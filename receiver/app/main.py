@@ -67,7 +67,7 @@ DISPLAY_TZ = ZoneInfo(os.environ.get("DISPLAY_TZ", "UTC"))
 VALID_SURFACES = {"browser", "network", "cli", "ide", "desktop", "mcp", "cloud"}
 VALID_SEVERITIES = {"info", "warn"}
 # Bounded set: safe as a Loki stream label and a Prometheus metric label.
-# Sources that pre-date the field (the deployed browser extension) report "unknown".
+# Sources that pre-date the field (older browser extensions) report "unknown".
 VALID_OS = {"macos", "windows", "linux", "unknown"}
 
 logging.basicConfig(stream=sys.stdout, level=logging.INFO, format="%(message)s")
@@ -295,7 +295,7 @@ async def _fire_alert(f: Finding):
 
 
 @app.post("/report")
-@app.post("/flag")  # legacy path used by the deployed browser extension
+@app.post("/flag")  # legacy path, kept for older browser extension versions
 async def report(f: Finding, request: Request, authorization: str = Header(default="")):
     _auth(authorization)
 

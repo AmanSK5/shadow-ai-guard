@@ -12,9 +12,9 @@ Two sources, one shape internally:
   * The bundled ai_services.yaml, used when no URL is set (a laptop run) or
     when the fetch fails. A network blip should not mean a missed scan.
 
-The two files use different shapes — `tools:` with flattened identifier fields
-versus `services:` with nested desktop_apps/browser_extensions — so _normalise
-converts the former into the latter and everything below it is unchanged.
+The two files use different shapes. `tools:` has flattened identifier fields,
+`services:` has nested desktop_apps/browser_extensions. _normalise converts
+the first into the second so everything below it can stay the same.
 """
 
 from __future__ import annotations

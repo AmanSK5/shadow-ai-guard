@@ -599,7 +599,7 @@ services:
       models or uploading training data.
 
 # ===========================================
-# BRIDGE DETECTION — SaaS targets
+# BRIDGE DETECTION: SaaS targets
 # ===========================================
 # These are NOT AI services. These are your org's SaaS tools that
 # should only be accessed by browsers under normal usage.
@@ -697,7 +697,7 @@ allowed_processes:
   - Arc
   - Arc Helper
 
-  # Native SaaS desktop apps (these talk to their own backends — not bridges)
+  # Native SaaS desktop apps (these talk to their own backends, not bridges)
   - Slack
   - Slack.exe
   - Slack Helper

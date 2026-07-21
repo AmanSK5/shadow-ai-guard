@@ -4,7 +4,7 @@ Evaluates MCP server definitions against a risk framework aligned to
 the OWASP Agentic AI Top 10. Takes an MCP server config (JSON/YAML)
 and produces a security assessment with allow/block recommendation.
 
-This module does not require API credentials — it analyses static
+This module does not require API credentials. It analyses static
 configuration files or fetched registry entries.
 """
 

@@ -55,8 +55,8 @@ digging through subfolders.
 **Getting it running**
 - [Getting started](docs/getting-started.md) - clone to your first finding on
   a dashboard, the minimum viable deployment
-- [Architecture](docs/architecture.md) - the mental model: the finding schema
-  as the contract, and why the pieces are shaped this way
+- [Architecture](docs/architecture.md) - the mental model: the finding schema,
+  and why the pieces are shaped this way
 
 **Deploying each surface**
 - [macOS endpoint collector](endpoint/macos/README.md) - via Jamf
@@ -113,8 +113,8 @@ on the roadmap.
 
 ## Finding schema
 
-Every source emits the same shape. This is the contract of the project; any
-new scanner or collector that emits it will work with everything downstream:
+Every source uses this same shape. Any new scanner or collector that emits
+it works with everything downstream:
 
 ```json
 {
@@ -140,7 +140,7 @@ whether a managed device uses a personal account, not who someone is.
 - A Kubernetes cluster for the receiver and scanner CronJobs. Anything
   conformant works; nothing in the core is cloud-specific.
 - A log pipeline that ingests container stdout. The provided dashboard
-  assumes Loki, but the receiver's only output contract is JSON lines.
+  assumes Loki, but the receiver's only output is JSON lines.
 - Grafana for the dashboard, Alertmanager for alerting (optional).
 - At least one detection source per surface you care about. Currently
   supported: Microsoft Graph (Entra, Exchange, Intune), Jamf Pro,

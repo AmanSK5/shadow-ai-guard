@@ -6,7 +6,7 @@ usage receipts that indicate a user registered for an AI tool with
 their work email.
 
 Required Graph API permission: Mail.ReadBasic.All (application)
-This permission allows reading subject, sender, and timestamps only —
+This permission allows reading subject, sender, and timestamps only,
 NOT email bodies. This is sufficient for signup email detection and
 follows the principle of least privilege.
 

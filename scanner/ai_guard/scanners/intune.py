@@ -1,8 +1,8 @@
 """Intune scanner.
 
 Queries Microsoft Graph / Intune API for:
-  1. Discovered apps — AI desktop applications on managed Windows devices
-  2. Browser extensions — AI-related Chrome/Edge extensions (via device config profiles)
+  1. Discovered apps: AI desktop applications on managed Windows devices
+  2. Browser extensions: AI-related Chrome/Edge extensions (via device config profiles)
 """
 
 from __future__ import annotations

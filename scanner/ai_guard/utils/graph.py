@@ -2,8 +2,8 @@
 
 Both the Entra and Exchange scanners need the same two things: pagination
 that follows @odata.nextLink, and the set of users that actually count as
-"our users" — enabled Member accounts, not B2B guests and not disabled
-leavers. Guests generate mailbox 404s in Exchange and misattributed
+"our users" (enabled Member accounts, not B2B guests and not disabled
+leavers). Guests generate mailbox 404s in Exchange and misattributed
 findings in Entra; disabled accounts are history, not shadow AI.
 """
 
@@ -31,7 +31,7 @@ async def paginate(client, url: str, max_pages: int = 20) -> list[dict]:
         next_link = data.get("@odata.nextLink")
         if not next_link:
             break
-        # nextLink is a full URL — the client already has base_url set,
+        # nextLink is a full URL; the client already has base_url set,
         # so strip it back to path+query.
         if next_link.startswith(GRAPH_V1):
             current_url = next_link[len(GRAPH_V1):]
@@ -47,7 +47,7 @@ async def paginate(client, url: str, max_pages: int = 20) -> list[dict]:
 
 
 async def get_active_member_upns(client) -> set[str]:
-    """UPNs of enabled Member users — the accounts that count as our users.
+    """UPNs of enabled Member users (the accounts that count as our users).
 
     Excludes:
       * Guests (userType eq 'Guest'): B2B collaborators invited into the
@@ -57,7 +57,7 @@ async def get_active_member_upns(client) -> set[str]:
         sign-ins are records, not active shadow AI.
 
     The filter runs server-side. userType belongs to Graph's "advanced
-    query" set, which wants ConsistencyLevel: eventual plus $count — both
+    query" set, which wants ConsistencyLevel: eventual plus $count; both
     are harmless on tenants where the plain filter would also have worked,
     so they are always sent.
 

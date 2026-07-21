@@ -1,14 +1,14 @@
 """SentinelOne Deep Visibility scanner.
 
 Queries the DV API for DNS events to detect:
-  1. Shadow AI usage — DNS lookups to known AI service domains
-  2. SaaS bridge connections — non-browser processes resolving SaaS API
+  1. Shadow AI usage: DNS lookups to known AI service domains
+  2. SaaS bridge connections: non-browser processes resolving SaaS API
      domains, indicating MCP bridges or API key integrations that bypass
      OAuth consent controls
 
 Endpoints:
-  POST /dv/init-query  — submit a DV query
-  GET  /dv/events      — poll for results (409 = still processing)
+  POST /dv/init-query  : submit a DV query
+  GET  /dv/events      : poll for results (409 = still processing)
 
 Query syntax:
   ObjectType = "dns" AND DNSRequest contains "domain"
@@ -24,7 +24,7 @@ Uses the Agents API to resolve endpoint names to logged-in users when
 DNS events lack user attribution (e.g. NETWORK SERVICE, system processes).
 
 Rate limiting: MSSP consoles throttle /dv/init-query aggressively. A
-throttled batch is retried with backoff rather than dropped — a silently
+throttled batch is retried with backoff rather than dropped. A silently
 missing bridge batch means a silently missing bridge finding.
 """
 
@@ -51,7 +51,7 @@ from ai_guard.utils.auth import AuthError, SentinelOneAuth
 logger = logging.getLogger(__name__)
 
 # Seconds to wait between DV batch queries to avoid 429 rate limiting.
-# MSSP consoles have tighter limits — increase if still getting throttled.
+# MSSP consoles have tighter limits; increase if still getting throttled.
 BATCH_DELAY_SECONDS = 25
 
 # A throttled batch is retried this many times before being recorded as an
@@ -62,7 +62,7 @@ MAX_THROTTLE_RETRIES = 3
 # activity (OneDrive, svchost, Office apps resolving Copilot endpoints).
 # When the process is in the allowed_processes list AND the domain matches
 # one of these, the event is skipped.  Browser lookups to these same domains
-# are NOT filtered — those represent real user AI activity.
+# are NOT filtered: those represent real user AI activity.
 _MICROSOFT_SYSTEM_DOMAINS = {
     "copilot.cloud.microsoft",
     "copilot.microsoft.com",
@@ -74,7 +74,7 @@ DV_QUERY_TIMEOUT_SECONDS = 60
 
 # SentinelOne populates processName with the agent version ("2.1.204") on
 # some event types instead of the resolving process. Such an event tells us
-# a device resolved a domain but not what did the resolving — which is the
+# a device resolved a domain but not what did the resolving, which is the
 # entire basis of bridge detection.
 _AGENT_VERSION_RE = re.compile(r"^\d+\.\d+(\.\d+)*$")
 
@@ -120,7 +120,7 @@ class SentinelOneScanner(BaseScanner):
             # Build endpoint -> user map from Agents API
             self._endpoint_users = await self._build_endpoint_user_map(client)
 
-            # Shared seen set — tracks (endpoint, matched_domain) pairs
+            # Shared seen set: tracks (endpoint, matched_domain) pairs
             # across both scans so we record at most one finding per
             # endpoint per AI service / bridge target domain.
             seen: set[tuple[str, str]] = set()
@@ -224,7 +224,7 @@ class SentinelOneScanner(BaseScanner):
 
                 # Filter system-process noise for Microsoft domains.
                 # OneDrive, svchost, Office apps resolve Copilot endpoints
-                # as background M365 activity — not real AI usage.
+                # as background M365 activity, not real AI usage.
                 # Browser lookups to the same domains are kept.
                 if (
                     process_name
@@ -233,7 +233,7 @@ class SentinelOneScanner(BaseScanner):
                 ):
                     continue
 
-                # One finding per endpoint per service — skip duplicates
+                # One finding per endpoint per service. Skip duplicates
                 pair = (endpoint_name, f"ai:{service.name}")
                 if pair in seen:
                     continue
@@ -321,7 +321,7 @@ class SentinelOneScanner(BaseScanner):
                 if is_unattributable(process_name):
                     continue
 
-                # Skip browser processes — those are normal SaaS access
+                # Skip browser processes: those are normal SaaS access
                 if self.registry.is_allowed_process(process_name):
                     continue
 
@@ -381,8 +381,8 @@ class SentinelOneScanner(BaseScanner):
         """Submit a DV query and poll for results, retrying on throttling.
 
         Endpoints:
-          POST /dv/init-query  — initiate query
-          GET  /dv/events      — fetch results
+          POST /dv/init-query  : initiate query
+          GET  /dv/events      : fetch results
 
         Raises the last error if every attempt is throttled, so the caller
         can record which domains went unchecked.
@@ -470,7 +470,7 @@ class SentinelOneScanner(BaseScanner):
                 params={"queryId": query_id, "limit": 1000},
             )
 
-            # 409 means query is still being processed — wait and retry
+            # 409 means query is still being processed; wait and retry
             if resp.status_code == 409:
                 await asyncio.sleep(3)
                 continue
@@ -488,7 +488,7 @@ class SentinelOneScanner(BaseScanner):
             if isinstance(data, list) and len(data) > 0:
                 return data
 
-            # Empty list means still processing — wait and retry
+            # Empty list means still processing; wait and retry
             await asyncio.sleep(3)
 
         return []

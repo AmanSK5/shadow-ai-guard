@@ -13,7 +13,7 @@ lock:
 	@echo "Commit this file to the repo."
 
 # Install from lockfile with hash verification
-# This is the secure install path — refuses to install if hashes don't match
+# This is the secure install path: refuses to install if hashes don't match
 install:
 	pip install --require-hashes --no-deps -r requirements.lock
 	pip install --no-deps -e .

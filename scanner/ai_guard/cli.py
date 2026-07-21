@@ -47,7 +47,7 @@ console = Console()
 )
 @click.pass_context
 def main(ctx, config, env_file):
-    """AI Guard — Shadow AI discovery and MCP security scanner."""
+    """AI Guard: Shadow AI discovery and MCP security scanner."""
     # Auto-load .env file if it exists
     env_path = Path(env_file)
     if env_path.exists():
@@ -401,7 +401,7 @@ def _secure_env_file(path: Path) -> None:
         import stat
         path.chmod(stat.S_IRUSR | stat.S_IWUSR)
     except (OSError, AttributeError):
-        pass  # Windows or permission error — skip
+        pass  # Windows or permission error: skip
 
 
 @main.command()

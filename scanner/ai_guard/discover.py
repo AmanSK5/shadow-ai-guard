@@ -47,7 +47,7 @@ AI_KEYWORDS = [
     "ollama",
 ]
 
-# Domain fragments that indicate false positives — major vendors, CDNs,
+# Domain fragments that indicate false positives: major vendors, CDNs,
 # OS services, and other infrastructure that happen to match AI keywords
 # (e.g. "ai.google.com", "chat.microsoft.com").
 FALSE_POSITIVE_FRAGMENTS = [

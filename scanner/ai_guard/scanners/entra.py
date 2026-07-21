@@ -1,14 +1,15 @@
 """Entra ID scanner.
 
 Queries Microsoft Graph API for:
-  1. Sign-in logs — SSO authentications to known AI services
-  2. Service principals — AI apps registered in the tenant
-  3. OAuth2 permission grants — consent grants (delegated + application)
+  1. Sign-in logs: SSO authentications to known AI services
+  2. Service principals: AI apps registered in the tenant
+  3. OAuth2 permission grants: consent grants (delegated + application)
 
 Findings are limited to enabled Member accounts. Guests SSO through this
-tenant on their own employer's behalf — their AI usage is not your organisation
-shadow AI — and disabled accounts are leavers whose sign-ins are records,
-not active risk. Service-principal findings carry no user and are kept.
+tenant on their own employer's behalf, so their AI usage is not your
+organisation's shadow AI. Disabled accounts are leavers whose sign-ins are
+records, not active risk. Service-principal findings carry no user and are
+kept.
 """
 
 from __future__ import annotations

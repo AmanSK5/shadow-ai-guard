@@ -1,7 +1,7 @@
 """JAMF Pro scanner.
 
 Queries JAMF Pro API for:
-  1. Application inventory — AI desktop apps on managed Macs
+  1. Application inventory: AI desktop apps on managed Macs
 
 Device identity is the hardware serial, not the friendly computer name.
 The browser extension and the endpoint collector both report serials; a Mac

@@ -1,7 +1,7 @@
 # Security model
 
-This document states the trust model plainly so you can decide what it means
-in your environment. It errs on the side of admitting limitations.
+This document sets out the trust model, so you can decide what it means in
+your environment. It's upfront about what it doesn't do.
 
 ## Data handled
 

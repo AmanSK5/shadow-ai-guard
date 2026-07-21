@@ -4,7 +4,7 @@ This document is the mental model. Read it before extending the platform or
 reviewing a change: it explains not just what the pieces are but why they are
 shaped this way, which is the part that is hard to reconstruct from the code.
 
-## The one idea
+## How it fits together
 
 Every detection surface, however different its mechanism, produces the same
 thing: a **finding**. A finding is a small JSON object saying "this AI tool,
@@ -12,12 +12,11 @@ on this surface, on this device, is signed into an account on this domain."
 The receiver accepts findings and does not care where they came from. That
 single shape is the contract the whole system is built around.
 
-Because the finding is the contract, adding a new source (a new scanner, a
-new OS collector, a new RMM) is never a change to the receiver or the
-dashboard. It is a new thing that emits the finding shape. This is the
-property that makes the platform extensible, and it is worth protecting: a
-change that makes the receiver care about a specific source is a change
-moving in the wrong direction.
+Because every source uses the same finding shape, adding a new one (a new
+scanner, a new OS collector, a new RMM) is never a change to the receiver
+or the dashboard. It is a new thing that emits the finding shape. This is
+worth keeping: if a change makes the receiver need to know about a specific
+source, something has gone wrong.
 
 ## What a deployment actually looks like
 
