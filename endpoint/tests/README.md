@@ -35,6 +35,7 @@ python3 -c "
 from http.server import HTTPServer, BaseHTTPRequestHandler
 class H(BaseHTTPRequestHandler):
     def do_POST(self):
+        print(f'POST {self.path}')
         self.send_response(200); self.end_headers()
         self.wfile.write(b'{\"ok\":true}')
     def do_GET(self):
@@ -97,9 +98,10 @@ cat /var/lib/ai-guard/reported.state
 
 ### macOS
 
-Same approach using Jamf script parameters:
-
 ```bash
+# Make sure the console user's home has a detectable AI tool config:
+echo '{"oauthAccount":"tester@example.com"}' > ~/.claude.json
+
 # Successful delivery (HTTP 200):
 sudo ./endpoint/macos/ai-guard-collector.sh \
      "" "" "" \
@@ -154,10 +156,29 @@ while ($listener.IsListening) {
 }
 ```
 
-In another shell, edit `$ReceiverBase` in the collector to
-`http://localhost:9999`, then run:
+In another shell, create the fixture, edit `$ReceiverBase` in the
+collector to `http://localhost:9999`, then run:
 
 ```powershell
+# Make sure the console user's profile has a detectable AI tool config:
+'{"oauthAccount":"tester@example.com"}' | Set-Content "$env:USERPROFILE\.claude.json"
+
 .\endpoint\windows\ai-guard-collector.ps1
 Get-Content C:\ProgramData\ai-guard\reported.state.json
+# Should contain the finding key with a current epoch timestamp.
+
+# To test failed delivery, expire the finding's throttle timestamp.
+# Check the actual key in the state file (it may differ from the
+# example if your username or tool differs), then set it to an
+# expired value:
+$state = Get-Content C:\ProgramData\ai-guard\reported.state.json -Raw | ConvertFrom-Json
+$state.'cli|claude-code|example.com' = 1000000000
+$state | ConvertTo-Json | Set-Content C:\ProgramData\ai-guard\reported.state.json
+
+# Restart the fake receiver with $PostStatus = 500, then run again:
+.\endpoint\windows\ai-guard-collector.ps1
+
+# Confirm the receiver received the POST attempt, then check state:
+Get-Content C:\ProgramData\ai-guard\reported.state.json
+# The timestamp should still be 1000000000, not the current time.
 ```

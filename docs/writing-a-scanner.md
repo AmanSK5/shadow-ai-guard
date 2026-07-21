@@ -18,7 +18,7 @@ interface:
   "os": "unknown",
   "account_domain": "gmail.com",
   "device": "",
-  "user": "jane.doe",
+  "user": "",
   "evidence": "entra-signin",
   "severity": "warn",
   "reported_at": "2026-01-01T09:00:00Z",
