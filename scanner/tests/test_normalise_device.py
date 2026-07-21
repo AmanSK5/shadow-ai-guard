@@ -6,6 +6,12 @@ wasn't exactly two characters long.
 """
 
 import os
+import sys
+from pathlib import Path
+
+# receiver_reporter.py lives at scanner/ (outside the ai_guard package).
+# Add that directory so the import resolves regardless of working directory.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
 
