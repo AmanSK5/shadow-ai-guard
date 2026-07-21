@@ -150,6 +150,7 @@ while ($listener.IsListening) {
         $ctx.Response.ContentLength64 = $body.Length
         $ctx.Response.OutputStream.Write($body, 0, $body.Length)
     } else {
+        Write-Host "POST $($ctx.Request.Url.AbsolutePath) -> $PostStatus"
         $ctx.Response.StatusCode = $PostStatus
     }
     $ctx.Response.Close()
