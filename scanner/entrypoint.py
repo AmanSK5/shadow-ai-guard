@@ -19,7 +19,7 @@ Environment:
 
 Exit codes:
   0  scan completed, findings reported (or none found)
-  1  no scanner could run, or reporting failed for every finding
+  1  no scanner could run, or any finding failed to report
 """
 from __future__ import annotations
 
@@ -123,7 +123,12 @@ async def run() -> int:
 
     # Findings we could not report are findings we do not have. Fail loudly so
     # the CronJob's failure shows up rather than a silently empty dashboard.
-    return 1 if sent == 0 else 0
+    return _exit_code(sent, failed)
+
+
+def _exit_code(sent: int, failed: int) -> int:
+    """Non-zero when any finding failed to report."""
+    return 1 if failed > 0 else 0
 
 
 if __name__ == "__main__":

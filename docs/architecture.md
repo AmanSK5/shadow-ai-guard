@@ -207,11 +207,13 @@ system. They need one thing: the receiver's bearer token. Centralising the
 outbound integrations in the receiver keeps the trust surface small and lets
 a deployer swap Loki for another pipeline by changing one component.
 
-**Why domain, never mailbox.** The question the platform answers is whether
-a managed device uses a personal account, which the domain answers
-completely. The local part (who specifically) adds identifying data without
-adding signal for that question. Collecting less is both a privacy stance
-and a smaller thing to secure.
+**What the account fields carry.** The `account_domain` field holds the
+domain only, which is what answers the core question: is a managed device
+using a personal account. The finding also carries a `user` field so it can
+be followed up with the right person. On cloud scanners this is the corporate
+email's local part, kept only for approved corporate domains; on endpoint
+collectors it is the device's console username. Both are already known to IT.
+See [privacy](deployment-privacy.md) for exactly when the username is populated.
 
 **Why severity is computed from the corporate domain, not stored.** What
 counts as a "work" account is the deployer's configuration, not a property

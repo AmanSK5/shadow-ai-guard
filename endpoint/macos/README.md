@@ -22,9 +22,9 @@ an allowlist entry for the script path and the receiver URL if needed.
 | desktop | AI apps in /Applications, local runtimes like Ollama | no, presence only |
 | mcp     | MCP servers wired into AI tool configs | no, lists server names |
 
-Account findings report the domain only, never the mailbox. An account on a
-domain outside your corporate list reports as `warn`; everything else is
-`info`.
+Account findings carry the domain in `account_domain` and the console
+username in `user`. An account on a domain outside your corporate list
+reports as `warn`; everything else is `info`.
 
 ## Reporting behaviour
 

@@ -12,7 +12,8 @@
 # at runtime. Nothing tool-specific is hardcoded in this script: adding a new
 # AI tool is a registry merge request, not a script edit plus an MDM re-paste.
 #
-# Privacy: reports the account DOMAIN only, never the local-part.
+# Privacy: the account_domain field is the domain only. The console username
+# is sent in the user field (already known to IT via MDM).
 # Same flag schema as the companion browser extension, plus "surface", "os", "severity".
 #
 # Deployment: Jamf policy script, recurring check-in (daily).

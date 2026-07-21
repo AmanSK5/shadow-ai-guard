@@ -34,7 +34,8 @@
 #     SYSTEM-profile traps that silently produced empty pilots elsewhere.
 #   * Fail loudly. A collector that reports nothing looks identical to a
 #     clean machine; across a fleet that is false confidence.
-#   * Report the account DOMAIN, never the mailbox local-part.
+#   * The account_domain field carries the domain only. The console username
+#     is sent in the user field (already known to IT).
 
 set -u
 

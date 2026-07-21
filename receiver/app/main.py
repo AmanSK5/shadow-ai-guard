@@ -161,6 +161,8 @@ class Finding(BaseModel):
     # cannot exclude bridge targets. Empty for pre-0.1.4 lines and for
     # extension flags via /flag.
     source: str = ""
+    device_name: str = ""
+    risk_tier: str = ""
 
 
 # --------------------------------------------------------------------- app --

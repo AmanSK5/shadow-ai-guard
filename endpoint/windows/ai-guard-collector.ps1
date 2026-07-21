@@ -18,8 +18,8 @@
       produces a healthy-looking dashboard and false confidence.
     * Throttle info findings to one report per day; warns (personal
       accounts) and never-seen findings report on every run.
-    * Report the account DOMAIN, never the mailbox name. The question is
-      whether a managed device uses a personal account, not who someone is.
+    * Report the account domain in account_domain; the console username is
+      sent in the user field. Both are already known to IT through the MDM.
 
 .NOTES
   Deployed via Intune Proactive Remediation (detection script). Exits 1 when

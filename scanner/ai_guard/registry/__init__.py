@@ -138,6 +138,9 @@ class Registry:
                 "Registry fetch failed (%s): %s - using bundled copy",
                 self.url, e,
             )
+            logger.warning(
+                "Using bundled registry fallback; detection coverage may be reduced"
+            )
             self.source = f"bundled (fetch failed: {e})"
             return yaml.safe_load(self.path.read_text())
 

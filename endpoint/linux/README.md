@@ -51,7 +51,8 @@ instead of POSTing, which is the local-test mode.
 | desktop | AI apps and local runtimes like Ollama | no, presence only |
 | mcp     | MCP servers wired into AI tool configs | no, lists server names |
 
-Account findings report the domain only, never the mailbox local part.
+Account findings carry the domain in `account_domain` and the console
+username in `user`.
 
 ## Reporting behaviour
 
