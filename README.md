@@ -18,6 +18,35 @@ one registry of known AI tools, and one dashboard. Adding a new AI tool to
 detection is a merge request to a YAML file, not a script change on every
 endpoint.
 
+## Try it in five minutes
+
+You don't need a Kubernetes cluster, an MDM, or any cloud logins to see what
+this does. There's a demo that runs the real receiver and a real Grafana
+dashboard against fake data, all in Docker:
+
+```bash
+git clone https://github.com/AmanSK5/shadow-ai-guard.git
+cd shadow-ai-guard/demo
+docker compose up
+```
+
+Then open **http://localhost:3000** and look at the **AI Guard - Shadow AI
+Visibility** dashboard. It brings up Loki, the receiver (built from the real
+Dockerfile in this repo), and a small seeder that posts example findings across
+every surface and OS. That's so you land on a dashboard that's already full
+instead of an empty one: who's running what, personal versus work accounts, a
+breakdown per tool, and the MCP integrations people have wired up.
+
+The demo uses `example.com` / `example.co.uk` as the work domains, plus made-up
+device and user names. It only runs Loki, so a few of the Prometheus tiles are
+left out. This isn't the full picture a real deployment gives you, but it's
+enough to see how the thing works without setting anything up. The dashboard's
+own header spells out what's different, and there's more detail in
+[`demo/README.md`](demo/README.md).
+
+When you want to run it for real, start with
+[docs/getting-started.md](docs/getting-started.md).
+
 ## Documentation
 
 Everything is under `docs/` and the component folders. Start here rather than

@@ -19,6 +19,103 @@ property that makes the platform extensible, and it is worth protecting: a
 change that makes the receiver care about a specific source is a change
 moving in the wrong direction.
 
+## What a deployment actually looks like
+
+The receiver, the logs and the dashboard stay the same everywhere. The part that
+changes from one company to the next is what feeds them: whatever you already run
+that can spot AI tools and send in a finding.
+
+It's set up this way on purpose. The receiver takes findings the same way no
+matter which source they came from, so adding a new source doesn't mean changing
+the receiver, the logs or the dashboard. You point one more thing at it and it
+fits in with the rest.
+
+```
+  WHAT FEEDS IT                                   WHERE IT ENDS UP
+  (use what you already run)                      (your existing stack)
+
+  browser extension ──────┐
+  (managed browser policy)│
+                          │
+  endpoint collectors ────┤                        ┌─► logs ──► Grafana
+  macOS / Windows / Linux │                        │   (Loki, or       dashboard
+  (pushed by MDM or RMM)  ├──►  receiver  ──────────┤    anything that
+                          │                         │    takes JSON lines)
+  cloud scanners ─────────┤                         │
+  sign-in logs,           │                         └─► alerts ──► your channel
+  signup emails,          │                             (Alertmanager)
+  software inventory      │
+                          │        ▲
+  network / DNS scanner ──┘        │
+  anything that sees             registry (a YAML file, reviewed in a PR)
+  which domains devices          domains, extension IDs, config paths,
+  talk to: EDR, DNS              whether a tool's approved - collectors
+  firewall, web gateway          pull this at runtime
+```
+
+Left to right: anything on the left sends the same kind of finding into the
+receiver, the receiver writes it to the logs and fires alerts, and Grafana reads
+the logs. The registry is the one shared thing everything leans on. Collectors
+pull their list of what-to-look-for from it at runtime, which is why adding a new
+AI tool is a one-line edit to a YAML file instead of a change you have to push to
+every machine.
+
+The left column is the part you have freedom over. None of those four are
+required, and none are tied to a particular vendor. You run the ones you can, and where you're
+missing one you can usually swap in something you already have (see *Swapping
+collectors* below).
+
+## Swapping collectors
+
+The receiver only cares about the finding, not where it came from. So the
+left-hand side is really a set of jobs, not a fixed list of products. Each job
+can be done by whatever you've got that can see that surface and either run a
+script or give you an inventory. If you don't have the obvious tool for a job,
+there's usually something you already own that'll stand in.
+
+| The job | Usually done by | Can also be done by | What the stand-in has to do |
+| --- | --- | --- | --- |
+| macOS machines | An Apple MDM | Any MDM or RMM that can push and run a shell script on Macs | Run the collector script on a schedule and capture the output |
+| Windows machines | A Windows MDM | Any MDM or RMM that can push and run PowerShell | Run the collector script on a schedule and capture the output |
+| Linux / unmanaged machines | (often nothing) | An RMM that can run scripts on a schedule | Just run the collector script. It doesn't need to fully "manage" the box, only run scripts on it |
+| Software inventory | Your device-management tool's inventory | Anything that lists installed apps and extensions per machine | Give you app or extension IDs the registry can match |
+| Network / DNS | A DNS-telemetry source | Anything that already sees which domains your machines reach: EDR, a DNS firewall, a web gateway, resolver logs | Give you (machine, domain) pairs to match against the registry |
+| Cloud sign-ins | Your identity provider's sign-in logs | Any IdP that shows per-app sign-in events | Show which users signed into which AI apps |
+| Cloud signups | A mail or records search | Anything that can surface signup / verification emails from AI vendors | Show the sender domains of self-service signups |
+
+Two things worth pulling out of that table:
+
+An **RMM that can run scripts can stand in for an MDM here**, even if it
+doesn't otherwise manage the machine. That's how Linux and any other unmanaged
+boxes get covered - you don't need a "real" MDM for them, you just need something
+that can run a script on a schedule.
+
+The **network side doesn't need a dedicated DNS product**. Anything that already
+sees the domains your machines talk to will feed it, so most places can use an
+EDR or web filter they already pay for rather than buying something new.
+
+## Where people usually start
+
+You don't turn everything on at once. Pick the jobs you can already cover and
+grow from there. A few common shapes:
+
+- **Mostly Microsoft.** Windows machines and inventory come from your Windows
+  MDM, sign-ins and signups from your Microsoft identity and mail side, and the
+  network side from whatever EDR or web filter already logs domain traffic. Add
+  the browser extension through managed browser policy.
+
+- **Apple-heavy or a mix.** macOS machines and inventory from your Apple MDM,
+  Windows from a Windows MDM, and any Linux or contractor machines covered by an
+  RMM that can run scripts. Cloud and network as above.
+
+- **Just trying it out.** Start with only the endpoint collectors on the few
+  machines that matter, plus the browser extension. That alone answers the
+  question worth the most - which AI CLIs and IDE tools are signed into personal
+  accounts - with no cloud setup at all. Add the rest later if you need it.
+
+Either way the receiver, the logs, the dashboard and the registry don't change.
+Only the left-hand side does.
+
 ## The finding schema
 
 ```json
