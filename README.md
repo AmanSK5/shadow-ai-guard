@@ -20,6 +20,8 @@ endpoint.
 
 ## Try it in five minutes
 
+https://github.com/user-attachments/assets/f114e781-7053-4000-ba82-2b2d0fcc3e85
+
 You don't need a Kubernetes cluster, an MDM, or any cloud logins to see what
 this does. There's a demo that runs the real receiver and a real Grafana
 dashboard against fake data, all in Docker:
