@@ -1,5 +1,9 @@
 # shadow-ai-guard
 
+> [!NOTE]
+> **Alpha release.** Early-stage and under active development. It works, but
+> has known limitations tracked in [Issues](../../issues).
+
 Shadow AI detection across every surface it actually appears on: browser, CLI,
 IDE, desktop, network and cloud. Built to run on infrastructure you already
 have, for roughly the cost of nothing.

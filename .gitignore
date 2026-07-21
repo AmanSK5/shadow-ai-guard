@@ -14,3 +14,4 @@ registry/dist/
 *.key
 *.pfx
 *.p12
+.claude/
