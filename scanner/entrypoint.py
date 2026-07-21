@@ -57,7 +57,7 @@ SCANNERS = {
     "jamf": JAMFScanner,
 }
 
-DRY_RUN = bool(os.environ.get("DRY_RUN"))
+DRY_RUN = os.environ.get("DRY_RUN", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 async def run() -> int:

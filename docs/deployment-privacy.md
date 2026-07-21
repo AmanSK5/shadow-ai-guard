@@ -12,10 +12,17 @@ owns data protection in your organisation before you deploy.
 Collected per finding: tool name, surface, OS, device identifier, username,
 account domain, an evidence path, severity, timestamp.
 
-Deliberately not collected: mailbox local parts (the domain only, never
-jane.doe@), message or page content, browsing history beyond matches
-against the registry of known AI domains, keystrokes, file contents,
-credentials or tokens belonging to users.
+Deliberately not collected: message or page content, browsing history beyond matches 
+against the registry of known AI domains, keystrokes, file contents, credentials or 
+tokens belonging to users.
+
+How usernames are handled: for sign-ins on an approved corporate domain, the 
+username (the local part of the work email) is recorded in the user field, because that 
+identity is already known to IT. For personal-domain accounts the user field is left 
+empty and only the domain is kept.
+
+On endpoint collectors the username is the device's console account name, which is 
+already visible to IT through the MDM.
 
 The design intent is to answer "is a managed device using an unmanaged AI
 account" with the minimum identifiable data that still supports a

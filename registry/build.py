@@ -104,7 +104,6 @@ def emit(registry):
                 ("mcp_config_paths", "any"),
                 ("mcp_config_paths_macos", "macos"),
                 ("mcp_config_paths_windows", "windows"),
-                ("mcp_config_paths_windows", "windows"),
                 ("mcp_config_paths_linux", "linux"),
             )
             for p in t.get(key, [])

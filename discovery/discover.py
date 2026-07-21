@@ -42,7 +42,7 @@ GITLAB_URL = os.environ.get("GITLAB_URL", "").rstrip("/")
 GITLAB_TOKEN = os.environ.get("GITLAB_TOKEN", "")
 GITLAB_PROJECT = os.environ.get("GITLAB_PROJECT_ID", "")
 MIN_DEVICES = int(os.environ.get("MIN_DEVICES", "1"))
-DRY_RUN = bool(os.environ.get("DRY_RUN"))
+DRY_RUN = os.environ.get("DRY_RUN", "").strip().lower() in {"1", "true", "yes", "on"}
 
 def _require_https(name: str, value: str) -> None:
     """Reject non-HTTPS base URLs at startup to prevent sending API tokens

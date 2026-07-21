@@ -125,7 +125,7 @@ it works with everything downstream:
   "os": "macos",
   "account_domain": "gmail.com",
   "device": "SERIAL123",
-  "user": "jane.doe",
+  "user": "aman.test",
   "evidence": "~/.claude.json",
   "severity": "warn",
   "reported_at": "2026-01-01T09:00:00Z",
@@ -134,8 +134,9 @@ it works with everything downstream:
 ```
 
 `severity` is `warn` when the account domain is not one of your corporate
-domains, `info` otherwise. Domain only, never the mailbox: the question is
-whether a managed device uses a personal account, not who someone is.
+domains, `info` otherwise. The `user` field carries an account name so a
+finding can be followed up with the right person; see
+[privacy](docs/deployment-privacy.md) for exactly when it is populated.
 
 ## What you need
 

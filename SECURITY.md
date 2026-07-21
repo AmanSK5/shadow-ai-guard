@@ -6,9 +6,9 @@ your environment. It's upfront about what it doesn't do.
 ## Data handled
 
 Findings contain usernames, device serials, tool names, account domains and
-evidence paths. They deliberately exclude mailbox local parts, message
-content, file content and credentials. Even so, the aggregate is a map of who
-uses what on which machine: treat the receiver's log store (e.g. your Loki
+evidence paths. They deliberately exclude message content, file content and 
+credentials. Even so, the aggregate is a map of who uses what on which 
+machine: treat the receiver's log store (e.g. your Loki
 tenant) as sensitive, and scope dashboard access accordingly.
 
 For privacy and DPIA guidance, see docs/deployment-privacy.md.

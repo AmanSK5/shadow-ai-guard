@@ -93,7 +93,8 @@ def normalise_device(device_name: Optional[str]) -> tuple[str, str]:
     if not device_name:
         return "", ""
     if _PREFIX_HOSTNAME is None:
-        return device_name.strip()
+        cleaned = device_name.strip()
+        return cleaned, cleaned
     m = _PREFIX_HOSTNAME.match(device_name.strip())
     if m:
         return m.group(1).upper(), device_name
