@@ -135,13 +135,10 @@ class Registry:
             return data
         except Exception as e:  # noqa: BLE001 - any failure means fall back
             logger.warning(
-                "Registry fetch failed (%s): %s - using bundled copy",
-                self.url, e,
-            )
-            logger.warning(
                 "Using bundled registry fallback; detection coverage may be reduced"
             )
-            self.source = f"bundled (fetch failed: {e})"
+            logger.debug("Registry fetch failed: %s", e)
+            self.source = "bundled (fetch failed)"
             return yaml.safe_load(self.path.read_text())
 
     @staticmethod

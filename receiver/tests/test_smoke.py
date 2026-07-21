@@ -27,8 +27,8 @@ def test_registry_without_auth_returns_401():
     assert resp.status_code == 401
 
 
-def test_report_preserves_device_name_and_risk_tier():
-    """device_name and risk_tier survive validation and appear in the response."""
+def test_report_accepts_device_name_and_risk_tier():
+    """Integration: the /report endpoint accepts a payload with the new fields."""
     resp = client.post(
         "/report",
         json={
@@ -41,33 +41,33 @@ def test_report_preserves_device_name_and_risk_tier():
     assert resp.status_code == 200
 
 
-def test_report_defaults_for_device_name_and_risk_tier():
-    """Omitting device_name and risk_tier uses empty-string defaults."""
-    resp = client.post(
-        "/report",
-        json={"tool": "claude-code"},
-        headers={"Authorization": "Bearer test-token-for-ci"},
-    )
-    assert resp.status_code == 200
-
-
-def test_device_name_not_in_loki_stream_labels():
-    """device_name must stay inside the JSON body, never become a Loki label."""
+def test_model_preserves_device_name_and_risk_tier():
+    """device_name and risk_tier survive Pydantic validation into model_dump."""
     from app.main import Finding
-    f = Finding(tool="test", device_name="host-01")
-    # The Loki stream uses only these bounded labels
-    stream_labels = {"app", "kind", "surface", "severity", "os"}
-    assert "device_name" not in stream_labels
+    f = Finding(tool="claude-code", device_name="ACME-C02XK1AB", risk_tier="high")
+    d = f.model_dump()
+    assert d["device_name"] == "ACME-C02XK1AB"
+    assert d["risk_tier"] == "high"
 
 
-def test_unknown_extra_fields_ignored():
-    """Pydantic v2 default is extra='ignore'; unknown fields don't cause errors."""
-    resp = client.post(
-        "/report",
-        json={
-            "tool": "claude-code",
-            "completely_unknown_field": "should not error",
-        },
-        headers={"Authorization": "Bearer test-token-for-ci"},
-    )
-    assert resp.status_code == 200
+def test_model_defaults_for_device_name_and_risk_tier():
+    """Omitting device_name and risk_tier gives empty-string defaults."""
+    from app.main import Finding
+    f = Finding(tool="claude-code")
+    d = f.model_dump()
+    assert d["device_name"] == ""
+    assert d["risk_tier"] == ""
+
+
+def test_unbounded_fields_not_in_loki_stream_labels():
+    """Unbounded fields must not be Loki stream labels."""
+    from app.main import LOKI_FINDING_LABELS
+    for field in ("device_name", "risk_tier", "tool", "device", "user", "account_domain"):
+        assert field not in LOKI_FINDING_LABELS, f"{field} would cause label cardinality issues"
+
+
+def test_unknown_extra_fields_dropped():
+    """Pydantic v2 default is extra='ignore'; unknown fields are silently dropped."""
+    from app.main import Finding
+    f = Finding(tool="claude-code", completely_unknown_field="should vanish")
+    assert "completely_unknown_field" not in f.model_dump()

@@ -37,7 +37,12 @@ Field rules:
   findings usually have no single device, so `unknown` and an empty
   `device` is correct.
 - **account_domain** is the domain only. If your source gives you a full
-  address, strip the local part before reporting. Never send the mailbox.
+  address, strip the local part before putting it here. The `account_domain`
+  field must never contain a local part or full email.
+- **user** carries the account identity for follow-up. For approved corporate
+  domains this may be the email's local part; it must be left empty for
+  personal-domain accounts. Never put a personal email's local part in any
+  field.
 - **severity**: send `warn` if the account is not a corporate account,
   `info` otherwise. If your source cannot tell (presence only, no account),
   send `info` and leave `account_domain` empty.

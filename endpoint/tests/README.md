@@ -28,7 +28,7 @@ for unit-test sourcing. Verification is manual.
 Start a receiver that returns a configurable status code:
 
 ```bash
-# Returns 200 on POST /report, 200 with empty registry on GET:
+# Returns 200 on POST /report, 200 with a minimal registry on GET:
 python3 -c "
 from http.server import HTTPServer, BaseHTTPRequestHandler
 class H(BaseHTTPRequestHandler):
@@ -37,7 +37,7 @@ class H(BaseHTTPRequestHandler):
         self.wfile.write(b'{\"ok\":true}')
     def do_GET(self):
         self.send_response(200); self.end_headers()
-        self.wfile.write(b'{\"version\":1,\"cli\":[],\"ide\":[],\"desktop\":[],\"mcp\":[]}')
+        self.wfile.write(b'{\"version\":1,\"cli\":[{\"tool\":\"claude-code\",\"config_paths\":[\".claude.json\"],\"account_json_path\":\".claude.json\",\"account_json_keys\":[\"oauthAccount\"],\"binaries\":[\"claude\"]}],\"ide\":[],\"desktop\":[],\"mcp\":[]}')
     def log_message(self, *a): pass
 HTTPServer(('127.0.0.1', 9999), H).serve_forever()
 " &
@@ -52,6 +52,9 @@ Run on a real machine with a real user home (the collector resolves the
 logged-in user from `/home`, so it needs an actual non-root home directory).
 
 ```bash
+# Make sure the logged-in user's home has a detectable AI tool config:
+echo '{"oauthAccount":"tester@example.com"}' > ~/.claude.json
+
 # Against the fake receiver (HTTP 200):
 sudo AIGUARD_RECEIVER_BASE=http://127.0.0.1:9999 \
      AIGUARD_TOKEN=test \
@@ -79,6 +82,7 @@ Same approach using Jamf script parameters:
 
 ```bash
 sudo ./endpoint/macos/ai-guard-collector.sh \
+     "" "" "" \
      "http://127.0.0.1:9999" "test" "example.com"
 cat "/Library/Application Support/ai-guard/reported.state"
 ```

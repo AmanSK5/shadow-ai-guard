@@ -223,6 +223,14 @@ def _auth(authorization: str):
         raise HTTPException(401, "bad token")
 
 
+# The Loki stream labels derived from each finding. Anything not in this
+# set stays inside the JSON line body, parsed at query time. Adding a
+# field here mints a new stream per unique value, so only bounded sets
+# belong (surface, severity, os). Unbounded fields (tool, device,
+# device_name, user, account_domain, risk_tier) must stay out.
+LOKI_FINDING_LABELS = {"surface", "severity", "os"}
+
+
 async def _push_loki(f: Finding, line: str):
     """Fire-and-forget push to Loki. Bounded labels only (no tool/device:
     unbounded values stay inside the JSON line, parsed at query time)."""
@@ -232,9 +240,7 @@ async def _push_loki(f: Finding, line: str):
                 "stream": {
                     "app": "ai-guard-receiver",
                     "kind": "finding",
-                    "surface": f.surface,
-                    "severity": f.severity,
-                    "os": f.os,
+                    **{k: getattr(f, k) for k in LOKI_FINDING_LABELS},
                 },
                 "values": [[str(time.time_ns()), line]],
             }

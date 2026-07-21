@@ -218,7 +218,6 @@ report() {
       return
     fi
   fi
-  printf '%s %s\n' "$key" "$NOW_EPOCH" >> "$STATE_NEW"
 
   local payload
   payload=$(cat <<JSON
@@ -227,6 +226,10 @@ JSON
 )
   if [ -z "$ENDPOINT" ]; then
     echo "[ai-guard] FLAG (no endpoint set): $payload"
+    # Print-only: preserve old timestamp if one exists, but don't advance it.
+    local old_ts
+    old_ts=$(state_get "$key")
+    [ -n "$old_ts" ] && printf '%s %s\n' "$key" "$old_ts" >> "$STATE_NEW"
     return
   fi
   local code
@@ -236,9 +239,14 @@ JSON
     --data "$payload" "$ENDPOINT" 2>/dev/null || echo 000)
   if [ "$code" = "200" ] || [ "$code" = "204" ]; then
     POSTED=$((POSTED + 1))
+    printf '%s %s\n' "$key" "$NOW_EPOCH" >> "$STATE_NEW"
   else
     echo "[ai-guard] POST failed: HTTP $code for $tool -> $ENDPOINT"
     POST_FAILURES=$((POST_FAILURES + 1))
+    # Keep the old timestamp so the finding retries next run.
+    local old_ts
+    old_ts=$(state_get "$key")
+    [ -n "$old_ts" ] && printf '%s %s\n' "$key" "$old_ts" >> "$STATE_NEW"
   fi
 }
 

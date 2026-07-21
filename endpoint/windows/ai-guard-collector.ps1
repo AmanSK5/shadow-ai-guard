@@ -172,7 +172,6 @@ function Send-Finding {
             return
         }
     }
-    $StateNew[$key] = $NowEpoch
 
     $payload = @{
         tool = $Tool; surface = $Surface; os = 'windows'
@@ -183,6 +182,8 @@ function Send-Finding {
 
     if (-not $Endpoint) {
         Write-Output "ai-guard FLAG (no endpoint set): $payload"
+        # Print-only: preserve old timestamp if one exists, but don't advance it.
+        if ($StateOld.ContainsKey($key)) { $StateNew[$key] = $StateOld[$key] }
         return
     }
     try {
@@ -190,11 +191,14 @@ function Send-Finding {
             -Headers @{ Authorization = "Bearer $Token" } `
             -ContentType 'application/json' -Body $payload -ErrorAction Stop | Out-Null
         $script:Posted++
+        $StateNew[$key] = $NowEpoch
     } catch {
         $code = 'ERR'
         if ($_.Exception.Response) { $code = [int]$_.Exception.Response.StatusCode }
         Write-Output "ai-guard POST failed: HTTP $code for $Tool -> $Endpoint"
         $script:PostFailures++
+        # Keep the old timestamp so the finding retries next run.
+        if ($StateOld.ContainsKey($key)) { $StateNew[$key] = $StateOld[$key] }
     }
 }
 

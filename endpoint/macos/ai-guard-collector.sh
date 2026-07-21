@@ -145,13 +145,12 @@ report() {
       return 0
     fi
   fi
-  STATE_NEW="${STATE_NEW}${key} ${NOW_EPOCH}
-"
 
   local payload
   payload=$(/usr/bin/printf '{"tool":"%s","surface":"%s","os":"macos","account_domain":"%s","device":"%s","user":"%s","evidence":"%s","severity":"%s","reported_at":"%s"}' \
     "$tool" "$surface" "$acct" "$SERIAL" "$CONSOLE_USER" "$evidence" "$severity" "$NOW")
 
+  local delivered=false
   if [ -n "$ENDPOINT" ]; then
     local http_code
     http_code=$(/usr/bin/curl -s -m 10 -o /dev/null -w '%{http_code}' -X POST "$ENDPOINT" \
@@ -166,9 +165,25 @@ report() {
       POST_FAILURES=$((POST_FAILURES + 1))
     else
       POST_OK=$((POST_OK + 1))
+      delivered=true
     fi
   else
     echo "[ai-guard] FLAG (no endpoint set): $payload"
+  fi
+
+  # Advance the throttle timestamp only after confirmed delivery.
+  # On failure, keep the old timestamp (if any) so the finding retries
+  # on the next run rather than being suppressed for 24h.
+  if [ "$delivered" = true ]; then
+    STATE_NEW="${STATE_NEW}${key} ${NOW_EPOCH}
+"
+  else
+    local old_ts
+    old_ts=$(state_lookup "$key")
+    if [ -n "$old_ts" ]; then
+      STATE_NEW="${STATE_NEW}${key} ${old_ts}
+"
+    fi
   fi
 
   if [ -n "$acct" ]; then
