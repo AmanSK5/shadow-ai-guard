@@ -178,6 +178,29 @@ README for specifics.
 New here? [docs/getting-started.md](docs/getting-started.md) walks this
 through end to end for a minimum deployment.
 
+## Status and known limitations
+
+This is an alpha, released early on purpose. It runs in production in one
+environment, and the rough edges are labelled rather than hidden. The current
+ones:
+
+- **Registry parity.** Not every surface detects every registry entry yet.
+  Some tools are covered by the endpoint collectors but not the scanners, or
+  the other way round, depending on what identifiers each surface can see.
+  Closing that gap is ongoing registry work, not code change.
+- **Scanner accuracy.** The cloud and network scanners match on identifiers
+  like sign-in application names and DNS patterns, and some of those edges
+  are still being tuned. Expect occasional misses or over-matches; treat
+  findings as leads to follow up, not verdicts.
+- **Delivery paths.** The collectors are tested through the delivery
+  mechanisms actually run behind this project (Jamf, Intune, and an RMM for
+  Linux). The other documented paths, such as Ansible or plain cron, are
+  written to work but have had less real-world exercise. Pilot on one
+  machine first.
+
+If you hit one of these, or something not on this list, an issue with the
+finding JSON and what you expected is genuinely useful.
+
 ## Governance notes
 
 The registry ships with every tool set to `approved: false`. Approval is your

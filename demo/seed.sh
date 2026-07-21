@@ -19,8 +19,8 @@ echo "seeding demo findings -> $R"
 
 # A spread designed so every dashboard panel lights up: personal (warn) and
 # corporate (info) accounts, all three endpoint OSes, plus cloud and network.
-# Corporate domain in this demo is "example.com" (set the dashboard variable
-# to example\.com to see the personal/work colouring).
+# Corporate domain in this demo is "example.com"; the dashboard's corporate
+# domains variable already defaults to it, so the colouring needs no setup.
 
 # --- personal accounts (these are the red ones) ---
 post "{\"tool\":\"claude-code\",\"surface\":\"cli\",\"os\":\"macos\",\"account_domain\":\"gmail.com\",\"device\":\"C02PIKACHU\",\"user\":\"pikachu\",\"evidence\":\"~/.claude.json\",\"severity\":\"warn\",\"reported_at\":\"$(now)\",\"source\":\"collector-macos\"}"
