@@ -1,0 +1,60 @@
+{
+  "duration_seconds": 0.8,
+  "findings": [
+    {
+      "service_name": "Atlassian Rovo",
+      "source": "mcp_scan",
+      "risk_tier": "high",
+      "user_upn": "gengar@demo-corp.example",
+      "device_name": null,
+      "detail": "Over-permissioned MCP connector: Atlassian Rovo — OAuth scopes include write:jira-work, write:confluence-content, admin:confluence-space; 15 tools (9 write); verdict BLOCK",
+      "first_seen_days_ago": 3,
+      "last_seen_days_ago": 0,
+      "timestamp_days_ago": 0,
+      "occurrence_count": 1,
+      "vendor": "Atlassian",
+      "category": "agent",
+      "domains": ["api.atlassian.com"],
+      "raw_evidence": {
+        "server_name": "atlassian-rovo",
+        "auth_method": "oauth2",
+        "oauth_scopes": [
+          "read:jira-work",
+          "write:jira-work",
+          "read:confluence-content.all",
+          "write:confluence-content",
+          "admin:confluence-space",
+          "read:me"
+        ],
+        "tool_count": 15,
+        "write_tools": [
+          "create_issue",
+          "update_issue",
+          "transition_issue",
+          "add_comment",
+          "create_page",
+          "update_page",
+          "delete_page",
+          "add_label",
+          "assign_issue"
+        ],
+        "read_tools": [
+          "search_issues",
+          "get_issue",
+          "list_projects",
+          "search_confluence",
+          "get_page",
+          "get_user"
+        ],
+        "risks": [
+          {"level": "high", "category": "AG02: Excessive Agency", "title": "Write access to Jira and Confluence"},
+          {"level": "high", "category": "AG04: Privilege Escalation", "title": "admin:confluence-space scope"},
+          {"level": "medium", "category": "AG06: Overreliance", "title": "Bulk data ingestion from Confluence"}
+        ],
+        "verdict": "BLOCK",
+        "consent_granted_by": "gengar@demo-corp.example",
+        "tenant_id": "DEMO-ATLASSIAN-TENANT-001"
+      }
+    }
+  ]
+}

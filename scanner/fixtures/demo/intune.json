@@ -1,0 +1,43 @@
+{
+  "duration_seconds": 2.8,
+  "findings": [
+    {
+      "service_name": "GitHub Copilot",
+      "source": "intune_app",
+      "risk_tier": "low",
+      "user_upn": "venusaur@demo-corp.example",
+      "device_name": "DEMO-LAPTOP-03",
+      "detail": "Discovered app: GitHub Copilot (VS Code extension runtime) on managed Windows device",
+      "first_seen_days_ago": 30,
+      "last_seen_days_ago": 0,
+      "timestamp_days_ago": 0,
+      "occurrence_count": 1,
+      "raw_evidence": {
+        "app_name": "GitHub Copilot",
+        "executable": "github-copilot.exe",
+        "device_id": "DEMO-DEVICE-ID-03",
+        "device_name": "DEMO-LAPTOP-03"
+      }
+    },
+    {
+      "service_name": "Grammarly",
+      "vendor": "Grammarly",
+      "source": "intune_extension",
+      "risk_tier": "medium",
+      "user_upn": "pikachu@demo-corp.example",
+      "device_name": "DEMO-LAPTOP-04",
+      "detail": "Browser extension: Grammarly for Chrome (kbfnbcaeplbcioakkpcpgfkobkghlhen) on managed device",
+      "first_seen_days_ago": 7,
+      "last_seen_days_ago": 1,
+      "timestamp_days_ago": 1,
+      "occurrence_count": 1,
+      "raw_evidence": {
+        "extension_name": "Grammarly for Chrome",
+        "extension_id": "kbfnbcaeplbcioakkpcpgfkobkghlhen",
+        "browser": "chrome",
+        "device_id": "DEMO-DEVICE-ID-04",
+        "device_name": "DEMO-LAPTOP-04"
+      }
+    }
+  ]
+}

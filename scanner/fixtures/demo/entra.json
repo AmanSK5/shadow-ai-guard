@@ -1,0 +1,25 @@
+{
+  "duration_seconds": 4.2,
+  "findings": [
+    {
+      "service_name": "Notion AI",
+      "source": "entra_consent_grant",
+      "risk_tier": "medium",
+      "user_upn": "blastoise@demo-corp.example",
+      "device_name": null,
+      "detail": "OAuth consent grant to Notion AI — delegated permissions: User.Read, Files.Read — last used 47 days ago",
+      "first_seen_days_ago": 90,
+      "last_seen_days_ago": 47,
+      "timestamp_days_ago": 47,
+      "occurrence_count": 1,
+      "raw_evidence": {
+        "app_id": "00000000-0000-0000-0000-000000000001",
+        "app_display_name": "Notion AI",
+        "consent_type": "delegated",
+        "scopes": "User.Read Files.Read",
+        "principal_id": "00000000-0000-0000-0000-DEMO00000002",
+        "tenant_id": "00000000-0000-0000-0000-DEMO00000000"
+      }
+    }
+  ]
+}

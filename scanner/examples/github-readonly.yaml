@@ -1,0 +1,41 @@
+# Example MCP Server Definition — Read-Only GitHub
+# ==================================================
+# A hypothetical read-only GitHub MCP connector.
+# Demonstrates what a lower-risk config looks like.
+# Use: ai-guard mcp-scan examples/github-readonly.yaml
+
+name: github-readonly
+description: "Read-only access to GitHub repositories and issues"
+vendor: GitHub
+version: "1.0.0"
+
+auth:
+  type: oauth2
+  flow: authorization_code
+  scopes:
+    - repo:status
+    - read:org
+    - read:discussion
+
+tools:
+  - name: list_repositories
+    description: "List repositories for the authenticated user"
+  - name: get_repository
+    description: "Get details of a specific repository"
+  - name: search_issues
+    description: "Search issues and pull requests"
+  - name: get_issue
+    description: "Get details of a specific issue"
+  - name: list_pull_requests
+    description: "List pull requests for a repository"
+  - name: get_pull_request
+    description: "Get details of a specific pull request"
+
+allowed_tools:
+  - list_repositories
+  - get_repository
+  - search_issues
+  - get_issue
+  - list_pull_requests
+  - get_pull_request
+blocked_tools: []

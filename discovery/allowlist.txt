@@ -1,0 +1,26 @@
+# High-volume domains that are never AI services; skipped before classification.
+# One per line, eTLD+1. Extend freely - cheaper than classifying them weekly.
+google.com
+googleapis.com
+gstatic.com
+apple.com
+icloud.com
+microsoft.com
+office.com
+office365.com
+windows.net
+azure.com
+amazonaws.com
+cloudfront.net
+akamaized.net
+cloudflare.com
+slack.com
+zoom.us
+atlassian.com
+github.com
+gitlab.com
+sentinelone.net
+jamfcloud.com
+# Add your own corporate domains below. Domains listed here are never
+# proposed by the discovery job as candidate AI services.
+example.com

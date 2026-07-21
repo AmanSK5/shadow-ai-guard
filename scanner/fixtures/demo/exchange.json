@@ -1,0 +1,24 @@
+{
+  "duration_seconds": 3.8,
+  "findings": [
+    {
+      "service_name": "Grammarly",
+      "vendor": "Grammarly",
+      "source": "exchange_email",
+      "risk_tier": "medium",
+      "user_upn": "pikachu@demo-corp.example",
+      "device_name": null,
+      "detail": "Signup confirmation email from noreply@grammarly.com — subject: \"Welcome to Grammarly!\"",
+      "first_seen_days_ago": 10,
+      "last_seen_days_ago": 10,
+      "timestamp_days_ago": 10,
+      "occurrence_count": 1,
+      "raw_evidence": {
+        "sender": "noreply@grammarly.com",
+        "subject": "Welcome to Grammarly!",
+        "recipient": "pikachu@demo-corp.example",
+        "folder": "Inbox"
+      }
+    }
+  ]
+}

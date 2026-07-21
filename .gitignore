@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+registry/dist/
+.env
+.venv/
+*.egg-info/
+.env
+.venv/
+__pycache__/
+*.egg-info/
+registry/dist/
+.DS_Store
+*.pem
+*.key
+*.pfx
+*.p12

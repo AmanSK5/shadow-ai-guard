@@ -1,0 +1,823 @@
+# AI Service Registry
+# ===================
+# Central registry of known AI/LLM services and their identifiers.
+# Each scanner module matches its data source against this registry.
+#
+# Fields:
+#   name:               Display name
+#   vendor:             Parent company
+#   category:           chatbot | copilot | embedded | api | agent
+#   risk_tier:          high | medium | low (default assessment, overridable in policy.yaml)
+#   domains:            DNS domains / URLs (matched by SentinelOne Deep Visibility)
+#   entra_app_ids:      Entra ID application/client IDs (matched by sign-in logs)
+#   email_domains:      Sender domains for signup/verification emails (matched by Exchange)
+#   desktop_apps:       Bundle IDs / exe names (matched by Intune & JAMF)
+#   browser_extensions: Known extension IDs (matched by Intune & JAMF)
+#   mcp_identifiers:    MCP server names / registry slugs (matched by MCP scanner)
+#   notes:              Context for the IT admin reviewing the report
+
+services:
+
+  # ===========================
+  # STANDALONE AI CHATBOTS
+  # ===========================
+
+  - name: ChatGPT
+    vendor: OpenAI
+    category: chatbot
+    risk_tier: high
+    domains:
+      - chat.openai.com
+      - chatgpt.com
+      - api.openai.com
+      - cdn.oaistatic.com
+      - auth0.openai.com
+    entra_app_ids: []  # No known Entra SSO app ID - users create native accounts
+    email_domains:
+      - openai.com
+      - email.openai.com
+    desktop_apps:
+      windows:
+        - ChatGPT.exe
+      macos:
+        - com.openai.chat
+    browser_extensions:
+      chrome: []
+      edge: []
+    mcp_identifiers: []
+    notes: >
+      Users can sign up with work email + password without any Entra involvement.
+      Enterprise tier offers SSO but most orgs encounter the free/Plus tier first.
+
+  - name: Claude
+    vendor: Anthropic
+    category: chatbot
+    risk_tier: high
+    domains:
+      - claude.ai
+      - claude.com
+      - claudeusercontent.com
+      - api.anthropic.com
+      - console.anthropic.com
+    entra_app_ids: []
+    email_domains:
+      - anthropic.com
+      - mail.anthropic.com
+    desktop_apps:
+      windows:
+        - claude.exe
+      macos:
+        - com.anthropic.claudefordesktop
+    browser_extensions:
+      chrome: []
+      edge: []
+    mcp_identifiers:
+      - anthropic-claude
+    notes: >
+      Claude desktop app supports MCP server connections which can bridge
+      to other tools. Team/Pro plans have no admin controls - Enterprise required.
+
+  - name: Google Gemini
+    vendor: Google
+    category: chatbot
+    risk_tier: high
+    domains:
+      - gemini.google.com
+      - aistudio.google.com
+      - generativelanguage.googleapis.com
+      - alkalimakersuite-pa.clients6.google.com
+    entra_app_ids: []
+    email_domains:
+      - google.com
+    desktop_apps:
+      windows: []
+      macos: []
+    browser_extensions:
+      chrome: []
+      edge: []
+    mcp_identifiers: []
+    notes: >
+      Accessible via personal Google accounts. If org uses Google Workspace,
+      Gemini may be enabled at the workspace level without IT involvement.
+
+  - name: DeepSeek
+    vendor: DeepSeek
+    category: chatbot
+    risk_tier: high
+    domains:
+      - chat.deepseek.com
+      - api.deepseek.com
+      - deepseek.com
+    entra_app_ids: []
+    email_domains:
+      - deepseek.com
+    desktop_apps:
+      windows: []
+      macos: []
+    browser_extensions:
+      chrome: []
+      edge: []
+    mcp_identifiers: []
+    notes: >
+      China-based provider. Data subject to Chinese data laws.
+      Significant data sovereignty risk for UK/EU organisations.
+
+  - name: Perplexity
+    vendor: Perplexity AI
+    category: chatbot
+    risk_tier: medium
+    domains:
+      - perplexity.ai
+      - www.perplexity.ai
+      - api.perplexity.ai
+    entra_app_ids: []
+    email_domains:
+      - perplexity.ai
+    desktop_apps:
+      windows: []
+      macos:
+        - ai.perplexity.mac
+    browser_extensions:
+      chrome:
+        - hlgbcneanomplepojfcnclggenpcoldo  # Perplexity Chrome extension
+      edge: []
+    mcp_identifiers: []
+    notes: >
+      AI-powered search. Users may paste internal content into search queries
+      without considering it as "using an AI tool."
+
+  - name: Grok
+    vendor: xAI
+    category: chatbot
+    risk_tier: medium
+    domains:
+      - grok.com
+    entra_app_ids: []
+    email_domains:
+      - x.com
+    desktop_apps:
+      windows: []
+      macos: []
+    browser_extensions:
+      chrome: []
+      edge: []
+    mcp_identifiers: []
+    notes: >
+      Accessible via X (Twitter). Users may not think of it as a separate
+      AI tool since it's embedded in a social platform.
+
+  # ===========================
+  # COPILOTS & CODING ASSISTANTS
+  # ===========================
+
+  - name: Microsoft Copilot (Free)
+    vendor: Microsoft
+    category: copilot
+    risk_tier: medium
+    domains:
+      - copilot.microsoft.com
+      - copilot.cloud.microsoft
+      - sydney.bing.com
+    entra_app_ids: []
+    email_domains: []
+    desktop_apps:
+      windows:
+        - Microsoft.Copilot
+      macos: []
+    browser_extensions:
+      chrome: []
+      edge:
+        - Microsoft-Copilot  # Built into Edge
+    mcp_identifiers: []
+    notes: >
+      Free Copilot in Edge/Bing is separate from M365 Copilot.
+      Users on managed devices may use this without realising data
+      goes to the consumer Copilot service, not the enterprise one.
+
+  - name: Microsoft 365 Copilot
+    vendor: Microsoft
+    category: copilot
+    risk_tier: high
+    domains:
+      - copilot.microsoft.com
+      - substrate.office.com
+    entra_app_ids:
+      - fb8d53bb-d7db-4b18-a257-9560e2f3a024  # M365 Copilot
+    email_domains: []
+    desktop_apps:
+      windows: []
+      macos: []
+    browser_extensions:
+      chrome: []
+      edge: []
+    mcp_identifiers: []
+    notes: >
+      Requires per-user licensing. Accesses all content the user can see
+      in SharePoint, OneDrive, Teams, Outlook. Overshared content becomes
+      an AI exposure risk. Needs Purview sensitivity labels as a control.
+
+  - name: GitHub Copilot
+    vendor: GitHub / Microsoft
+    category: copilot
+    risk_tier: medium
+    domains:
+      - copilot.github.com
+      - api.githubcopilot.com
+      - copilot-proxy.githubusercontent.com
+    entra_app_ids: []
+    email_domains:
+      - github.com
+    desktop_apps:
+      windows: []
+      macos: []
+    browser_extensions:
+      chrome: []
+      edge: []
+    mcp_identifiers: []
+    notes: >
+      IDE extension. Code context sent to GitHub's AI service.
+      Individual plans can be purchased without org admin involvement.
+
+  - name: Cursor
+    vendor: Anysphere
+    category: copilot
+    risk_tier: high
+    domains:
+      - cursor.com
+      - api2.cursor.sh
+      - cursor.sh
+    entra_app_ids: []
+    email_domains:
+      - cursor.sh
+      - cursor.com
+    desktop_apps:
+      windows:
+        - Cursor.exe
+      macos:
+        - com.todesktop.230313mzl4w4u92
+    browser_extensions:
+      chrome: []
+      edge: []
+    mcp_identifiers: []
+    notes: >
+      AI-native IDE. Indexes entire codebases for context. High risk if
+      used on proprietary codebases without authorisation.
+
+  - name: Windsurf
+    vendor: Codeium
+    category: copilot
+    risk_tier: high
+    domains:
+      - windsurf.com
+      - codeium.com
+      - server.codeium.com
+      - codeiumdata.com
+    entra_app_ids: []
+    email_domains:
+      - codeium.com
+      - windsurf.com
+    desktop_apps:
+      windows:
+        - Windsurf.exe
+      macos:
+        - com.codeium.windsurf
+    browser_extensions:
+      chrome: []
+      edge: []
+    mcp_identifiers: []
+    notes: >
+      AI-native IDE similar to Cursor. Full codebase indexing.
+
+  - name: Claude Code
+    vendor: Anthropic
+    category: copilot
+    risk_tier: high
+    domains:
+      - api.anthropic.com
+    entra_app_ids: []
+    email_domains:
+      - anthropic.com
+    desktop_apps:
+      windows: []
+      macos: []
+    browser_extensions:
+      chrome: []
+      edge: []
+    mcp_identifiers: []
+    notes: >
+      CLI tool with agentic capabilities - can read/write files, run commands.
+      Operates with the user's full filesystem and terminal permissions.
+      MCP server support means it can bridge to other tools.
+
+  # ===========================
+  # EMBEDDED AI IN SAAS
+  # ===========================
+
+  - name: Atlassian Rovo
+    vendor: Atlassian
+    category: embedded
+    risk_tier: high
+    domains:
+      - rovo.atlassian.com
+      - api.atlassian.com
+    entra_app_ids: []
+    email_domains: []
+    desktop_apps:
+      windows: []
+      macos: []
+    browser_extensions:
+      chrome: []
+      edge: []
+    mcp_identifiers:
+      - atlassian  # MCP connector name
+    notes: >
+      AI embedded in Jira/Confluence. Reads all content the user can access.
+      MCP connector gives external AI tools (Claude) read/write access to
+      Jira and Confluence via OAuth 2.0 (3LO). No admin controls without
+      Atlassian Guard (formerly Atlassian Access) Enterprise tier.
+
+  - name: Notion AI
+    vendor: Notion Labs
+    category: embedded
+    risk_tier: medium
+    domains:
+      - notion.so
+      - api.notion.com
+      - notion.ai
+    entra_app_ids: []
+    email_domains:
+      - notion.so
+      - makenotion.com
+    desktop_apps:
+      windows:
+        - Notion.exe
+      macos:
+        - notion.id
+    browser_extensions:
+      chrome: []
+      edge: []
+    mcp_identifiers:
+      - notion
+    notes: >
+      AI features within Notion workspace. Processes all page content
+      the user has access to. Enabled at workspace level.
+
+  - name: Grammarly AI
+    vendor: Grammarly
+    category: embedded
+    risk_tier: medium
+    domains:
+      - grammarly.com
+      - app.grammarly.com
+      - gnar.grammarly.com
+    entra_app_ids: []
+    email_domains:
+      - grammarly.com
+    desktop_apps:
+      windows:
+        - Grammarly.Desktop.exe
+      macos:
+        - com.grammarly.ProjectLlama
+    browser_extensions:
+      chrome:
+        - kbfnbcaeplbcioakkpcpgfkobkghlhen  # Grammarly for Chrome
+      edge:
+        - kbfnbcaeplbcioakkpcpgfkobkghlhen
+    mcp_identifiers: []
+    notes: >
+      Browser extension sees all text input across every web app.
+      Intercepts content in email composers, Jira ticket editors,
+      Slack messages. High data exposure surface despite seeming benign.
+
+  - name: Otter.ai
+    vendor: Otter.ai
+    category: embedded
+    risk_tier: high
+    domains:
+      - otter.ai
+      - api.otter.ai
+    entra_app_ids: []
+    email_domains:
+      - otter.ai
+    desktop_apps:
+      windows:
+        - Otter.exe
+      macos:
+        - ai.otter.otter
+    browser_extensions:
+      chrome:
+        - bnmojkbbkkonlmlfgejehefjldooied  # Otter Chrome extension
+      edge: []
+    mcp_identifiers: []
+    notes: >
+      Meeting transcription AI. Records and transcribes all meeting audio.
+      Users can join meetings on their own initiative. Transcripts stored
+      on Otter's servers. Very high risk for confidential internal meetings.
+
+  - name: Wispr Flow
+    vendor: Wispr
+    category: embedded
+    risk_tier: high
+    domains:
+      - wisprflow.ai
+      - wisprflow.com
+      - api.wisprflow.ai
+    entra_app_ids: []
+    email_domains:
+      - wisprflow.ai
+    desktop_apps:
+      windows: []
+      macos: []
+    browser_extensions:
+      chrome: []
+      edge: []
+    mcp_identifiers: []
+    notes: >
+      Voice-to-text AI that runs as a background service capturing audio.
+      Always-on microphone access means it can capture ambient conversation,
+      meeting audio, and dictation across all applications.
+
+  - name: Fireflies.ai
+    vendor: Fireflies
+    category: embedded
+    risk_tier: high
+    domains:
+      - fireflies.ai
+      - app.fireflies.ai
+    entra_app_ids: []
+    email_domains:
+      - fireflies.ai
+    desktop_apps:
+      windows: []
+      macos: []
+    browser_extensions:
+      chrome: []
+      edge: []
+    mcp_identifiers: []
+    notes: >
+      AI meeting transcription and note-taking, similar to Otter.ai.
+      Records, transcribes, and summarises meetings. Users can add the
+      Fireflies bot to calendar meetings without admin involvement.
+      Transcripts stored on Fireflies servers — high risk for
+      confidential internal meetings.
+
+  # ===========================
+  # AI IMAGE / MEDIA GENERATION
+  # ===========================
+
+  - name: Midjourney
+    vendor: Midjourney
+    category: chatbot
+    risk_tier: low
+    domains:
+      - midjourney.com
+      - www.midjourney.com
+    entra_app_ids: []
+    email_domains:
+      - midjourney.com
+    desktop_apps:
+      windows: []
+      macos: []
+    browser_extensions:
+      chrome: []
+      edge: []
+    mcp_identifiers: []
+    notes: >
+      Image generation. Lower data risk than text AI tools but prompts
+      could leak proprietary project or product information.
+
+  - name: DALL-E / ChatGPT Image Gen
+    vendor: OpenAI
+    category: chatbot
+    risk_tier: low
+    domains:
+      - chat.openai.com  # Same as ChatGPT
+    entra_app_ids: []
+    email_domains: []
+    desktop_apps:
+      windows: []
+      macos: []
+    browser_extensions:
+      chrome: []
+      edge: []
+    mcp_identifiers: []
+    notes: >
+      Bundled within ChatGPT. See ChatGPT entry for domain/app detection.
+
+  # ===========================
+  # API / DEVELOPER PLATFORMS
+  # ===========================
+
+  - name: OpenAI API Platform
+    vendor: OpenAI
+    category: api
+    risk_tier: high
+    domains:
+      - platform.openai.com
+      - api.openai.com
+    entra_app_ids: []
+    email_domains:
+      - openai.com
+    desktop_apps:
+      windows: []
+      macos: []
+    browser_extensions:
+      chrome: []
+      edge: []
+    mcp_identifiers: []
+    notes: >
+      Developer API access. Could indicate someone building an internal
+      tool or integration without IT/security oversight.
+
+  - name: Anthropic API / Console
+    vendor: Anthropic
+    category: api
+    risk_tier: high
+    domains:
+      - anthropic.com
+      - console.anthropic.com
+      - api.anthropic.com
+    entra_app_ids: []
+    email_domains:
+      - anthropic.com
+    desktop_apps:
+      windows: []
+      macos: []
+    browser_extensions:
+      chrome: []
+      edge: []
+    mcp_identifiers: []
+    notes: >
+      Developer API access. Same risk as OpenAI API Platform.
+
+  - name: Ollama
+    vendor: Ollama
+    category: api
+    risk_tier: high
+    domains:
+      - ollama.com
+      - ollama.ai
+      - api.ollama.com
+      - registry.ollama.ai
+    entra_app_ids: []
+    email_domains: []
+    desktop_apps:
+      windows:
+        - ollama.exe
+        - Ollama.exe
+      macos:
+        - ollama
+    browser_extensions:
+      chrome: []
+      edge: []
+    mcp_identifiers: []
+    notes: >
+      Local LLM runner that downloads and runs AI models on-device with
+      no cloud processing. Detection is limited to model download activity
+      and process name matching. Data stays local but models can be large
+      and compute-intensive, and there are no enterprise controls.
+
+  - name: Hugging Face
+    vendor: Hugging Face
+    category: api
+    risk_tier: medium
+    domains:
+      - huggingface.co
+      - api-inference.huggingface.co
+    entra_app_ids: []
+    email_domains:
+      - huggingface.co
+    desktop_apps:
+      windows: []
+      macos: []
+    browser_extensions:
+      chrome: []
+      edge: []
+    mcp_identifiers: []
+    notes: >
+      Model hosting and inference API. Could indicate someone running
+      models or uploading training data.
+
+# ===========================================
+# BRIDGE DETECTION — SaaS targets
+# ===========================================
+# These are NOT AI services. These are your org's SaaS tools that
+# should only be accessed by browsers under normal usage.
+# If a non-browser process (e.g. VS Code, Claude, Python) connects
+# to these domains, it indicates an MCP bridge, API key integration,
+# or automation that IT should know about.
+#
+# Fields:
+#   name:     SaaS service name
+#   domains:  API/app domains to monitor
+#   notes:    Why this matters
+
+bridge_targets:
+
+  - name: Atlassian (Jira/Confluence)
+    domains:
+      - api.atlassian.com
+      - "*.atlassian.net"
+      - atlassian.net
+    notes: >
+      API token creation is self-service for all users.
+      No Atlassian Guard = no admin controls.
+      MCP connectors and VS Code extensions can use API tokens
+      to give AI tools full read/write access.
+
+  - name: GitHub
+    domains:
+      - api.github.com
+      - github.com
+    notes: >
+      Personal access tokens are self-service.
+      AI coding assistants commonly bridge to GitHub via MCP.
+      Legitimate for devs using git CLI, but flag if Claude
+      or other AI processes are the ones connecting.
+
+  - name: Slack
+    domains:
+      - api.slack.com
+      - slack.com
+    notes: >
+      User tokens and bot tokens can be created without admin approval.
+      AI tools with Slack MCP access can read message history.
+
+  - name: Microsoft 365 / SharePoint
+    domains:
+      - graph.microsoft.com
+      - sharepoint.com
+    notes: >
+      OAuth consent is locked to admin, but if an AI tool
+      somehow obtains a token (e.g. via a delegated flow the
+      user already has), it could access files and mail.
+
+  - name: Google Workspace
+    domains:
+      - www.googleapis.com
+      - drive.googleapis.com
+      - sheets.googleapis.com
+      - docs.googleapis.com
+      - drive.google.com
+      - docs.google.com
+    notes: >
+      Google API keys and OAuth tokens can be self-provisioned.
+      AI tools bridging to Google Drive/Docs can access shared files.
+
+  - name: Figma
+    domains:
+      - api.figma.com
+      - figma.com
+    notes: >
+      Personal access tokens are self-service.
+      Design files may contain unreleased proprietary work.
+
+# Allowed process names for bridge detection.
+# These are known browsers, native SaaS desktop apps, and system processes
+# that legitimately connect to the bridge target domains.
+# Only processes NOT in this list trigger a bridge finding.
+allowed_processes:
+
+  # Browsers
+  - chrome
+  - Google Chrome
+  - Google Chrome Helper
+  - Google Chrome Helper (Renderer)
+  - Google Chrome Helper (GPU)
+  - Google Chrome Helper (Plugin)
+  - firefox
+  - safari
+  - Safari Networking
+  - msedge
+  - Microsoft Edge
+  - Microsoft Edge Helper
+  - brave
+  - opera
+  - arc
+  - Arc
+  - Arc Helper
+
+  # Native SaaS desktop apps (these talk to their own backends — not bridges)
+  - Slack
+  - Slack.exe
+  - Slack Helper
+  - Slack Helper (Renderer)
+  - Teams
+  - Teams.exe
+  - Microsoft Teams
+  - Microsoft Teams Helper
+  - ms-teams
+  - OneDrive
+  - OneDrive.exe
+  - OneDriveStandaloneUpdater.exe
+  - SharePoint.exe
+  - Outlook
+  - Outlook.exe
+  - OUTLOOK.EXE
+  - Figma
+  - Figma.exe
+  - Figma Helper
+  - Notion
+  - Notion.exe
+  - Notion Helper
+
+  # Windows system processes
+  - svchost.exe
+  - svchost
+  - backgroundTaskHost.exe
+  - backgroundTaskHost
+  - SearchHost.exe
+  - SearchProtocolHost.exe
+  - RuntimeBroker.exe
+  - explorer.exe
+  - taskhostw.exe
+  - sihost.exe
+  - dllhost.exe
+  - services.exe
+  - lsass.exe
+  - csrss.exe
+  - wininit.exe
+  - System
+  - msedgewebview2.exe
+  - WebViewHost.exe
+  - CompPkgSrv.exe
+  - StartMenuExperienceHost.exe
+
+  # Microsoft Office / M365 background processes
+  - OneDrive.Sync.Service.exe
+  - EXCEL.EXE
+  - WINWORD.EXE
+  - POWERPNT.EXE
+  - Microsoft.Notes.exe
+
+  # Windows search / UI
+  - SearchApp.exe
+
+  # Firefox
+  - firefox.exe
+
+  # Linux system processes
+  - systemd-resolved
+
+  # macOS system processes
+  - com.apple.WebKit.Networking
+  - nsurlsessiond
+  - trustd
+  - mDNSResponder
+  - networkserviceproxy
+  - com.apple.Safari.WebContent
+  - CalendarAgent
+  - accountsd
+  - remindd
+  - sharingd
+
+  # Auto-updaters (normal background activity)
+  - updater
+  - updater.exe
+  - Update
+  - GoogleUpdate
+  - SoftwareUpdateAgent
+  - softwareupdated
+  - Microsoft Update Assistant
+  - MicrosoftAutoUpdate
+
+  # Git (legitimate dev tool, not an AI bridge)
+  - git
+  - git.exe
+  - git-remote-https
+  - gh
+  - gh.exe
+
+# ===========================================
+# DISCOVER EXCLUSIONS
+# ===========================================
+# Domains that match AI keywords but are not AI services.
+# The 'ai-guard discover' command filters these out alongside
+# the hardcoded false-positive list and registry domains.
+discover_exclude_domains:
+  - jetbrains.com
+  - fastly.net
+  - ably.net
+  - ably-realtime.com
+  - shopifysvc.com
+  - shopifycloud.com
+  - vsassets.io
+  - vscode-cdn.net
+  - vercel.app
+  - thehubevents.com
+  - ai.engineer
+  - www.ai.engineer
+
+# ===================
+# REGISTRY METADATA
+# ===================
+registry_version: "1.1.0"
+last_updated: "2026-04-04"
+maintainer: "AmanSK5"
+contributing: >
+  To add a new AI service, submit a PR with all known identifiers.
+  At minimum, provide: name, vendor, category, risk_tier, and domains.
+  Entra app IDs can be found in Azure Portal > Enterprise Applications
+  after a user has authenticated to the service via SSO.
+  To add a bridge target, add the SaaS service's API domains to the
+  bridge_targets section.

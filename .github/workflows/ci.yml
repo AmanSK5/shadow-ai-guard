@@ -1,0 +1,119 @@
+name: ci
+
+# Supply chain posture:
+# - every action is pinned to a full commit SHA, not a movable tag
+# - only official actions (actions/*, docker/*); path filtering and image
+#   tag construction are plain shell so no third-party action is trusted
+# - python installs use --require-hashes against committed lockfiles
+#
+# To bump an action: update the SHA and the trailing version comment
+# together. Resolve a tag to its commit with:
+#   gh api repos/OWNER/REPO/commits/TAG --jq .sha
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: shellcheck macOS collector
+        run: shellcheck -S warning endpoint/macos/*.sh endpoint/linux/*.sh
+
+  psscriptanalyzer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: lint Windows collector
+        shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+          $r = Invoke-ScriptAnalyzer -Path endpoint/windows/ -Recurse -Severity Warning,Error
+          $r | Format-Table -AutoSize
+          if ($r | Where-Object Severity -eq 'Error') { exit 1 }
+
+  registry-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with: { python-version: '3.12' }
+      - run: pip install pyyaml==6.0.3 jsonschema==4.25.1
+      - name: validate registry against schema and build all views
+        run: python registry/build.py --check
+
+  receiver-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with: { python-version: '3.12' }
+      - run: pip install --require-hashes -r receiver/requirements.lock && pip install pytest==8.4.2
+      - run: pytest receiver/ -q
+
+  scanner-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with: { python-version: '3.12' }
+      - run: pip install --require-hashes -r scanner/requirements.lock && pip install -e scanner/ --no-deps && pip install pytest==8.4.2
+      - run: pytest scanner/tests -q
+
+  build-images:
+    # main and tags only: PRs validate, they do not publish.
+    if: github.event_name == 'push'
+    needs: [shellcheck, registry-validate, receiver-test, scanner-test]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        component: [receiver, scanner, discovery]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 2
+      - name: detect whether this component changed (tags always build)
+        id: gate
+        run: |
+          if [[ '${{ github.ref_type }}' == 'tag' ]]; then
+            echo "build=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if git diff --name-only HEAD^ HEAD | grep -q '^${{ matrix.component }}/'; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: compute image tags
+        if: steps.gate.outputs.build == 'true'
+        id: tags
+        run: |
+          IMAGE="ghcr.io/${{ github.repository }}/${{ matrix.component }}"
+          IMAGE="${IMAGE,,}"   # ghcr requires lowercase
+          SHORT_SHA="${GITHUB_SHA::7}"
+          TAGS="$IMAGE:sha-$SHORT_SHA"
+          if [[ '${{ github.ref_type }}' == 'tag' ]]; then
+            TAGS="$TAGS,$IMAGE:${GITHUB_REF_NAME#v},$IMAGE:latest"
+          else
+            TAGS="$TAGS,$IMAGE:main"
+          fi
+          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        if: steps.gate.outputs.build == 'true'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        if: steps.gate.outputs.build == 'true'
+        with:
+          context: ${{ matrix.component }}
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}

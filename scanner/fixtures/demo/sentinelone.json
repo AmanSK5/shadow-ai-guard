@@ -1,0 +1,61 @@
+{
+  "duration_seconds": 7.6,
+  "findings": [
+    {
+      "service_name": "ChatGPT",
+      "source": "sentinelone_dns",
+      "risk_tier": "high",
+      "user_upn": "charizard@demo-corp.example",
+      "device_name": "DEMO-LAPTOP-01",
+      "detail": "DNS lookup for chatgpt.com (via chrome.exe) — 847 queries over 14 days, bursty weekday pattern",
+      "first_seen_days_ago": 14,
+      "last_seen_days_ago": 0,
+      "timestamp_days_ago": 0,
+      "occurrence_count": 847,
+      "raw_evidence": {
+        "dns_request": "chatgpt.com",
+        "endpoint": "DEMO-LAPTOP-01",
+        "user": "charizard@demo-corp.example",
+        "process": "chrome.exe",
+        "daily_counts": [98, 112, 87, 0, 0, 105, 91, 78, 96, 0, 0, 62, 74, 44]
+      }
+    },
+    {
+      "service_name": "ChatGPT",
+      "source": "sentinelone_dns",
+      "risk_tier": "high",
+      "user_upn": "charizard@demo-corp.example",
+      "device_name": "DEMO-LAPTOP-01",
+      "detail": "DNS lookup for cdn.oaistatic.com (via chrome.exe) — CDN asset loads confirming active sessions",
+      "first_seen_days_ago": 14,
+      "last_seen_days_ago": 0,
+      "timestamp_days_ago": 1,
+      "occurrence_count": 1203,
+      "raw_evidence": {
+        "dns_request": "cdn.oaistatic.com",
+        "endpoint": "DEMO-LAPTOP-01",
+        "user": "charizard@demo-corp.example",
+        "process": "chrome.exe"
+      }
+    },
+    {
+      "service_name": "GitHub Copilot",
+      "source": "sentinelone_dns",
+      "risk_tier": "low",
+      "user_upn": "venusaur@demo-corp.example",
+      "device_name": "DEMO-LAPTOP-03",
+      "detail": "DNS lookup for copilot.github.com (via code) — IDE extension traffic",
+      "first_seen_days_ago": 14,
+      "last_seen_days_ago": 0,
+      "timestamp_days_ago": 0,
+      "occurrence_count": 312,
+      "raw_evidence": {
+        "dns_request": "copilot.github.com",
+        "endpoint": "DEMO-LAPTOP-03",
+        "user": "venusaur@demo-corp.example",
+        "process": "code",
+        "daily_counts": [28, 31, 22, 0, 0, 35, 29, 33, 27, 0, 0, 41, 36, 30]
+      }
+    }
+  ]
+}

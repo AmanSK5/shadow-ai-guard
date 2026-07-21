@@ -1,0 +1,39 @@
+# Demo policy — used with ai-guard scan --demo
+#
+# Demonstrates the three policy actions:
+#   BLOCKED  → chatgpt.com (charizard triggers this)
+#   APPROVED → GitHub Copilot (venusaur triggers this)
+#   EDUCATE  → everything else (default, pikachu/blastoise/gengar land here)
+
+scanners:
+  sentinelone:
+    enabled: true
+    credential_env_prefix: AIGUARD_S1
+    options:
+      lookback_days: 14
+  entra:
+    enabled: true
+    credential_env_prefix: AIGUARD_ENTRA
+  exchange:
+    enabled: true
+    credential_env_prefix: AIGUARD_ENTRA
+  intune:
+    enabled: true
+    credential_env_prefix: AIGUARD_ENTRA
+  jamf:
+    enabled: true
+    credential_env_prefix: AIGUARD_JAMF
+  mcp:
+    enabled: true
+
+policy:
+  lookback_days: 30
+
+  risk_overrides:
+    GitHub Copilot: low
+
+  approved_services:
+    - GitHub Copilot
+
+  blocked_services:
+    - ChatGPT

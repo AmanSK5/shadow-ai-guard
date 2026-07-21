@@ -1,0 +1,166 @@
+# shadow-ai-guard
+
+Shadow AI detection across every surface it actually appears on: browser, CLI,
+IDE, desktop, network and cloud. Built to run on infrastructure you already
+have, for roughly the cost of nothing.
+
+## Why this exists
+
+No single commercial tool sees all of the places AI tools turn up. CASB and
+DLP products see the browser. Endpoint tools see installed applications. Cloud
+access tools see OAuth grants. None of them read `~/.claude.json` to tell you
+which account your developers' AI CLIs are signed into, and the account is the
+part that matters: an approved tool on a personal account is unmanaged data
+flow, invisible spend, and an offboarding gap.
+
+This project unifies detection across six surfaces with one finding schema,
+one registry of known AI tools, and one dashboard. Adding a new AI tool to
+detection is a merge request to a YAML file, not a script change on every
+endpoint.
+
+## Documentation
+
+Everything is under `docs/` and the component folders. Start here rather than
+digging through subfolders.
+
+**Getting it running**
+- [Getting started](docs/getting-started.md) - clone to your first finding on
+  a dashboard, the minimum viable deployment
+- [Architecture](docs/architecture.md) - the mental model: the finding schema
+  as the contract, and why the pieces are shaped this way
+
+**Deploying each surface**
+- [macOS endpoint collector](endpoint/macos/README.md) - via Jamf
+- [Windows endpoint collector](endpoint/windows/README.md) - via Intune
+- [Linux endpoint collector](endpoint/linux/README.md) - via any RMM, cron,
+  or config management
+- [Browser extension](extension/README.md) - the browser surface
+- [Cloud and network scanners](scanner/README.md) - Entra, Exchange, Intune,
+  Jamf, SentinelOne, and the MCP security scanner
+
+**Extending and operating**
+- [Writing a scanner](docs/writing-a-scanner.md) - add a new detection source
+  by emitting the finding schema
+- [Security model](SECURITY.md) - the trust model, stated plainly
+- [Privacy and DPIA guidance](docs/deployment-privacy.md) - read before
+  deploying; this is workplace monitoring and usually warrants a DPIA
+
+---
+
+## How it works
+
+```
+browser extension ─┐
+macOS collector  ──┤
+Windows collector ─┼──► receiver ──► logs (Loki) ──► Grafana dashboard
+Linux collector  ──┤       │
+cloud scanners  ───┤       └──────► Alertmanager ──► alerts (personal accounts)
+network scanner ───┘       ▲
+        registry (YAML, MR-reviewed) ── served to collectors at runtime
+```
+
+- **receiver** - FastAPI service. Accepts findings, logs them as structured
+  JSON, fires alerts for personal accounts, serves the registry to collectors.
+- **registry** - the source of truth for what counts as an AI tool: domains,
+  extension IDs, config file paths, approval status. Schema-validated in CI.
+  Collectors fetch their identifier lists from the receiver at runtime, so a
+  new tool needs no endpoint changes.
+- **scanner** - cloud and fleet scanners: Entra ID sign-ins, Exchange signup
+  email evidence, Intune and Jamf software inventory, SentinelOne DNS
+  telemetry for network-level detection including local process bridges.
+  Each module is optional; run the ones your estate supports.
+- **endpoint** - collectors for macOS (Jamf, bash), Windows (Intune,
+  PowerShell), and Linux (any RMM, cron, or config management). These read AI
+  tool config files to report which account each tool is signed into. This is
+  the data no API-level product has.
+- **discovery** - weekly job that classifies unrecognised AI-looking domains
+  from DNS telemetry and proposes registry additions as merge requests. A
+  human approves every change.
+- **dashboards** - Grafana dashboard over Loki. Set your corporate domains in
+  the dashboard variable and personal accounts light up red.
+
+The discovery job currently opens GitLab merge requests; a GitHub backend is
+on the roadmap.
+
+## Finding schema
+
+Every source emits the same shape. This is the contract of the project; any
+new scanner or collector that emits it will work with everything downstream:
+
+```json
+{
+  "tool": "claude-code",
+  "surface": "cli",
+  "os": "macos",
+  "account_domain": "gmail.com",
+  "device": "SERIAL123",
+  "user": "jane.doe",
+  "evidence": "~/.claude.json",
+  "severity": "warn",
+  "reported_at": "2026-01-01T09:00:00Z",
+  "source": "collector-macos"
+}
+```
+
+`severity` is `warn` when the account domain is not one of your corporate
+domains, `info` otherwise. Domain only, never the mailbox: the question is
+whether a managed device uses a personal account, not who someone is.
+
+## What you need
+
+- A Kubernetes cluster for the receiver and scanner CronJobs. Anything
+  conformant works; nothing in the core is cloud-specific.
+- A log pipeline that ingests container stdout. The provided dashboard
+  assumes Loki, but the receiver's only output contract is JSON lines.
+- Grafana for the dashboard, Alertmanager for alerting (optional).
+- At least one detection source per surface you care about. Currently
+  supported: Microsoft Graph (Entra, Exchange, Intune), Jamf Pro,
+  SentinelOne, Chrome/Edge managed extension policy, and endpoint collectors
+  for macOS, Windows and Linux.
+- Secrets for whichever sources you enable. Local development uses a
+  `.env` (see `scanner/README.md`); deployed scanners read from Kubernetes
+  Secrets or your secret store.
+
+Prebuilt images are published to GHCR by CI. A Helm chart is in progress;
+until then, the receiver is a Deployment with the registry ConfigMap mounted
+at `/etc/ai-guard`, and the scanners are CronJobs. See each component's
+README for specifics.
+
+## Deployment order
+
+1. Deploy the receiver, create its bearer token Secret, expose it on an
+   ingress endpoints can reach.
+2. Publish the registry: `python registry/build.py`, then load
+   `registry/dist/registry.json` and `registry/dist/collector.json` into the
+   ConfigMap the receiver mounts.
+3. Enable the scanners your estate supports and schedule them.
+4. Roll out the endpoint collectors through your MDM or RMM. Pilot on one
+   machine first; the deployment notes in `endpoint/*/README.md` are written
+   from doing exactly that.
+5. Import the dashboard, set the corporate domains variable.
+
+New here? [docs/getting-started.md](docs/getting-started.md) walks this
+through end to end for a minimum deployment.
+
+## Governance notes
+
+The registry ships with every tool set to `approved: false`. Approval is your
+organisation's decision, not this project's default. The discovery job
+proposes additions; it never merges them. If you operate under ISO 42001 or
+similar, the registry doubles as your maintained inventory of AI systems in
+use, and the dashboard as its evidence.
+
+Before deploying, read docs/deployment-privacy.md: this is workplace
+monitoring in most jurisdictions and usually warrants a DPIA.
+
+## Security model
+
+See SECURITY.md. Short version: one bearer token shared by reporting sources,
+rate-limited public ingest, findings carry usernames and device identifiers
+so treat your log store as sensitive, and endpoint collectors run as
+root/SYSTEM via your MDM or RMM, so review them like anything else you push
+that way.
+
+## License
+
+Apache-2.0.

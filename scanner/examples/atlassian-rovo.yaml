@@ -1,0 +1,59 @@
+# Example MCP Server Definition — Atlassian Rovo
+# ================================================
+# This is an example of what the MCP scanner evaluates.
+# Based on the real Atlassian Rovo MCP connector.
+# Use: ai-guard mcp-scan examples/atlassian-rovo.yaml
+
+name: atlassian
+description: "Connect Claude to Atlassian Jira and Confluence via Rovo"
+vendor: Atlassian
+version: "1.0.0"
+
+auth:
+  type: oauth2
+  flow: authorization_code  # OAuth 2.0 (3LO)
+  scopes:
+    - read:jira-work
+    - write:jira-work
+    - read:jira-user
+    - read:confluence-content.all
+    - write:confluence-content
+    - read:confluence-space.summary
+    - search:confluence
+
+tools:
+  # Jira tools
+  - name: jira_search_issues
+    description: "Search Jira issues using JQL"
+  - name: jira_get_issue
+    description: "Get details of a specific Jira issue"
+  - name: jira_create_issue
+    description: "Create a new Jira issue"
+  - name: jira_update_issue
+    description: "Update an existing Jira issue"
+  - name: jira_add_comment
+    description: "Add a comment to a Jira issue"
+  - name: jira_transition_issue
+    description: "Transition a Jira issue to a different status"
+  - name: jira_assign_issue
+    description: "Assign a Jira issue to a user"
+  - name: jira_list_projects
+    description: "List all Jira projects"
+
+  # Confluence tools
+  - name: confluence_search
+    description: "Search Confluence content"
+  - name: confluence_get_page
+    description: "Get the content of a Confluence page"
+  - name: confluence_create_page
+    description: "Create a new Confluence page"
+  - name: confluence_update_page
+    description: "Update an existing Confluence page"
+  - name: confluence_get_space
+    description: "Get details of a Confluence space"
+  - name: confluence_list_pages
+    description: "List all pages in a Confluence space"
+
+# No tool filtering configured — all tools exposed
+allowed_tools: []
+blocked_tools: []

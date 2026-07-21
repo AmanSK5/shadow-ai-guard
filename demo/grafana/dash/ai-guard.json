@@ -1,0 +1,1833 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": 1,
+  "links": [],
+  "panels": [
+    {
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false,
+          "showMiniMap": false
+        },
+        "content": "## Shadow AI visibility — demo mode\n\n**This is a self-contained demo running on seeded data, not a live environment.** One Loki instance, ~11 example findings across every surface and OS, corporate domains fixed to `example.com` / `example.co.uk`. A few things differ from a real deployment:\n\n- **Some panels are omitted.** The session gauges, registry-tools count, and last-scan-age tiles read Prometheus metrics; this demo runs Loki only, so those panels aren't included here. The full dashboard in `dashboards/` has them.\n- **The corporate-domain variable is inert in the demo.** Work-vs-personal classification is hardcoded to the two example domains above, so editing the `Corporate domains` box won't change anything here. In a real deployment that regex drives the classification.\n- **Time-based panels follow the time picker.** The findings are seeded once at startup; if the severity or surface charts look empty, widen the range (e.g. last 24h).\n\n**Reading the board:** presence of a tool is informational. Red means a *personal* (non-corporate) account is signed into an AI tool on a managed device, or an unexplained integration was found — in a real deployment those route to your alerting channel automatically.",
+        "mode": "markdown"
+      },
+      "pluginVersion": "11.1.0",
+      "transparent": true,
+      "type": "text"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "description": "Distinct devices that sent at least one finding in the last 24 hours, across all detection surfaces. Macs report through the day; Windows and network devices appear via the daily 06:00 scan. This is the total the two OS panels to the right break down.",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 0,
+        "y": 8
+      },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.1.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "count(count by (device) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | device != \"\" [24h])))",
+          "instant": true,
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "Devices reporting (24h)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "description": "Devices from the 24h total whose findings include device-level macOS evidence (MDM inventory or the endpoint collector).",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "noValue": "0",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 5,
+        "y": 8
+      },
+      "id": 13,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.1.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "count(count by (device) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | device != \"\" | os=`macos` [24h])))",
+          "instant": true,
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "...confirmed macOS",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "description": "Devices from the 24h total whose findings include device-level Linux evidence (RMM inventory).",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "noValue": "0",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 9,
+        "y": 8
+      },
+      "id": 14,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.1.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "count(count by (device) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | device != \"\" | os=`linux` [24h])))",
+          "instant": true,
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "...confirmed Linux",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "description": "Devices from the 24h total whose findings include device-level Windows evidence (Intune inventory).",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "noValue": "0",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 13,
+        "y": 8
+      },
+      "id": 20,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.1.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "expr": "count(count by (device) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | device != \"\" | os=`windows` [24h])))",
+          "instant": true,
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "...confirmed Windows",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "description": "The ten most widespread AI tools, counted as the number of distinct devices each was seen on in the last 7 days. Full list in the inventory table below.",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 7,
+        "x": 17,
+        "y": 8
+      },
+      "id": 6,
+      "options": {
+        "displayMode": "basic",
+        "maxVizHeight": 300,
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "namePlacement": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "pluginVersion": "11.1.0",
+      "targets": [
+        {
+          "expr": "topk(10, count by (tool) (count by (tool, device) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | device != \"\" [7d]))))",
+          "instant": true,
+          "legendFormat": "{{tool}}",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "Top tools (devices, 7d)",
+      "transformations": [
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "desc": true,
+                "field": "Value #A"
+              }
+            ]
+          }
+        }
+      ],
+      "type": "bargauge"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "description": "Every person/tool/device seen in the last 7 days. Pinned to 7 days: the dashboard time picker does not change it. Filter with the Tool and Account type controls at the top. account_type: personal = a non-corporate account is signed in (needs a conversation), work = a corporate account (fine), none = the tool is present but no account was readable (e.g. an installed IDE extension), which is not the same as 'no account'.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "account_type"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "none": {
+                        "color": "text",
+                        "index": 2,
+                        "text": "presence only"
+                      },
+                      "personal": {
+                        "color": "red",
+                        "index": 0,
+                        "text": "personal"
+                      },
+                      "work": {
+                        "color": "green",
+                        "index": 1,
+                        "text": "work"
+                      }
+                    },
+                    "type": "value"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 17,
+        "x": 0,
+        "y": 13
+      },
+      "id": 3,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "11.1.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "count by (user, tool, surface, account_type, account_domain, device, severity) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | label_format account_type=`{{ if eq .account_domain \"\" }}none{{ else if or (eq .account_domain \"example.com\") (eq .account_domain \"example.co.uk\") }}work{{ else }}personal{{ end }}` | tool =~ `${tool:regex}` | account_type =~ `$account` [7d]))",
+          "format": "table",
+          "instant": true,
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "timeFrom": "7d",
+      "title": "Who is running what (last 7 days, filterable)",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value #A": true
+            },
+            "indexByName": {
+              "account_domain": 4,
+              "account_type": 3,
+              "device": 5,
+              "severity": 6,
+              "surface": 2,
+              "tool": 1,
+              "user": 0
+            },
+            "renameByName": {}
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "desc": false,
+                "field": "account_type"
+              },
+              {
+                "desc": false,
+                "field": "user"
+              }
+            ]
+          }
+        }
+      ],
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "description": "Where the evidence comes from: browser = login pages, cli/ide/mcp/desktop = on the device itself, network = DNS traffic, cloud = Microsoft 365 records.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 7,
+        "x": 17,
+        "y": 16
+      },
+      "id": 5,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "pieType": "pie",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (surface) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} [$__auto]))",
+          "legendFormat": "{{surface}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Findings by surface (7d)",
+      "type": "piechart"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "description": "Reporting activity over time. Green (info) = tools being present, normal. Yellow (warn) = personal accounts or unexplained integrations - each also goes to Slack. A flat-zero chart means reporting has stopped, which is itself a problem.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "bars",
+            "fillOpacity": 60,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 25
+      },
+      "id": 4,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (severity) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} [$__auto]))",
+          "legendFormat": "{{severity}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Findings by severity (rate)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "description": "Distinct devices per detection surface and platform over 7 days. A device appears on every surface it was seen on, so the column does not sum to the device total.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [
+            {
+              "options": {
+                "unknown": {
+                  "index": 0,
+                  "text": "not reported"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 25
+      },
+      "id": 9,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "11.1.0",
+      "targets": [
+        {
+          "expr": "count by (surface, os) (count by (surface, os, device) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | device != \"\" | label_format os=`{{ if eq .os \"\" }}pre-os{{ else if eq .os \"unknown\" }}n/a (cloud/network){{ else }}{{ .os }}{{ end }}` [7d])))",
+          "format": "table",
+          "instant": true,
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "Surface x OS (devices, 7d)",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "Value #A": 2,
+              "os": 1,
+              "surface": 0
+            },
+            "renameByName": {
+              "Value #A": "devices (7d)"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "desc": true,
+                "field": "Value #A"
+              }
+            ]
+          }
+        }
+      ],
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "description": "All findings by device platform. 'n/a (cloud/network)' is evidence from sources that cannot know the platform (sign-in logs, DNS, email) - expected, not an error.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 33
+      },
+      "id": 8,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "right",
+          "showLegend": true
+        },
+        "pieType": "pie",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum by (os) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | label_format os=`{{ if eq .os \"\" }}pre-os{{ else if eq .os \"unknown\" }}n/a (cloud/network){{ else }}{{ .os }}{{ end }}` [7d]))",
+          "instant": true,
+          "legendFormat": "{{os}}",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "Findings by OS (7d)",
+      "type": "piechart"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "description": "The raw record of recent warnings - personal accounts and unexplained integrations - newest first. Each of these also produced a Slack alert.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 33
+      },
+      "id": 7,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "expr": "{app=\"ai-guard-receiver\"} | json | kind=`finding` | severity=`warn`",
+          "queryType": "range",
+          "refId": "A"
+        }
+      ],
+      "title": "Recent warn findings",
+      "type": "logs"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "description": "The complete list of AI tools detected in the last 7 days and how many devices each appears on. This is the living replacement for the monthly manual audit.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 41
+      },
+      "id": 11,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "11.1.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "count by (tool) (count by (tool, device) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | device != \"\" | tool !~ \".*-mcp:.*\" | source != `sentinelone_bridge` [7d])))",
+          "format": "table",
+          "instant": true,
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "AI tool inventory (all tools, by device count, 7d)",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "Value #A": 1,
+              "tool": 0
+            },
+            "renameByName": {
+              "Value #A": "devices (7d)"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "desc": true,
+                "field": "devices (7d)"
+              }
+            ]
+          }
+        }
+      ],
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "description": "Distinct devices with any finding in 7 days, by platform. A device with both device-level and network evidence is counted under each - see the reconciling stats at the top for exclusive counts.",
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 41
+      },
+      "id": 10,
+      "options": {
+        "displayMode": "basic",
+        "maxVizHeight": 300,
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "namePlacement": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "pluginVersion": "11.1.0",
+      "targets": [
+        {
+          "expr": "count by (os) (count by (device, os) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | label_format os=`{{ if eq .os \"\" }}pre-os{{ else if eq .os \"unknown\" }}n/a (cloud/network){{ else }}{{ .os }}{{ end }}` | __error__=`` [7d])))",
+          "instant": true,
+          "legendFormat": "{{os}}",
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "Devices with findings, by OS",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "description": "Integrations people have connected to their AI tools (MCP servers): which integration, who, and on which device. Not alarming by default - this is an inventory for review.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 51
+      },
+      "id": 12,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "11.1.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "count by (tool, user, device) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | tool =~ \".*-mcp:.*\" [7d]))",
+          "format": "table",
+          "instant": true,
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "title": "MCP integrations (who wired what, 7d)",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value #A": true
+            },
+            "indexByName": {
+              "Value #A": 3,
+              "device": 2,
+              "tool": 0,
+              "user": 1
+            },
+            "renameByName": {}
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "desc": false,
+                "field": "tool"
+              }
+            ]
+          }
+        }
+      ],
+      "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 58
+      },
+      "id": 15,
+      "panels": [],
+      "title": "Key tools (last 7 days)",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "description": "Every Anthropic surface in one place. The tool column shows why one product appears under several names: claude.ai is the browser extension reporting a domain, claude-code is the CLI and the IDE extension, claude is the desktop app, and anthropic.claude-code is the raw VS Code extension ID from before tool-name normalisation (those age out of the 7 day window on their own). Approved tool, so work accounts here are expected; personal accounts are the ones to act on.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "account_type"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "none": {
+                        "color": "text",
+                        "index": 2,
+                        "text": "presence only"
+                      },
+                      "personal": {
+                        "color": "red",
+                        "index": 0,
+                        "text": "personal"
+                      },
+                      "work": {
+                        "color": "green",
+                        "index": 1,
+                        "text": "work"
+                      }
+                    },
+                    "type": "value"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 59
+      },
+      "id": 16,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "11.1.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "count by (tool, surface, user, account_type, account_domain, device) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | label_format account_type=`{{ if eq .account_domain \"\" }}none{{ else if or (eq .account_domain \"example.com\") (eq .account_domain \"example.co.uk\") }}work{{ else }}personal{{ end }}` | tool =~ `claude.*|anthropic\\.claude.*` [7d]))",
+          "format": "table",
+          "instant": true,
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "timeFrom": "7d",
+      "title": "Claude (Anthropic, all surfaces)",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value #A": true
+            },
+            "indexByName": {
+              "account_domain": 4,
+              "account_type": 3,
+              "device": 5,
+              "surface": 1,
+              "tool": 0,
+              "user": 2
+            },
+            "renameByName": {}
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "desc": false,
+                "field": "account_type"
+              },
+              {
+                "desc": false,
+                "field": "user"
+              }
+            ]
+          }
+        }
+      ],
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "description": "chatgpt.com is the browser extension reporting a domain; chatgpt is the desktop app or IDE extension. ChatGPT is marked approved: false in the registry by default, so presence alerts here are informational until an approval decision is made. Personal accounts are the real signal.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "account_type"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "none": {
+                        "color": "text",
+                        "index": 2,
+                        "text": "presence only"
+                      },
+                      "personal": {
+                        "color": "red",
+                        "index": 0,
+                        "text": "personal"
+                      },
+                      "work": {
+                        "color": "green",
+                        "index": 1,
+                        "text": "work"
+                      }
+                    },
+                    "type": "value"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 59
+      },
+      "id": 17,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "11.1.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "count by (tool, surface, user, account_type, account_domain, device) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | label_format account_type=`{{ if eq .account_domain \"\" }}none{{ else if or (eq .account_domain \"example.com\") (eq .account_domain \"example.co.uk\") }}work{{ else }}personal{{ end }}` | tool =~ `chatgpt.*|openai\\.chatgpt.*` [7d]))",
+          "format": "table",
+          "instant": true,
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "timeFrom": "7d",
+      "title": "ChatGPT (OpenAI, all surfaces)",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value #A": true
+            },
+            "indexByName": {
+              "account_domain": 4,
+              "account_type": 3,
+              "device": 5,
+              "surface": 1,
+              "tool": 0,
+              "user": 2
+            },
+            "renameByName": {}
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "desc": false,
+                "field": "account_type"
+              },
+              {
+                "desc": false,
+                "field": "user"
+              }
+            ]
+          }
+        }
+      ],
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "description": "Account identity comes from the id_token JWT inside ~/.codex/auth.json, so the account domain here is who the CLI is actually signed in as. The heaviest source of personal accounts on developer machines.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "account_type"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "none": {
+                        "color": "text",
+                        "index": 2,
+                        "text": "presence only"
+                      },
+                      "personal": {
+                        "color": "red",
+                        "index": 0,
+                        "text": "personal"
+                      },
+                      "work": {
+                        "color": "green",
+                        "index": 1,
+                        "text": "work"
+                      }
+                    },
+                    "type": "value"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 67
+      },
+      "id": 18,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "11.1.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "count by (tool, surface, user, account_type, account_domain, device) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | label_format account_type=`{{ if eq .account_domain \"\" }}none{{ else if or (eq .account_domain \"example.com\") (eq .account_domain \"example.co.uk\") }}work{{ else }}personal{{ end }}` | tool =~ `codex.*` [7d]))",
+          "format": "table",
+          "instant": true,
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "timeFrom": "7d",
+      "title": "Codex CLI (OpenAI)",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value #A": true
+            },
+            "indexByName": {
+              "account_domain": 4,
+              "account_type": 3,
+              "device": 5,
+              "surface": 1,
+              "tool": 0,
+              "user": 2
+            },
+            "renameByName": {}
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "desc": false,
+                "field": "account_type"
+              },
+              {
+                "desc": false,
+                "field": "user"
+              }
+            ]
+          }
+        }
+      ],
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "description": "Meeting transcription, so the data path matters more than the tool: transcripts of internal calls leave the estate. Cloud surface findings have no device, because the evidence is an Entra sign-in or a mailbox rather than a machine. Relevant to the plan tier question: SSO, EU data residency and SCIM are Enterprise-only.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "account_type"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "none": {
+                        "color": "text",
+                        "index": 2,
+                        "text": "presence only"
+                      },
+                      "personal": {
+                        "color": "red",
+                        "index": 0,
+                        "text": "personal"
+                      },
+                      "work": {
+                        "color": "green",
+                        "index": 1,
+                        "text": "work"
+                      }
+                    },
+                    "type": "value"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 67
+      },
+      "id": 19,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "11.1.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "count by (tool, surface, user, account_type, account_domain, device) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | label_format account_type=`{{ if eq .account_domain \"\" }}none{{ else if or (eq .account_domain \"example.com\") (eq .account_domain \"example.co.uk\") }}work{{ else }}personal{{ end }}` | tool =~ `fireflies.*` [7d]))",
+          "format": "table",
+          "instant": true,
+          "queryType": "instant",
+          "refId": "A"
+        }
+      ],
+      "timeFrom": "7d",
+      "title": "Fireflies",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value #A": true
+            },
+            "indexByName": {
+              "account_domain": 4,
+              "account_type": 3,
+              "device": 5,
+              "surface": 1,
+              "tool": 0,
+              "user": 2
+            },
+            "renameByName": {}
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "desc": false,
+                "field": "account_type"
+              },
+              {
+                "desc": false,
+                "field": "user"
+              }
+            ]
+          }
+        }
+      ],
+      "type": "table"
+    }
+  ],
+  "refresh": "5m",
+  "schemaVersion": 39,
+  "tags": [
+    "ai-guard",
+    "security"
+  ],
+  "templating": {
+    "list": [
+      {
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "datasource": {
+          "type": "loki",
+          "uid": "loki"
+        },
+        "definition": "",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Tool",
+        "multi": true,
+        "name": "tool",
+        "options": [],
+        "query": {
+          "label": "tool",
+          "refId": "LokiVariableQueryEditor-VariableQuery",
+          "stream": "{app=\"ai-guard-receiver\"}",
+          "type": 1
+        },
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": ".*"
+        },
+        "hide": 0,
+        "includeAll": false,
+        "label": "Account type",
+        "multi": false,
+        "name": "account",
+        "options": [
+          {
+            "selected": true,
+            "text": "All",
+            "value": ".*"
+          },
+          {
+            "selected": false,
+            "text": "Personal",
+            "value": "personal"
+          },
+          {
+            "selected": false,
+            "text": "Work",
+            "value": "work"
+          },
+          {
+            "selected": false,
+            "text": "Presence only",
+            "value": "none"
+          }
+        ],
+        "query": "All : .*,Personal : personal,Work : work,Presence only : none",
+        "skipUrlSync": false,
+        "type": "custom"
+      },
+      {
+        "current": {
+          "text": "example\\.com|example\\.co\\.uk",
+          "value": "example\\.com|example\\.co\\.uk"
+        },
+        "description": "Regex of account domains that count as corporate/work. Escape dots. Everything else with a non-empty domain shows as personal.",
+        "hide": 0,
+        "label": "Corporate domains (regex)",
+        "name": "corp_domains",
+        "options": [],
+        "query": "example\\.com|example\\.co\\.uk",
+        "skipUrlSync": false,
+        "type": "textbox"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-5m",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "AI Guard - Shadow AI Visibility",
+  "uid": "ai-guard",
+  "version": 1,
+  "weekStart": ""
+}

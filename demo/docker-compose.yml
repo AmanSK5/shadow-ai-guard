@@ -1,0 +1,106 @@
+# shadow-ai-guard local demo
+# --------------------------
+# One command to see the platform work with synthetic data, no cluster and
+# no credentials:
+#
+#     docker compose up
+#
+# Then open http://localhost:3000 (anonymous, no login) and look at the
+# "Shadow AI" dashboard. Everything is fake: demo users are named after
+# Pokemon, findings are seeded by the `seeder` service below.
+#
+# Stop and wipe with:  docker compose down -v
+
+name: shadow-ai-guard-demo
+
+services:
+  # Log store. The receiver pushes findings here; Grafana reads them.
+  loki:
+    image: grafana/loki:3.4.1
+    command: -config.file=/etc/loki/local-config.yaml
+    ports:
+      - "3100:3100"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:3100/ready | grep -q ready || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Builds the registry from the repo's real registry.yaml into a shared
+  # volume, so a fresh clone needs no pre-generated files. Runs once, exits.
+  registry-builder:
+    image: python:3.12-slim
+    working_dir: /src
+    # The repo is mounted read-only, but build.py writes into registry/dist/
+    # inside the repo. So copy the registry dir to a writable temp location,
+    # build there, and copy the two artifacts the receiver needs to /out.
+    command: >
+      sh -c "pip install --quiet pyyaml jsonschema &&
+             cp -r /src/registry /tmp/registry &&
+             cd /tmp && python registry/build.py &&
+             cp registry/dist/registry.json registry/dist/collector.json /out/"
+    volumes:
+      - ../:/src:ro
+      - registry-dist:/out
+    restart: "no"
+
+  # The real receiver, built from this repo. Pushes every finding straight to
+  # the demo Loki (LOKI_PUSH_URL), so no log-scraping sidecar is needed.
+  receiver:
+    build: ../receiver
+    environment:
+      AUTH_TOKEN: "demo-token"
+      LOKI_PUSH_URL: "http://loki:3100/loki/api/v1/push"
+      REGISTRY_PATH: "/etc/ai-guard/registry.json"
+      COLLECTOR_REGISTRY_PATH: "/etc/ai-guard/collector.json"
+      DISPLAY_TZ: "UTC"
+    volumes:
+      - registry-dist:/etc/ai-guard:ro
+    depends_on:
+      loki:
+        condition: service_healthy
+      registry-builder:
+        condition: service_completed_successfully
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz')\" || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Grafana, pre-provisioned with the Loki datasource and the project
+  # dashboard. Anonymous access is on so there is no login step.
+  grafana:
+    image: grafana/grafana:11.1.0
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_USERS_DEFAULT_THEME: "dark"
+    volumes:
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/dash:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - loki
+    ports:
+      - "3000:3000"
+
+  # Seeds synthetic findings once the receiver is healthy, then exits.
+  # Re-run with:  docker compose run --rm seeder
+  seeder:
+    image: curlimages/curl:8.8.0
+    entrypoint: ["/bin/sh", "/seed.sh"]
+    environment:
+      RECEIVER: "http://receiver:8080"
+      TOKEN: "demo-token"
+    volumes:
+      - ./seed.sh:/seed.sh:ro
+    depends_on:
+      receiver:
+        condition: service_healthy
+    restart: "no"
+
+volumes:
+  registry-dist:

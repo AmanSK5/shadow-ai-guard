@@ -1,0 +1,93 @@
+# AI Guard Policy Configuration
+# ===============================
+# Copy this file and customise for your organisation.
+# Credentials are always read from environment variables via .env, never from this file.
+
+# ─────────────────────────────────────────────
+# Scanner configuration
+# ─────────────────────────────────────────────
+# Three credential sets cover all scanners:
+#   AIGUARD_ENTRA_*  — powers Entra, Exchange, and Intune (one Azure app registration)
+#   AIGUARD_S1_*     — powers SentinelOne
+#   AIGUARD_JAMF_*   — powers JAMF Pro
+
+scanners:
+
+  # SentinelOne Deep Visibility — shadow AI discovery + bridge detection
+  # Detects: AI tool DNS lookups, non-browser processes hitting SaaS APIs
+  sentinelone:
+    enabled: true
+    credential_env_prefix: AIGUARD_S1
+    options:
+      lookback_days: 14  # DV max depends on licence tier
+
+  # Entra ID — OAuth sign-ins, service principals, consent grants
+  # Detects: SSO sign-ins to AI tools, AI apps registered in your tenant
+  entra:
+    enabled: true
+    credential_env_prefix: AIGUARD_ENTRA
+    options:
+      lookback_days: 30
+
+  # Exchange Online — signup/verification email detection
+  # Detects: users who registered for AI tools with their work email
+  # Uses the same app registration as Entra
+  exchange:
+    enabled: true
+    credential_env_prefix: AIGUARD_ENTRA
+    options:
+      lookback_days: 30
+
+  # Intune — discovered apps on Windows devices (optional)
+  # SentinelOne already catches active usage, so this is supplementary
+  # Uses the same app registration as Entra
+  intune:
+    enabled: true
+    credential_env_prefix: AIGUARD_ENTRA
+    options: {}
+
+  # JAMF Pro — app inventory on Macs (optional)
+  # SentinelOne already catches active usage, so this is supplementary
+  jamf:
+    enabled: true
+    credential_env_prefix: AIGUARD_JAMF
+    options: {}
+
+  # MCP Security Scanner — evaluates MCP server configs (no API needed)
+  mcp:
+    enabled: true
+    options:
+      mcp_config_paths: []
+      # Add paths to MCP server configs you want to evaluate:
+      # - /path/to/claude_desktop_config.json
+      # - /path/to/mcp-server-definition.yaml
+
+# ─────────────────────────────────────────────
+# Organisation policy
+# ─────────────────────────────────────────────
+policy:
+
+  # How far back to look for activity (days)
+  lookback_days: 30
+
+  # Override default risk tiers for specific services
+  # (e.g. if you've done a security review and accepted the risk)
+  risk_overrides: {}
+    # GitHub Copilot: low
+    # Grammarly AI: low
+
+  # Approved services (still reported but flagged as approved)
+  approved_services: []
+    # - GitHub Copilot
+
+  # Explicitly blocked services (always flagged as high risk)
+  blocked_services:
+    - ChatGPT
+    - DeepSeek
+    - Cursor
+    - Windsurf
+    - Otter.ai
+
+# Output configuration
+output_format: terminal  # terminal | json | csv
+# output_path: /path/to/report.json

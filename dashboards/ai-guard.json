@@ -1,0 +1,1459 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "type": "datasource",
+      "pluginId": "prometheus"
+    },
+    {
+      "name": "DS_LOKI",
+      "label": "Loki",
+      "type": "datasource",
+      "pluginId": "loki"
+    }
+  ],
+  "title": "AI Guard - Shadow AI Visibility",
+  "uid": "ai-guard",
+  "tags": [
+    "ai-guard",
+    "security"
+  ],
+  "timezone": "browser",
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "refresh": "5m",
+  "panels": [
+    {
+      "type": "text",
+      "title": "",
+      "transparent": true,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 3
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "## Shadow AI visibility\n**What this shows:** every AI tool detected across your organisation's devices and cloud accounts, updated continuously (endpoints report through the day; cloud sources scan daily). **Presence of a tool is informational.** Red numbers mean a *personal* (non-corporate) account is signed into an AI tool on a managed device, or an unexplained integration was found - those route to your alerting channel automatically. Set the corporate domain regex in the dashboard variables above."
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Active personal-account sessions",
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 0,
+        "y": 3
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "sum(aiguard_personal_accounts_active) or vector(0)",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        }
+      },
+      "description": "How many personal (non-corporate) AI account sessions are currently live on managed devices. 0 is the goal. Resets briefly when the receiver service restarts; the table below is the durable record."
+    },
+    {
+      "type": "stat",
+      "title": "Devices reporting (24h)",
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 5,
+        "y": 3
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
+          "expr": "count(count by (device) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | device != \"\" [24h])))",
+          "queryType": "instant",
+          "instant": true
+        }
+      ],
+      "description": "Distinct devices that sent at least one finding in the last 24 hours, across all detection surfaces. Macs report through the day; Windows and network devices appear via the daily 06:00 scan. This is the total the two OS panels to the right break down."
+    },
+    {
+      "type": "stat",
+      "title": "Tools in registry",
+      "gridPos": {
+        "h": 5,
+        "w": 5,
+        "x": 10,
+        "y": 3
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "aiguard_registry_tools_total",
+          "instant": true
+        }
+      ],
+      "description": "How many AI products the platform knows how to detect. Grows via a weekly automated discovery review - not a problem number, just coverage."
+    },
+    {
+      "type": "stat",
+      "title": "Hours since last finding, per surface",
+      "description": "Freshness check per detection surface. cli/ide/desktop/mcp should stay under ~24h, cloud/network under ~26h (daily scan). A red value means that detection layer has stopped reporting and the dashboard may be blind there.",
+      "gridPos": {
+        "h": 5,
+        "w": 9,
+        "x": 15,
+        "y": 3
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "(time() - aiguard_last_scan_timestamp) / 3600",
+          "legendFormat": "{{surface}}",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "h",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 26
+              },
+              {
+                "color": "red",
+                "value": 48
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "table",
+      "title": "Who is running what (last 7 days, filterable)",
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
+          "expr": "count by (user, tool, surface, account_type, account_domain, device, severity) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | label_format account_type=`{{ if eq .account_domain \"\" }}none{{ else if eq (regexReplaceAll \"^(?:${corp_domains})$\" .account_domain \"__CORP__\") \"__CORP__\" }}work{{ else }}personal{{ end }}` | tool =~ `${tool:regex}` | account_type =~ `$account` [7d]))",
+          "queryType": "instant",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value #A": true
+            },
+            "indexByName": {
+              "user": 0,
+              "tool": 1,
+              "surface": 2,
+              "account_type": 3,
+              "account_domain": 4,
+              "device": 5,
+              "severity": 6
+            },
+            "renameByName": {}
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "account_type",
+                "desc": false
+              },
+              {
+                "field": "user",
+                "desc": false
+              }
+            ]
+          }
+        }
+      ],
+      "description": "Every person/tool/device seen in the last 7 days. Pinned to 7 days: the dashboard time picker does not change it. Filter with the Tool and Account type controls at the top. account_type: personal = a non-corporate account is signed in (needs a conversation), work = a corporate account (fine), none = the tool is present but no account was readable (e.g. an installed IDE extension), which is not the same as 'no account'.",
+      "timeFrom": "7d",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "account_type"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "personal": {
+                        "text": "personal",
+                        "color": "red",
+                        "index": 0
+                      },
+                      "work": {
+                        "text": "work",
+                        "color": "green",
+                        "index": 1
+                      },
+                      "none": {
+                        "text": "presence only",
+                        "color": "text",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Findings by severity (rate)",
+      "description": "Reporting activity over time. Green (info) = tools being present, normal. Yellow (warn) = personal accounts or unexplained integrations - each also goes to Slack. A flat-zero chart means reporting has stopped, which is itself a problem.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 18
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "targets": [
+        {
+          "expr": "sum by (severity) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} [$__auto]))",
+          "legendFormat": "{{severity}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 60
+          }
+        }
+      }
+    },
+    {
+      "type": "piechart",
+      "title": "Findings by surface (7d)",
+      "gridPos": {
+        "h": 8,
+        "w": 5,
+        "x": 12,
+        "y": 18
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "targets": [
+        {
+          "expr": "sum by (surface) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} [$__auto]))",
+          "legendFormat": "{{surface}}",
+          "refId": "A"
+        }
+      ],
+      "description": "Where the evidence comes from: browser = login pages, cli/ide/mcp/desktop = on the device itself, network = DNS traffic, cloud = Microsoft 365 records."
+    },
+    {
+      "type": "bargauge",
+      "title": "Top tools (devices, 7d)",
+      "gridPos": {
+        "h": 8,
+        "w": 7,
+        "x": 17,
+        "y": 18
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": true
+        },
+        "showUnfilled": true
+      },
+      "targets": [
+        {
+          "expr": "topk(10, count by (tool) (count by (tool, device) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | device != \"\" [7d]))))",
+          "legendFormat": "{{tool}}",
+          "refId": "A",
+          "queryType": "instant",
+          "instant": true
+        }
+      ],
+      "transformations": [
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "Value #A",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "description": "The ten most widespread AI tools, counted as the number of distinct devices each was seen on in the last 7 days. Full list in the inventory table below."
+    },
+    {
+      "type": "timeseries",
+      "title": "Personal-account sessions over time",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 34
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "aiguard_personal_accounts_active",
+          "legendFormat": "total"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "spanNulls": true
+          }
+        }
+      },
+      "description": "History of total live personal-account sessions. Spikes show when someone signed into a personal account; drops show sessions expiring. Per-tool breakdown is in the Loki inventory table."
+    },
+    {
+      "type": "logs",
+      "title": "Recent warn findings",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 34
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true
+      },
+      "targets": [
+        {
+          "expr": "{app=\"ai-guard-receiver\"} | json | kind=`finding` | severity=`warn`",
+          "queryType": "range"
+        }
+      ],
+      "description": "The raw record of recent warnings - personal accounts and unexplained integrations - newest first. Each of these also produced a Slack alert."
+    },
+    {
+      "type": "barchart",
+      "title": "Personal-account sessions (total)",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 26
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "aiguard_personal_accounts_active",
+          "legendFormat": "{{os}}",
+          "refId": "A",
+          "instant": true,
+          "queryType": "instant"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "noValue": "none active"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "none active"
+        },
+        "overrides": []
+      },
+      "description": "Total live personal-account sessions. Per-OS breakdown is in the Loki findings-by-OS panel. Empty means none active right now."
+    },
+    {
+      "type": "piechart",
+      "title": "Findings by OS (7d)",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 26
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "targets": [
+        {
+          "expr": "sum by (os) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | label_format os=`{{ if eq .os \"\" }}pre-os{{ else if eq .os \"unknown\" }}n/a (cloud/network){{ else }}{{ .os }}{{ end }}` [7d]))",
+          "legendFormat": "{{os}}",
+          "refId": "A",
+          "instant": true,
+          "queryType": "instant"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": true
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "right"
+        },
+        "pieType": "pie"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "description": "All findings by device platform. 'n/a (cloud/network)' is evidence from sources that cannot know the platform (sign-in logs, DNS, email) - expected, not an error."
+    },
+    {
+      "type": "table",
+      "title": "Surface x OS (devices, 7d)",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 26
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "targets": [
+        {
+          "expr": "count by (surface, os) (count by (surface, os, device) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | device != \"\" | label_format os=`{{ if eq .os \"\" }}pre-os{{ else if eq .os \"unknown\" }}n/a (cloud/network){{ else }}{{ .os }}{{ end }}` [7d])))",
+          "refId": "A",
+          "instant": true,
+          "queryType": "instant",
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "surface": 0,
+              "os": 1,
+              "Value #A": 2
+            },
+            "renameByName": {
+              "Value #A": "devices (7d)"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "Value #A",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "unknown": {
+                  "text": "not reported",
+                  "index": 0
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "description": "Distinct devices per detection surface and platform over 7 days. A device appears on every surface it was seen on, so the column does not sum to the device total."
+    },
+    {
+      "type": "barchart",
+      "title": "Personal-account sessions (total)",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 42
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "expr": "aiguard_personal_accounts_active",
+          "legendFormat": "total",
+          "refId": "A",
+          "instant": true,
+          "queryType": "instant"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "none active"
+        },
+        "overrides": []
+      },
+      "description": "Total personal-account sessions. Per-domain breakdown is available in the Loki inventory table. Empty means no personal accounts currently active."
+    },
+    {
+      "type": "bargauge",
+      "title": "Devices with findings, by OS",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 42
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "targets": [
+        {
+          "expr": "count by (os) (count by (device, os) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | label_format os=`{{ if eq .os \"\" }}pre-os{{ else if eq .os \"unknown\" }}n/a (cloud/network){{ else }}{{ .os }}{{ end }}` | __error__=`` [7d])))",
+          "legendFormat": "{{os}}",
+          "refId": "A",
+          "instant": true,
+          "queryType": "instant"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "values": true
+        }
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "description": "Distinct devices with any finding in 7 days, by platform. A device with both device-level and network evidence is counted under each - see the reconciling stats at the top for exclusive counts."
+    },
+    {
+      "title": "AI tool inventory (all tools, by device count, 7d)",
+      "type": "table",
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 50,
+        "w": 12,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
+          "expr": "count by (tool) (count by (tool, device) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | device != \"\" | tool !~ \".*-mcp:.*\" | source != `sentinelone_bridge` [7d])))",
+          "queryType": "instant",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "tool": 0,
+              "Value #A": 1
+            },
+            "renameByName": {
+              "Value #A": "devices (7d)"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "devices (7d)",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "description": "The complete list of AI tools detected in the last 7 days and how many devices each appears on. This is the living replacement for the monthly manual audit."
+    },
+    {
+      "title": "MCP integrations (who wired what, 7d)",
+      "type": "table",
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 50,
+        "w": 12,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
+          "expr": "count by (tool, user, device) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | tool =~ \".*-mcp:.*\" [7d]))",
+          "queryType": "instant",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value #A": true
+            },
+            "indexByName": {
+              "tool": 0,
+              "user": 1,
+              "device": 2,
+              "Value #A": 3
+            },
+            "renameByName": {}
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "tool",
+                "desc": false
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true
+      },
+      "description": "Integrations people have connected to their AI tools (MCP servers): which integration, who, and on which device. Not alarming by default - this is an inventory for review."
+    },
+    {
+      "type": "stat",
+      "title": "...confirmed macOS",
+      "description": "Devices from the 24h total whose findings include device-level macOS evidence (MDM inventory or the endpoint collector).",
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "gridPos": {
+        "x": 9,
+        "y": 3,
+        "w": 4,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
+          "expr": "count(count by (device) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | device != \"\" | os=`macos` [24h])))",
+          "queryType": "instant",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "...confirmed Windows",
+      "description": "Devices from the 24h total whose findings include device-level Windows evidence (Intune inventory).",
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "gridPos": {
+        "x": 13,
+        "y": 3,
+        "w": 4,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
+          "expr": "count(count by (device) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | device != \"\" | os=`windows` [24h])))",
+          "queryType": "instant",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "...confirmed Linux",
+      "description": "Devices from the 24h total whose findings include device-level Linux evidence.",
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "gridPos": {
+        "x": 13,
+        "y": 3,
+        "w": 4,
+        "h": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
+          "expr": "count(count by (device) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | device != \"\" | os=`Linux` [24h])))",
+          "queryType": "instant",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "row",
+      "title": "Key tools (last 7 days)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 60
+      },
+      "panels": []
+    },
+    {
+      "type": "table",
+      "title": "Claude (Anthropic, all surfaces)",
+      "description": "Every Anthropic surface in one place. The tool column shows why one product appears under several names: claude.ai is the browser extension reporting a domain, claude-code is the CLI and the IDE extension, claude is the desktop app, and anthropic.claude-code is the raw VS Code extension ID from before tool-name normalisation (those age out of the 7 day window on their own). Approved tool, so work accounts here are expected; personal accounts are the ones to act on.",
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "timeFrom": "7d",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 61
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
+          "expr": "count by (tool, surface, user, account_type, account_domain, device) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | label_format account_type=`{{ if eq .account_domain \"\" }}none{{ else if eq (regexReplaceAll \"^(?:${corp_domains})$\" .account_domain \"__CORP__\") \"__CORP__\" }}work{{ else }}personal{{ end }}` | tool =~ `claude.*|anthropic\\.claude.*` [7d]))",
+          "queryType": "instant",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value #A": true
+            },
+            "indexByName": {
+              "tool": 0,
+              "surface": 1,
+              "user": 2,
+              "account_type": 3,
+              "account_domain": 4,
+              "device": 5
+            },
+            "renameByName": {}
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "account_type",
+                "desc": false
+              },
+              {
+                "field": "user",
+                "desc": false
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "account_type"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "personal": {
+                        "text": "personal",
+                        "color": "red",
+                        "index": 0
+                      },
+                      "work": {
+                        "text": "work",
+                        "color": "green",
+                        "index": 1
+                      },
+                      "none": {
+                        "text": "presence only",
+                        "color": "text",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "type": "table",
+      "title": "ChatGPT (OpenAI, all surfaces)",
+      "description": "chatgpt.com is the browser extension reporting a domain; chatgpt is the desktop app or IDE extension. Approval status comes from the registry; tools default to approved: false until reviewed, so presence alerts are noise for tools you have not yet approved. Personal accounts are the real signal regardless of approval status.",
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "timeFrom": "7d",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 61
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
+          "expr": "count by (tool, surface, user, account_type, account_domain, device) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | label_format account_type=`{{ if eq .account_domain \"\" }}none{{ else if eq (regexReplaceAll \"^(?:${corp_domains})$\" .account_domain \"__CORP__\") \"__CORP__\" }}work{{ else }}personal{{ end }}` | tool =~ `chatgpt.*|openai\\.chatgpt.*` [7d]))",
+          "queryType": "instant",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value #A": true
+            },
+            "indexByName": {
+              "tool": 0,
+              "surface": 1,
+              "user": 2,
+              "account_type": 3,
+              "account_domain": 4,
+              "device": 5
+            },
+            "renameByName": {}
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "account_type",
+                "desc": false
+              },
+              {
+                "field": "user",
+                "desc": false
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "account_type"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "personal": {
+                        "text": "personal",
+                        "color": "red",
+                        "index": 0
+                      },
+                      "work": {
+                        "text": "work",
+                        "color": "green",
+                        "index": 1
+                      },
+                      "none": {
+                        "text": "presence only",
+                        "color": "text",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "type": "table",
+      "title": "Codex CLI (OpenAI)",
+      "description": "Account identity comes from the id_token JWT inside ~/.codex/auth.json, so the account domain here is who the CLI is actually signed in as. The heaviest source of personal accounts on developer machines.",
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "timeFrom": "7d",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 69
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
+          "expr": "count by (tool, surface, user, account_type, account_domain, device) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | label_format account_type=`{{ if eq .account_domain \"\" }}none{{ else if eq (regexReplaceAll \"^(?:${corp_domains})$\" .account_domain \"__CORP__\") \"__CORP__\" }}work{{ else }}personal{{ end }}` | tool =~ `codex.*` [7d]))",
+          "queryType": "instant",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value #A": true
+            },
+            "indexByName": {
+              "tool": 0,
+              "surface": 1,
+              "user": 2,
+              "account_type": 3,
+              "account_domain": 4,
+              "device": 5
+            },
+            "renameByName": {}
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "account_type",
+                "desc": false
+              },
+              {
+                "field": "user",
+                "desc": false
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "account_type"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "personal": {
+                        "text": "personal",
+                        "color": "red",
+                        "index": 0
+                      },
+                      "work": {
+                        "text": "work",
+                        "color": "green",
+                        "index": 1
+                      },
+                      "none": {
+                        "text": "presence only",
+                        "color": "text",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true
+      }
+    },
+    {
+      "type": "table",
+      "title": "Fireflies",
+      "description": "Meeting transcription, so the data path matters more than the tool: transcripts of internal calls leave the estate. Cloud surface findings have no device, because the evidence is an Entra sign-in or a mailbox rather than a machine. Relevant to the plan tier question: SSO, EU data residency and SCIM are Enterprise-only.",
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "timeFrom": "7d",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 69
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
+          "expr": "count by (tool, surface, user, account_type, account_domain, device) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | label_format account_type=`{{ if eq .account_domain \"\" }}none{{ else if eq (regexReplaceAll \"^(?:${corp_domains})$\" .account_domain \"__CORP__\") \"__CORP__\" }}work{{ else }}personal{{ end }}` | tool =~ `fireflies.*` [7d]))",
+          "queryType": "instant",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value #A": true
+            },
+            "indexByName": {
+              "tool": 0,
+              "surface": 1,
+              "user": 2,
+              "account_type": 3,
+              "account_domain": 4,
+              "device": 5
+            },
+            "renameByName": {}
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "account_type",
+                "desc": false
+              },
+              {
+                "field": "user",
+                "desc": false
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "account_type"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "personal": {
+                        "text": "personal",
+                        "color": "red",
+                        "index": 0
+                      },
+                      "work": {
+                        "text": "work",
+                        "color": "green",
+                        "index": 1
+                      },
+                      "none": {
+                        "text": "presence only",
+                        "color": "text",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "templating": {
+    "list": [
+      {
+        "name": "tool",
+        "label": "Tool",
+        "type": "query",
+        "datasource": {
+          "type": "loki",
+          "uid": "${DS_LOKI}"
+        },
+        "query": {
+          "label": "tool",
+          "refId": "LokiVariableQueryEditor-VariableQuery",
+          "stream": "{app=\"ai-guard-receiver\"}",
+          "type": 1
+        },
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".*",
+        "current": {
+          "selected": true,
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "sort": 1
+      },
+      {
+        "name": "account",
+        "label": "Account type",
+        "type": "custom",
+        "query": "All : .*,Personal : personal,Work : work,Presence only : none",
+        "options": [
+          {
+            "selected": true,
+            "text": "All",
+            "value": ".*"
+          },
+          {
+            "selected": false,
+            "text": "Personal",
+            "value": "personal"
+          },
+          {
+            "selected": false,
+            "text": "Work",
+            "value": "work"
+          },
+          {
+            "selected": false,
+            "text": "Presence only",
+            "value": "none"
+          }
+        ],
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": ".*"
+        },
+        "multi": false,
+        "includeAll": false
+      },
+      {
+        "name": "corp_domains",
+        "label": "Corporate domains (regex)",
+        "type": "textbox",
+        "query": "example\\.com|example\\.co\\.uk",
+        "current": {
+          "text": "example\\.com|example\\.co\\.uk",
+          "value": "example\\.com|example\\.co\\.uk"
+        },
+        "options": [],
+        "hide": 0,
+        "description": "Regex of account domains that count as corporate/work. Escape dots. Everything else with a non-empty domain shows as personal."
+      }
+    ]
+  }
+}
