@@ -40,7 +40,7 @@ class H(BaseHTTPRequestHandler):
         self.wfile.write(b'{\"ok\":true}')
     def do_GET(self):
         self.send_response(200); self.end_headers()
-        self.wfile.write(b'{\"version\":1,\"cli\":[{\"tool\":\"claude-code\",\"config_paths\":[\".claude.json\"],\"account_json_path\":\".claude.json\",\"account_json_keys\":[\"oauthAccount\"],\"binaries\":[\"claude\"]}],\"ide\":[],\"desktop\":[],\"mcp\":[]}')
+        self.wfile.write(b'{\"version\":1,\"cli\":[{\"tool\":\"claude-code\",\"config_paths\":[\".claude-aiguard-test.json\"],\"account_json_path\":\".claude-aiguard-test.json\",\"account_json_keys\":[\"oauthAccount\"],\"binaries\":[\"claude\"]}],\"ide\":[],\"desktop\":[],\"mcp\":[]}')
     def log_message(self, *a): pass
 HTTPServer(('127.0.0.1', 9999), H).serve_forever()
 " &
@@ -55,8 +55,9 @@ Run on a real machine with a real user home (the collector resolves the
 logged-in user from `/home`, so it needs an actual non-root home directory).
 
 ```bash
-# Make sure the logged-in user's home has a detectable AI tool config:
-echo '{"oauthAccount":"tester@example.com"}' > ~/.claude.json
+# Create a test-only config file (does not touch ~/.claude.json):
+printf '%s\n' '{"oauthAccount":"tester@example.com"}' \
+  > "$HOME/.claude-aiguard-test.json"
 
 # Against the fake receiver (HTTP 200):
 sudo AIGUARD_RECEIVER_BASE=http://127.0.0.1:9999 \
@@ -94,13 +95,17 @@ sudo AIGUARD_CORP_DOMAINS=example.com \
      ./endpoint/linux/ai-guard-collector.sh
 cat /var/lib/ai-guard/reported.state
 # Timestamps should not advance.
+
+# Clean up the test fixture:
+rm -f "$HOME/.claude-aiguard-test.json"
 ```
 
 ### macOS
 
 ```bash
-# Make sure the console user's home has a detectable AI tool config:
-echo '{"oauthAccount":"tester@example.com"}' > ~/.claude.json
+# Create a test-only config file (does not touch ~/.claude.json):
+printf '%s\n' '{"oauthAccount":"tester@example.com"}' \
+  > "$HOME/.claude-aiguard-test.json"
 
 # Successful delivery (HTTP 200):
 sudo ./endpoint/macos/ai-guard-collector.sh \
@@ -124,6 +129,9 @@ sudo ./endpoint/macos/ai-guard-collector.sh \
 # Confirm the receiver received the POST attempt, then check state:
 cat "/Library/Application Support/ai-guard/reported.state"
 # The timestamp should still be the expired value, not the current time.
+
+# Clean up the test fixture:
+rm -f "$HOME/.claude-aiguard-test.json"
 ```
 
 ### Windows
@@ -135,7 +143,7 @@ accepts findings on POST:
 # Fake receiver: returns registry JSON on GET /registry/collector,
 # returns 200 on POST /report. Change $PostStatus to 500 to test failure.
 $PostStatus = 200
-$RegistryJson = '{"version":1,"cli":[{"tool":"claude-code","config_paths":[".claude.json"],"account_json_path":".claude.json","account_json_keys":["oauthAccount"],"binaries":["claude"]}],"ide":[],"desktop":[],"mcp":[]}'
+$RegistryJson = '{"version":1,"cli":[{"tool":"claude-code","config_paths":[".claude-aiguard-test.json"],"account_json_path":".claude-aiguard-test.json","account_json_keys":["oauthAccount"],"binaries":["claude"]}],"ide":[],"desktop":[],"mcp":[]}'
 
 $listener = [System.Net.HttpListener]::new()
 $listener.Prefixes.Add("http://localhost:9999/")
@@ -161,8 +169,8 @@ In another shell, create the fixture, edit `$ReceiverBase` in the
 collector to `http://localhost:9999`, then run:
 
 ```powershell
-# Make sure the console user's profile has a detectable AI tool config:
-'{"oauthAccount":"tester@example.com"}' | Set-Content "$env:USERPROFILE\.claude.json"
+# Create a test-only config file (does not touch ~/.claude.json):
+'{"oauthAccount":"tester@example.com"}' | Set-Content "$env:USERPROFILE\.claude-aiguard-test.json"
 
 .\endpoint\windows\ai-guard-collector.ps1
 Get-Content C:\ProgramData\ai-guard\reported.state.json
@@ -182,4 +190,7 @@ $state | ConvertTo-Json | Set-Content C:\ProgramData\ai-guard\reported.state.jso
 # Confirm the receiver received the POST attempt, then check state:
 Get-Content C:\ProgramData\ai-guard\reported.state.json
 # The timestamp should still be 1000000000, not the current time.
+
+# Clean up the test fixture:
+Remove-Item "$env:USERPROFILE\.claude-aiguard-test.json" -ErrorAction SilentlyContinue
 ```
