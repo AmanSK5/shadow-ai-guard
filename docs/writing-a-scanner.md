@@ -95,8 +95,10 @@ it shows up as one tool on the dashboard rather than several unrelated rows.
 - Do not add tool-specific logic to the receiver. The receiver is
   deliberately generic; a source that requires the receiver to know about it
   is designed wrong.
-- Do not send the mailbox local part, message content, file content, or
-  credentials. The finding is intentionally minimal; keep it that way.
+- Do not send a full email address, message content, file content, or
+  credentials. A corporate email's local part may be sent in the `user`
+  field where attribution is required, but a personal account's local part
+  must not be. The finding is intentionally minimal; keep it that way.
 - Do not make the account domain a corporate/personal decision in your
   scanner beyond the simple domain check. What counts as corporate is the
   deployer's configuration, computed downstream.

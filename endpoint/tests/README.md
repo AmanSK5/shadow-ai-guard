@@ -12,14 +12,16 @@ for unit-test sourcing. Verification is manual.
 
 | Scenario | State outcome |
 |---|---|
-| HTTP 2xx, info finding | Key written with current timestamp |
+| HTTP 200, info finding (macOS) | Key written with current timestamp |
+| HTTP 200 or 204, info finding (Linux) | Key written with current timestamp |
+| Successful response, info finding (Windows) | Key written with current timestamp (Invoke-RestMethod completes without throwing) |
 | HTTP non-2xx, info finding (no prior state) | Key omitted |
 | HTTP non-2xx, info finding (expired prior state) | Old timestamp preserved |
 | Transport failure, info finding | Same as non-2xx |
 | Print-only mode, info finding | Old timestamp preserved (or omitted if none) |
 | Warn finding, any outcome | Key may be written, but warns skip the throttle check so it has no effect |
 | Suppressed info finding (within 24h) | Old timestamp carried forward, no request made |
-| Unrelated state entries | Preserved regardless of this finding's outcome |
+| Unrelated state entries | Outside the scope of this test. Collectors rebuild state from the current scan, so entries for tools not detected during the run may not be carried forward. |
 
 ## Manual verification
 
@@ -63,11 +65,28 @@ sudo AIGUARD_RECEIVER_BASE=http://127.0.0.1:9999 \
 
 # Check state:
 cat /var/lib/ai-guard/reported.state
-# Should contain the finding key with a current epoch timestamp.
+# Should contain the finding key with a current epoch timestamp, e.g.:
+#   cli|claude-code|example.com 1753100000
 
-# Now restart the fake receiver returning 500, and run again:
+# To test failed delivery, the finding must be eligible for reporting.
+# The successful run above created a fresh 24h throttle timestamp, so
+# you need to expire it first. Check the actual key in your state file
+# (it may differ from the example if your username or tool differs),
+# then replace its timestamp with an expired value:
+sudo sed -i 's/\(cli|claude-code|example.com\) .*/\1 1000000000/' \
+    /var/lib/ai-guard/reported.state
+
+# Now restart the fake receiver returning 500 and run again:
+sudo AIGUARD_RECEIVER_BASE=http://127.0.0.1:9999 \
+     AIGUARD_TOKEN=test \
+     AIGUARD_CORP_DOMAINS=example.com \
+     ./endpoint/linux/ai-guard-collector.sh
+
+# Confirm the receiver received the POST attempt (check the fake
+# receiver's terminal for the request). Then check state:
 cat /var/lib/ai-guard/reported.state
-# The timestamp should NOT have advanced.
+# The finding's timestamp should still be the expired value (1000000000),
+# NOT the current time. This means it will retry on the next run.
 
 # Print-only mode (no AIGUARD_RECEIVER_BASE):
 sudo AIGUARD_CORP_DOMAINS=example.com \
@@ -81,28 +100,64 @@ cat /var/lib/ai-guard/reported.state
 Same approach using Jamf script parameters:
 
 ```bash
+# Successful delivery (HTTP 200):
 sudo ./endpoint/macos/ai-guard-collector.sh \
      "" "" "" \
      "http://127.0.0.1:9999" "test" "example.com"
 cat "/Library/Application Support/ai-guard/reported.state"
+# Should contain the finding key with a current epoch timestamp.
+
+# To test failed delivery, expire the finding's throttle timestamp
+# so the collector will attempt to report it again. Check the actual
+# key in your state file (it may differ from the example below if
+# your username or tool differs), then replace its timestamp:
+sudo sed -i '' 's/\(cli|claude-code|example.com\) .*/\1 1000000000/' \
+    "/Library/Application Support/ai-guard/reported.state"
+
+# Restart the fake receiver returning 500, then run again:
+sudo ./endpoint/macos/ai-guard-collector.sh \
+     "" "" "" \
+     "http://127.0.0.1:9999" "test" "example.com"
+
+# Confirm the receiver received the POST attempt, then check state:
+cat "/Library/Application Support/ai-guard/reported.state"
+# The timestamp should still be the expired value, not the current time.
 ```
 
 ### Windows
 
-Start a listener in PowerShell, then run the collector:
+Start a listener in PowerShell that serves the registry on GET and
+accepts findings on POST:
 
 ```powershell
-# Fake receiver (returns 200):
+# Fake receiver: returns registry JSON on GET /registry/collector,
+# returns 200 on POST /report. Change $PostStatus to 500 to test failure.
+$PostStatus = 200
+$RegistryJson = '{"version":1,"cli":[{"tool":"claude-code","config_paths":[".claude.json"],"account_json_path":".claude.json","account_json_keys":["oauthAccount"],"binaries":["claude"]}],"ide":[],"desktop":[],"mcp":[]}'
+
 $listener = [System.Net.HttpListener]::new()
 $listener.Prefixes.Add("http://localhost:9999/")
 $listener.Start()
+Write-Host "Listening on http://localhost:9999/ (POST status: $PostStatus)"
 while ($listener.IsListening) {
     $ctx = $listener.GetContext()
-    $ctx.Response.StatusCode = 200
+    if ($ctx.Request.HttpMethod -eq 'GET') {
+        $body = [Text.Encoding]::UTF8.GetBytes($RegistryJson)
+        $ctx.Response.StatusCode = 200
+        $ctx.Response.ContentType = 'application/json'
+        $ctx.Response.ContentLength64 = $body.Length
+        $ctx.Response.OutputStream.Write($body, 0, $body.Length)
+    } else {
+        $ctx.Response.StatusCode = $PostStatus
+    }
     $ctx.Response.Close()
 }
+```
 
-# In another shell, run the collector (edit $ReceiverBase first):
+In another shell, edit `$ReceiverBase` in the collector to
+`http://localhost:9999`, then run:
+
+```powershell
 .\endpoint\windows\ai-guard-collector.ps1
 Get-Content C:\ProgramData\ai-guard\reported.state.json
 ```
