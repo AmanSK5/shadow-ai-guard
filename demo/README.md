@@ -6,6 +6,9 @@ are named after Pokemon, findings are seeded locally.
 
 ## Run it
 
+Requires Docker with Compose v2 (`docker compose`, not the legacy
+`docker-compose`), and ports 3000, 8080 and 3100 free.
+
 From the repository root:
 
 ```bash
