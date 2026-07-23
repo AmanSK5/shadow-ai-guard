@@ -1,0 +1,20 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!--
+  Extension update manifest. Host this file and the packed .crx on public
+  HTTPS (an S3 bucket works well). The forcelist entries in deploy/ point
+  every browser at this file.
+
+  Replace:
+    EXTENSION_ID  - your 32-char id (README: pack and derive)
+    codebase      - the public URL of the packed .crx
+  On every release: bump the version in src/manifest.json, pack a new
+  versioned .crx, upload it, then update codebase and version here. The
+  version here MUST match the packed manifest's version.
+-->
+<gupdate xmlns='http://www.google.com/update2/response' protocol='2.0'>
+  <app appid='EXTENSION_ID'>
+    <updatecheck
+      codebase='https://YOUR_HOST/ai-guard-1.0.0.crx'
+      version='1.0.0' />
+  </app>
+</gupdate>

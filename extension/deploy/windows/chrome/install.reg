@@ -1,0 +1,10 @@
+Windows Registry Editor Version 5.00
+
+; INSTALL policy for Chrome on Windows.
+; Deploy via GPO, Intune (script or ADMX-backed policy), or your RMM.
+; Replace EXTENSION_ID and https://YOUR_HOST/updates.xml first.
+; The "1" value name is an index; use the next free number if the
+; forcelist already has entries.
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome\ExtensionInstallForcelist]
+"1"="EXTENSION_ID;https://YOUR_HOST/updates.xml"

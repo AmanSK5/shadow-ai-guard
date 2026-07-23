@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  INSTALL payload for Chrome.
+  Upload in your MDM (e.g. Jamf "Application & Custom Settings") under
+  preference domain:  com.google.Chrome
+  It must coexist as a SEPARATE payload alongside the per-extension config
+  payload (com.google.Chrome.extensions.<EXTENSION_ID>).
+  Removing this payload force-uninstalls the extension.
+
+  Replace:
+    EXTENSION_ID                   - your 32-char id (README: pack and derive)
+    https://YOUR_HOST/updates.xml  - your hosted updates.xml URL
+-->
+<plist version="1.0">
+<dict>
+    <key>ExtensionInstallForcelist</key>
+    <array>
+        <string>EXTENSION_ID;https://YOUR_HOST/updates.xml</string>
+    </array>
+</dict>
+</plist>

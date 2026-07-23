@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  CONFIG payload (managed storage) for Edge.
+  Upload under preference domain:  com.microsoft.Edge.extensions.EXTENSION_ID
+  Keys at top level, no wrapper dict.
+
+  Replace:
+    EXTENSION_ID            - in the preference domain (not in this file)
+    REPLACE_WITH_TOKEN      - the receiver bearer token (write-only)
+    reportEndpoint          - your receiver URL
+    allowedDomains          - your corporate email domains
+    classificationMarkings  - labels from your document classification policy
+  deviceIdentifier: on Jamf, $SERIALNUMBER is substituted per machine.
+-->
+<plist version="1.0">
+<dict>
+    <key>allowedDomains</key>
+    <array>
+        <string>example.com</string>
+    </array>
+    <key>reportEndpoint</key>
+    <string>https://ai-guard.example.com/report</string>
+    <key>deviceIdentifier</key>
+    <string>$SERIALNUMBER</string>
+    <key>authToken</key>
+    <string>REPLACE_WITH_TOKEN</string>
+    <key>pasteGuardMode</key>
+    <string>warn</string>
+    <key>classificationMarkings</key>
+    <array>
+        <string>Client Confidential</string>
+        <string>Internal Confidential</string>
+        <string>Internal Use Only</string>
+        <string>Strictly Confidential</string>
+        <string>Commercial in Confidence</string>
+    </array>
+</dict>
+</plist>

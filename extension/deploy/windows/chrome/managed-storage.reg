@@ -1,0 +1,13 @@
+Windows Registry Editor Version 5.00
+
+; CONFIG (managed storage) for Chrome on Windows.
+; Replace EXTENSION_ID in the key path, then the placeholder values.
+; List values (allowedDomains, classificationMarkings) are JSON strings.
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome\3rdparty\extensions\EXTENSION_ID\policy]
+"reportEndpoint"="https://ai-guard.example.com/report"
+"authToken"="REPLACE_WITH_TOKEN"
+"deviceIdentifier"="%COMPUTERNAME%"
+"pasteGuardMode"="warn"
+"allowedDomains"="[\"example.com\"]"
+"classificationMarkings"="[\"Client Confidential\", \"Internal Confidential\", \"Internal Use Only\", \"Strictly Confidential\", \"Commercial in Confidence\"]"
