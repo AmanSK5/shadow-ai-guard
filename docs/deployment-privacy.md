@@ -28,6 +28,25 @@ The design intent is to answer "is a managed device using an unmanaged AI
 account" with the minimum identifiable data that still supports a
 conversation with the right person.
 
+## The paste guard inspects content locally
+
+The browser extension's paste guard scans text at the moment of paste or
+drop into a known AI tool. That inspection happens on the device, inside
+the page, and your DPIA should name it plainly rather than let "no content
+collected" imply "no content touched". What keeps it proportionate:
+
+- The pasted text is never transmitted, stored, or included in any
+  finding, truncated or otherwise. Reports carry the detector id (e.g.
+  payment_card), the action taken, the tool, the device and a timestamp.
+- The "overridden" action records that a person chose to proceed past a
+  warning. Tell staff this is recorded: it is the one paste-guard datum
+  about a decision rather than a clipboard.
+- What is scanned for is reviewable and centrally controlled: the detector
+  list and its deliberate exclusions are open in `extension/src/guard.js`,
+  and the classification markings come from your own document
+  classification policy via managed configuration.
+- Typed content, clipboard images and file uploads are not scanned.
+
 ## DPIA checklist
 
 Work through these before deployment. Most map directly onto ICO / GDPR
@@ -39,8 +58,10 @@ Article 35 expectations; adapt to your jurisdiction.
       appropriate licensing, security and data governance.
 - [ ] Identify your lawful basis (typically legitimate interests for
       security monitoring of corporate devices). Document the balancing
-      test: the data is minimal, the alternative (content inspection,
-      proxy interception) is more intrusive.
+      test: the data is minimal, and the more intrusive alternatives
+      (server-side content inspection, proxy interception) are avoided;
+      the paste guard's inspection is client-side only and reports no
+      content.
 - [ ] Confirm scope is corporate-managed devices and corporate cloud
       tenants only. This tool has no visibility into personal devices,
       and you should keep it that way.

@@ -115,6 +115,13 @@ grow from there. A few common shapes:
 Either way the receiver, the logs, the dashboard and the registry don't change.
 Only the left-hand side does.
 
+The browser surface is also the one place the platform prevents rather
+than observes: the extension's paste guard scans pastes into AI tools
+on-device and warns or blocks before content reaches the page, reporting
+detector ids through the same finding schema (`source: paste_guard`).
+Everything else in this document describes detection; that one control is
+enforcement, and it rides the same pipeline.
+
 ## The finding schema
 
 ```json

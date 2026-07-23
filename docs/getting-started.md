@@ -31,7 +31,9 @@ Get one source working first.
   root/admin, to be your first endpoint.
 
 You do not need Alertmanager, the cloud scanners, or the browser extension
-to get started. Add those once the basic thread works.
+to get started. Add those once the basic thread works. When you do add the
+browser surface, [../extension/README.md](../extension/README.md) covers
+packing, hosting and MDM deployment, including the paste guard.
 
 ## 1. Deploy the receiver
 
