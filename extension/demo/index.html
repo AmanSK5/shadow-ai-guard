@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>AI Guard - paste guard demo</title>
+<!--
+  Zero-install demo of the paste guard. This page loads the REAL, unmodified
+  ../src/guard.js and stubs the three chrome.* calls it makes, so what you
+  see is exactly what the deployed extension does: same detectors, same
+  interception, same overlay. The "what would be reported" panel shows the
+  full payload the extension would send. Note what is not in it.
+
+  Run it: open this file in any browser from a clone of the repo
+  (double-click works; or `python3 -m http.server` from the repo root and
+  visit /extension/demo/). Mode links reload with ?mode=warn|block|off.
+-->
+<style>
+  :root { color-scheme: dark; }
+  body { font-family: -apple-system, "Segoe UI", sans-serif; background:#14161c;
+         color:#e8e8e8; max-width:880px; margin:32px auto; padding:0 20px;
+         line-height:1.5; }
+  h1 { font-size:1.4em; } h2 { font-size:1.05em; margin-top:1.6em; }
+  .muted { color:#9aa0ab; font-size:0.92em; }
+  .mode a { color:#9aa0ab; text-decoration:none; padding:3px 10px;
+            border:1px solid #333; border-radius:5px; margin-right:6px; }
+  .mode a.active { color:#fff; border-color:#f5a524; }
+  #prompt { min-height:88px; background:#1e222b; border:1px solid #333;
+            border-radius:10px; padding:14px; margin-top:10px; outline:none;
+            white-space:pre-wrap; }
+  #prompt:empty::before { content:"Paste something here, like an AI tool prompt box..."; color:#6b7280; }
+  table { border-collapse:collapse; width:100%; font-size:0.92em; }
+  td { padding:6px 8px; border-bottom:1px solid #262a33; vertical-align:top; }
+  code { background:#1e222b; padding:2px 6px; border-radius:4px;
+         font-size:0.92em; word-break:break-all; }
+  button.copy { background:#262b36; color:#ddd; border:1px solid #3a3f4a;
+                border-radius:4px; padding:3px 10px; cursor:pointer;
+                font:inherit; font-size:0.85em; }
+  button.copy:active { background:#3a3f4a; }
+  #report { background:#101318; border:1px solid #262a33; border-radius:8px;
+            padding:12px; min-height:60px; font-family:ui-monospace, monospace;
+            font-size:0.85em; white-space:pre-wrap; }
+  .ok { color:#4ade80; }
+</style>
+</head>
+<body>
+
+<h1>Paste guard demo</h1>
+<p>This page runs the extension's real <code>src/guard.js</code>, unmodified.
+The box below stands in for an AI tool's prompt box. Paste the vectors,
+watch the overlay, and watch the report panel: detection happens entirely
+in this page, and the report never contains what you pasted.</p>
+
+<p class="mode">Mode:
+  <a href="?mode=warn" id="m-warn">warn</a>
+  <a href="?mode=block" id="m-block">block</a>
+  <a href="?mode=off" id="m-off">off</a>
+  <span class="muted">(warn shows a Paste anyway override; block does not)</span>
+</p>
+
+<div id="prompt" contenteditable="true"></div>
+
+<h2>What would be reported</h2>
+<div id="report" class="muted">Nothing yet. Reports appear here exactly as
+the extension would send them to the receiver.</div>
+
+<h2>Test vectors (all fake or documentation values)</h2>
+<table id="vectors">
+  <tr><td><code>AKIAIOSFODNN7EXAMPLE</code></td><td>AWS access key (Amazon's documented example)</td><td></td></tr>
+  <tr><td><code>4111 1111 1111 1111</code></td><td>Payment card (industry test number, passes Luhn)</td><td></td></tr>
+  <tr><td><code>password: Summer2026!</code></td><td>Shared credential</td><td></td></tr>
+  <tr><td><code>CLIENT CONFIDENTIAL</code></td><td>Document classification marking</td><td></td></tr>
+  <tr><td><code>glpat-abcdefghij1234567890</code></td><td>GitLab personal access token shape</td><td></td></tr>
+  <tr><td><code>sk_live_abcdefghijklmnop1234</code></td><td>Stripe live key shape</td><td></td></tr>
+  <tr><td><code>AB 12 34 56 C</code></td><td>UK National Insurance number shape</td><td></td></tr>
+  <tr><td><code>GB82WEST12345698765432</code></td><td>IBAN (from the IBAN registry examples)</td><td></td></tr>
+</table>
+
+<h2>And the negatives</h2>
+<p class="muted">These must paste through silently: a date like
+<code>12-03-24</code>, a phone number, a 16-digit order number that fails
+the Luhn check, an email signature with a lowercase "this email is
+confidential" footer, ordinary prose using the word "internal".</p>
+
+<p class="muted">The full detector list and the deliberate exclusions are
+documented in <code>src/guard.js</code>. Deploying the real thing is
+covered in the README next to this folder.</p>
+
+<script>
+  // Stub the three chrome.* touchpoints guard.js uses. Everything else on
+  // this page is presentation.
+  const params = new URLSearchParams(location.search);
+  const mode = ["warn","block","off"].includes(params.get("mode")) ? params.get("mode") : "warn";
+  document.getElementById("m-" + mode).classList.add("active");
+
+  window.__demoReport = function (msg) {
+    // Render what the background worker would POST, mapped exactly as
+    // background.js maps it. The pasted content is not available here,
+    // by construction: guard.js never includes it in the message.
+    const payload = {
+      tool: location.hostname || "demo.local",
+      surface: "browser",
+      source: "paste_guard",
+      severity: "warn",
+      evidence: "paste " + msg.action + ": " + msg.detectors.join(","),
+      device: "demo-machine",
+      reported_at: msg.ts,
+    };
+    const el = document.getElementById("report");
+    el.classList.remove("muted");
+    el.textContent = JSON.stringify(payload, null, 2) +
+      "\n\n" + el.textContent.replace(/^Nothing yet[\s\S]*$/, "");
+  };
+
+  window.chrome = {
+    storage: { managed: { get: async () => ({ pasteGuardMode: mode }) } },
+    runtime: { sendMessage: (msg) => { if (msg && msg.type === "paste-guard") window.__demoReport(msg); } },
+  };
+
+  // Copy buttons for the vectors
+  document.querySelectorAll("#vectors tr").forEach((row) => {
+    const codeEl = row.querySelector("code");
+    const cell = row.querySelectorAll("td")[2];
+    if (!codeEl || !cell) return;
+    const b = document.createElement("button");
+    b.className = "copy"; b.textContent = "Copy";
+    b.addEventListener("click", async () => {
+      await navigator.clipboard.writeText(codeEl.textContent);
+      b.textContent = "Copied"; b.classList.add("ok");
+      setTimeout(() => { b.textContent = "Copy"; b.classList.remove("ok"); }, 1200);
+    });
+    cell.appendChild(b);
+  });
+</script>
+<script src="../src/guard.js"></script>
+</body>
+</html>

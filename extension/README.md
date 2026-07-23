@@ -42,6 +42,12 @@ via a "Paste anyway" button (which is itself reported, as `overridden`); in
 `block` mode they cannot. The mode is managed configuration, so moving from
 warn to block is a policy push, not a release.
 
+Want to see it before deploying anything? Run the repo demo (`cd demo &&
+docker compose up`) and open http://localhost:8090/demo/, or open
+`demo/index.html` in this folder straight from a clone. Either way it is
+the real `src/guard.js` running, with the browser APIs stubbed and test
+vectors included.
+
 ## Setup
 
 The extension is deployed as a force-installed managed extension through

@@ -102,5 +102,13 @@ services:
         condition: service_healthy
     restart: "no"
 
+# Serves the paste-guard demo page (and the real guard.js it loads).
+  extension-demo:
+    image: nginx:1.27-alpine
+    volumes:
+      - ../extension:/usr/share/nginx/html:ro
+    ports:
+      - "8090:80"
+
 volumes:
   registry-dist:
