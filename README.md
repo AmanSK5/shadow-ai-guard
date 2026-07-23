@@ -50,6 +50,15 @@ enough to see how the thing works without setting anything up. The dashboard's
 own header spells out what's different, and there's more detail in
 [`demo/README.md`](demo/README.md).
 
+Alongside the dashboard, the demo serves the browser paste guard at
+http://localhost:8090/demo/: a stand-in AI prompt box running the
+extension's real, unmodified `guard.js`, with copyable test vectors on the
+page. Paste a fake AWS key or a payment card number and watch it get
+stopped before it reaches the page; the panel underneath shows the exact
+report that would be sent, which never contains what you pasted.
+
+https://github.com/user-attachments/assets/16dd7857-935b-40c8-ad73-524b30271ec7
+
 When you want to run it for real, start with
 [docs/getting-started.md](docs/getting-started.md).
 
