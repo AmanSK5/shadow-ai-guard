@@ -294,5 +294,4 @@ function showOverlay(hits, action, onOverride) {
   box.appendChild(row);
   document.documentElement.appendChild(box);
   setTimeout(() => { if (box.isConnected && !onOverride) box.remove(); }, 8000);
-  if (onOverride) setTimeout(() => { if (box.isConnected) box.remove(); }, 20000);
 }

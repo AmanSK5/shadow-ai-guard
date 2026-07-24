@@ -16,6 +16,12 @@ carry `source: paste_guard` and an `evidence` field of the form
 `paste <warned|blocked|overridden>: <detector ids>`. No receiver change is
 needed: both map onto the standard finding schema.
 
+The extension also sends a daily heartbeat finding (same schema,
+`severity: info`, evidence carrying its version and paste-guard mode), so
+a dashboard can count devices with a working install rather than trusting
+MDM delivery status. It contains nothing about the person or their
+activity.
+
 ## What the paste guard detects
 
 Secret formats (AWS keys, private keys, GitLab/GitHub/Anthropic/OpenAI/

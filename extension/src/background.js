@@ -42,6 +42,44 @@ chrome.runtime.onMessage.addListener((msg) => {
   }
 });
 
+// ---- heartbeat: proves the whole chain works per device ----
+// Sent on browser startup, install/update, and daily via chrome.alarms.
+// Traverses extension -> managed config -> token -> receiver -> Loki, so one
+// heartbeat in the last 24h means the paste guard on that device WORKS, not
+// just that the MDM delivered a profile. Carries version and mode only.
+
+const HEARTBEAT_MIN_INTERVAL_MS = 20 * 60 * 60 * 1000; // at most ~once a day
+
+async function heartbeat(reason) {
+  try {
+    const state = await chrome.storage.local.get("lastHeartbeat");
+    const now = Date.now();
+    if (state.lastHeartbeat && now - state.lastHeartbeat < HEARTBEAT_MIN_INTERVAL_MS) return;
+    let mode = "warn";
+    try {
+      const cfg = await chrome.storage.managed.get("pasteGuardMode");
+      if (cfg && ["off", "warn", "block"].includes(cfg.pasteGuardMode)) mode = cfg.pasteGuardMode;
+    } catch (e) { /* unmanaged: fallback mode stands */ }
+    await report({
+      tool: "paste-guard",
+      surface: "browser",
+      source: "paste_guard",
+      severity: "info",
+      evidence: "heartbeat version=" + chrome.runtime.getManifest().version +
+                " mode=" + mode + " reason=" + reason,
+      reported_at: new Date().toISOString(),
+    });
+    await chrome.storage.local.set({ lastHeartbeat: now });
+  } catch (e) {
+    console.warn("[ai-account-guard] heartbeat failed", e);
+  }
+}
+
+chrome.runtime.onStartup.addListener(() => heartbeat("startup"));
+chrome.runtime.onInstalled.addListener(() => heartbeat("installed"));
+chrome.alarms.create("ai-guard-heartbeat", { periodInMinutes: 60 * 24 });
+chrome.alarms.onAlarm.addListener((a) => { if (a.name === "ai-guard-heartbeat") heartbeat("alarm"); });
+
 async function getConfig() {
   try {
     const cfg = await chrome.storage.managed.get([
