@@ -16,12 +16,6 @@ carry `source: paste_guard` and an `evidence` field of the form
 `paste <warned|blocked|overridden>: <detector ids>`. No receiver change is
 needed: both map onto the standard finding schema.
 
-The extension also sends a daily heartbeat finding (same schema,
-`severity: info`, evidence carrying its version and paste-guard mode), so
-a dashboard can count devices with a working install rather than trusting
-MDM delivery status. It contains nothing about the person or their
-activity.
-
 ## What the paste guard detects
 
 Secret formats (AWS keys, private keys, GitLab/GitHub/Anthropic/OpenAI/
@@ -47,12 +41,6 @@ Detection runs entirely on-device. In `warn` mode the person can proceed
 via a "Paste anyway" button (which is itself reported, as `overridden`); in
 `block` mode they cannot. The mode is managed configuration, so moving from
 warn to block is a policy push, not a release.
-
-Want to see it before deploying anything? Run the repo demo (`cd demo &&
-docker compose up`) and open http://localhost:8090/demo/, or open
-`demo/index.html` in this folder straight from a clone. Either way it is
-the real `src/guard.js` running, with the browser APIs stubbed and test
-vectors included.
 
 ## Setup
 
@@ -110,7 +98,11 @@ without the other installs an unconfigured extension that reports nothing.
 
 - `install.plist` under the browser's preference domain (`com.google.Chrome`,
   `com.brave.Browser`, `com.microsoft.Edge`): the forcelist entry pointing
-  at your updates.xml.
+  at your updates.xml, plus an `ExtensionSettings` entry with
+  `override_update_url`. Both are needed: the forcelist installs, but on
+  its own it does not reliably update self-hosted extensions afterwards;
+  the `ExtensionSettings` entry is what makes the browser keep polling
+  your updates.xml for new versions.
 - `managed-storage.plist` under the per-extension domain
   (`<browser domain>.extensions.<your id>`): the runtime configuration.
 
@@ -168,8 +160,19 @@ resented.
 
 Bump the version in `src/manifest.json`, pack with the same .pem, upload
 the new versioned .crx, update `codebase` and `version` in the hosted
-updates.xml. Browsers pick it up on their update poll. Keep the previous
-.crx in the bucket: re-pointing updates.xml at it is your rollback.
+updates.xml. Keep the previous .crx in the bucket: re-pointing updates.xml
+at it is your rollback.
+
+Two things make updates actually arrive, and both are already in the
+blueprints. First, the `ExtensionSettings` policy entry with
+`override_update_url`: without it, browsers install from the forcelist and
+then never reliably poll a self-hosted updates.xml again. This is
+long-standing browser behaviour, not a configuration mistake, and it costs
+an evening to discover the hard way. Second, the extension's daily
+heartbeat calls `chrome.runtime.requestUpdateCheck()`, so running browsers
+ask for their own update within a day of a release instead of waiting for
+a restart. With both in place, a release is: pack, upload, update the xml,
+and watch it propagate.
 
 ## Known limitations
 

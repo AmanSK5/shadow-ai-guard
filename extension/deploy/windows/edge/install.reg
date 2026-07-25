@@ -8,3 +8,11 @@ Windows Registry Editor Version 5.00
 
 [HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge\ExtensionInstallForcelist]
 "1"="EXTENSION_ID;https://YOUR_HOST/updates.xml"
+
+; ExtensionSettings with override_update_url is what makes the browser
+; actually poll your updates.xml for NEW versions; the forcelist alone
+; installs but does not reliably update self-hosted extensions. The value
+; is a JSON string; replace EXTENSION_ID and the URL.
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge]
+"ExtensionSettings"="{\"EXTENSION_ID\":{\"installation_mode\":\"force_installed\",\"update_url\":\"https://YOUR_HOST/updates.xml\",\"override_update_url\":true}}"

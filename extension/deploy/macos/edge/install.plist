@@ -8,6 +8,14 @@
   payload (com.microsoft.Edge.extensions.<EXTENSION_ID>).
   Removing this payload force-uninstalls the extension.
 
+
+  ExtensionSettings with override_update_url is what makes the browser
+  actually poll your updates.xml for NEW versions. The legacy forcelist
+  alone installs the extension but does not reliably update self-hosted
+  extensions afterwards; this is a long-standing browser behaviour, not a
+  configuration mistake. Keep both: the forcelist for install, the
+  ExtensionSettings entry for updates.
+
   Replace:
     EXTENSION_ID                   - your 32-char id (README: pack and derive)
     https://YOUR_HOST/updates.xml  - your hosted updates.xml URL
@@ -18,5 +26,17 @@
     <array>
         <string>EXTENSION_ID;https://YOUR_HOST/updates.xml</string>
     </array>
+    <key>ExtensionSettings</key>
+    <dict>
+        <key>EXTENSION_ID</key>
+        <dict>
+            <key>installation_mode</key>
+            <string>force_installed</string>
+            <key>update_url</key>
+            <string>https://YOUR_HOST/updates.xml</string>
+            <key>override_update_url</key>
+            <true/>
+        </dict>
+    </dict>
 </dict>
 </plist>

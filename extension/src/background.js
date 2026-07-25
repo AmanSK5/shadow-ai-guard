@@ -70,6 +70,9 @@ async function heartbeat(reason) {
       reported_at: new Date().toISOString(),
     });
     await chrome.storage.local.set({ lastHeartbeat: now });
+    // Ask the browser to check for our own update; makes releases reach
+    // running browsers within a day instead of waiting for a restart.
+    chrome.runtime.requestUpdateCheck(() => {});
   } catch (e) {
     console.warn("[ai-account-guard] heartbeat failed", e);
   }
