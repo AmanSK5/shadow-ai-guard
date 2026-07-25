@@ -35,7 +35,7 @@
           "showLineNumbers": false,
           "showMiniMap": false
         },
-        "content": "## Shadow AI visibility — demo mode\n\n**This is a self-contained demo running on seeded data, not a live environment.** One Loki instance, ~11 example findings across every surface and OS, corporate domains fixed to `example.com` / `example.co.uk`. A few things differ from a real deployment:\n\n- **Some panels are omitted.** The session gauges, registry-tools count, and last-scan-age tiles read Prometheus metrics; this demo runs Loki only, so those panels aren't included here. The full dashboard in `dashboards/` has them.\n- **The corporate-domain variable is inert in the demo.** Work-vs-personal classification is hardcoded to the two example domains above, so editing the `Corporate domains` box won't change anything here. In a real deployment that regex drives the classification.\n- **Time-based panels follow the time picker.** The findings are seeded once at startup; if the severity or surface charts look empty, widen the range (e.g. last 24h).\n\n**Reading the board:** presence of a tool is informational. Red means a *personal* (non-corporate) account is signed into an AI tool on a managed device, or an unexplained integration was found — in a real deployment those route to your alerting channel automatically.",
+        "content": "## Shadow AI visibility \u2014 demo mode\n\n**This is a self-contained demo running on seeded data, not a live environment.** One Loki instance, ~11 example findings across every surface and OS, corporate domains fixed to `example.com` / `example.co.uk`. A few things differ from a real deployment:\n\n- **Some panels are omitted.** The session gauges, registry-tools count, and last-scan-age tiles read Prometheus metrics; this demo runs Loki only, so those panels aren't included here. The full dashboard in `dashboards/` has them.\n- **The corporate-domain variable is inert in the demo.** Work-vs-personal classification is hardcoded to the two example domains above, so editing the `Corporate domains` box won't change anything here. In a real deployment that regex drives the classification.\n- **Time-based panels follow the time picker.** The findings are seeded once at startup; if the severity or surface charts look empty, widen the range (e.g. last 24h).\n\n**Reading the board:** presence of a tool is informational. Red means a *personal* (non-corporate) account is signed into an AI tool on a managed device, or an unexplained integration was found \u2014 in a real deployment those route to your alerting channel automatically.",
         "mode": "markdown"
       },
       "pluginVersion": "11.1.0",
@@ -1723,6 +1723,335 @@
         }
       ],
       "type": "table"
+    },
+    {
+      "type": "row",
+      "title": "Paste guard",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 75
+      },
+      "id": 30,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Pastes stopped (7d)",
+      "id": 31,
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 0,
+        "y": 76
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | source=`paste_guard` | regexp `paste (?P<action>\\w+): (?P<detectors>[^\\\"]*)` | action=~`warned|blocked` [7d])) or vector(0)",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "instant": true,
+          "queryType": "instant"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "description": "Paste/drop events where the browser extension's paste guard intercepted a secret pattern."
+    },
+    {
+      "type": "stat",
+      "title": "Overridden (7d)",
+      "id": 32,
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 4,
+        "y": 76
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | source=`paste_guard` | regexp `paste (?P<action>\\w+): (?P<detectors>[^\\\"]*)` | action=`overridden` [7d])) or vector(0)",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "instant": true,
+          "queryType": "instant"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "description": "Times a person clicked Paste anyway after a warning. This is the number that decides when warn becomes block."
+    },
+    {
+      "type": "stat",
+      "title": "Paste guard: active devices (24h)",
+      "id": 33,
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 8,
+        "y": 76
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "count(count by (device) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | source=`paste_guard` | regexp `heartbeat version=(?P<version>\\S+) mode=(?P<pastemode>\\S+)` | version!=\"\" [24h]))) or vector(0)",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "instant": true,
+          "queryType": "instant"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "description": "Devices whose paste guard sent a heartbeat in the last 24h. A heartbeat proves the whole chain works on that device; compare against your MDM scope count."
+    },
+    {
+      "type": "timeseries",
+      "title": "Paste-guard events by tool",
+      "id": 34,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 76
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (tool) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | source=`paste_guard` | regexp `paste (?P<action>\\w+): (?P<detectors>[^\\\"]*)` | action!=\"\" [$__auto]))",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "legendFormat": "{{tool}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 60
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "table",
+      "title": "Paste-guard detail (7d)",
+      "id": 35,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 81
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "count by (action, detectors, tool, device) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | source=`paste_guard` | regexp `paste (?P<action>\\w+): (?P<detectors>[^\\\"]*)` | action!=\"\" [7d]))",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "instant": true,
+          "queryType": "instant"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "Value": "events"
+            }
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "events",
+            "desc": true
+          }
+        ]
+      },
+      "description": "Multi-detector pastes appear as a comma-joined detectors value; that is the extension's report shape."
+    },
+    {
+      "type": "table",
+      "title": "Paste guard: device coverage (24h)",
+      "id": 36,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 84
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "count by (device, version, pastemode) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | source=`paste_guard` | regexp `heartbeat version=(?P<version>\\S+) mode=(?P<pastemode>\\S+)` | version!=\"\" [24h]))",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "instant": true,
+          "queryType": "instant"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value": true
+            },
+            "renameByName": {
+              "pastemode": "mode"
+            }
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "device",
+            "desc": false
+          }
+        ]
+      },
+      "description": "Per-device paste guard state from heartbeats: which extension version is running and which mode it is in."
     }
   ],
   "refresh": "5m",
@@ -1806,15 +2135,15 @@
       },
       {
         "current": {
-          "text": "example\\.com|example\\.co\\.uk",
-          "value": "example\\.com|example\\.co\\.uk"
+          "text": "example[.]com|example[.]co[.]uk",
+          "value": "example[.]com|example[.]co[.]uk"
         },
         "description": "Regex of account domains that count as corporate/work. Escape dots. Everything else with a non-empty domain shows as personal.",
         "hide": 0,
         "label": "Corporate domains (regex)",
         "name": "corp_domains",
         "options": [],
-        "query": "example\\.com|example\\.co\\.uk",
+        "query": "example[.]com|example[.]co[.]uk",
         "skipUrlSync": false,
         "type": "textbox"
       }

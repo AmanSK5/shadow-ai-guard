@@ -33,7 +33,7 @@ with no login (anonymous access is on for the demo only).
 
 Personal-versus-work colouring works out of the box: the dashboard's
 corporate domains variable ships with the demo's domains
-(`example\.com|example\.co\.uk`) as its default, so example.com accounts
+(`example[.]com|example[.]co[.]uk`) as its default, so example.com accounts
 show as corporate and gmail.com / outlook.com as personal with no steps.
 In a real deployment that same variable is what you point at your own
 domains.

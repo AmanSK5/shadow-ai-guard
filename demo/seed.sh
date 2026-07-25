@@ -41,5 +41,10 @@ post "{\"tool\":\"ollama\",\"surface\":\"desktop\",\"os\":\"linux\",\"account_do
 post "{\"tool\":\"claude-code-mcp:atlassian,figma\",\"surface\":\"mcp\",\"os\":\"macos\",\"account_domain\":\"\",\"device\":\"C02PIKACHU\",\"user\":\"pikachu\",\"evidence\":\".claude.json mcpServers\",\"severity\":\"info\",\"reported_at\":\"$(now)\",\"source\":\"collector-macos\"}"
 post "{\"tool\":\"deepseek\",\"surface\":\"network\",\"os\":\"unknown\",\"account_domain\":\"\",\"device\":\"NIX-BULBA\",\"user\":\"bulbasaur\",\"evidence\":\"dns:deepseek.com\",\"severity\":\"info\",\"reported_at\":\"$(now)\",\"source\":\"sentinelone_bridge\"}"
 
+# --- paste guard (browser extension events + one heartbeat) ---
+post "{\"tool\":\"chatgpt.com\",\"surface\":\"browser\",\"source\":\"paste_guard\",\"severity\":\"warn\",\"evidence\":\"paste warned: aws_access_key\",\"device\":\"PIKACHU-MBP\",\"os\":\"macos\",\"reported_at\":\"$(now)\"}"
+post "{\"tool\":\"claude.ai\",\"surface\":\"browser\",\"source\":\"paste_guard\",\"severity\":\"warn\",\"evidence\":\"paste overridden: classification_marking\",\"device\":\"EEVEE-WIN\",\"os\":\"windows\",\"reported_at\":\"$(now)\"}"
+post "{\"tool\":\"paste-guard\",\"surface\":\"browser\",\"source\":\"paste_guard\",\"severity\":\"info\",\"evidence\":\"heartbeat version=1.1.1 mode=warn reason=demo\",\"device\":\"PIKACHU-MBP\",\"os\":\"macos\",\"reported_at\":\"$(now)\"}"
+
 echo ""
 echo "done. open http://localhost:3000 and view the Shadow AI dashboard."

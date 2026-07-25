@@ -1370,6 +1370,335 @@
       "options": {
         "showHeader": true
       }
+    },
+    {
+      "type": "row",
+      "title": "Paste guard",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 77
+      },
+      "id": 10,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Pastes stopped (7d)",
+      "id": 11,
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 0,
+        "y": 78
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | source=`paste_guard` | regexp `paste (?P<action>\\w+): (?P<detectors>[^\\\"]*)` | action=~`warned|blocked` [7d])) or vector(0)",
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
+          "instant": true,
+          "queryType": "instant"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "orange"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "description": "Paste/drop events where the browser extension's paste guard intercepted a secret pattern."
+    },
+    {
+      "type": "stat",
+      "title": "Overridden (7d)",
+      "id": 12,
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 4,
+        "y": 78
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | source=`paste_guard` | regexp `paste (?P<action>\\w+): (?P<detectors>[^\\\"]*)` | action=`overridden` [7d])) or vector(0)",
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
+          "instant": true,
+          "queryType": "instant"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "description": "Times a person clicked Paste anyway after a warning. This is the number that decides when warn becomes block."
+    },
+    {
+      "type": "stat",
+      "title": "Paste guard: active devices (24h)",
+      "id": 13,
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 8,
+        "y": 78
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "count(count by (device) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | source=`paste_guard` | regexp `heartbeat version=(?P<version>\\S+) mode=(?P<pastemode>\\S+)` | version!=\"\" [24h]))) or vector(0)",
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
+          "instant": true,
+          "queryType": "instant"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "green"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "description": "Devices whose paste guard sent a heartbeat in the last 24h. A heartbeat proves the whole chain works on that device; compare against your MDM scope count."
+    },
+    {
+      "type": "timeseries",
+      "title": "Paste-guard events by tool",
+      "id": 14,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 78
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (tool) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | source=`paste_guard` | regexp `paste (?P<action>\\w+): (?P<detectors>[^\\\"]*)` | action!=\"\" [$__auto]))",
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
+          "legendFormat": "{{tool}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 60
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      }
+    },
+    {
+      "type": "table",
+      "title": "Paste-guard detail (7d)",
+      "id": 15,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 83
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "count by (action, detectors, tool, device) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | source=`paste_guard` | regexp `paste (?P<action>\\w+): (?P<detectors>[^\\\"]*)` | action!=\"\" [7d]))",
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
+          "instant": true,
+          "queryType": "instant"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "Value": "events"
+            }
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "events",
+            "desc": true
+          }
+        ]
+      },
+      "description": "Multi-detector pastes appear as a comma-joined detectors value; that is the extension's report shape."
+    },
+    {
+      "type": "table",
+      "title": "Paste guard: device coverage (24h)",
+      "id": 16,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 86
+      },
+      "datasource": {
+        "type": "loki",
+        "uid": "${DS_LOKI}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "count by (device, version, pastemode) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | source=`paste_guard` | regexp `heartbeat version=(?P<version>\\S+) mode=(?P<pastemode>\\S+)` | version!=\"\" [24h]))",
+          "datasource": {
+            "type": "loki",
+            "uid": "${DS_LOKI}"
+          },
+          "instant": true,
+          "queryType": "instant"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "Value": true
+            },
+            "renameByName": {
+              "pastemode": "mode"
+            }
+          }
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "device",
+            "desc": false
+          }
+        ]
+      },
+      "description": "Per-device paste guard state from heartbeats: which extension version is running and which mode it is in."
     }
   ],
   "schemaVersion": 39,
@@ -1445,10 +1774,10 @@
         "name": "corp_domains",
         "label": "Corporate domains (regex)",
         "type": "textbox",
-        "query": "example\\.com|example\\.co\\.uk",
+        "query": "example[.]com|example[.]co[.]uk",
         "current": {
-          "text": "example\\.com|example\\.co\\.uk",
-          "value": "example\\.com|example\\.co\\.uk"
+          "text": "example[.]com|example[.]co[.]uk",
+          "value": "example[.]com|example[.]co[.]uk"
         },
         "options": [],
         "hide": 0,
