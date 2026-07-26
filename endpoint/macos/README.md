@@ -78,6 +78,15 @@ AIGUARD_REGISTRY_FILE=registry/dist/collector.json sudo ./ai-guard-collector.sh
 
 With no receiver URL set, findings print to stdout instead of POSTing.
 
+To run directly against a live receiver, pass the same values the Jamf
+policy would, as positional arguments. Jamf reserves parameters 1 to 3, so
+the script reads from `$4` onward; fill the first three with placeholders:
+
+```bash
+sudo ./ai-guard-collector.sh _ _ _ \
+  "https://ai-guard.example.com" "$TOKEN" "example.com,example.co.uk"
+```
+
 ## Notes
 
 - The script targets the console user's home, not root's, because it runs as

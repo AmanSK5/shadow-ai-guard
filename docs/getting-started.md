@@ -59,6 +59,10 @@ listens on port 8080 and needs, at minimum:
 - `AUTH_TOKEN` from the Secret above
 - the registry ConfigMap mounted at `/etc/ai-guard` (next step)
 
+If you deploy before the ConfigMap from step 2 exists, the pod sits in
+ContainerCreating with a FailedMount event. That is normal: create the
+ConfigMap and the kubelet mounts it within a minute, no restart needed.
+
 Optional environment variables, all off by default:
 - `ALERTMANAGER_URL`, set to enable alerting; unset means findings are
   logged and dashboarded but nothing pages
@@ -75,9 +79,14 @@ curl -s https://your-receiver-host/healthz
 ## 2. Publish the registry
 
 The registry is the list of AI tools to detect. Collectors fetch it from the
-receiver at runtime, so it lives in a ConfigMap the receiver serves:
+receiver at runtime, so it lives in a ConfigMap the receiver serves.
+
+`build.py` needs `pyyaml` and `jsonschema`. On current Homebrew or Debian
+Python (PEP 668), install them in a venv:
 
 ```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install pyyaml jsonschema
 python registry/build.py
 kubectl create configmap ai-guard-registry \
   --from-file=registry.json=registry/dist/registry.json \
@@ -147,6 +156,7 @@ is running what" table, coloured by whether the account is personal or work.
 
 ## Just want to see the dashboard?
 
-A local demo that needs no cluster and no real data is on the roadmap
-(`docker compose up` with fixture findings). Until then, the fastest way to
-see the platform work is steps 1 to 5 above against a test machine.
+The demo in `demo/` needs no cluster and no real data: `docker compose up`
+brings up the receiver, Loki, Grafana and a seeder, with the dashboard
+populated in about five minutes. `demo/README.md` covers it, including the
+paste guard demo page.
