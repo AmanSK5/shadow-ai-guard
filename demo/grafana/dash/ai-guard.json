@@ -481,7 +481,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "count by (user, tool, surface, account_type, account_domain, device, severity) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | label_format account_type=`{{ if eq .account_domain \"\" }}none{{ else if or (eq .account_domain \"example.com\") (eq .account_domain \"example.co.uk\") }}work{{ else }}personal{{ end }}` | tool =~ `${tool:regex}` | account_type =~ `$account` [7d]))",
+          "expr": "count by (user, tool, surface, account_type, account_domain, device, severity) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | label_format device=`{{ if .device_name }}{{ .device_name }}{{ else }}{{ .device }}{{ end }}` | label_format account_type=`{{ if eq .account_domain \"\" }}none{{ else if or (eq .account_domain \"example.com\") (eq .account_domain \"example.co.uk\") }}work{{ else }}personal{{ end }}` | tool =~ `${tool:regex}` | account_type =~ `$account` [7d]))",
           "format": "table",
           "instant": true,
           "queryType": "instant",
@@ -1091,7 +1091,7 @@
             "type": "loki",
             "uid": "loki"
           },
-          "expr": "count by (tool, user, device) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | tool =~ \".*-mcp:.*\" [7d]))",
+          "expr": "count by (tool, user, device) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | label_format device=`{{ if .device_name }}{{ .device_name }}{{ else }}{{ .device }}{{ end }}` | tool =~ \".*-mcp:.*\" [7d]))",
           "format": "table",
           "instant": true,
           "queryType": "instant",
@@ -1961,7 +1961,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "count by (action, detectors, tool, device) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | source=`paste_guard` | regexp `paste (?P<action>\\w+): (?P<detectors>[^\\\"]*)` | action!=\"\" [7d]))",
+          "expr": "count by (action, detectors, tool, device) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | label_format device=`{{ if .device_name }}{{ .device_name }}{{ else }}{{ .device }}{{ end }}` | source=`paste_guard` | regexp `paste (?P<action>\\w+): (?P<detectors>[^\\\"]*)` | action!=\"\" [7d]))",
           "datasource": {
             "type": "loki",
             "uid": "loki"
@@ -2015,7 +2015,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "count by (device, version, pastemode) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | source=`paste_guard` | regexp `heartbeat version=(?P<version>\\S+) mode=(?P<pastemode>\\S+)` | version!=\"\" [24h]))",
+          "expr": "count by (device, version, pastemode) (count_over_time({app=\"ai-guard-receiver\", kind=\"finding\"} | json | label_format device=`{{ if .device_name }}{{ .device_name }}{{ else }}{{ .device }}{{ end }}` | source=`paste_guard` | regexp `heartbeat version=(?P<version>\\S+) mode=(?P<pastemode>\\S+)` | version!=\"\" [24h]))",
           "datasource": {
             "type": "loki",
             "uid": "loki"
