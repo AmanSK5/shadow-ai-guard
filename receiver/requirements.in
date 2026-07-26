@@ -1,4 +1,4 @@
-fastapi==0.115.*
+fastapi==0.140.*
 uvicorn[standard]==0.34.*
 httpx==0.28.*
 prometheus-client==0.21.*
