@@ -44,11 +44,19 @@ CI, so you do not need to build anything:
 ghcr.io/amansk5/shadow-ai-guard/receiver:latest
 ```
 
+Pick a namespace and use it consistently from here on. The Secret, the
+ConfigMap and the Deployment all have to land in the same one:
+
+```bash
+export NS=ai-guard
+kubectl create namespace "$NS"
+```
+
 Create its bearer token as a Kubernetes Secret. Every source authenticates
 to the receiver with this one token:
 
 ```bash
-kubectl create secret generic ai-guard-receiver \
+kubectl -n "$NS" create secret generic ai-guard-receiver \
   --from-literal=authToken="$(openssl rand -hex 32)"
 ```
 
@@ -86,11 +94,13 @@ receiver at runtime, so it lives in a ConfigMap the receiver serves.
 `build.py` needs `pyyaml` and `jsonschema`. On current Homebrew or Debian
 Python (PEP 668), install them in a venv:
 
+Same namespace as step 1. If you are in a new shell, `export NS=ai-guard` first.
+
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install pyyaml jsonschema
 python registry/build.py
-kubectl create configmap ai-guard-registry \
+kubectl -n "$NS" create configmap ai-guard-registry \
   --from-file=registry.json=registry/dist/registry.json \
   --from-file=collector.json=registry/dist/collector.json
 ```

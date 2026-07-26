@@ -1,9 +1,9 @@
 # Example receiver deployment: Deployment, Service, Ingress in one file.
 # Adapted from a real deployment; change the marked values and apply.
 #
-# No namespace is set, so this lands wherever you point it. Pick one and use
-# it consistently for all three commands below and the apply, or the pod will
-# sit in ContainerCreating waiting for a Secret that is somewhere else:
+# No namespace is set, so this lands wherever you point it. Use the same one
+# for all of the commands below, or the pod will sit in ContainerCreating
+# waiting for a Secret that is somewhere else:
 #
 #   NS=ai-guard
 #   kubectl create namespace "$NS"
