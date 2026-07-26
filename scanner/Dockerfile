@@ -4,7 +4,7 @@
 # endpoint at runtime (AIGUARD_REGISTRY_URL), so merging a discovery MR
 # updates this scanner without a rebuild. The bundled ai_services.yaml ships
 # only as an offline fallback.
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 # tzdata so TZ works if a deployer sets it; default is UTC.
 RUN apt-get update \
