@@ -25,7 +25,7 @@ permissions:
   contents: read
 
 env:
-  TRIVY: aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f%
+  TRIVY: aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f
   # The vulnerability DB is pulled from a registry. Anonymous pulls are rate
   # limited and will flake the job, so authenticate with the workflow token.
   TRIVY_USERNAME: ${{ github.actor }}
