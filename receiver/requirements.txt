@@ -1,5 +1,5 @@
 fastapi==0.115.*
-uvicorn[standard]==0.34.*
+uvicorn[standard]==0.51.*
 httpx==0.28.*
 prometheus-client==0.21.*
 pydantic==2.*
