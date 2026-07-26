@@ -1,15 +1,19 @@
 # Example receiver deployment: Deployment, Service, Ingress in one file.
 # Adapted from a real deployment; change the marked values and apply.
 #
-# Before applying, create the Secret and the registry ConfigMap
-# (docs/getting-started.md steps 1 and 2):
+# No namespace is set, so this lands wherever you point it. Pick one and use
+# it consistently for all three commands below and the apply, or the pod will
+# sit in ContainerCreating waiting for a Secret that is somewhere else:
 #
-#   kubectl create secret generic ai-guard-receiver \
+#   NS=ai-guard
+#   kubectl create namespace "$NS"
+#   kubectl -n "$NS" create secret generic ai-guard-receiver \
 #     --from-literal=authToken="$(openssl rand -hex 32)"
 #   python registry/build.py
-#   kubectl create configmap ai-guard-registry \
+#   kubectl -n "$NS" create configmap ai-guard-registry \
 #     --from-file=registry.json=registry/dist/registry.json \
 #     --from-file=collector.json=registry/dist/collector.json
+#   kubectl -n "$NS" apply -f receiver/deploy/receiver.yaml
 #
 # If the Deployment is applied before the ConfigMap exists, the pod waits in
 # ContainerCreating until it does, then starts on its own.
@@ -30,10 +34,28 @@ spec:
       labels:
         app: ai-guard-receiver
     spec:
+      # The image already runs as 65532, but declaring it here is what lets
+      # Kubernetes enforce it and a policy scanner verify it. Matches the
+      # USER line in receiver/Dockerfile; change both together or neither.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: receiver
           image: ghcr.io/amansk5/shadow-ai-guard/receiver:latest
           imagePullPolicy: IfNotPresent
+          # The receiver writes nothing to disk: findings go to stdout and,
+          # optionally, straight to Loki. An emptyDir covers /tmp for anything
+          # the Python runtime wants scratch space for.
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
           ports:
             - containerPort: 8080
           env:
@@ -49,6 +71,8 @@ spec:
             - name: registry
               mountPath: /etc/ai-guard
               readOnly: true
+            - name: tmp
+              mountPath: /tmp
           readinessProbe:
             httpGet: { path: /healthz, port: 8080 }
             initialDelaySeconds: 3
@@ -62,6 +86,8 @@ spec:
         - name: registry
           configMap:
             name: ai-guard-registry
+        - name: tmp
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
