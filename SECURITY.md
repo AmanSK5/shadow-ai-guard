@@ -67,6 +67,23 @@ This is a visibility tool, not a control. It does not block anything, and a
 user with local admin can remove the collector or fake its output. Its value
 is making the common case visible, not defeating a determined insider.
 
+## How this repo is checked
+
+Trivy runs on every push and weekly, scanning Python dependencies, OS
+packages inside the published images, Dockerfiles and Kubernetes manifests
+for misconfiguration, and the tree for committed secrets. It fails the build
+on HIGH or CRITICAL with a fix available. The weekly run is the one that
+matters: it catches CVEs published against code that has not changed.
+
+Alongside it: CodeQL on Python and JavaScript, Dependabot alerts and updates,
+and secret scanning with push protection. Every GitHub Action is pinned to a
+full commit SHA, and Python installs are hash-verified against committed
+lockfiles.
+
+Configuration is in `.github/workflows/`, `trivy-secret.yaml` and
+`.trivyignore`. Accepted findings are recorded in `.trivyignore` with a
+reason and an expiry rather than silently suppressed.
+
 ## Reporting a vulnerability
 
 Open a private security advisory on GitHub rather than a public issue.

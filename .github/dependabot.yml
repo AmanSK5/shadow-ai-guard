@@ -16,7 +16,7 @@ updates:
     schedule:
       interval: weekly
 
-  # Touches requirements.txt and requirements.in, not the .lock files.
+  # Touches requirements.in only, not the .lock files.
   # Every PR here needs a lock regeneration before it will pass CI.
   - package-ecosystem: pip
     directories:
