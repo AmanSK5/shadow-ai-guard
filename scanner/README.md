@@ -173,13 +173,19 @@ A security tool with compromised dependencies would be ironic.
 - `requirements.lock` is the committed lockfile with exact versions and
   SHA256 hashes
 - `make install` uses `--require-hashes` and fails on any mismatch
-- `make lock` regenerates after changing requirements.in, `make audit`
-  checks for known CVEs, `make verify` confirms the installed set still
-  matches
+- `make lock` regenerates after changing requirements.in, preserving
+  versions already pinned in the lockfile
+- `make upgrade` regenerates allowing every package to move to its newest
+  compatible version; this is the one that clears a CVE, `make lock` alone
+  will not
+- `make verify` confirms the installed set still matches
+- both compile inside `python:3.12-slim` so the lock matches the interpreter
+  the image ships, not whatever Python you happen to have
 
 This protects against a compromised package version on PyPI and unpinned
 transitive dependencies. It does not protect against a compromised
-version being the one you pinned; run `make audit` regularly.
+version being the one you pinned. CI scans for that weekly with Trivy;
+`make audit` is the same check locally.
 
 ## Requirements
 

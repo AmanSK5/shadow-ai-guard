@@ -29,8 +29,9 @@ $CorporateDomains = @('example.com')                 # accounts here are work; o
 ```
 
 Keep the token inside single quotes (literal in PowerShell, so `$` in a
-token cannot expand). Commit only the placeholder version; the tokenised
-copy exists only inside Intune.
+token cannot expand). Commit only the placeholder version; the tokenised copy 
+exists only inside Intune. CI fails the build if the placeholder is missing, 
+so a tokenised copy cannot reach main by accident.
 
 ## Intune deployment
 

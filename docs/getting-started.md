@@ -141,7 +141,7 @@ directory and POSTs findings to the receiver.
 Check the receiver logs:
 
 ```bash
-kubectl logs deploy/ai-guard-receiver -c receiver --since=5m
+kubectl -n "$NS" logs deploy/ai-guard-receiver -c receiver --since=5m
 ```
 
 You should see a JSON finding line with the tool, surface, account domain,
