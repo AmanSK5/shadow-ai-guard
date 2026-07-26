@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.14-slim
 WORKDIR /srv
 COPY requirements.lock .
 RUN pip install --no-cache-dir --require-hashes -r requirements.lock
