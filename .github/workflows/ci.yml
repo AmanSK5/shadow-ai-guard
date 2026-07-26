@@ -26,6 +26,22 @@ permissions:
   packages: write
 
 jobs:
+  placeholder-guard:
+    # The Windows collector and the browser extension both ship a placeholder
+    # where a deployer is expected to put a real receiver token. The Trivy
+    # custom secret rule catches a token that looks like one; this catches the
+    # placeholder going missing, which is the same mistake from the other side
+    # and works regardless of how long the token is.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: token placeholders intact
+        run: |
+          grep -q '__RECEIVER_TOKEN__' endpoint/windows/ai-guard-collector.ps1 \
+            || { echo "::error::Windows collector token placeholder was replaced"; exit 1; }
+          grep -q 'FALLBACK_AUTH_TOKEN = ""' extension/src/background.js \
+            || { echo "::error::extension fallback token is not empty"; exit 1; }
+
   shellcheck:
     runs-on: ubuntu-latest
     steps:
@@ -76,7 +92,7 @@ jobs:
   build-images:
     # main and tags only: PRs validate, they do not publish.
     if: github.event_name == 'push'
-    needs: [shellcheck, registry-validate, receiver-test, scanner-test]
+    needs: [placeholder-guard, shellcheck, registry-validate, receiver-test, scanner-test]
     runs-on: ubuntu-latest
     strategy:
       matrix:
