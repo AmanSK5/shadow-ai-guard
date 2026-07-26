@@ -1,0 +1,28 @@
+version: 2
+updates:
+  # Keeps the SHA pins in ci.yml current. Dependabot bumps the SHA and the
+  # trailing version comment together, which is the maintenance cost that
+  # otherwise makes SHA pinning rot into a lie.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker
+    directories:
+      - /receiver
+      - /scanner
+      - /discovery
+    schedule:
+      interval: weekly
+
+  # Touches requirements.txt and requirements.in, not the .lock files.
+  # Every PR here needs a lock regeneration before it will pass CI.
+  - package-ecosystem: pip
+    directories:
+      - /receiver
+      - /scanner
+      - /discovery
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
