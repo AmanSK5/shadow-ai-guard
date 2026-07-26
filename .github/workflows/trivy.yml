@@ -58,7 +58,7 @@ jobs:
               --severity HIGH,CRITICAL \
               --ignore-unfixed \
               --exit-code 1 \
-              --no-progress
+              --quiet
 
       - name: dockerfiles, compose and k8s manifests
         run: |
@@ -70,7 +70,7 @@ jobs:
               --ignorefile /work/.trivyignore \
               --severity HIGH,CRITICAL \
               --exit-code 1 \
-              --no-progress
+              --quiet
 
   images:
     name: image (${{ matrix.component }})
@@ -105,7 +105,7 @@ jobs:
               --severity HIGH,CRITICAL \
               --ignore-unfixed \
               --exit-code 1 \
-              --no-progress
+              --quiet
 
       # Informational: everything, including CVEs with no fix available, so a
       # failure above can be read in context without a second local run.
@@ -120,4 +120,4 @@ jobs:
               --scanners vuln \
               --severity MEDIUM,HIGH,CRITICAL \
               --exit-code 0 \
-              --no-progress
+              --quiet
