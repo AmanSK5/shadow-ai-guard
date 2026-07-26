@@ -1,0 +1,107 @@
+# Example receiver deployment: Deployment, Service, Ingress in one file.
+# Adapted from a real deployment; change the marked values and apply.
+#
+# Before applying, create the Secret and the registry ConfigMap
+# (docs/getting-started.md steps 1 and 2):
+#
+#   kubectl create secret generic ai-guard-receiver \
+#     --from-literal=authToken="$(openssl rand -hex 32)"
+#   python registry/build.py
+#   kubectl create configmap ai-guard-registry \
+#     --from-file=registry.json=registry/dist/registry.json \
+#     --from-file=collector.json=registry/dist/collector.json
+#
+# If the Deployment is applied before the ConfigMap exists, the pod waits in
+# ContainerCreating until it does, then starts on its own.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-guard-receiver
+  labels:
+    app: ai-guard-receiver
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ai-guard-receiver
+  template:
+    metadata:
+      labels:
+        app: ai-guard-receiver
+    spec:
+      containers:
+        - name: receiver
+          image: ghcr.io/amansk5/shadow-ai-guard/receiver:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          env:
+            - name: AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: ai-guard-receiver
+                  key: authToken
+            # CHANGE: your Loki push endpoint, or remove to log to stdout only
+            - name: LOKI_PUSH_URL
+              value: "http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push"
+          volumeMounts:
+            - name: registry
+              mountPath: /etc/ai-guard
+              readOnly: true
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 10
+          resources:
+            requests: { cpu: 50m, memory: 96Mi }
+            limits: { memory: 256Mi }
+      volumes:
+        - name: registry
+          configMap:
+            name: ai-guard-registry
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-guard-receiver
+spec:
+  selector:
+    app: ai-guard-receiver
+  ports:
+    - port: 8080
+      targetPort: 8080
+---
+# CHANGE: host and class to suit your cluster. The endpoints (collectors,
+# extension) POST here, so it must be HTTPS and reachable from all of them.
+#
+# On a Tailscale-operator cluster the whole Ingress can instead be:
+#   spec:
+#     ingressClassName: tailscale
+#     defaultBackend:
+#       service: { name: ai-guard-receiver, port: { number: 8080 } }
+#     tls:
+#       - hosts: [ai-guard]
+# which gives you https://ai-guard.<tailnet>.ts.net with a valid cert and
+# no cert-manager involved. Only useful if every endpoint is on the tailnet.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ai-guard-receiver
+spec:
+  rules:
+    - host: ai-guard.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ai-guard-receiver
+                port:
+                  number: 8080
+  tls:
+    - hosts: [ai-guard.example.com]
+      secretName: ai-guard-tls

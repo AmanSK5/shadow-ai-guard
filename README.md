@@ -72,6 +72,7 @@ digging through subfolders.
   a dashboard, the minimum viable deployment
 - [Architecture](docs/architecture.md) - the mental model: the finding schema,
   and why the pieces are shaped this way
+- [Receiver](receiver/README.md) - the one service everything reports to: every variable and endpoint, plus an example deployment to adapt
 
 **Deploying each surface**
 - [macOS endpoint collector](endpoint/macos/README.md) - via Jamf

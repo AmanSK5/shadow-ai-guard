@@ -75,6 +75,8 @@ Confirm it is up:
 curl -s https://your-receiver-host/healthz
 # {"ok": true, "version": "..."}
 ```
+`receiver/README.md` documents every variable and endpoint, and
+`receiver/deploy/receiver.yaml` is a working example manifest to adapt.
 
 ## 2. Publish the registry
 
