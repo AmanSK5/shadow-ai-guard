@@ -1,0 +1,11 @@
+# Accepted vulnerability findings. One CVE per line, with the reason and an
+# expiry so entries do not become permanent by accident.
+#
+# Format:
+#   CVE-2024-12345 exp:2026-12-31
+#
+# Rules for this repo:
+# - only add an entry when the CVE is unreachable from how the code is used,
+#   or when no fixed version exists and the risk is accepted in writing
+# - always set an expiry, six months maximum
+# - never suppress a finding in the receiver's request path without a note
