@@ -1,13 +1,23 @@
 """Intune scanner.
 
-Queries Microsoft Graph / Intune API for:
-  1. Discovered apps: AI desktop applications on managed Windows devices
-  2. Browser extensions: AI-related Chrome/Edge extensions (via device config profiles)
+Queries Microsoft Graph / Intune for discovered apps: AI desktop
+applications installed on managed Windows devices.
+
+Browser extensions are not covered here. The registry carries extension
+identifiers and DetectionSource.INTUNE_EXTENSION exists, but nothing
+produces one yet; extension visibility currently comes from the browser
+extension itself, not from Intune.
+
+Per-device attribution needs DeviceManagementManagedDevices.Read.All on top
+of DeviceManagementApps.Read.All. Without it the device lookup fails and the
+scanner falls back to an aggregate count, which is reported as a scan error
+rather than passed off as a clean result.
 """
 
 from __future__ import annotations
 from typing import Optional
 
+import logging
 from datetime import datetime, timezone
 
 from ai_guard.config import ScannerConfig
@@ -20,6 +30,8 @@ from ai_guard.scanners.base import (
 )
 from ai_guard.utils.auth import AuthError, MSGraphAuth
 from ai_guard.utils.graph import paginate
+
+logger = logging.getLogger(__name__)
 
 
 class IntuneScanner(BaseScanner):
@@ -45,8 +57,9 @@ class IntuneScanner(BaseScanner):
         try:
             client = await self._auth.graph_client()
 
-            app_findings = await self._scan_discovered_apps(client)
+            app_findings, app_errors = await self._scan_discovered_apps(client)
             result.findings.extend(app_findings)
+            result.errors.extend(app_errors)
 
             await client.aclose()
 
@@ -56,9 +69,19 @@ class IntuneScanner(BaseScanner):
         result.duration_seconds = (datetime.now(timezone.utc) - start).total_seconds()
         return result
 
-    async def _scan_discovered_apps(self, client) -> list[Finding]:
-        """Query Intune discovered apps for known AI tool executables."""
-        findings = []
+    async def _scan_discovered_apps(
+        self, client
+    ) -> tuple[list[Finding], list[str]]:
+        """Query Intune discovered apps for known AI tool executables.
+
+        Returns findings and any errors worth surfacing. A device lookup that
+        fails degrades that app to an aggregate count rather than aborting the
+        scan, but the degradation is reported: an aggregate finding that looks
+        identical to a successful one, with no indication attribution was
+        attempted and failed, is worse than no finding at all.
+        """
+        findings: list[Finding] = []
+        errors: list[str] = []
 
         # GET /deviceManagement/detectedApps lists apps found on managed devices.
         # Follow @odata.nextLink pagination to avoid silently truncated results.
@@ -68,6 +91,9 @@ class IntuneScanner(BaseScanner):
             apps = await paginate(client, url)
         except Exception as e:
             raise RuntimeError(f"Failed to query Intune discovered apps: {e}") from e
+
+        failed_lookups: list[str] = []
+        first_reason: Optional[str] = None
 
         for app in apps:
             app_name = app.get("displayName", "")
@@ -88,9 +114,13 @@ class IntuneScanner(BaseScanner):
             if not service:
                 continue
 
-            # Get which devices have this app
             app_id = app.get("id", "")
-            devices = await self._get_app_devices(client, app_id)
+            devices, lookup_error = await self._get_app_devices(client, app_id)
+
+            if lookup_error:
+                failed_lookups.append(app_name)
+                if first_reason is None:
+                    first_reason = lookup_error
 
             if devices:
                 for device in devices:
@@ -110,40 +140,75 @@ class IntuneScanner(BaseScanner):
                         )
                     )
             else:
-                # No per-device detail, report aggregate
+                # No per-device detail. Say which kind of "no detail" this is,
+                # so an operator can tell a permissions problem from an app
+                # that genuinely resolved to nothing.
+                if lookup_error:
+                    detail = (
+                        f"{app_name} found on {device_count} device(s); "
+                        f"per-device attribution unavailable ({lookup_error})"
+                    )
+                else:
+                    detail = f"{app_name} found on {device_count} device(s)"
+
                 findings.append(
                     Finding(
                         service=service,
                         source=DetectionSource.INTUNE_APP,
                         risk_tier=service.risk_tier,
-                        detail=f"{app_name} found on {device_count} device(s)",
+                        detail=detail,
                         occurrence_count=device_count,
                         raw_evidence={
                             "app_name": app_name,
                             "device_count": device_count,
+                            "attribution_failed": bool(lookup_error),
                         },
                     )
                 )
 
-        return findings
-
-    async def _get_app_devices(self, client, app_id: str) -> list[dict]:
-        """Get devices that have a specific discovered app."""
-        try:
-            resp = await client.get(
-                f"/deviceManagement/detectedApps/{app_id}/managedDevices"
-                f"?$select=deviceName,userPrincipalName,id"
+        if failed_lookups:
+            errors.append(
+                f"Device attribution failed for {len(failed_lookups)} app(s) "
+                f"({', '.join(failed_lookups[:5])}"
+                f"{', ...' if len(failed_lookups) > 5 else ''}); "
+                f"those findings are aggregate counts with no user or device. "
+                f"First error: {first_reason}. "
+                f"DeviceManagementManagedDevices.Read.All is required for "
+                f"per-device attribution."
             )
-            if resp.status_code != 200:
-                return []
 
-            return [
-                {
-                    "device_name": d.get("deviceName"),
-                    "upn": d.get("userPrincipalName"),
-                    "id": d.get("id"),
-                }
-                for d in resp.json().get("value", [])
-            ]
-        except Exception:
-            return []
+        return findings, errors
+
+    async def _get_app_devices(
+        self, client, app_id: str
+    ) -> tuple[list[dict], Optional[str]]:
+        """Get devices that have a specific discovered app.
+
+        Returns (devices, error). An empty list with no error means the app
+        really is on no managed devices; an empty list with an error means the
+        lookup did not work. Collapsing those two into one value is how a
+        permissions problem gets mistaken for a clean estate.
+
+        Paginated: a popular app can exceed one page, and a silently truncated
+        device list understates exposure.
+        """
+        url = (
+            f"/deviceManagement/detectedApps/{app_id}/managedDevices"
+            f"?$select=deviceName,userPrincipalName,id"
+        )
+        try:
+            devices = await paginate(client, url)
+        except Exception as e:
+            logger.warning(
+                "Intune: device lookup failed for detectedApp %s: %s", app_id, e
+            )
+            return [], str(e)
+
+        return [
+            {
+                "device_name": d.get("deviceName"),
+                "upn": d.get("userPrincipalName"),
+                "id": d.get("id"),
+            }
+            for d in devices
+        ], None
