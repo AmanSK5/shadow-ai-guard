@@ -44,6 +44,14 @@ CI, so you do not need to build anything:
 ghcr.io/amansk5/shadow-ai-guard/receiver:latest
 ```
 
+Published for `linux/amd64` and `linux/arm64`, so the same tag works on
+Graviton, Apple Silicon and a Raspberry Pi without anything extra. Check what
+a tag resolves to with:
+
+```bash
+docker buildx imagetools inspect ghcr.io/amansk5/shadow-ai-guard/receiver:latest
+```
+
 Pick a namespace and use it consistently from here on. The Secret, the
 ConfigMap and the Deployment all have to land in the same one:
 
