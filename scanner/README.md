@@ -24,7 +24,7 @@ shared dashboard.
 | **SentinelOne** | DNS lookups and network connections to AI service domains from managed endpoints | Deep Visibility |
 | **Exchange** | Signup/verification emails from AI service sender domains | Microsoft Graph |
 | **Intune** | AI desktop apps discovered on Windows devices | Microsoft Graph |
-| **Jamf** | AI desktop apps and browser extensions on Macs | Jamf Pro API |
+| **Jamf** | AI desktop apps installed on managed Macs | Jamf Pro API |
 | **MCP scanner** | Security risk assessment of MCP server integrations | Static analysis |
 
 Each layer catches what the others miss: Entra sees OAuth flows but not
