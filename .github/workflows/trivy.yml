@@ -2,14 +2,30 @@ name: trivy
 
 # Security scanning: Python dependencies, OS packages inside the built images,
 # IaC misconfiguration (Dockerfiles, compose, k8s manifests) and committed
-# secrets.
+# secrets. Findings are published to GitHub code scanning alongside CodeQL.
 #
 # Supply chain posture matches ci.yml: no third-party actions. The
 # aquasecurity/trivy-action repo was compromised in March 2026, so Trivy runs
-# here as its own container, pinned by digest, driven from plain shell.
+# here as its own container, pinned by digest, driven from plain shell. The
+# one action beyond checkout is github/codeql-action/upload-sarif, which is
+# GitHub-owned and pinned to a commit SHA like everything else.
 #
 # To bump Trivy, change the tag and digest in TRIVY together. Resolve with:
 #   docker buildx imagetools inspect aquasec/trivy:0.72.0 --format '{{.Manifest.Digest}}'
+#
+# Each scan runs twice: once to produce SARIF (never fails, so findings always
+# reach the Security tab) and once to gate the build (fails, and prints a
+# readable table). The alternative is one run that writes SARIF and exits
+# non-zero, which relies on Trivy writing the file before it exits. It does,
+# but a scanner that silently loses findings when it trips is not worth the
+# five seconds saved on a warm DB cache.
+#
+# The two runs use different filters on purpose:
+#   SARIF  HIGH and CRITICAL including unfixed, because an alert you cannot
+#          fix yet is still worth seeing and the Security tab can hold it
+#   gate   HIGH and CRITICAL with a fix available, because failing a build
+#          over something with no available fix just teaches people to ignore
+#          red
 
 on:
   push:
@@ -23,6 +39,10 @@ on:
 
 permissions:
   contents: read
+  # Required to publish SARIF to code scanning. Not granted to pull requests
+  # from forks, which is why every upload is continue-on-error: a fork PR
+  # should fail on findings, not on a permission it was never going to have.
+  security-events: write
 
 env:
   TRIVY: aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f
@@ -38,13 +58,40 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: prepare trivy cache
-        run: mkdir -p "$HOME/.cache/trivy"
+      - name: prepare trivy cache and sarif output
+        run: mkdir -p "$HOME/.cache/trivy" "${{ runner.temp }}/sarif"
 
       # --file-patterns is required: Trivy's pip analyzer matches
       # requirements.txt by name and would otherwise skip the .lock files that
       # are the actual source of truth in this repo.
-      - name: dependencies and committed secrets
+      - name: dependencies and committed secrets (report)
+        run: |
+          docker run --rm \
+            -v "$PWD:/work:ro" \
+            -v "${{ runner.temp }}/sarif:/out" \
+            -v "$HOME/.cache/trivy:/root/.cache/trivy" \
+            -e TRIVY_USERNAME -e TRIVY_PASSWORD \
+            "$TRIVY" fs /work \
+              --scanners vuln,secret \
+              --file-patterns 'pip:.*requirements.*\.lock' \
+              --secret-config /work/trivy-secret.yaml \
+              --ignorefile /work/.trivyignore \
+              --severity HIGH,CRITICAL \
+              --format sarif \
+              --output /out/fs.sarif \
+              --exit-code 0 \
+              --quiet
+
+      - name: publish dependency and secret findings
+        uses: github/codeql-action/upload-sarif@c54b30b7df092240050e69945842bc67aee0f0f4 # v4.37.3
+        continue-on-error: true
+        with:
+          sarif_file: ${{ runner.temp }}/sarif/fs.sarif
+          # Distinct category per scan. Without it each upload replaces the
+          # last and the Security tab shows only whichever ran most recently.
+          category: trivy-fs
+
+      - name: dependencies and committed secrets (gate)
         run: |
           docker run --rm \
             -v "$PWD:/work:ro" \
@@ -60,7 +107,35 @@ jobs:
               --exit-code 1 \
               --quiet
 
-      - name: dockerfiles, compose and k8s manifests
+      # always(): a failure in the dependency gate above must not stop the
+      # misconfiguration scan from running. They are independent findings and
+      # hiding one behind the other wastes a round trip.
+      - name: dockerfiles, compose and k8s manifests (report)
+        if: always()
+        run: |
+          docker run --rm \
+            -v "$PWD:/work:ro" \
+            -v "${{ runner.temp }}/sarif:/out" \
+            -v "$HOME/.cache/trivy:/root/.cache/trivy" \
+            -e TRIVY_USERNAME -e TRIVY_PASSWORD \
+            "$TRIVY" config /work \
+              --ignorefile /work/.trivyignore \
+              --severity HIGH,CRITICAL \
+              --format sarif \
+              --output /out/config.sarif \
+              --exit-code 0 \
+              --quiet
+
+      - name: publish misconfiguration findings
+        if: always()
+        uses: github/codeql-action/upload-sarif@c54b30b7df092240050e69945842bc67aee0f0f4 # v4.37.3
+        continue-on-error: true
+        with:
+          sarif_file: ${{ runner.temp }}/sarif/config.sarif
+          category: trivy-config
+
+      - name: dockerfiles, compose and k8s manifests (gate)
+        if: always()
         run: |
           docker run --rm \
             -v "$PWD:/work:ro" \
@@ -82,8 +157,8 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: prepare trivy cache
-        run: mkdir -p "$HOME/.cache/trivy"
+      - name: prepare trivy cache and sarif output
+        run: mkdir -p "$HOME/.cache/trivy" "${{ runner.temp }}/sarif"
 
       # Built locally and scanned from a tar, so no docker socket is exposed to
       # the scanner and nothing is published from this workflow.
@@ -92,7 +167,33 @@ jobs:
           docker build -t "scan/${{ matrix.component }}:ci" "${{ matrix.component }}"
           docker save "scan/${{ matrix.component }}:ci" -o /tmp/image.tar
 
-      - name: scan image
+      - name: scan image (report)
+        run: |
+          docker run --rm \
+            -v /tmp/image.tar:/tmp/image.tar:ro \
+            -v "$PWD/.trivyignore:/work/.trivyignore:ro" \
+            -v "${{ runner.temp }}/sarif:/out" \
+            -v "$HOME/.cache/trivy:/root/.cache/trivy" \
+            -e TRIVY_USERNAME -e TRIVY_PASSWORD \
+            "$TRIVY" image --input /tmp/image.tar \
+              --scanners vuln \
+              --ignorefile /work/.trivyignore \
+              --severity HIGH,CRITICAL \
+              --format sarif \
+              --output /out/image.sarif \
+              --exit-code 0 \
+              --quiet
+
+      - name: publish image findings
+        uses: github/codeql-action/upload-sarif@c54b30b7df092240050e69945842bc67aee0f0f4 # v4.37.3
+        continue-on-error: true
+        with:
+          sarif_file: ${{ runner.temp }}/sarif/image.sarif
+          # Per component: one category for all three would mean the last
+          # matrix leg to finish silently replaces the other two.
+          category: trivy-image-${{ matrix.component }}
+
+      - name: scan image (gate)
         run: |
           docker run --rm \
             -v /tmp/image.tar:/tmp/image.tar:ro \
