@@ -207,8 +207,11 @@ jobs:
           IMAGE="${IMAGE,,}"
           REF="$IMAGE:sha-${GITHUB_SHA::7}"
           echo "inspecting $REF"
-          got=$(docker buildx imagetools inspect "$REF" --raw \
-                | grep -o '"architecture":"[a-z0-9]*"' | sort -u)
+          # The default output lists one "Platform: os/arch" line per manifest.
+          # Do not parse --raw: it pretty-prints, so "architecture": "amd64"
+          # carries a space that a naive pattern misses, which fails the check
+          # on an image that is perfectly fine.
+          got=$(docker buildx imagetools inspect "$REF" | awk '/Platform:/ {print $2}' | sort -u)
           echo "$got"
-          echo "$got" | grep -q '"architecture":"amd64"' || { echo "::error::amd64 missing"; exit 1; }
-          echo "$got" | grep -q '"architecture":"arm64"' || { echo "::error::arm64 missing"; exit 1; }
+          echo "$got" | grep -qx 'linux/amd64' || { echo "::error::amd64 missing"; exit 1; }
+          echo "$got" | grep -qx 'linux/arm64' || { echo "::error::arm64 missing"; exit 1; }
