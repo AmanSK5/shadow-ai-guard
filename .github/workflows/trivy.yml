@@ -20,12 +20,20 @@ name: trivy
 # but a scanner that silently loses findings when it trips is not worth the
 # five seconds saved on a warm DB cache.
 #
-# The two runs use different filters on purpose:
-#   SARIF  HIGH and CRITICAL including unfixed, because an alert you cannot
-#          fix yet is still worth seeing and the Security tab can hold it
-#   gate   HIGH and CRITICAL with a fix available, because failing a build
-#          over something with no available fix just teaches people to ignore
-#          red
+# Filters, and why they differ between the two:
+#
+#   repo scans   SARIF publishes HIGH and CRITICAL including unfixed; the gate
+#                only fails on ones with a fix. These are our own Python
+#                dependencies, so an unfixed finding is still actionable: pin,
+#                replace or drop the package.
+#
+#   image scans  Both use --ignore-unfixed. These are Debian packages in
+#                python:3.12-slim, which we do not control. Publishing them
+#                produced 23 alerts nobody could act on, tripled because each
+#                component image is its own category. When one becomes
+#                fixable the gate catches it automatically, so publishing the
+#                unfixed ones added noise and no signal. The full report step
+#                still prints everything to the log.
 
 on:
   push:
@@ -179,6 +187,7 @@ jobs:
               --scanners vuln \
               --ignorefile /work/.trivyignore \
               --severity HIGH,CRITICAL \
+              --ignore-unfixed \
               --format sarif \
               --output /out/image.sarif \
               --exit-code 0 \
