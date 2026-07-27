@@ -10,7 +10,10 @@ Two sources, one shape internally:
     MR therefore reaches every scanner on its next run, with no image rebuild.
 
   * The bundled ai_services.yaml, used when no URL is set (a laptop run) or
-    when the fetch fails. A network blip should not mean a missed scan.
+    when the fetch fails. A network blip should not mean a missed scan. It is
+    generated from registry.yaml by registry/build.py and never hand-edited;
+    CI fails if the committed copy has drifted, because a stale fallback means
+    reduced coverage with only a log line to say so.
 
 The two files use different shapes. `tools:` has flattened identifier fields,
 `services:` has nested desktop_apps/browser_extensions. _normalise converts
