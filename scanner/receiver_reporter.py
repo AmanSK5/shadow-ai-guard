@@ -55,9 +55,17 @@ SOURCE_MAP: dict[DetectionSource, tuple[str, str]] = {
     DetectionSource.SENTINELONE_BRIDGE: ("cloud", "unknown"),
     DetectionSource.EXCHANGE_EMAIL: ("cloud", "unknown"),
     DetectionSource.INTUNE_APP: ("desktop", "windows"),
+    # Neither extension source is produced by anything yet, and the surface
+    # here cannot be resolved as a per-source constant. extension_ids in the
+    # registry mixes IDE hosts (vscode, jetbrains) with browser hosts (chrome,
+    # edge), so one INTUNE_EXTENSION finding could be either kind. "ide" is
+    # what most of the registry is today, 9 tools of 13, not a decision that
+    # has been made. When extension detection is built, split the sources by
+    # host so the surface follows from the data rather than being guessed.
+    # See issue #21.
     DetectionSource.INTUNE_EXTENSION: ("ide", "windows"),
     DetectionSource.JAMF_APP: ("desktop", "macos"),
-    DetectionSource.JAMF_EXTENSION: ("ide", "macos"),
+    DetectionSource.JAMF_EXTENSION: ("ide", "macos"),  # same caveat as above
     DetectionSource.MCP_SCAN: ("mcp", "unknown"),
 }
 
