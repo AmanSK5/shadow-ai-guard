@@ -17,6 +17,10 @@ WORKDIR /srv
 COPY requirements.lock ./
 # Hash-verified dependency install first, then the package itself with no
 # dependency resolution: the lockfile is the source of truth for what runs.
+# This is also what makes the amd64 and arm64 builds work from one lockfile:
+# pip-compile --generate-hashes records every distribution for a version, so
+# the aarch64 wheels are already covered. Regenerate with `make upgrade`,
+# which compiles inside this same base image.
 RUN pip install --no-cache-dir --require-hashes -r requirements.lock
 COPY pyproject.toml README.md ./
 COPY ai_guard/ ./ai_guard/
