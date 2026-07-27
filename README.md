@@ -191,25 +191,29 @@ through end to end for a minimum deployment.
 ## Status and known limitations
 
 This is an alpha, released early on purpose. It runs in production in one
-environment, and the rough edges are labelled rather than hidden. The current
-ones:
+environment, and the rough edges are labelled rather than hidden. The list
+has changed since the first release: the registry fallback drift and the
+Entra scanner counting failed sign-ins as usage are fixed and tested. The
+current ones:
 
-- **Registry parity.** Not every surface detects every registry entry yet.
-  Some tools are covered by the endpoint collectors but not the scanners, or
-  the other way round, depending on what identifiers each surface can see.
-  Closing that gap is ongoing registry work, not code change.
-- **Scanner accuracy.** The cloud and network scanners match on identifiers
-  like sign-in application names and DNS patterns, and some of those edges
-  are still being tuned. Expect occasional misses or over-matches; treat
-  findings as leads to follow up, not verdicts.
-- **Delivery paths.** The collectors are tested through the delivery
-  mechanisms actually run behind this project (Jamf, Intune, and an RMM for
-  Linux). The other documented paths, such as Ansible or plain cron, are
-  written to work but have had less real-world exercise. Pilot on one
-  machine first.
+- **Browser extensions as a detection target.** The registry carries Chrome
+  and Edge extension IDs for tools like Grammarly and Perplexity, and the
+  matching code exists, but no collector reads browser profiles yet, so
+  nothing produces those findings. An AI extension reads every page without
+  anyone pasting a thing, and today only DNS traffic hints at one. This is
+  the biggest known coverage gap.
+- **Non-interactive sign-ins.** The Entra scanner sees interactive sign-ins
+  only. Silent token refreshes, which are most of the volume, are invisible
+  to it ([#23](https://github.com/AmanSK5/shadow-ai-guard/issues/23)).
+  Sign-in findings are a floor, not a count.
+- **The Windows delivery path.** The Linux collector is driven end to end in
+  CI and the macOS path has been run on a fresh cluster; the Windows
+  collector has had the least real-world running. Pilot on one machine
+  first.
 
-If you hit one of these, or something not on this list, an issue with the
-finding JSON and what you expected is genuinely useful.
+Treat findings as leads to follow up, not verdicts. If you hit something
+wrong or missing, an issue with the finding JSON and what you expected is
+genuinely useful.
 
 ## Governance notes
 
