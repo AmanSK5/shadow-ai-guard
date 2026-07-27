@@ -71,7 +71,37 @@ jobs:
       - name: lint Windows collector
         shell: pwsh
         run: |
-          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+          # PSScriptAnalyzer ships on the runner image, so the usual path
+          # needs no network at all. This job failed once on a gallery lookup
+          # for a module that was already present: an unnecessary request is
+          # a failure mode with nothing to show for it.
+          #
+          # The minimum is pinned so the same commit lints the same way twice,
+          # which is what every other dependency in this file already does.
+          # Bump by checking the tags on PowerShell/PSScriptAnalyzer.
+          $version = '1.25.0'
+          $have = Get-Module -ListAvailable PSScriptAnalyzer |
+                  Where-Object { $_.Version -ge [version]$version } |
+                  Select-Object -First 1
+
+          if ($have) {
+            Write-Host "using preinstalled PSScriptAnalyzer $($have.Version)"
+          } else {
+            Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue
+            $ok = $false
+            foreach ($attempt in 1..3) {
+              try {
+                Install-Module PSScriptAnalyzer -MinimumVersion $version `
+                  -Repository PSGallery -Force -Scope CurrentUser -ErrorAction Stop
+                $ok = $true; break
+              } catch {
+                Write-Host "attempt ${attempt}: $($_.Exception.Message)"
+                Start-Sleep -Seconds ([int][Math]::Pow(3, $attempt))
+              }
+            }
+            if (-not $ok) { Write-Host "::error::could not install PSScriptAnalyzer $version"; exit 1 }
+          }
+          Import-Module PSScriptAnalyzer -MinimumVersion $version
           $r = Invoke-ScriptAnalyzer -Path endpoint/windows/ -Recurse -Severity Warning,Error
           $r | Format-Table -AutoSize
           if ($r | Where-Object Severity -eq 'Error') { exit 1 }
