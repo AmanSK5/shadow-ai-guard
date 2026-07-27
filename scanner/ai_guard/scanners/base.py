@@ -33,6 +33,22 @@ class DetectionSource(str, Enum):
     MCP_SCAN = "mcp_scan"
 
 
+# occurrence_count is a different quantity per source: sign-in events for
+# Entra, installed devices for Intune, signup emails for Exchange. The number
+# alone invites comparing things that are not comparable, so anything that
+# publishes the count publishes the unit alongside it. Sources that never
+# aggregate stay at 1 and report "detections".
+OCCURRENCE_UNIT: dict["DetectionSource", str] = {
+    DetectionSource.ENTRA_SIGN_IN: "sign-ins",
+    DetectionSource.EXCHANGE_EMAIL: "signup emails",
+    DetectionSource.INTUNE_APP: "devices",
+}
+
+
+def occurrence_unit(source: "DetectionSource") -> str:
+    return OCCURRENCE_UNIT.get(source, "detections")
+
+
 @dataclass
 class Finding:
     """A single detection of AI tool usage or risk."""

@@ -20,7 +20,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from ai_guard.scanners.base import Finding, ScanResult
+from ai_guard.scanners.base import Finding, ScanResult, occurrence_unit
 
 
 RISK_COLORS = {
@@ -523,7 +523,7 @@ class ReportGenerator:
                 }
                 for r in self.results
             ],
-            "note": "Results are deduplicated by endpoint — each entry represents a unique user/endpoint, not event volume.",
+            "note": "Each entry is one user/endpoint, not one per event. occurrence_count carries how many, in the unit named by occurrence_unit (sign-ins, devices, signup emails); it is 1 for sources that do not aggregate.",
             "findings": [
                 {
                     "service": f.service.name,
@@ -535,6 +535,8 @@ class ReportGenerator:
                     "device_name": f.device_name,
                     "detail": f.detail,
                     "timestamp": f.timestamp.isoformat() if f.timestamp else None,
+                    "occurrence_count": f.occurrence_count,
+                    "occurrence_unit": occurrence_unit(f.source),
                     "first_seen": f.first_seen.isoformat() if f.first_seen else None,
                     "last_seen": f.last_seen.isoformat() if f.last_seen else None,
                 }
@@ -555,6 +557,7 @@ class ReportGenerator:
         headers = [
             "service", "vendor", "category", "risk_tier", "source",
             "user_upn", "device_name", "detail",
+            "occurrence_count", "occurrence_unit",
             "first_seen", "last_seen",
         ]
 
@@ -572,6 +575,8 @@ class ReportGenerator:
                 "user_upn": f.user_upn or "",
                 "device_name": f.device_name or "",
                 "detail": f.detail,
+                "occurrence_count": f.occurrence_count,
+                "occurrence_unit": occurrence_unit(f.source),
                 "first_seen": f.first_seen.isoformat() if f.first_seen else "",
                 "last_seen": f.last_seen.isoformat() if f.last_seen else "",
             })

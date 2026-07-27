@@ -163,6 +163,12 @@ class Finding(BaseModel):
     source: str = ""
     device_name: str = ""
     risk_tier: str = ""
+    # How many, and of what. The unit differs per source (sign-ins for Entra,
+    # devices for Intune, signup emails for Exchange), so the number is only
+    # meaningful next to it. Defaults keep older senders working: the browser
+    # extension and pre-0.1.7 scanners do not send either field.
+    occurrence_count: int = 1
+    occurrence_unit: str = "detections"
 
 
 # --------------------------------------------------------------------- app --

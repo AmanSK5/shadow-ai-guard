@@ -36,7 +36,7 @@ from typing import Optional
 
 import httpx
 
-from ai_guard.scanners.base import DetectionSource, Finding
+from ai_guard.scanners.base import DetectionSource, Finding, occurrence_unit
 
 logger = logging.getLogger(__name__)
 
@@ -172,6 +172,11 @@ class ReceiverReporter:
             "severity": "warn" if (personal or bridge) else "info",
             "source": f.source.value,
             "risk_tier": f.risk_tier,
+            # Volume, with its unit: the number means sign-ins for Entra,
+            # devices for Intune, signup emails for Exchange. Goes in the log
+            # line, never a Loki label; the label set is deliberately bounded.
+            "occurrence_count": f.occurrence_count,
+            "occurrence_unit": occurrence_unit(f.source),
             "reported_at": (f.last_seen or f.timestamp).isoformat()
             if (f.last_seen or f.timestamp)
             else None,
