@@ -10,6 +10,10 @@ tenant on their own employer's behalf, so their AI usage is not your
 organisation's shadow AI. Disabled accounts are leavers whose sign-ins are
 records, not active risk. Service-principal findings carry no user and are
 kept.
+
+Only successful sign-ins count as usage. A blocked attempt is an access
+control working, whether that is app assignment or Conditional Access,
+not shadow AI to report.
 """
 
 from __future__ import annotations
@@ -101,7 +105,12 @@ class EntraScanner(BaseScanner):
         return result
 
     async def _scan_sign_in_logs(self, client) -> list[Finding]:
-        """Check sign-in logs for authentications to known AI app IDs.
+        """Check sign-in logs for successful authentications to known AI apps.
+
+        Only successful sign-ins count as usage. A failed attempt means the
+        user tried and did not get in, which is frequently Conditional Access
+        working as intended; counting those as usage overstates exposure and
+        reports a working control as a finding.
 
         Follows @odata.nextLink pagination to avoid truncated results.
         """
@@ -113,8 +122,7 @@ class EntraScanner(BaseScanner):
         url = (
             f"/auditLogs/signIns"
             f"?$filter=createdDateTime ge {since}"
-            f"&$select=userPrincipalName,appDisplayName,appId,createdDateTime,"
-            f"status,resourceDisplayName"
+            f"&$select=userPrincipalName,appDisplayName,appId,createdDateTime,status"
             f"&$top=999"
             f"&$orderby=createdDateTime desc"
         )
@@ -127,11 +135,24 @@ class EntraScanner(BaseScanner):
 
         # Aggregate by (user, app) to avoid duplicate findings
         seen: dict[tuple[str, str], Finding] = {}
+        failed = 0
+        no_status = 0
+
         for entry in all_entries:
+            status = entry.get("status")
+            if not isinstance(status, dict) or "errorCode" not in status:
+                # Absent rather than failed. Do not guess, and do not let a
+                # change to the $select silently inflate the numbers.
+                no_status += 1
+                continue
+            if status.get("errorCode") != 0:
+                failed += 1
+                continue
+
             app_id = entry.get("appId", "")
             app_name = entry.get("appDisplayName", "")
             upn = entry.get("userPrincipalName", "")
-            ts = entry.get("createdDateTime", "")
+            ts = _parse_ts(entry.get("createdDateTime", ""))
 
             service = self.registry.match_entra_app_id(app_id)
             if not service:
@@ -145,21 +166,41 @@ class EntraScanner(BaseScanner):
 
             key = (upn, service.name)
             if key in seen:
-                seen[key].occurrence_count += 1
-                seen[key].last_seen = _parse_ts(ts)
+                found = seen[key]
+                found.occurrence_count += 1
+                # Compare rather than assign. Graph returns newest first, so
+                # assigning would leave the oldest timestamp in last_seen.
+                # Comparing also survives a change to the $orderby.
+                if ts:
+                    if found.first_seen is None or ts < found.first_seen:
+                        found.first_seen = ts
+                    if found.last_seen is None or ts > found.last_seen:
+                        found.last_seen = ts
             else:
-                finding = Finding(
+                seen[key] = Finding(
                     service=service,
                     source=DetectionSource.ENTRA_SIGN_IN,
                     risk_tier=service.risk_tier,
                     user_upn=upn,
                     detail=f"SSO sign-in to {service.name} (app: {app_name})",
-                    timestamp=_parse_ts(ts),
-                    first_seen=_parse_ts(ts),
-                    last_seen=_parse_ts(ts),
+                    timestamp=ts,
+                    first_seen=ts,
+                    last_seen=ts,
                     raw_evidence={"app_id": app_id, "app_name": app_name},
                 )
-                seen[key] = finding
+
+        if failed:
+            logger.info(
+                "Entra: ignored %d failed sign-in(s); only successful "
+                "authentications count as usage",
+                failed,
+            )
+        if no_status:
+            logger.warning(
+                "Entra: %d sign-in(s) had no status field and were ignored. "
+                "Check the $select in the signIns query.",
+                no_status,
+            )
 
         findings.extend(seen.values())
         return findings
