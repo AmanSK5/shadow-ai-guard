@@ -6,7 +6,37 @@ advances only after confirmed delivery to the receiver.
 
 These collectors are full system scripts (they resolve hardware serials,
 console users, and fetch the registry over HTTP) and are not structured
-for unit-test sourcing. Verification is manual.
+for unit-test sourcing. Rather than restructure code that runs as root on
+every managed machine purely to make it testable, the Linux collector is
+driven end to end against a fake receiver.
+
+## Automated: Linux
+
+`test_linux_collector.sh` covers the whole table below for Linux. It runs
+the real script, so it exercises curl and the actual delivery path. CI runs
+it on every push and it gates image publishing.
+
+```bash
+docker run --rm -v "$PWD:/w" -w /w python:3.12-slim sh -c \
+  "apt-get update -qq && apt-get install -yqq curl >/dev/null && \
+   endpoint/tests/test_linux_collector.sh"
+```
+
+It must run as root with a clean `/home`, hence the container: the collector
+resolves the console user from the first non-root home it finds, and if some
+other home sorts ahead of the test user's, no findings are produced and every
+assertion about state passes because nothing happened. The script checks for
+that and refuses to run rather than pass vacuously.
+
+Two of the tests supply the registry from disk via `AIGUARD_REGISTRY_FILE`.
+Without it, pointing the collector at a dead port or omitting the receiver
+base fails the registry fetch first, so `report()` is never reached and the
+test passes without testing anything. Both were written that way initially
+and only caught by deliberately breaking the collector to check the tests
+noticed.
+
+macOS and Windows follow the same shape but need their own runners; the
+manual procedure below still applies to them.
 
 ## Expected behaviour
 
