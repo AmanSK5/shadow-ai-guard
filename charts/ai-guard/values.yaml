@@ -58,6 +58,19 @@ ingress:
   # a short name like "ai-guard": the operator issues the cert and serves it
   # at https://ai-guard.<tailnet>.ts.net.
 
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
 resources:
   requests:
     cpu: 50m

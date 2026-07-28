@@ -18,10 +18,14 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
     spec:
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         - name: receiver
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
           ports:
             - name: http
               containerPort: 8080
@@ -47,6 +51,10 @@ spec:
             - name: registry
               mountPath: /etc/ai-guard
               readOnly: true
+            # The root filesystem is read-only, so anything that writes needs
+            # somewhere to write. /tmp is the only one the receiver uses.
+            - name: tmp
+              mountPath: /tmp
           readinessProbe:
             httpGet: { path: /healthz, port: http }
             initialDelaySeconds: 3
@@ -59,6 +67,8 @@ spec:
         - name: registry
           configMap:
             name: {{ include "ai-guard.registryConfigMap" . }}
+        - name: tmp
+          emptyDir: {}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
