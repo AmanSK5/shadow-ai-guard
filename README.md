@@ -192,16 +192,14 @@ through end to end for a minimum deployment.
 
 This is an alpha, released early on purpose. It runs in production in one
 environment, and the rough edges are labelled rather than hidden. The list
-has changed since the first release: the registry fallback drift and the
-Entra scanner counting failed sign-ins as usage are fixed and tested. The
-current ones:
+has changed since the first release: the registry fallback drift, the Entra 
+scanner counting failed sign-ins as usage, and browser extension inventory 
+are fixed and tested. The current ones:
 
-- **Browser extensions as a detection target.** The registry carries Chrome
-  and Edge extension IDs for tools like Grammarly and Perplexity, and the
-  matching code exists, but no collector reads browser profiles yet, so
-  nothing produces those findings. An AI extension reads every page without
-  anyone pasting a thing, and today only DNS traffic hints at one. This is
-  the biggest known coverage gap.
+- **Snap Chromium profiles.** The collectors inventory installed browser
+  extensions from Chrome, Chromium, Brave and Edge profiles, but snap
+  Chromium on Linux keeps its profile under `~/snap` and is not read, so an
+  AI extension there is invisible.
 - **Non-interactive sign-ins.** The Entra scanner sees interactive sign-ins
   only. Silent token refreshes, which are most of the volume, are invisible
   to it ([#23](https://github.com/AmanSK5/shadow-ai-guard/issues/23)).

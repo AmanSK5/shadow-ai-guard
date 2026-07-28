@@ -19,6 +19,7 @@ an allowlist entry for the script path and the receiver URL if needed.
 |---------|---------|----------|
 | cli     | Claude Code, Codex CLI, Gemini CLI | yes, from the tool's config file |
 | ide     | AI extensions in VS Code, Cursor, JetBrains | no, presence only |
+| browser | AI extensions in Chrome, Brave, Edge | no, presence only |
 | desktop | AI apps in /Applications, local runtimes like Ollama | no, presence only |
 | mcp     | MCP servers wired into AI tool configs | no, lists server names |
 
