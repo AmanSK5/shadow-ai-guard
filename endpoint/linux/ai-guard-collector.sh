@@ -294,9 +294,14 @@ out = []
 for t in r.get("ide", []):
     e = t.get("extension_ids") or {}
     # linux VS Code / Cursor use the same extension IDs as elsewhere.
-    # chrome/edge IDs in the registry are browser extensions, not IDE.
+    # chrome/edge IDs are browser extensions: matched against installed
+    # extension folders in Chrome-family browser profiles below.
     for x in e.get("vscode", []):
         out.append(U.join(["ide", x, t["tool"]]))
+    for x in e.get("chrome", []):
+        out.append(U.join(["bext", "chrome", x, t["tool"]]))
+    for x in e.get("edge", []):
+        out.append(U.join(["bext", "edge", x, t["tool"]]))
 for t in r.get("desktop", []):
     for a in (t.get("app_names") or []):
         out.append(U.join(["app", a, t["tool"]]))
@@ -412,6 +417,38 @@ EOF
 scan_ext_dir "$HOME_DIR/.vscode/extensions" ".vscode/extensions"
 scan_ext_dir "$HOME_DIR/.vscode-server/extensions" ".vscode-server/extensions"
 scan_ext_dir "$HOME_DIR/.cursor/extensions" ".cursor/extensions"
+
+# ------------------------------------------------- browser extensions -------
+# Installed browser extensions, matched by extension id against the registry.
+# Presence is the finding: an AI extension reads pages without anything being
+# pasted. Chrome, Chromium and Brave install from the Chrome store, so all
+# match chrome ids; Edge installs from both stores, so it matches both sets.
+# Snap Chromium keeps profiles under ~/snap and is not covered.
+scan_browser_extensions() {
+  local root="$1" label="$2" idkinds="$3" pdir profile extdir ext
+  [ -d "$root" ] || return 0
+  for pdir in "$root/Default" "$root"/Profile\ *; do
+    [ -d "$pdir/Extensions" ] || continue
+    profile=$(basename "$pdir")
+    for extdir in "$pdir/Extensions"/*/; do
+      [ -d "$extdir" ] || continue
+      ext=$(basename "$extdir")
+      while IFS="$SEP" read -r _k bkind id tool; do
+        case ",$idkinds," in *",$bkind,"*) ;; *) continue ;; esac
+        [ "$ext" = "$id" ] && report_once "browser" "$tool" "" "$label/$profile extension $id"
+      done <<EOF
+$(printf '%s\n' "$REG_TSV" | grep "^bext${SEP}")
+EOF
+    done
+  done
+}
+scan_browser_extensions "$HOME_DIR/.config/google-chrome"               "Chrome"   "chrome"
+scan_browser_extensions "$HOME_DIR/.config/chromium"                    "Chromium" "chrome"
+scan_browser_extensions "$HOME_DIR/.config/BraveSoftware/Brave-Browser" "Brave"    "chrome"
+scan_browser_extensions "$HOME_DIR/.config/microsoft-edge"              "Edge"     "chrome,edge"
+# Flatpak installs keep browser profiles under ~/.var/app/<app-id>/config.
+scan_browser_extensions "$HOME_DIR/.var/app/com.google.Chrome/config/google-chrome" "Chrome (flatpak)" "chrome"
+scan_browser_extensions "$HOME_DIR/.var/app/com.brave.Browser/config/BraveSoftware/Brave-Browser" "Brave (flatpak)" "chrome"
 
 # ---------------------------------------------------------------- desktop ---
 # Linux desktop apps: registry app_names may carry a macOS ".app" suffix, so

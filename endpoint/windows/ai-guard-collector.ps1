@@ -294,7 +294,7 @@ foreach ($t in $Registry.cli) {
 
 # ide: extension directories are named "<extension.id>-<version>". Cursor is a
 # VS Code fork and uses the same IDs. chrome/edge IDs in the registry are
-# browser extensions and are deliberately not read here.
+# browser extensions and are read in the browser section below.
 foreach ($pair in @(@('.vscode\extensions', 'vscode'), @('.cursor\extensions', 'cursor'))) {
     $dir = Join-Path $UserHome $pair[0]
     if (-not (Test-Path $dir)) { continue }
@@ -305,6 +305,37 @@ foreach ($pair in @(@('.vscode\extensions', 'vscode'), @('.cursor\extensions', '
                 if ($sub.Name -like "$ext-*") {
                     Send-FindingOnce -Surface 'ide' -Tool $t.tool -Account '' `
                         -Evidence "$($pair[1])/$($sub.Name)"
+                }
+            }
+        }
+    }
+}
+
+# browser: installed browser extensions, matched by extension id against the
+# registry. Presence is the finding: an AI extension reads pages without
+# anything being pasted. Chrome and Brave install from the Chrome store, so
+# both match chrome ids; Edge installs from both stores, so it matches both.
+$BrowserRoots = @(
+    @{ Path = Join-Path $env:LOCALAPPDATA 'Google\Chrome\User Data';               Label = 'Chrome'; Kinds = @('chrome') },
+    @{ Path = Join-Path $env:LOCALAPPDATA 'BraveSoftware\Brave-Browser\User Data'; Label = 'Brave';  Kinds = @('chrome') },
+    @{ Path = Join-Path $env:LOCALAPPDATA 'Microsoft\Edge\User Data';              Label = 'Edge';   Kinds = @('chrome', 'edge') }
+)
+foreach ($b in $BrowserRoots) {
+    if (-not (Test-Path $b.Path)) { continue }
+    $profiles = Get-ChildItem $b.Path -Directory -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -eq 'Default' -or $_.Name -like 'Profile *' }
+    foreach ($p in $profiles) {
+        $extDir = Join-Path $p.FullName 'Extensions'
+        if (-not (Test-Path $extDir)) { continue }
+        $installed = @((Get-ChildItem $extDir -Directory -ErrorAction SilentlyContinue).Name)
+        if (-not $installed) { continue }
+        foreach ($t in $Registry.ide) {
+            foreach ($kind in $b.Kinds) {
+                foreach ($id in $t.extension_ids.$kind) {
+                    if ($installed -contains $id) {
+                        Send-FindingOnce -Surface 'browser' -Tool $t.tool -Account '' `
+                            -Evidence "$($b.Label)/$($p.Name) extension $id"
+                    }
                 }
             }
         }
