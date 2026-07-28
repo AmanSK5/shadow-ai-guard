@@ -1,0 +1,13 @@
+{{- if and .Values.registry.create (not .Values.registry.existingConfigMap) }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ printf "%s-registry" (include "ai-guard.fullname" .) }}
+  labels:
+    {{- include "ai-guard.labels" . | nindent 4 }}
+data:
+  registry.json: |
+{{ .Files.Get "files/registry.json" | indent 4 }}
+  collector.json: |
+{{ .Files.Get "files/collector.json" | indent 4 }}
+{{- end }}

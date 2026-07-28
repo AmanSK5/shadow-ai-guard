@@ -1,0 +1,306 @@
+{
+  "version": 1,
+  "cli": [
+    {
+      "tool": "claude-code",
+      "config_paths": [
+        ".claude.json",
+        ".claude"
+      ],
+      "account_json_path": ".claude.json",
+      "account_json_keys": [
+        "oauthAccount",
+        "emailAddress"
+      ],
+      "binaries": [
+        "claude"
+      ]
+    },
+    {
+      "tool": "codex-cli",
+      "config_paths": [
+        ".codex"
+      ],
+      "account_json_path": ".codex/auth.json",
+      "account_jwt_path": [
+        "tokens",
+        "id_token"
+      ],
+      "account_jwt_claim": "email",
+      "binaries": [
+        "codex"
+      ]
+    },
+    {
+      "tool": "gemini-cli",
+      "config_paths": [
+        ".gemini"
+      ],
+      "account_json_path": ".gemini/google_accounts.json",
+      "account_json_keys": [
+        "active"
+      ],
+      "binaries": [
+        "gemini"
+      ]
+    },
+    {
+      "tool": "cursor",
+      "config_paths": [
+        ".cursor"
+      ]
+    },
+    {
+      "tool": "ollama",
+      "config_paths": [
+        ".ollama/models"
+      ],
+      "binaries": [
+        "ollama"
+      ]
+    },
+    {
+      "tool": "lm-studio",
+      "config_paths": [
+        ".lmstudio"
+      ]
+    }
+  ],
+  "desktop": [
+    {
+      "tool": "claude",
+      "app_names": [
+        "Claude.app",
+        "Claude"
+      ],
+      "bundle_ids": [
+        "com.anthropic.claudefordesktop"
+      ]
+    },
+    {
+      "tool": "chatgpt",
+      "app_names": [
+        "ChatGPT.app",
+        "ChatGPT"
+      ],
+      "bundle_ids": [
+        "com.openai.chat"
+      ]
+    },
+    {
+      "tool": "cursor",
+      "app_names": [
+        "Cursor.app",
+        "Cursor"
+      ],
+      "bundle_ids": [
+        "com.todesktop.230313mzl4w4u92"
+      ]
+    },
+    {
+      "tool": "codeium",
+      "app_names": [
+        "Windsurf.app",
+        "Windsurf"
+      ],
+      "bundle_ids": [
+        "com.codeium.windsurf"
+      ]
+    },
+    {
+      "tool": "otter",
+      "app_names": [
+        "Otter.app",
+        "Otter"
+      ],
+      "bundle_ids": [
+        "ai.otter.otter"
+      ]
+    },
+    {
+      "tool": "grammarly",
+      "app_names": [
+        "Grammarly Desktop.app",
+        "Grammarly"
+      ],
+      "bundle_ids": [
+        "com.grammarly.ProjectLlama"
+      ]
+    },
+    {
+      "tool": "wispr-flow",
+      "app_names": [
+        "Wispr Flow.app",
+        "Wispr Flow"
+      ],
+      "bundle_ids": []
+    },
+    {
+      "tool": "perplexity",
+      "app_names": [
+        "Perplexity.app",
+        "Perplexity"
+      ],
+      "bundle_ids": [
+        "ai.perplexity.mac"
+      ]
+    },
+    {
+      "tool": "ollama",
+      "app_names": [
+        "Ollama.app",
+        "Ollama",
+        "ollama"
+      ],
+      "bundle_ids": []
+    },
+    {
+      "tool": "lm-studio",
+      "app_names": [
+        "LM Studio.app",
+        "LM Studio"
+      ],
+      "bundle_ids": []
+    }
+  ],
+  "ide": [
+    {
+      "tool": "claude-code",
+      "extension_ids": {
+        "vscode": [
+          "anthropic.claude-code"
+        ]
+      }
+    },
+    {
+      "tool": "chatgpt",
+      "extension_ids": {
+        "vscode": [
+          "openai.chatgpt"
+        ]
+      }
+    },
+    {
+      "tool": "gemini-cli",
+      "extension_ids": {
+        "vscode": [
+          "google.geminicodeassist"
+        ]
+      }
+    },
+    {
+      "tool": "github-copilot",
+      "extension_ids": {
+        "vscode": [
+          "github.copilot",
+          "github.copilot-chat"
+        ],
+        "jetbrains": [
+          "github-copilot"
+        ]
+      }
+    },
+    {
+      "tool": "cline",
+      "extension_ids": {
+        "vscode": [
+          "saoudrizwan.claude-dev"
+        ]
+      }
+    },
+    {
+      "tool": "roo-code",
+      "extension_ids": {
+        "vscode": [
+          "rooveterinaryinc.roo-cline"
+        ]
+      }
+    },
+    {
+      "tool": "continue",
+      "extension_ids": {
+        "vscode": [
+          "continue.continue"
+        ]
+      }
+    },
+    {
+      "tool": "codeium",
+      "extension_ids": {
+        "vscode": [
+          "codeium.codeium"
+        ]
+      }
+    },
+    {
+      "tool": "tabnine",
+      "extension_ids": {
+        "vscode": [
+          "tabnine.tabnine-vscode"
+        ]
+      }
+    },
+    {
+      "tool": "otter",
+      "extension_ids": {
+        "chrome": [
+          "bnmojkbbkkonlmlfgejehefjldooied"
+        ]
+      }
+    },
+    {
+      "tool": "grammarly",
+      "extension_ids": {
+        "chrome": [
+          "kbfnbcaeplbcioakkpcpgfkobkghlhen"
+        ],
+        "edge": [
+          "kbfnbcaeplbcioakkpcpgfkobkghlhen"
+        ]
+      }
+    },
+    {
+      "tool": "perplexity",
+      "extension_ids": {
+        "chrome": [
+          "hlgbcneanomplepojfcnclggenpcoldo"
+        ]
+      }
+    },
+    {
+      "tool": "microsoft-copilot",
+      "extension_ids": {
+        "edge": [
+          "Microsoft-Copilot"
+        ]
+      }
+    }
+  ],
+  "mcp": [
+    {
+      "tool": "claude",
+      "path": "Library/Application Support/Claude/claude_desktop_config.json",
+      "os": "macos"
+    },
+    {
+      "tool": "claude",
+      "path": "AppData/Roaming/Claude/claude_desktop_config.json",
+      "os": "windows"
+    },
+    {
+      "tool": "claude",
+      "path": ".config/Claude/claude_desktop_config.json",
+      "os": "linux"
+    },
+    {
+      "tool": "claude-code",
+      "path": ".claude.json",
+      "os": "any"
+    },
+    {
+      "tool": "cursor",
+      "path": ".cursor/mcp.json",
+      "os": "any"
+    }
+  ]
+}

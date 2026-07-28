@@ -1,0 +1,31 @@
+The receiver is deployed.
+
+{{- if .Values.ingress.enabled }}
+{{- if eq .Values.ingress.className "tailscale" }}
+
+  Endpoint: https://{{ .Values.ingress.host }}.<your-tailnet>.ts.net
+  (the Tailscale operator appends the tailnet name and issues the cert;
+  kubectl get ingress {{ include "ai-guard.fullname" . }} shows the full address)
+{{- else }}
+
+  Endpoint: https://{{ .Values.ingress.host }}
+{{- end }}
+{{- else }}
+
+  No ingress. Reach it in-cluster at
+  {{ include "ai-guard.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }},
+  or port-forward to try it out:
+
+    kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "ai-guard.fullname" . }} 8080:{{ .Values.service.port }}
+
+  Collectors and the browser extension report over HTTPS from the machines
+  themselves, so a real deployment needs the ingress enabled.
+{{- end }}
+
+Read the bearer token every source authenticates with:
+
+  kubectl -n {{ .Release.Namespace }} get secret {{ include "ai-guard.secretName" . }} \
+    -o jsonpath='{.data.authToken}' | base64 -d; echo
+
+Next: import dashboards/ai-guard.json into Grafana, then roll out one
+collector (docs/getting-started.md step 3).
