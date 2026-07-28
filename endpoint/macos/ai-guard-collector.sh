@@ -241,9 +241,12 @@ registry_tsv() {
         (r.ide || []).forEach(function (t) {
           var e = t.extension_ids || {};
           // Cursor is a VS Code fork and uses the same extension IDs.
-          // chrome/edge IDs are browser extensions, not IDE findings.
           (e.vscode || []).forEach(function (x) { out.push(["ide", x, t.tool].join(U)); });
           (e.jetbrains || []).forEach(function (x) { out.push(["jb", x, t.tool].join(U)); });
+          // chrome/edge IDs are browser extensions: matched against installed
+          // extension folders in Chrome-family browser profiles below.
+          (e.chrome || []).forEach(function (x) { out.push(["bext", "chrome", x, t.tool].join(U)); });
+          (e.edge || []).forEach(function (x) { out.push(["bext", "edge", x, t.tool].join(U)); });
         });
         (r.desktop || []).forEach(function (t) {
           (t.app_names || []).forEach(function (a) { out.push(["app", a, t.tool].join(U)); });
@@ -386,6 +389,36 @@ while IFS="$SEP" read -r _kind ext tool; do
     report_once "ide" "$tool" "" "JetBrains plugins dir ($ext)"
   fi
 done < <(printf '%s\n' "$REG_TSV" | /usr/bin/grep "^jb${SEP}")
+
+# ------------------------------------------------------- browser extensions --
+
+# Installed browser extensions, matched by extension id against the
+# registry. Presence is the finding: an AI extension reads pages without
+# anything being pasted. Chrome and Brave install from the Chrome store, so
+# both match chrome ids; Edge installs from both stores, so it matches both
+# sets. Folder presence in a profile's Extensions dir is the signal;
+# evidence names the browser and profile, never the user's home path.
+scan_browser_extensions() {
+  local root="$1" label="$2" idkinds="$3" profile pdir extdir bkind ext tool
+  [ -d "$root" ] || return 0
+  for pdir in "$root/Default" "$root"/Profile\ *; do
+    [ -d "$pdir/Extensions" ] || continue
+    profile=$(/usr/bin/basename "$pdir")
+    for extdir in "$pdir/Extensions"/*/; do
+      [ -d "$extdir" ] || continue
+      ext=$(/usr/bin/basename "$extdir")
+      while IFS="$SEP" read -r _kind bkind id tool; do
+        case ",$idkinds," in *",$bkind,"*) ;; *) continue ;; esac
+        [ "$ext" = "$id" ] && report_once "browser" "$tool" "" "$label/$profile extension $id"
+      done < <(printf '%s\n' "$REG_TSV" | /usr/bin/grep "^bext${SEP}")
+    done
+  done
+}
+
+APPSUP="$HOME_DIR/Library/Application Support"
+scan_browser_extensions "$APPSUP/Google/Chrome"                "Chrome" "chrome"
+scan_browser_extensions "$APPSUP/BraveSoftware/Brave-Browser"  "Brave"  "chrome"
+scan_browser_extensions "$APPSUP/Microsoft Edge"               "Edge"   "chrome,edge"
 
 # ---------------------------------------------------------------- desktop ---
 
