@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ai-guard.fullname" . }}
+  labels:
+    {{- include "ai-guard.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "ai-guard.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ai-guard.selectorLabels" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      containers:
+        - name: receiver
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ai-guard.secretName" . }}
+                  key: authToken
+            {{- with .Values.loki.pushUrl }}
+            - name: LOKI_PUSH_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.alertmanager.url }}
+            - name: ALERTMANAGER_URL
+              value: {{ . | quote }}
+            - name: ALERT_TTL_MINUTES
+              value: {{ $.Values.alertmanager.ttlMinutes | quote }}
+            {{- end }}
+            - name: DISPLAY_TZ
+              value: {{ .Values.displayTz | quote }}
+          volumeMounts:
+            - name: registry
+              mountPath: /etc/ai-guard
+              readOnly: true
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 10
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: registry
+          configMap:
+            name: {{ include "ai-guard.registryConfigMap" . }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

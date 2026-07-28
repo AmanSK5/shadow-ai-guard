@@ -1,0 +1,71 @@
+# Receiver image. Multi-arch (amd64, arm64).
+image:
+  repository: ghcr.io/amansk5/shadow-ai-guard/receiver
+  tag: ""            # defaults to the chart's appVersion
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+
+# The bearer token every source authenticates with.
+#
+#   value:         set it here (fine for a quick start, ends up in helm values)
+#   existingSecret: point at a Secret you created yourself, with key authToken
+#
+# Leave both unset and the chart generates a random token on first install and
+# keeps it across upgrades. Read it back with:
+#   kubectl get secret <release>-ai-guard -o jsonpath='{.data.authToken}' | base64 -d
+auth:
+  value: ""
+  existingSecret: ""
+
+# Where findings go. Unset means stdout only, which still works if something
+# else scrapes container logs into your log store.
+loki:
+  pushUrl: ""        # e.g. http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push
+
+# Optional. Unset means findings are logged and dashboarded but nothing pages.
+alertmanager:
+  url: ""
+  ttlMinutes: 120
+
+# Timezone for the human-readable timestamp on alerts. Machine timestamps are
+# always UTC.
+displayTz: UTC
+
+# The compiled registry ships with the chart, so the receiver has an
+# identifier list on first install with nothing to build. Set create: false to
+# manage the ConfigMap yourself (for example from a CI job that compiles
+# registry.yaml on every merge).
+registry:
+  create: true
+  existingConfigMap: ""
+
+service:
+  type: ClusterIP
+  port: 8080
+
+# Endpoints report over HTTPS, so the receiver needs to be reachable from
+# every machine that runs a collector or the browser extension.
+ingress:
+  enabled: false
+  className: ""
+  host: ai-guard.example.com
+  annotations: {}
+  tls:
+    enabled: true
+    secretName: ai-guard-tls
+  # On a Tailscale-operator cluster, set className to "tailscale" and host to
+  # a short name like "ai-guard": the operator issues the cert and serves it
+  # at https://ai-guard.<tailnet>.ts.net.
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 96Mi
+  limits:
+    memory: 256Mi
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

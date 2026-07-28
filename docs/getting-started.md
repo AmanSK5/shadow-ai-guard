@@ -52,6 +52,32 @@ a tag resolves to with:
 docker buildx imagetools inspect ghcr.io/amansk5/shadow-ai-guard/receiver:latest
 ```
 
+### The short way
+
+If you use Helm, the chart does this step and the next one in a single
+command, with the compiled registry already inside it:
+
+```bash
+helm install ai-guard charts/ai-guard \
+  --namespace ai-guard --create-namespace \
+  --set loki.pushUrl=http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push \
+  --set ingress.enabled=true \
+  --set ingress.host=ai-guard.example.com
+```
+
+Read the token it generated, then skip to step 3:
+
+```bash
+kubectl -n ai-guard get secret ai-guard \
+  -o jsonpath='{.data.authToken}' | base64 -d; echo
+```
+
+`charts/ai-guard/README.md` covers the values, including how to bring your
+own token or your own registry ConfigMap. The rest of steps 1 and 2 is the
+same thing by hand.
+
+### By hand
+
 Pick a namespace and use it consistently from here on. The Secret, the
 ConfigMap and the Deployment all have to land in the same one:
 

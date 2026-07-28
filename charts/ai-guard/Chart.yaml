@@ -1,0 +1,10 @@
+apiVersion: v2
+name: ai-guard
+description: Receiver for shadow-ai-guard, the AI tool detection platform
+type: application
+version: 0.1.0
+appVersion: "0.2.0"
+home: https://github.com/AmanSK5/shadow-ai-guard
+sources:
+  - https://github.com/AmanSK5/shadow-ai-guard
+keywords: [security, shadow-ai, detection]

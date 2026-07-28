@@ -1,0 +1,807 @@
+{
+  "version": 1,
+  "tools": [
+    {
+      "id": "claude",
+      "name": "Claude",
+      "vendor": "Anthropic",
+      "category": "assistant",
+      "approved": true,
+      "added_by": "manual",
+      "domains": [
+        "claude.ai",
+        "anthropic.com",
+        "api.anthropic.com",
+        "claude.com",
+        "claudeusercontent.com",
+        "console.anthropic.com"
+      ],
+      "app_names": [
+        "Claude.app",
+        "Claude"
+      ],
+      "bundle_ids": [
+        "com.anthropic.claudefordesktop"
+      ],
+      "mcp_config_paths_macos": [
+        "Library/Application Support/Claude/claude_desktop_config.json"
+      ],
+      "mcp_config_paths_windows": [
+        "AppData/Roaming/Claude/claude_desktop_config.json"
+      ],
+      "mcp_config_paths_linux": [
+        ".config/Claude/claude_desktop_config.json"
+      ],
+      "email_senders": [
+        "anthropic.com",
+        "mail.anthropic.com"
+      ],
+      "risk_tier": "high",
+      "mcp_identifiers": [
+        "anthropic-claude"
+      ],
+      "exe_names": [
+        "claude.exe"
+      ],
+      "notes": "Claude desktop app supports MCP server connections."
+    },
+    {
+      "id": "claude-code",
+      "name": "Claude Code",
+      "vendor": "Anthropic",
+      "category": "coding",
+      "approved": true,
+      "added_by": "manual",
+      "domains": [],
+      "extension_ids": {
+        "vscode": [
+          "anthropic.claude-code"
+        ]
+      },
+      "cli": {
+        "config_paths": [
+          ".claude.json",
+          ".claude"
+        ],
+        "account_json_path": ".claude.json",
+        "account_json_keys": [
+          "oauthAccount",
+          "emailAddress"
+        ],
+        "binaries": [
+          "claude"
+        ]
+      },
+      "mcp_config_paths": [
+        ".claude.json"
+      ],
+      "risk_tier": "high",
+      "email_senders": [
+        "anthropic.com"
+      ],
+      "notes": "CLI tool with agentic capabilities."
+    },
+    {
+      "id": "chatgpt",
+      "name": "ChatGPT",
+      "vendor": "OpenAI",
+      "category": "assistant",
+      "approved": false,
+      "added_by": "manual",
+      "domains": [
+        "chat.openai.com",
+        "chatgpt.com",
+        "openai.com",
+        "api.openai.com",
+        "cdn.oaistatic.com",
+        "auth0.openai.com"
+      ],
+      "app_names": [
+        "ChatGPT.app",
+        "ChatGPT"
+      ],
+      "bundle_ids": [
+        "com.openai.chat"
+      ],
+      "extension_ids": {
+        "vscode": [
+          "openai.chatgpt"
+        ]
+      },
+      "email_senders": [
+        "openai.com",
+        "tm.openai.com",
+        "email.openai.com"
+      ],
+      "risk_tier": "high",
+      "exe_names": [
+        "ChatGPT.exe"
+      ],
+      "notes": "Users can sign up with work email + password without any Entra involvement."
+    },
+    {
+      "id": "codex-cli",
+      "name": "Codex CLI",
+      "vendor": "OpenAI",
+      "category": "coding",
+      "approved": false,
+      "added_by": "manual",
+      "domains": [],
+      "cli": {
+        "config_paths": [
+          ".codex"
+        ],
+        "account_json_path": ".codex/auth.json",
+        "account_jwt_path": [
+          "tokens",
+          "id_token"
+        ],
+        "account_jwt_claim": "email",
+        "binaries": [
+          "codex"
+        ]
+      },
+      "risk_tier": "medium"
+    },
+    {
+      "id": "gemini",
+      "name": "Gemini",
+      "vendor": "Google",
+      "category": "assistant",
+      "approved": false,
+      "added_by": "manual",
+      "domains": [
+        "gemini.google.com",
+        "aistudio.google.com",
+        "generativelanguage.googleapis.com"
+      ],
+      "email_senders": [
+        "google.com"
+      ],
+      "risk_tier": "high"
+    },
+    {
+      "id": "gemini-cli",
+      "name": "Gemini CLI",
+      "vendor": "Google",
+      "category": "coding",
+      "approved": false,
+      "added_by": "manual",
+      "domains": [],
+      "extension_ids": {
+        "vscode": [
+          "google.geminicodeassist"
+        ]
+      },
+      "cli": {
+        "config_paths": [
+          ".gemini"
+        ],
+        "account_json_path": ".gemini/google_accounts.json",
+        "account_json_keys": [
+          "active"
+        ],
+        "binaries": [
+          "gemini"
+        ]
+      },
+      "risk_tier": "medium"
+    },
+    {
+      "id": "github-copilot",
+      "name": "GitHub Copilot",
+      "vendor": "GitHub",
+      "category": "coding",
+      "approved": true,
+      "added_by": "manual",
+      "domains": [
+        "copilot-proxy.githubusercontent.com",
+        "api.githubcopilot.com",
+        "copilot.github.com"
+      ],
+      "extension_ids": {
+        "vscode": [
+          "github.copilot",
+          "github.copilot-chat"
+        ],
+        "jetbrains": [
+          "github-copilot"
+        ]
+      },
+      "risk_tier": "medium",
+      "email_senders": [
+        "github.com"
+      ]
+    },
+    {
+      "id": "cursor",
+      "name": "Cursor",
+      "vendor": "Anysphere",
+      "category": "coding",
+      "approved": false,
+      "added_by": "manual",
+      "domains": [
+        "cursor.com",
+        "cursor.sh",
+        "api2.cursor.sh"
+      ],
+      "app_names": [
+        "Cursor.app",
+        "Cursor"
+      ],
+      "bundle_ids": [
+        "com.todesktop.230313mzl4w4u92"
+      ],
+      "cli": {
+        "config_paths": [
+          ".cursor"
+        ]
+      },
+      "mcp_config_paths": [
+        ".cursor/mcp.json"
+      ],
+      "email_senders": [
+        "cursor.com",
+        "cursor.sh"
+      ],
+      "risk_tier": "high",
+      "exe_names": [
+        "Cursor.exe"
+      ]
+    },
+    {
+      "id": "cline",
+      "name": "Cline",
+      "vendor": "Cline Bot Inc",
+      "category": "coding",
+      "approved": false,
+      "added_by": "manual",
+      "domains": [
+        "api.cline.bot"
+      ],
+      "extension_ids": {
+        "vscode": [
+          "saoudrizwan.claude-dev"
+        ]
+      },
+      "risk_tier": "medium"
+    },
+    {
+      "id": "roo-code",
+      "name": "Roo Code",
+      "vendor": "Roo Veterinary Inc",
+      "category": "coding",
+      "approved": false,
+      "added_by": "manual",
+      "domains": [],
+      "extension_ids": {
+        "vscode": [
+          "rooveterinaryinc.roo-cline"
+        ]
+      },
+      "risk_tier": "medium"
+    },
+    {
+      "id": "continue",
+      "name": "Continue",
+      "vendor": "Continue Dev",
+      "category": "coding",
+      "approved": false,
+      "added_by": "manual",
+      "domains": [
+        "continue.dev"
+      ],
+      "extension_ids": {
+        "vscode": [
+          "continue.continue"
+        ]
+      },
+      "risk_tier": "medium"
+    },
+    {
+      "id": "codeium",
+      "name": "Codeium / Windsurf",
+      "vendor": "Codeium",
+      "category": "coding",
+      "approved": false,
+      "added_by": "manual",
+      "domains": [
+        "codeium.com",
+        "windsurf.com",
+        "server.codeium.com",
+        "codeiumdata.com"
+      ],
+      "app_names": [
+        "Windsurf.app",
+        "Windsurf"
+      ],
+      "extension_ids": {
+        "vscode": [
+          "codeium.codeium"
+        ]
+      },
+      "risk_tier": "high",
+      "email_senders": [
+        "codeium.com",
+        "windsurf.com"
+      ],
+      "bundle_ids": [
+        "com.codeium.windsurf"
+      ],
+      "exe_names": [
+        "Windsurf.exe"
+      ]
+    },
+    {
+      "id": "tabnine",
+      "name": "Tabnine",
+      "vendor": "Tabnine",
+      "category": "coding",
+      "approved": false,
+      "added_by": "manual",
+      "domains": [
+        "tabnine.com",
+        "api.tabnine.com"
+      ],
+      "extension_ids": {
+        "vscode": [
+          "tabnine.tabnine-vscode"
+        ]
+      },
+      "risk_tier": "medium"
+    },
+    {
+      "id": "otter",
+      "name": "Otter",
+      "vendor": "Otter.ai",
+      "category": "transcription",
+      "approved": false,
+      "added_by": "manual",
+      "domains": [
+        "otter.ai",
+        "api.otter.ai"
+      ],
+      "app_names": [
+        "Otter.app",
+        "Otter"
+      ],
+      "email_senders": [
+        "otter.ai"
+      ],
+      "risk_tier": "high",
+      "bundle_ids": [
+        "ai.otter.otter"
+      ],
+      "exe_names": [
+        "Otter.exe"
+      ],
+      "extension_ids": {
+        "chrome": [
+          "bnmojkbbkkonlmlfgejehefjldooied"
+        ]
+      }
+    },
+    {
+      "id": "grammarly",
+      "name": "Grammarly",
+      "vendor": "Grammarly",
+      "category": "writing",
+      "approved": false,
+      "added_by": "manual",
+      "domains": [
+        "grammarly.com",
+        "in.grammarly.com",
+        "app.grammarly.com",
+        "gnar.grammarly.com"
+      ],
+      "app_names": [
+        "Grammarly Desktop.app",
+        "Grammarly"
+      ],
+      "extension_ids": {
+        "chrome": [
+          "kbfnbcaeplbcioakkpcpgfkobkghlhen"
+        ],
+        "edge": [
+          "kbfnbcaeplbcioakkpcpgfkobkghlhen"
+        ]
+      },
+      "email_senders": [
+        "grammarly.com"
+      ],
+      "risk_tier": "medium",
+      "bundle_ids": [
+        "com.grammarly.ProjectLlama"
+      ],
+      "exe_names": [
+        "Grammarly.Desktop.exe"
+      ]
+    },
+    {
+      "id": "wispr-flow",
+      "name": "Wispr Flow",
+      "vendor": "Wispr",
+      "category": "voice",
+      "approved": false,
+      "added_by": "manual",
+      "domains": [
+        "wisprflow.ai",
+        "wisprflow.com",
+        "api.wisprflow.ai"
+      ],
+      "app_names": [
+        "Wispr Flow.app",
+        "Wispr Flow"
+      ],
+      "risk_tier": "high",
+      "email_senders": [
+        "wisprflow.ai"
+      ]
+    },
+    {
+      "id": "perplexity",
+      "name": "Perplexity",
+      "vendor": "Perplexity AI",
+      "category": "search",
+      "approved": false,
+      "added_by": "manual",
+      "domains": [
+        "perplexity.ai",
+        "api.perplexity.ai",
+        "www.perplexity.ai"
+      ],
+      "app_names": [
+        "Perplexity.app",
+        "Perplexity"
+      ],
+      "email_senders": [
+        "perplexity.ai"
+      ],
+      "risk_tier": "medium",
+      "bundle_ids": [
+        "ai.perplexity.mac"
+      ],
+      "extension_ids": {
+        "chrome": [
+          "hlgbcneanomplepojfcnclggenpcoldo"
+        ]
+      }
+    },
+    {
+      "id": "ollama",
+      "name": "Ollama",
+      "vendor": "Ollama",
+      "category": "local-model",
+      "approved": false,
+      "added_by": "manual",
+      "notes": "Local models; data stays on device but model provenance unknown. Separate risk class.",
+      "domains": [
+        "ollama.com",
+        "registry.ollama.ai",
+        "ollama.ai",
+        "api.ollama.com"
+      ],
+      "app_names": [
+        "Ollama.app",
+        "Ollama",
+        "ollama"
+      ],
+      "cli": {
+        "config_paths": [
+          ".ollama/models"
+        ],
+        "binaries": [
+          "ollama"
+        ]
+      },
+      "risk_tier": "high",
+      "exe_names": [
+        "ollama.exe",
+        "Ollama.exe"
+      ]
+    },
+    {
+      "id": "lm-studio",
+      "name": "LM Studio",
+      "vendor": "Element Labs",
+      "category": "local-model",
+      "approved": false,
+      "added_by": "manual",
+      "domains": [
+        "lmstudio.ai"
+      ],
+      "app_names": [
+        "LM Studio.app",
+        "LM Studio"
+      ],
+      "cli": {
+        "config_paths": [
+          ".lmstudio"
+        ]
+      },
+      "risk_tier": "medium"
+    },
+    {
+      "id": "deepseek",
+      "name": "DeepSeek",
+      "vendor": "DeepSeek",
+      "category": "assistant",
+      "approved": false,
+      "added_by": "manual",
+      "domains": [
+        "chat.deepseek.com",
+        "deepseek.com",
+        "api.deepseek.com"
+      ],
+      "email_senders": [
+        "deepseek.com"
+      ],
+      "risk_tier": "high"
+    },
+    {
+      "id": "mistral",
+      "name": "Mistral Le Chat",
+      "vendor": "Mistral AI",
+      "category": "assistant",
+      "approved": false,
+      "added_by": "manual",
+      "domains": [
+        "chat.mistral.ai",
+        "mistral.ai",
+        "api.mistral.ai"
+      ],
+      "email_senders": [
+        "mistral.ai"
+      ],
+      "risk_tier": "medium"
+    },
+    {
+      "id": "grok",
+      "name": "Grok",
+      "vendor": "xAI",
+      "category": "assistant",
+      "approved": false,
+      "added_by": "manual",
+      "domains": [
+        "grok.com"
+      ],
+      "risk_tier": "medium",
+      "email_senders": [
+        "x.com"
+      ]
+    },
+    {
+      "id": "microsoft-copilot",
+      "name": "Microsoft Copilot (Free)",
+      "vendor": "Microsoft",
+      "category": "coding",
+      "approved": false,
+      "added_by": "manual",
+      "domains": [
+        "copilot.microsoft.com",
+        "copilot.cloud.microsoft",
+        "sydney.bing.com"
+      ],
+      "risk_tier": "medium",
+      "exe_names": [
+        "Microsoft.Copilot"
+      ],
+      "extension_ids": {
+        "edge": [
+          "Microsoft-Copilot"
+        ]
+      }
+    },
+    {
+      "id": "microsoft-365-copilot",
+      "name": "Microsoft 365 Copilot",
+      "vendor": "Microsoft",
+      "category": "coding",
+      "approved": false,
+      "added_by": "manual",
+      "domains": [
+        "substrate.office.com"
+      ],
+      "risk_tier": "high",
+      "entra_app_ids": [
+        "fb8d53bb-d7db-4b18-a257-9560e2f3a024"
+      ]
+    },
+    {
+      "id": "atlassian-rovo",
+      "name": "Atlassian Rovo",
+      "vendor": "Atlassian",
+      "category": "productivity",
+      "approved": false,
+      "added_by": "manual",
+      "domains": [
+        "rovo.atlassian.com",
+        "api.atlassian.com"
+      ],
+      "risk_tier": "high",
+      "mcp_identifiers": [
+        "atlassian"
+      ]
+    },
+    {
+      "id": "notion-ai",
+      "name": "Notion AI",
+      "vendor": "Notion Labs",
+      "category": "productivity",
+      "approved": false,
+      "added_by": "manual",
+      "domains": [
+        "notion.so",
+        "api.notion.com",
+        "notion.ai"
+      ],
+      "risk_tier": "medium",
+      "mcp_identifiers": [
+        "notion"
+      ],
+      "email_senders": [
+        "notion.so",
+        "makenotion.com"
+      ],
+      "bundle_ids": [
+        "notion.id"
+      ],
+      "exe_names": [
+        "Notion.exe"
+      ]
+    },
+    {
+      "id": "fireflies",
+      "name": "Fireflies.ai",
+      "vendor": "Fireflies",
+      "category": "productivity",
+      "approved": false,
+      "added_by": "manual",
+      "domains": [
+        "fireflies.ai",
+        "app.fireflies.ai"
+      ],
+      "risk_tier": "high",
+      "email_senders": [
+        "fireflies.ai"
+      ]
+    },
+    {
+      "id": "midjourney",
+      "name": "Midjourney",
+      "vendor": "Midjourney",
+      "category": "assistant",
+      "approved": false,
+      "added_by": "manual",
+      "domains": [
+        "midjourney.com",
+        "www.midjourney.com"
+      ],
+      "risk_tier": "low",
+      "email_senders": [
+        "midjourney.com"
+      ]
+    },
+    {
+      "id": "openai-api-platform",
+      "name": "OpenAI API Platform",
+      "vendor": "OpenAI",
+      "category": "platform",
+      "approved": false,
+      "added_by": "manual",
+      "domains": [
+        "platform.openai.com"
+      ],
+      "risk_tier": "high",
+      "email_senders": [
+        "openai.com"
+      ]
+    },
+    {
+      "id": "hugging-face",
+      "name": "Hugging Face",
+      "vendor": "Hugging Face",
+      "category": "platform",
+      "approved": false,
+      "added_by": "manual",
+      "domains": [
+        "huggingface.co",
+        "api-inference.huggingface.co"
+      ],
+      "risk_tier": "medium",
+      "email_senders": [
+        "huggingface.co"
+      ]
+    }
+  ],
+  "bridge_targets": [
+    {
+      "name": "Atlassian (Jira/Confluence)",
+      "domains": [
+        "api.atlassian.com",
+        "atlassian.net"
+      ],
+      "notes": "API token creation is self-service for all users."
+    },
+    {
+      "name": "GitHub",
+      "domains": [
+        "api.github.com",
+        "github.com"
+      ],
+      "notes": "Personal access tokens are self-service."
+    },
+    {
+      "name": "Slack",
+      "domains": [
+        "api.slack.com",
+        "slack.com"
+      ],
+      "notes": "User tokens can be created without admin approval."
+    },
+    {
+      "name": "Microsoft 365 / SharePoint",
+      "domains": [
+        "graph.microsoft.com",
+        "sharepoint.com"
+      ],
+      "notes": "OAuth consent is locked to admin."
+    },
+    {
+      "name": "Google Workspace",
+      "domains": [
+        "www.googleapis.com",
+        "drive.googleapis.com",
+        "drive.google.com",
+        "docs.google.com"
+      ],
+      "notes": "Google API keys can be self-provisioned."
+    },
+    {
+      "name": "Figma",
+      "domains": [
+        "api.figma.com",
+        "figma.com"
+      ],
+      "notes": "Personal access tokens are self-service."
+    }
+  ],
+  "allowed_processes": [
+    "chrome",
+    "Google Chrome",
+    "firefox",
+    "safari",
+    "msedge",
+    "Microsoft Edge",
+    "brave",
+    "arc",
+    "Slack",
+    "Teams",
+    "OneDrive",
+    "Outlook",
+    "Figma",
+    "Notion",
+    "svchost.exe",
+    "explorer.exe",
+    "git",
+    "gh",
+    "systemd-resolved",
+    "mDNSResponder",
+    "trustd",
+    "nsurlsessiond"
+  ],
+  "discover_exclude_domains": [
+    "jetbrains.com",
+    "fastly.net",
+    "ably.net",
+    "ably-realtime.com",
+    "shopifysvc.com",
+    "shopifycloud.com",
+    "vsassets.io",
+    "vscode-cdn.net",
+    "vercel.app",
+    "thehubevents.com",
+    "ai.engineer",
+    "www.ai.engineer"
+  ]
+}
