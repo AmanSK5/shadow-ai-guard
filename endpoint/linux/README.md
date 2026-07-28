@@ -1,7 +1,7 @@
 # Linux endpoint collector
 
 Bash sibling of the macOS and Windows collectors: same surfaces (cli, ide,
-desktop, mcp), same finding schema, same receiver. Reads AI tool
+browser, desktop, mcp), same finding schema, same receiver. Reads AI tool
 configuration files from the developer's home directory to report which
 account each tool is signed into. Runs as root and resolves the human user
 itself, because RMM and cron jobs run as root, whose home is `/root` and
@@ -48,6 +48,7 @@ instead of POSTing, which is the local-test mode.
 |---------|---------|----------|
 | cli     | Claude Code, Codex CLI, Gemini CLI | yes, from the tool's config file |
 | ide     | AI extensions in VS Code, Cursor | no, presence only |
+| browser | AI extensions in Chrome, Chromium, Brave, Edge (not snap Chromium) | no, presence only |
 | desktop | AI apps and local runtimes like Ollama | no, presence only |
 | mcp     | MCP servers wired into AI tool configs | no, lists server names |
 

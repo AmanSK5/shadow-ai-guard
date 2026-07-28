@@ -1,7 +1,7 @@
 # Windows endpoint collector
 
 PowerShell sibling of the macOS collector: same surfaces (cli, ide,
-desktop, mcp), same finding schema, same receiver. Reads AI tool
+browser, desktop, mcp), same finding schema, same receiver. Reads AI tool
 configuration files from the logged-on user's profile to report which
 account each tool is signed into. Runs as SYSTEM via Intune and resolves
 the logged-on user itself (owner of explorer.exe, with a most-recent
