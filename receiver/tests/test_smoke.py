@@ -13,6 +13,8 @@ from app.main import app  # noqa: E402
 
 client = TestClient(app)
 
+AUTH = {"Authorization": "Bearer test-token-for-ci"}
+
 
 def test_healthz_returns_200_with_version():
     resp = client.get("/healthz")
@@ -36,7 +38,7 @@ def test_report_accepts_device_name_and_risk_tier():
             "device_name": "ACME-C02XK1AB",
             "risk_tier": "high",
         },
-        headers={"Authorization": "Bearer test-token-for-ci"},
+        headers=AUTH,
     )
     assert resp.status_code == 200
 
@@ -71,3 +73,58 @@ def test_unknown_extra_fields_dropped():
     from app.main import Finding
     f = Finding(tool="claude-code", completely_unknown_field="should vanish")
     assert "completely_unknown_field" not in f.model_dump()
+
+
+# ---------------------------------------------- auth before the body is read --
+
+
+def test_report_without_auth_is_rejected_before_the_body_is_validated():
+    """A missing token must beat a broken body.
+
+    The payload here is invalid: tool is required and absent. A 422 would mean
+    the model was validated before the token was checked, which is the whole
+    problem. The answer has to be 401.
+    """
+    resp = client.post("/report", json={"not_a_field": "x"})
+    assert resp.status_code == 401
+
+
+def test_oversized_body_is_rejected():
+    big = {"tool": "claude-code", "evidence": "x" * 200_000}
+    resp = client.post("/report", json=big, headers=AUTH)
+    assert resp.status_code == 413
+
+
+def test_oversized_body_without_auth_is_still_a_401():
+    """Token first, size second, so an unauthenticated caller learns nothing
+    about the size limit."""
+    big = {"tool": "claude-code", "evidence": "x" * 200_000}
+    resp = client.post("/report", json=big)
+    assert resp.status_code == 401
+
+
+def test_post_without_content_length_is_rejected():
+    """A chunked body would slip past the size check, so it is refused."""
+    resp = client.post(
+        "/report",
+        content=iter([b'{"tool":"claude-code"}']),
+        headers={**AUTH, "Content-Type": "application/json"},
+    )
+    assert resp.status_code == 411
+
+
+def test_over_long_field_is_rejected():
+    resp = client.post("/report", json={"tool": "x" * 500}, headers=AUTH)
+    assert resp.status_code == 422
+
+
+def test_occurrence_count_must_be_positive():
+    resp = client.post(
+        "/report", json={"tool": "claude-code", "occurrence_count": 0}, headers=AUTH
+    )
+    assert resp.status_code == 422
+
+
+def test_metrics_stays_open():
+    """Unauthenticated on purpose: it carries only bounded label values."""
+    assert client.get("/metrics").status_code == 200
