@@ -10,10 +10,16 @@ findings in Entra; disabled accounts are history, not shadow AI.
 from __future__ import annotations
 
 import logging
+import asyncio
 
 logger = logging.getLogger(__name__)
 
 GRAPH_V1 = "https://graph.microsoft.com/v1.0"
+# Some sign-in log filters (signInEventTypes, used to reach non-interactive
+# sign-ins) only exist on beta. Callers pass an absolute beta URL; paginate()
+# below only rewrites nextLinks that start with the v1.0 base, so a beta URL
+# and its nextLinks pass through untouched.
+GRAPH_BETA = "https://graph.microsoft.com/beta"
 
 
 async def paginate(client, url: str, max_pages: int = 20) -> list[dict]:
@@ -24,7 +30,17 @@ async def paginate(client, url: str, max_pages: int = 20) -> list[dict]:
     all_items: list[dict] = []
     current_url = url
     for page in range(max_pages):
-        resp = await client.get(current_url)
+        # Graph throttles, and it says how long to wait. Without this a 429
+        # ends pagination early and the caller gets a partial result that
+        # looks like a complete one, which is the worst shape a bug can take
+        # in a tool whose job is counting things.
+        for attempt in range(4):
+            resp = await client.get(current_url)
+            if resp.status_code != 429:
+                break
+            wait = float(resp.headers.get("Retry-After", 2 ** attempt))
+            logger.warning("Graph: throttled, waiting %.0fs", wait)
+            await asyncio.sleep(wait)
         resp.raise_for_status()
         data = resp.json()
         all_items.extend(data.get("value", []))
