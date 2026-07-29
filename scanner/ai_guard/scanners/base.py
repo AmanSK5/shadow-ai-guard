@@ -22,6 +22,7 @@ class DetectionSource(str, Enum):
     ENTRA_SIGN_IN = "entra_sign_in"
     ENTRA_SERVICE_PRINCIPAL = "entra_service_principal"
     ENTRA_CONSENT_GRANT = "entra_consent_grant"
+    ENTRA_DELEGATED_ACCESS = "entra_delegated_access"
     SENTINELONE_DNS = "sentinelone_dns"
     SENTINELONE_NETWORK = "sentinelone_network"
     SENTINELONE_BRIDGE = "sentinelone_bridge"
