@@ -34,6 +34,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import FastAPI, Header, HTTPException, Request, Response
+from fastapi.responses import JSONResponse
 from prometheus_client import (
     CONTENT_TYPE_LATEST,
     Counter,
@@ -45,6 +46,12 @@ from pydantic import BaseModel, Field
 # ------------------------------------------------------------------ config --
 
 AUTH_TOKEN = os.environ["AUTH_TOKEN"]
+# Built once so the comparison below is against a fixed string.
+_EXPECTED_AUTH = f"Bearer {AUTH_TOKEN}"
+# Findings are small: a large one is a few hundred bytes. The cap exists so an
+# unauthenticated client cannot make the receiver do work by sending something
+# enormous. Raise it if a source legitimately sends more.
+MAX_BODY_BYTES = int(os.environ.get("MAX_BODY_BYTES", "65536"))
 ALERTMANAGER_URL = os.environ.get("ALERTMANAGER_URL", "")
 # If set, findings are POSTed straight to Loki (matches receiver v0.1.1
 # behaviour); stdout JSON logging happens regardless.
@@ -146,34 +153,79 @@ threading.Thread(target=_sweep_loop, daemon=True).start()
 
 
 class Finding(BaseModel):
+    # Every field here arrives from outside, so every field is bounded. The
+    # limits are sized to real use rather than round numbers: a domain cannot
+    # exceed the DNS limit, evidence carries paths and detector lists, and
+    # nothing else is longer than a hostname.
     tool: str = Field(min_length=1, max_length=200)
-    surface: str = "browser"  # extension pre-dates the field
-    os: str = "unknown"       # ditto
-    account_domain: str = ""
-    device: str = "unknown"
-    user: str = ""
-    evidence: str = ""
-    severity: str = "warn"  # extension only reports violations
-    reported_at: str = ""
+    surface: str = Field(default="browser", max_length=32)  # extension pre-dates the field
+    os: str = Field(default="unknown", max_length=32)       # ditto
+    account_domain: str = Field(default="", max_length=253)
+    device: str = Field(default="unknown", max_length=256)
+    user: str = Field(default="", max_length=256)
+    evidence: str = Field(default="", max_length=2048)
+    severity: str = Field(default="warn", max_length=16)  # extension only reports violations
+    reported_at: str = Field(default="", max_length=64)
     # Which detector produced this (entra_sign_in, sentinelone_bridge,
     # jamf_app, exchange_email...). Dashboards need it to separate bridge
     # observations from AI-tool findings; without it the tool inventory
     # cannot exclude bridge targets. Empty for pre-0.1.4 lines and for
     # extension flags via /flag.
-    source: str = ""
-    device_name: str = ""
-    risk_tier: str = ""
+    source: str = Field(default="", max_length=64)
+    device_name: str = Field(default="", max_length=256)
+    risk_tier: str = Field(default="", max_length=32)
     # How many, and of what. The unit differs per source (sign-ins for Entra,
     # devices for Intune, signup emails for Exchange), so the number is only
     # meaningful next to it. Defaults keep older senders working: the browser
     # extension and pre-0.1.7 scanners do not send either field.
-    occurrence_count: int = 1
-    occurrence_unit: str = "detections"
+    occurrence_count: int = Field(default=1, ge=1, le=1_000_000)
+    occurrence_unit: str = Field(default="detections", max_length=32)
 
 
 # --------------------------------------------------------------------- app --
 
 app = FastAPI(title="ai-guard-receiver", version="0.1.6")
+
+
+# Paths that require the bearer token. /healthz and /metrics stay open:
+# healthz is a probe target and metrics carries only bounded label values.
+_PROTECTED = ("/report", "/flag", "/registry")
+
+
+@app.middleware("http")
+async def authenticate_before_reading(request: Request, call_next):
+    """Check the token, and the size, before the body is touched.
+
+    Without this the token check happens inside the endpoint, which means
+    FastAPI has already read and validated the JSON body by the time an
+    unauthenticated request is rejected. The receiver is meant to be
+    internet-facing, so anyone could make it do that work. Here nothing is
+    read until the caller has proved who they are.
+
+    The endpoints still call _auth(). That is deliberate: it keeps them
+    correct if this middleware is ever removed or reordered.
+    """
+    if request.url.path.startswith(_PROTECTED):
+        if not hmac.compare_digest(
+            request.headers.get("authorization", ""), _EXPECTED_AUTH
+        ):
+            return JSONResponse({"detail": "bad token"}, status_code=401)
+
+        if request.method == "POST":
+            declared = request.headers.get("content-length")
+            if declared is None:
+                # Every real client sends one. Refusing chunked bodies keeps
+                # the size check meaningful rather than advisory.
+                return JSONResponse(
+                    {"detail": "content-length required"}, status_code=411
+                )
+            try:
+                if int(declared) > MAX_BODY_BYTES:
+                    return JSONResponse({"detail": "body too large"}, status_code=413)
+            except ValueError:
+                return JSONResponse({"detail": "bad content-length"}, status_code=400)
+
+    return await call_next(request)
 
 
 def _load_registry() -> dict | None:
@@ -225,7 +277,8 @@ def registry_collector(authorization: str = Header(default="")):
 
 def _auth(authorization: str):
     # Constant-time comparison: a plain != leaks match length timing.
-    if not hmac.compare_digest(authorization, f"Bearer {AUTH_TOKEN}"):
+    # The middleware above is the real gate; this is defence in depth.
+    if not hmac.compare_digest(authorization, _EXPECTED_AUTH):
         raise HTTPException(401, "bad token")
 
 
