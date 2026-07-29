@@ -198,6 +198,25 @@ state_get() {
   grep -F "$1 " "$STATE_FILE" 2>/dev/null | tail -1 | awk '{print $2}'
 }
 
+# json_escape <string> - escape a value for use inside a JSON string.
+# Findings carry values the script does not control: device names, usernames,
+# and evidence built from registry data. A quote or a backslash in any of them
+# turns the payload into invalid JSON, the receiver rejects it, and the finding
+# is lost with nothing to say so. Order matters: backslash first, or the
+# escapes added afterwards get escaped again. Remaining control characters are
+# dropped rather than emitted raw, since raw ones are invalid JSON and these
+# values are labels, not data anyone parses.
+json_escape() {
+  local s="$1"
+  s=${s//\\/\\\\}
+  s=${s//\"/\\\"}
+  s=${s//$'\n'/\\n}
+  s=${s//$'\r'/\\r}
+  s=${s//$'\t'/\\t}
+  s=${s//[[:cntrl:]]/}
+  printf '%s' "$s"
+}
+
 # report <surface> <tool> <account> <evidence>
 report() {
   local surface="$1" tool="$2" acct="$3" evidence="$4"
@@ -219,11 +238,13 @@ report() {
     fi
   fi
 
+  # severity and reported_at are generated here, so they need no escaping.
+  # Everything else came from the registry, the machine or a config file.
   local payload
-  payload=$(cat <<JSON
-{"tool":"$tool","surface":"$surface","os":"linux","account_domain":"$acct","device":"$DEVICE","user":"$CONSOLE_USER","evidence":"$evidence","severity":"$severity","reported_at":"$NOW","source":"collector-linux"}
-JSON
-)
+  payload=$(printf '{"tool":"%s","surface":"%s","os":"linux","account_domain":"%s","device":"%s","user":"%s","evidence":"%s","severity":"%s","reported_at":"%s","source":"collector-linux"}' \
+    "$(json_escape "$tool")" "$(json_escape "$surface")" "$(json_escape "$acct")" \
+    "$(json_escape "$DEVICE")" "$(json_escape "$CONSOLE_USER")" "$(json_escape "$evidence")" \
+    "$severity" "$NOW")
   if [ -z "$ENDPOINT" ]; then
     echo "[ai-guard] FLAG (no endpoint set): $payload"
     # Print-only: preserve old timestamp if one exists, but don't advance it.
