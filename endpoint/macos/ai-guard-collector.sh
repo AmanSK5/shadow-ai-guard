@@ -119,6 +119,25 @@ SUMMARY_PARTS=()
 POST_OK=0
 POST_FAILURES=0
 
+# json_escape <string> - escape a value for use inside a JSON string.
+# Findings carry values the script does not control: device names, usernames,
+# and evidence built from registry data. A quote or a backslash in any of them
+# turns the payload into invalid JSON, the receiver rejects it, and the finding
+# is lost with nothing to say so. Order matters: backslash first, or the
+# escapes added afterwards get escaped again. Remaining control characters are
+# dropped rather than emitted raw, since raw ones are invalid JSON and these
+# values are labels, not data anyone parses.
+json_escape() {
+  local s="$1"
+  s=${s//\\/\\\\}
+  s=${s//\"/\\\"}
+  s=${s//$'\n'/\\n}
+  s=${s//$'\r'/\\r}
+  s=${s//$'\t'/\\t}
+  s=${s//[[:cntrl:]]/}
+  printf '%s' "$s"
+}
+
 # report <surface> <tool> <account_domain> <evidence>
 report() {
   local surface="$1" tool="$2" acct="$3" evidence="$4" severity="info"
@@ -146,9 +165,13 @@ report() {
     fi
   fi
 
+  # severity and reported_at are generated here, so they need no escaping.
+  # Everything else came from the registry, the machine or a config file.
   local payload
   payload=$(/usr/bin/printf '{"tool":"%s","surface":"%s","os":"macos","account_domain":"%s","device":"%s","user":"%s","evidence":"%s","severity":"%s","reported_at":"%s"}' \
-    "$tool" "$surface" "$acct" "$SERIAL" "$CONSOLE_USER" "$evidence" "$severity" "$NOW")
+    "$(json_escape "$tool")" "$(json_escape "$surface")" "$(json_escape "$acct")" \
+    "$(json_escape "$SERIAL")" "$(json_escape "$CONSOLE_USER")" "$(json_escape "$evidence")" \
+    "$severity" "$NOW")
 
   local delivered=false
   if [ -n "$ENDPOINT" ]; then
