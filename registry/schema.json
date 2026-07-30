@@ -127,12 +127,12 @@
               "config_paths": {
                 "type": "array",
                 "items": {
-                  "type": "string"
+                  "$ref": "#/$defs/relativePath"
                 },
                 "description": "Paths relative to $HOME that indicate the tool is present."
               },
               "account_json_path": {
-                "type": "string",
+                "$ref": "#/$defs/relativePath",
                 "description": "File holding the account identity, if the tool stores one."
               },
               "account_json_keys": {
@@ -164,7 +164,7 @@
           "mcp_config_paths": {
             "type": "array",
             "items": {
-              "type": "string"
+              "$ref": "#/$defs/relativePath"
             },
             "description": "MCP config paths valid on any OS, relative to the user's home. Use the _macos/_windows variants when the location differs per platform."
           },
@@ -208,19 +208,21 @@
           "mcp_config_paths_macos": {
             "type": "array",
             "items": {
-              "type": "string"
+              "$ref": "#/$defs/relativePath"
             },
             "description": "MCP config paths that exist only on macOS, relative to $HOME."
           },
           "mcp_config_paths_linux": {
             "type": "array",
-            "items": {"type": "string"},
+            "items": {
+              "$ref": "#/$defs/relativePath"
+            },
             "description": "MCP config paths that exist only on Linux, relative to $HOME."
           },
           "mcp_config_paths_windows": {
             "type": "array",
             "items": {
-              "type": "string"
+              "$ref": "#/$defs/relativePath"
             },
             "description": "MCP config paths that exist only on Windows, relative to the user profile."
           }
@@ -266,6 +268,13 @@
         "type": "string"
       },
       "description": "Domains that match AI keywords but are not AI services. Filtered out by the discovery job."
+    }
+  },
+  "$defs": {
+    "relativePath": {
+      "type": "string",
+      "pattern": "^(?!.*\\.\\.)(?![/\\\\])(?![A-Za-z]:)[^\\u0000-\\u001f]{1,256}$",
+      "description": "A path relative to the user's home directory. The collectors run as root or SYSTEM and join these to a home directory before reading them, so absolute paths, drive letters, parent traversal and control characters are refused here rather than trusted there."
     }
   }
 }
