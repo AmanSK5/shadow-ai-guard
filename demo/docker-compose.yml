@@ -18,8 +18,12 @@ services:
   loki:
     image: grafana/loki:3.4.1
     command: -config.file=/etc/loki/local-config.yaml
+    # Loopback only. Docker publishes to every interface by default, and this
+    # demo runs anonymous Grafana and a token everyone can read. Nothing here
+    # should be reachable from the rest of the network someone happens to be
+    # sitting on.
     ports:
-      - "3100:3100"
+      - "127.0.0.1:3100:3100"
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O- http://localhost:3100/ready | grep -q ready || exit 1"]
       interval: 5s
@@ -38,8 +42,12 @@ services:
     # --no-fallback because only registry/ is copied: build.py also writes the
     # scanner's bundled fallback, which lives outside that directory and has
     # nothing to do with the demo.
+    #
+    # The dependencies come from the same hash-pinned file CI uses. It carries
+    # a few test packages the builder has no use for, which costs a couple of
+    # seconds and saves maintaining a second lockfile that would drift.
     command: >
-      sh -c "pip install --quiet pyyaml jsonschema &&
+      sh -c "pip install --quiet --require-hashes -r /src/.github/requirements-ci.txt &&
              cp -r /src/registry /tmp/registry &&
              cd /tmp && python registry/build.py --no-fallback &&
              cp registry/dist/registry.json registry/dist/collector.json /out/"
@@ -66,7 +74,7 @@ services:
       registry-builder:
         condition: service_completed_successfully
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz')\" || exit 1"]
       interval: 5s
@@ -79,7 +87,9 @@ services:
     image: grafana/grafana:11.1.0
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "true"
-      GF_AUTH_ANONYMOUS_ORG_ROLE: "Admin"
+      # Viewer: the demo is for looking at a dashboard, and Admin let
+      # anyone who reached the port rewrite the provisioning.
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
       GF_AUTH_DISABLE_LOGIN_FORM: "true"
       GF_USERS_DEFAULT_THEME: "dark"
     volumes:
@@ -89,7 +99,7 @@ services:
     depends_on:
       - loki
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
 
   # Seeds synthetic findings once the receiver is healthy, then exits.
   # Re-run with:  docker compose run --rm seeder
@@ -112,7 +122,7 @@ services:
     volumes:
       - ../extension:/usr/share/nginx/html:ro
     ports:
-      - "8090:80"
+      - "127.0.0.1:8090:80"
 
 volumes:
   registry-dist:
