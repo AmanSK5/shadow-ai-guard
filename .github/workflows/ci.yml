@@ -256,6 +256,26 @@ jobs:
             sleep 2
           done
           echo "::error::findings never appeared in Loki"; exit 1
+      - name: Grafana loaded the provisioned dashboard
+        run: |
+          # The demo's actual promise is that you open Grafana and see a
+          # populated dashboard. Everything above proves the pipeline works
+          # while saying nothing about the part people are told to look at:
+          # a broken image, bad provisioning yaml or malformed dashboard JSON
+          # would leave the demo useless and this job green.
+          for _ in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:3000/api/health >/dev/null 2>&1 && break
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:3000/api/health
+          # Anonymous access is Viewer, which is enough to list dashboards.
+          # This proves provisioning parsed the file and registered it. It
+          # does not prove the panels return data; that needs the datasource
+          # to answer, which is a heavier check than a smoke test wants.
+          curl -fsS 'http://127.0.0.1:3000/api/search?type=dash-db' \
+            | grep -q '"uid": *"ai-guard"' \
+            || { echo "::error::the provisioned dashboard is not there"; exit 1; }
+
       - name: logs, when something above failed
         if: failure()
         working-directory: demo
