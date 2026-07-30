@@ -1,0 +1,78 @@
+# Example NetworkPolicy for the receiver.
+#
+# Not a chart template, and not installed by helm. A policy that is wrong is
+# worse than no policy, because it fails as a silent outage rather than an
+# error, and the right rules depend on where your ingress controller, log
+# store and Alertmanager actually live. Read this, change the marked parts,
+# apply it yourself.
+#
+# Requires a CNI that enforces NetworkPolicy. Flannel does not. If yours does
+# not either, applying this changes nothing and tells you nothing, which is
+# its own kind of misleading.
+#
+#   kubectl -n <namespace> apply -f charts/ai-guard/examples/networkpolicy.yaml
+#
+# What it assumes:
+#   * the ingress controller runs in a namespace labelled
+#     kubernetes.io/metadata.name=ingress-nginx
+#   * Loki runs in a namespace labelled kubernetes.io/metadata.name=monitoring
+#   * CoreDNS runs in kube-system
+#
+# Verify after applying, because the failure mode is quiet:
+#   kubectl -n <namespace> exec deploy/ai-guard -- wget -qO- localhost:8080/healthz
+#   then post a finding from outside and check it arrives.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ai-guard-receiver
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: ai-guard
+  policyTypes: [Ingress, Egress]
+
+  ingress:
+    # Only the ingress controller reaches the receiver. Endpoints report from
+    # outside the cluster, so they arrive through it rather than directly.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              # CHANGE: your ingress controller's namespace
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8080
+
+  egress:
+    # DNS, or nothing else here resolves.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+    # The log store. Only needed when LOKI_PUSH_URL is set: without it the
+    # receiver writes findings to stdout and something else collects them,
+    # in which case delete this rule.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              # CHANGE: the namespace your log store runs in
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 3100
+
+    # Alertmanager. Delete this rule if ALERTMANAGER_URL is unset.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              # CHANGE: the namespace Alertmanager runs in
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - protocol: TCP
+          port: 9093

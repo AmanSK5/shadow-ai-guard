@@ -1,7 +1,13 @@
 # Receiver image. Multi-arch (amd64, arm64).
+#
+# digest wins over tag when both are set. A tag can be moved to point at
+# different bytes; a digest cannot, which is what you want in an environment
+# where "the same version" has to mean the same image every time.
+#   digest: "sha256:..."   (from: docker buildx imagetools inspect <ref>)
 image:
   repository: ghcr.io/amansk5/shadow-ai-guard/receiver
   tag: ""            # defaults to the chart's appVersion
+  digest: ""
   pullPolicy: IfNotPresent
 
 replicaCount: 1
@@ -57,6 +63,11 @@ ingress:
   # On a Tailscale-operator cluster, set className to "tailscale" and host to
   # a short name like "ai-guard": the operator issues the cert and serves it
   # at https://ai-guard.<tailnet>.ts.net.
+
+# The receiver never calls the Kubernetes API, so it has no use for a
+# ServiceAccount token. Mounting one anyway hands a credential to anything
+# that gets code execution in the pod.
+automountServiceAccountToken: false
 
 podSecurityContext:
   runAsNonRoot: true
