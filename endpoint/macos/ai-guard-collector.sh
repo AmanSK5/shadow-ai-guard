@@ -328,6 +328,28 @@ json_get_csv() {
   json_get "$f" "$@"
 }
 
+# safe_rel_path <path> - true if a registry-supplied path is safe to join to
+# a home directory. The collector runs as root and the registry arrives over
+# the network, so the value is treated as input rather than configuration:
+# absolute paths, drive letters, parent traversal and control characters are
+# refused. Symlinks are not resolved. The threat here is a tampered registry,
+# and a symlink the user made inside their own home is not that.
+#
+# A bad entry is skipped rather than fatal. Aborting the scan would mean one
+# poisoned path could switch off detection everywhere, which is a better
+# outcome for an attacker than being ignored.
+safe_rel_path() {
+  case "$1" in
+    "" ) return 1 ;;
+    /* | \\* ) return 1 ;;
+    [A-Za-z]:* ) return 1 ;;
+    *..* ) return 1 ;;
+  esac
+  [ "${#1}" -le 256 ] || return 1
+  case "$1" in *[[:cntrl:]]* ) return 1 ;; esac
+  return 0
+}
+
 # first_existing <base> <comma-separated-paths> - print the first that exists
 first_existing() {
   local base="$1" list="$2" old="$IFS" c
@@ -336,6 +358,7 @@ first_existing() {
   IFS="$old"
   for c in "$@"; do
     [ -n "$c" ] || continue
+    safe_rel_path "$c" || continue
     if [ -e "$base/$c" ]; then printf '%s' "$c"; return 0; fi
   done
   return 1
@@ -363,6 +386,10 @@ first_binary() {
 # account_jwt_path + account_jwt_claim when the identity is inside a token.
 while IFS="$SEP" read -r _kind tool acct_path keys jwt_path jwt_claim cfg_paths _bins; do
   [ -n "$acct_path" ] || continue   # presence-only tools are handled by the desktop scan
+  if ! safe_rel_path "$acct_path"; then
+    echo "[ai-guard] refusing registry path for $tool: not relative to home" >&2
+    continue
+  fi
   f="$HOME_DIR/$acct_path"
   if [ -f "$f" ]; then
     email=""
@@ -467,6 +494,10 @@ done < <(printf '%s\n' "$REG_TSV" | /usr/bin/grep "^cli${SEP}")
 while IFS="$SEP" read -r _kind tool path os; do
   # Claude Desktop's config path differs per platform; skip the Windows rows.
   case "$os" in any|macos) ;; *) continue ;; esac
+  if ! safe_rel_path "$path"; then
+    echo "[ai-guard] refusing registry path for $tool: not relative to home" >&2
+    continue
+  fi
   f="$HOME_DIR/$path"
   [ -f "$f" ] || continue
   servers=$(json_keys "$f" mcpServers)

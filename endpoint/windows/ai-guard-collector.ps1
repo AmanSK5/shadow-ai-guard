@@ -239,7 +239,32 @@ function Send-FindingOnce {
     Send-Finding -Surface $Surface -Tool $Tool -Account $Account -Evidence $Evidence
 }
 
-function Join-UserPath { param([string]$Rel) Join-Path $UserHome ($Rel -replace '/', '\') }
+# Registry-supplied paths are documented as relative to the user's profile,
+# but the collector runs as SYSTEM and the registry arrives over the network,
+# so the value is treated as input rather than configuration. Absolute paths,
+# drive letters, parent traversal and control characters return $null and the
+# caller skips that entry.
+#
+# Skipped rather than fatal: aborting would let one poisoned path switch off
+# detection everywhere, which suits an attacker better than being ignored.
+function Test-SafeRelativePath {
+    param([string]$Rel)
+    if ([string]::IsNullOrWhiteSpace($Rel)) { return $false }
+    if ($Rel.Length -gt 256) { return $false }
+    if ($Rel -match '^[\\/]' -or $Rel -match '^[A-Za-z]:') { return $false }
+    if ($Rel -match '\.\.') { return $false }
+    if ($Rel -match '[\x00-\x1f]') { return $false }
+    return $true
+}
+
+function Join-UserPath {
+    param([string]$Rel)
+    if (-not (Test-SafeRelativePath $Rel)) {
+        Write-Output "ai-guard REFUSED: registry path not relative to profile"
+        return $null
+    }
+    Join-Path $UserHome ($Rel -replace '/', '\')
+}
 
 # Decode a JWT payload and pull one claim. Regex rather than ConvertFrom-Json
 # for the same reason as Get-JsonStringField: never whole-file parse input we
@@ -263,6 +288,7 @@ function Get-JwtClaim {
 foreach ($t in $Registry.cli) {
     if (-not $t.account_json_path) { continue }   # presence-only tools: desktop scan
     $f = Join-UserPath $t.account_json_path
+    if (-not $f) { continue }
     if (Test-Path $f) {
         try {
             $email = ''
@@ -284,7 +310,8 @@ foreach ($t in $Registry.cli) {
         }
     } else {
         foreach ($c in $t.config_paths) {
-            if (Test-Path (Join-UserPath $c)) {
+            $cp = Join-UserPath $c
+            if ($cp -and (Test-Path $cp)) {
                 Send-FindingOnce -Surface 'cli' -Tool $t.tool -Account '' -Evidence "~/$c"
                 break
             }
@@ -359,7 +386,8 @@ foreach ($t in $Registry.desktop) {
 foreach ($t in $Registry.cli) {
     if ($t.account_json_path) { continue }
     foreach ($c in $t.config_paths) {
-        if (Test-Path (Join-UserPath $c)) {
+        $cp = Join-UserPath $c
+        if ($cp -and (Test-Path $cp)) {
             Send-FindingOnce -Surface 'desktop' -Tool $t.tool -Account '' -Evidence "~/$c"
             break
         }
@@ -370,6 +398,7 @@ foreach ($t in $Registry.cli) {
 foreach ($m in $Registry.mcp) {
     if ($m.os -notin @('any', 'windows')) { continue }
     $f = Join-UserPath $m.path
+    if (-not $f) { continue }
     if (-not (Test-Path $f)) { continue }
     try {
         $names = Get-McpServerNames -Path $f
