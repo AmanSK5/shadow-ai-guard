@@ -49,9 +49,59 @@ a non-fatal error and will succeed on the following run.
 ## Exposure
 
 The ingest endpoint must be reachable by endpoints off your network, which
-usually means a public ingress. Deploy it with rate limiting and body size
-limits at the ingress layer, and TLS terminated with a real certificate. The
-receiver performs no lookups or writes on unauthenticated requests.
+usually means a public ingress. Terminate TLS with a real certificate.
+
+The receiver defends itself first. The bearer token is checked in middleware
+before the request body is read, so an unauthenticated caller cannot make it
+parse anything, and bodies over `MAX_BODY_BYTES` (64KB by default, which is
+generous for a finding) are refused before they are read. Every externally
+supplied field is length-bounded. That holds regardless of what you put in
+front of it.
+
+Add rate limiting and body size limits at the ingress as well. The receiver's
+own limits stop it doing work; the ingress stops the traffic arriving in the
+first place, which is the part that protects everything else sharing the
+cluster. The annotations are controller-specific, so the chart takes them
+through `ingress.annotations` rather than shipping one example that is wrong
+for most people.
+
+For ingress-nginx:
+
+```yaml
+ingress:
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "64k"
+    nginx.ingress.kubernetes.io/limit-rps: "10"
+    nginx.ingress.kubernetes.io/limit-connections: "20"
+```
+
+For Traefik, the limits live in middleware objects that the ingress then
+references:
+
+```yaml
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: ai-guard-limits
+spec:
+  buffering:
+    maxRequestBodyBytes: 65536
+  rateLimit:
+    average: 10
+    burst: 20
+```
+
+```yaml
+ingress:
+  annotations:
+    traefik.ingress.kubernetes.io/router.middlewares: default-ai-guard-limits@kubernetescrd
+```
+
+Sizing: a finding is a few hundred bytes, and a collector run posts one
+request per detection, so a busy machine sends a handful. Ten requests per
+second per source is already generous. If you raise `MAX_BODY_BYTES` for a
+source that legitimately sends more, raise the ingress limit to match, or the
+ingress will reject what the receiver would have accepted.
 
 ## Endpoint collectors
 
@@ -63,9 +113,12 @@ no persistent processes, and write state only under their own directory.
 
 ## What this is not
 
-This is a visibility tool, not a control. It does not block anything, and a
-user with local admin can remove the collector or fake its output. Its value
-is making the common case visible, not defeating a determined insider.
+Detection is visibility, not enforcement: it observes, and a user with local
+admin can remove a collector or fake its output. The browser paste guard is
+the one part that intervenes, and it is a seatbelt rather than a barrier: it
+stops an accidental paste, and someone determined can use a browser it is not
+deployed to. The value is making the common case visible and the careless
+case difficult, not defeating a determined insider.
 
 ## How this repo is checked
 
