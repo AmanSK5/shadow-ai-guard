@@ -34,10 +34,14 @@ services:
     # The repo is mounted read-only, but build.py writes into registry/dist/
     # inside the repo. So copy the registry dir to a writable temp location,
     # build there, and copy the two artifacts the receiver needs to /out.
+    #
+    # --no-fallback because only registry/ is copied: build.py also writes the
+    # scanner's bundled fallback, which lives outside that directory and has
+    # nothing to do with the demo.
     command: >
       sh -c "pip install --quiet pyyaml jsonschema &&
              cp -r /src/registry /tmp/registry &&
-             cd /tmp && python registry/build.py &&
+             cd /tmp && python registry/build.py --no-fallback &&
              cp registry/dist/registry.json registry/dist/collector.json /out/"
     volumes:
       - ../:/src:ro
@@ -102,7 +106,7 @@ services:
         condition: service_healthy
     restart: "no"
 
-# Serves the paste-guard demo page (and the real guard.js it loads).
+  # Serves the paste-guard demo page, and the real guard.js it loads.
   extension-demo:
     image: nginx:1.27-alpine
     volumes:
