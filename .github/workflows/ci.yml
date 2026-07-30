@@ -198,6 +198,73 @@ jobs:
           diff -q registry/dist/collector.json charts/ai-guard/files/collector.json \
             || { echo "::error::charts/ai-guard/files/collector.json is stale, copy registry/dist over it"; exit 1; }
 
+  demo-smoke:
+    # The demo is the first instruction in the README and the thing the
+    # project asks people to run before trusting anything else. It broke and
+    # stayed broken through a dozen green runs, because nothing here ran it.
+    #
+    # Container exit codes are not enough on their own: the seeder can exit 0
+    # having posted nothing anyone stored. The checks below follow a finding
+    # all the way to Loki, which is the claim the demo actually makes.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: bring the demo up
+        working-directory: demo
+        run: docker compose up -d --build
+      - name: the receiver becomes healthy
+        run: |
+          for _ in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:8080/healthz >/dev/null 2>&1 && break
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:8080/healthz
+      - name: the one-shot containers succeeded
+        working-directory: demo
+        run: |
+          for svc in registry-builder seeder; do
+            cid=$(docker compose ps -aq "$svc")
+            if [ -z "$cid" ]; then
+              echo "::error::$svc never ran"; exit 1
+            fi
+            code=$(docker wait "$cid")
+            if [ "$code" != "0" ]; then
+              echo "::error::$svc exited $code"; exit 1
+            fi
+          done
+      - name: the registry is served and the demo page is up
+        run: |
+          curl -fsS -H "Authorization: Bearer demo-token" \
+            http://127.0.0.1:8080/registry >/dev/null
+          curl -fsS http://127.0.0.1:8090/demo/ >/dev/null
+      - name: seeded findings reached the receiver
+        run: |
+          # A zero counter means the seeder posted nothing that was accepted.
+          curl -fsS http://127.0.0.1:8080/metrics \
+            | grep -Eq 'aiguard_findings_total\{[^}]*\} [1-9]' \
+            || { echo "::error::no findings were ingested"; exit 1; }
+      - name: and reached Loki
+        run: |
+          # Retried: the receiver returns 200 before Loki has necessarily
+          # indexed anything, and a demo that shows an empty dashboard is
+          # exactly the failure this job exists to catch.
+          for _ in $(seq 1 15); do
+            body=$(curl -fsS -G http://127.0.0.1:3100/loki/api/v1/query_range \
+              --data-urlencode 'query={app="ai-guard-receiver"}' \
+              --data-urlencode 'limit=5' 2>/dev/null || true)
+            case "$body" in *'"values"'*) echo "findings are queryable"; exit 0 ;; esac
+            sleep 2
+          done
+          echo "::error::findings never appeared in Loki"; exit 1
+      - name: logs, when something above failed
+        if: failure()
+        working-directory: demo
+        run: docker compose logs
+      - name: tear down
+        if: always()
+        working-directory: demo
+        run: docker compose down -v
+
   build-images:
     # main and tags only: PRs validate, they do not publish.
     if: github.event_name == 'push'
@@ -205,7 +272,7 @@ jobs:
       contents: read
       packages: write
     needs: [placeholder-guard, shellcheck, collector-delivery-state,
-            registry-validate, receiver-test, scanner-test, helm]
+            registry-validate, receiver-test, scanner-test, helm, demo-smoke]
     runs-on: ubuntu-latest
     strategy:
       matrix:
