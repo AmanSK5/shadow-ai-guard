@@ -15,7 +15,7 @@ tools:
     name: Claude
     vendor: Anthropic
     category: assistant
-    approved: true
+    approved: false
     added_by: manual
     domains: [claude.ai, anthropic.com, api.anthropic.com, claude.com, claudeusercontent.com, console.anthropic.com]
     app_names: ["Claude.app", "Claude"]
@@ -36,7 +36,7 @@ tools:
     name: Claude Code
     vendor: Anthropic
     category: coding
-    approved: true
+    approved: false
     added_by: manual
     domains: []
     extension_ids:
@@ -113,7 +113,7 @@ tools:
     name: GitHub Copilot
     vendor: GitHub
     category: coding
-    approved: true
+    approved: false
     added_by: manual
     domains: [copilot-proxy.githubusercontent.com, api.githubcopilot.com, copilot.github.com]
     extension_ids:

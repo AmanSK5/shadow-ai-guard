@@ -12,7 +12,7 @@ services:
   vendor: Anthropic
   category: assistant
   risk_tier: high
-  approved: true
+  approved: false
   domains:
   - claude.ai
   - anthropic.com
@@ -39,7 +39,7 @@ services:
   vendor: Anthropic
   category: coding
   risk_tier: high
-  approved: true
+  approved: false
   domains: []
   entra_app_ids: []
   email_domains:
@@ -127,7 +127,7 @@ services:
   vendor: GitHub
   category: coding
   risk_tier: medium
-  approved: true
+  approved: false
   domains:
   - copilot-proxy.githubusercontent.com
   - api.githubcopilot.com
