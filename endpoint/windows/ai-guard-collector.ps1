@@ -72,6 +72,10 @@ if (-not $Console) {
     exit 0
 }
 $UserHome = $Console.Home
+# The profile path with any reparse points resolved, and a trailing
+# separator so a sibling directory whose name merely starts the same way
+# cannot pass the containment check below.
+$UserHomeReal = [IO.Path]::GetFullPath($UserHome).TrimEnd('\') + '\'
 $ConsoleUser = $Console.User
 
 $Serial = ''
@@ -257,13 +261,66 @@ function Test-SafeRelativePath {
     return $true
 }
 
+
+# Resolve-UnderHome <path> - the real path if it stays inside the profile,
+# $null if it does not.
+#
+# Test-SafeRelativePath rejects a registry value that tries to escape. This
+# catches the other half: a path that looks fine but resolves elsewhere,
+# because a junction or symlink on the machine points out of the profile. The
+# collector runs as SYSTEM, so following one reads a file the user could not.
+#
+# Links are resolved rather than refused. Redirected profile folders are
+# ordinary on managed Windows, and refusing to follow any of them would drop
+# real findings to prevent an unlikely one.
+function Resolve-UnderHome {
+    param([string]$Path)
+    if (-not $Path) { return $null }
+    if (-not (Test-Path -LiteralPath $Path)) { return $null }
+    $p = $Path
+    for ($hops = 0; $hops -lt 16; $hops++) {
+        $item = Get-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue
+        if (-not $item) { return $null }
+        # LinkTarget on PowerShell 6+, Target on Windows PowerShell 5.1.
+        $target = $null
+        if ($item.PSObject.Properties['LinkTarget'] -and $item.LinkTarget) {
+            $target = $item.LinkTarget
+        } elseif ($item.PSObject.Properties['Target'] -and $item.Target) {
+            $target = @($item.Target)[0]
+        }
+        if (-not $target) { break }
+        if ([IO.Path]::IsPathRooted($target)) {
+            $p = $target
+        } else {
+            $p = Join-Path (Split-Path -Parent $p) $target
+        }
+        if (-not (Test-Path -LiteralPath $p)) { return $null }
+    }
+    $full = [IO.Path]::GetFullPath($p)
+    if ($full.StartsWith($UserHomeReal, [StringComparison]::OrdinalIgnoreCase)) {
+        return $full
+    }
+    return $null
+}
+
 function Join-UserPath {
     param([string]$Rel)
     if (-not (Test-SafeRelativePath $Rel)) {
         Write-Output "ai-guard REFUSED: registry path not relative to profile"
         return $null
     }
-    Join-Path $UserHome ($Rel -replace '/', '\')
+    # A single separator: the replacement string in -replace is not an
+    # escape context, so two backslashes here produced two in the path.
+    # Windows tolerated it, which is why it went unnoticed.
+    $joined = Join-Path $UserHome ($Rel -replace '/', '\')
+    # Not every caller is about to read the file; some only test
+    # existence. Resolve when it exists so the containment check applies
+    # to what would actually be opened, and hand back the joined path
+    # otherwise so a missing file stays missing rather than a refusal.
+    if (Test-Path -LiteralPath $joined) {
+        return (Resolve-UnderHome $joined)
+    }
+    $joined
 }
 
 # Decode a JWT payload and pull one claim. Regex rather than ConvertFrom-Json

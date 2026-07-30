@@ -83,6 +83,11 @@ if ! resolve_user; then
   exit 0
 fi
 
+# The home directory with every symlink already resolved, so the containment
+# check below compares like with like. Doing it once here rather than per path
+# keeps it to one subshell for the whole run.
+HOME_REAL=$(cd "$HOME_DIR" 2>/dev/null && pwd -P) || HOME_REAL="$HOME_DIR"
+
 # Stable device identifier. Prefer the DMI product serial (root can read it),
 # fall back to machine-id, then hostname. Never blank.
 DEVICE=""
@@ -391,6 +396,43 @@ safe_rel_path() {
   return 0
 }
 
+# resolve_under_home <absolute-path> - print the real path if it stays inside
+# the home directory, fail if it does not.
+#
+# safe_rel_path above rejects a registry value that tries to escape. This
+# catches the other half: a path that looks fine but resolves somewhere else,
+# because a symlink on the machine points out of the home directory. The
+# collector runs as root, so following one reads a file the user could not.
+#
+# Symlinks are resolved rather than rejected. Dotfiles are commonly managed
+# by symlinking them into a checkout, and those are exactly the machines that
+# have AI CLIs on them; refusing to follow any link would drop real findings
+# to prevent an unlikely one.
+#
+# No realpath or readlink -f: neither is dependable on macOS. The loop walks
+# links one at a time, and pwd -P canonicalises the directory chain.
+resolve_under_home() {
+  local p="$1" hops=0 target dir base
+  [ -e "$p" ] || return 1
+  while [ -L "$p" ]; do
+    hops=$((hops + 1))
+    [ "$hops" -le 16 ] || return 1        # a symlink loop, or someone being clever
+    target=$(readlink "$p") || return 1
+    case "$target" in
+      /*) p="$target" ;;
+      *)  p="$(dirname "$p")/$target" ;;
+    esac
+    [ -e "$p" ] || return 1
+  done
+  dir=$(dirname "$p")
+  base=$(basename "$p")
+  dir=$(cd "$dir" 2>/dev/null && pwd -P) || return 1
+  case "$dir/$base" in
+    "$HOME_REAL"/*) printf '%s' "$dir/$base"; return 0 ;;
+  esac
+  return 1
+}
+
 # first_existing <base> <comma-paths> - print first path that exists
 first_existing() {
   local base="$1" list="$2" old="$IFS" c
@@ -398,6 +440,7 @@ first_existing() {
   for c in "$@"; do
     [ -n "$c" ] || continue
     safe_rel_path "$c" || continue
+    resolve_under_home "$base/$c" >/dev/null 2>&1 || continue
     [ -e "$base/$c" ] && { printf '%s' "$c"; return 0; }
   done
   return 1
@@ -428,7 +471,7 @@ while IFS="$SEP" read -r _kind tool acct_path keys jwt_path jwt_claim cfg_paths 
     echo "[ai-guard] refusing registry path for $tool: not relative to home" >&2
     continue
   fi
-  f="$HOME_DIR/$acct_path"
+  f=$(resolve_under_home "$HOME_DIR/$acct_path") || f=""
   if [ -f "$f" ]; then
     email=""
     if [ -n "$keys" ]; then
@@ -534,7 +577,7 @@ while IFS="$SEP" read -r _kind tool path os; do
     echo "[ai-guard] refusing registry path for $tool: not relative to home" >&2
     continue
   fi
-  f="$HOME_DIR/$path"
+  f=$(resolve_under_home "$HOME_DIR/$path") || continue
   [ -f "$f" ] || continue
   servers=$(json_keys "$f" mcpServers)
   [ -n "$servers" ] && report_once "mcp" "${tool}-mcp:$servers" "" "$path mcpServers"
