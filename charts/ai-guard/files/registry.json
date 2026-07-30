@@ -6,7 +6,7 @@
       "name": "Claude",
       "vendor": "Anthropic",
       "category": "assistant",
-      "approved": true,
+      "approved": false,
       "added_by": "manual",
       "domains": [
         "claude.ai",
@@ -50,7 +50,7 @@
       "name": "Claude Code",
       "vendor": "Anthropic",
       "category": "coding",
-      "approved": true,
+      "approved": false,
       "added_by": "manual",
       "domains": [],
       "extension_ids": {
@@ -192,7 +192,7 @@
       "name": "GitHub Copilot",
       "vendor": "GitHub",
       "category": "coding",
-      "approved": true,
+      "approved": false,
       "added_by": "manual",
       "domains": [
         "copilot-proxy.githubusercontent.com",
