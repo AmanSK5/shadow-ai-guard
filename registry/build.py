@@ -4,6 +4,7 @@
 Usage:
   python build.py --check          # validate only (CI merge-request gate)
   python build.py                  # validate + write dist/*.json
+  python build.py --no-fallback    # dist/*.json only, for a partial checkout
 
 Artifacts:
   dist/registry.json    full registry, served by the receiver at /registry
@@ -116,7 +117,7 @@ def _scanner_shape(registry) -> dict:
 }
 
 
-def emit(registry):
+def emit(registry, write_fallback=True):
     DIST.mkdir(exist_ok=True)
     tools = registry["tools"]
 
@@ -179,6 +180,12 @@ def emit(registry):
     scanner = _scanner_shape(registry)
     (DIST / "scanner.json").write_text(json.dumps(scanner, indent=2))
 
+    print(f"wrote {len(tools)} tools -> {DIST}/{{registry,extension,collector,scanner}}.json")
+
+    if not write_fallback:
+        print("skipped the scanner fallback (--no-fallback)")
+        return
+
     # The scanner's bundled fallback is the same shape, so write it from the
     # same dict. No timestamp: the output has to be byte-identical between
     # runs or --check would fail every day on a date it generated itself.
@@ -186,8 +193,6 @@ def emit(registry):
         FALLBACK_HEADER
         + yaml.safe_dump(scanner, sort_keys=False, allow_unicode=True, width=100)
     )
-
-    print(f"wrote {len(tools)} tools -> {DIST}/{{registry,extension,collector,scanner}}.json")
     print(f"wrote {len(tools)} tools -> {FALLBACK.relative_to(HERE.parent)}")
 
 
@@ -205,6 +210,17 @@ def fallback_is_current(registry) -> bool:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true", help="validate only, no artifacts")
+    # For callers that have registry/ but not the scanner package, the demo
+    # being the one that matters: its builder copies registry/ into a writable
+    # temp dir and nothing else, so the fallback write lands on a path that
+    # does not exist. Explicit rather than inferred from a missing directory,
+    # because the same inference in CI would quietly skip the drift check that
+    # the fallback exists to provide.
+    ap.add_argument(
+        "--no-fallback",
+        action="store_true",
+        help="do not write the scanner's bundled fallback",
+    )
     args = ap.parse_args()
 
     registry, schema = load()
@@ -226,7 +242,7 @@ def main():
         print("bundled fallback registry is up to date")
         return
 
-    emit(registry)
+    emit(registry, write_fallback=not args.no_fallback)
 
 
 if __name__ == "__main__":
