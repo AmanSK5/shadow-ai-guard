@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from typing import Optional
 from datetime import datetime, timedelta, timezone
 
@@ -159,11 +160,7 @@ class EntraScanner(BaseScanner):
 
             service = self.registry.match_entra_app_id(app_id)
             if not service:
-                # Also try matching app display name against known service names
-                for svc in self.registry.services:
-                    if svc.name.lower() in app_name.lower():
-                        service = svc
-                        break
+                service = _match_service_by_name(self.registry, app_name)
             if not service:
                 continue
 
@@ -374,13 +371,7 @@ class EntraScanner(BaseScanner):
                 continue
             service = self.registry.match_entra_app_id(app_id)
             if not service:
-                for svc in self.registry.services:
-                    if (
-                        svc.name.lower() in display_name.lower()
-                        or (svc.vendor and svc.vendor.lower() in publisher.lower())
-                    ):
-                        service = svc
-                        break
+                service = _match_service_by_name(self.registry, display_name)
             if service:
                 apps[app_id] = service
         return apps
@@ -401,14 +392,7 @@ class EntraScanner(BaseScanner):
 
             service = self.registry.match_entra_app_id(app_id)
             if not service:
-                # Fuzzy match on display name / publisher
-                for svc in self.registry.services:
-                    if (
-                        svc.name.lower() in display_name.lower()
-                        or svc.vendor.lower() in (publisher or "").lower()
-                    ):
-                        service = svc
-                        break
+                service = _match_service_by_name(self.registry, display_name)
             if not service:
                 continue
 
@@ -492,6 +476,42 @@ class EntraScanner(BaseScanner):
                 )
             )
         return findings
+
+
+def _match_service_by_name(registry, display_name: str):
+    """Match a registry service to an application's display name.
+
+    Whole words, and the longest name wins.
+
+    A substring match makes "Continue" a match for anything containing the
+    word inside another, and a plain first-match loop lets "Claude" claim an
+    application called "Claude Code" purely because it appears earlier in the
+    registry. Both put a confident, wrong tool name on a finding, which is
+    worse than no finding: somebody acts on it.
+
+    Publisher is deliberately not consulted. Matching a registry vendor
+    against publisherName meant every application published by Microsoft or
+    Google matched whichever of their tools the registry happened to list
+    first. That never fired on the tenant this was written against, because
+    publisherName came back empty there, so it was latent rather than
+    harmless.
+    """
+    if not display_name:
+        return None
+    haystack = display_name.lower()
+    best_name = ""
+    best_svc = None
+    for svc in registry.services:
+        name = (svc.name or "").lower()
+        if not name:
+            continue
+        # Lookarounds rather than \b: several registry names end in
+        # punctuation ("Fireflies.ai", "Microsoft Copilot (Free)"), where \b
+        # does not match the way it reads like it should.
+        if re.search(r"(?<!\w)" + re.escape(name) + r"(?!\w)", haystack):
+            if len(name) > len(best_name):
+                best_name, best_svc = name, svc
+    return best_svc
 
 
 def _oauth_scopes(entry: dict) -> list[str]:
