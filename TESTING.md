@@ -104,7 +104,7 @@ a clean machine, which is the failure this project cares most about avoiding.
 
 ## Reporting
 
-Open an issue: https://github.com/AmanSK5/shadow-ai-guard/issues
+Open an issue: https://github.com/AmanSK5/shadow-ai-guard/issues/new/choose
 
 There are templates for installation problems, wrong or missing detections,
 privacy concerns and unclear documentation. If none fits, a plain issue is
