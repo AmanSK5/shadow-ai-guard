@@ -42,6 +42,25 @@ as corporate, so every account reports as a personal-account warning.
 If `AIGUARD_RECEIVER_BASE` is unset the script prints findings to stdout
 instead of POSTing, which is the local-test mode.
 
+### Trying it against a local receiver
+
+No RMM needed. Environment variables do not survive `sudo` on their own, so
+pass them through it:
+
+```bash
+sudo AIGUARD_RECEIVER_BASE=http://localhost:8080 \
+     AIGUARD_TOKEN=demo-token \
+     AIGUARD_CORP_DOMAINS=example.com \
+     ./ai-guard-collector.sh
+```
+
+Those values match the demo in `demo/`, so `docker compose up` there gives
+you somewhere for the findings to land.
+
+Set the corporate domains to something that is not yours and your own
+accounts show up as personal findings, which is the quickest way to see
+exactly what the collector reports about you.
+
 ## What it reports
 
 | surface | example | account? |

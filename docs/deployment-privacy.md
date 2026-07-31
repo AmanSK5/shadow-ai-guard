@@ -16,13 +16,21 @@ Deliberately not collected: message or page content, browsing history beyond mat
 against the registry of known AI domains, keystrokes, file contents, credentials or 
 tokens belonging to users.
 
-How usernames are handled: for sign-ins on an approved corporate domain, the 
-username (the local part of the work email) is recorded in the user field, because that 
-identity is already known to IT. For personal-domain accounts the user field is left 
-empty and only the domain is kept.
+How usernames are handled depends on where the finding came from, and the
+two rules are different.
 
-On endpoint collectors the username is the device's console account name, which is 
-already visible to IT through the MDM.
+Cloud and browser findings follow the account. For sign-ins on an approved
+corporate domain the username, meaning the local part of the work email, is
+recorded in the `user` field, because that identity is already known to IT.
+For personal-domain accounts the field is left empty and only the domain is
+kept.
+
+Endpoint collectors record the device's console account name whichever
+account the tool is signed into, because that name is what the MDM already
+reports for the device, and the finding is about a managed machine rather
+than an email address. A personal-account finding from a collector therefore
+carries a username and a personal domain together. That is deliberate: the
+username identifies the machine's owner, not the personal account.
 
 The design intent is to answer "is a managed device using an unmanaged AI
 account" with the minimum identifiable data that still supports a

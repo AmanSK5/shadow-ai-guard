@@ -67,6 +67,10 @@ When you want to run it for real, start with
 Everything is under `docs/` and the component folders. Start here rather than
 digging through subfolders.
 
+**Trying it out**
+- [Testing guide](TESTING.md) - three routes that need no company tenant,
+  what each one proves, and what is worth reporting back
+
 **Getting it running**
 - [Getting started](docs/getting-started.md) - clone to your first finding on
   a dashboard, the minimum viable deployment
