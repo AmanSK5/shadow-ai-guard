@@ -314,9 +314,21 @@ function Get-LinkTarget {
 # macOS and Linux collectors get this free from pwd -P; Windows has no
 # equivalent that works on both Windows PowerShell and PowerShell 7, so the
 # walk is done here.
+#
+# Following a link starts the walk again from the root rather than carrying
+# on from where the link was. The target has parents of its own, and any of
+# them can be a junction:
+#
+#   C:\Users\alice\a   -> link to C:\Users\alice\b\sub
+#   C:\Users\alice\b   -> junction outside the profile
+#
+# Continuing from the target would land on C:\Users\alice\b\sub\config.json,
+# which reads as inside the profile and is not.
 function Resolve-PhysicalPath {
-    param([string]$Path)
+    param([string]$Path, [int]$Hops = 0)
     if (-not $Path) { return $null }
+    if ($Hops -gt 40) { return $null }   # a link loop, or someone being clever
+
     $full = [IO.Path]::GetFullPath($Path)
     $root = [IO.Path]::GetPathRoot($full)
     if (-not $root) { return $null }
@@ -324,22 +336,21 @@ function Resolve-PhysicalPath {
     $current = $root
     $parts = $full.Substring($root.Length).Split(
         [char[]]@('\', '/'), [StringSplitOptions]::RemoveEmptyEntries)
-    foreach ($part in $parts) {
-        $current = Join-Path $current $part
-        $hops = 0
-        while ($true) {
-            if (-not (Test-Path -LiteralPath $current)) { return $null }
-            $item = Get-Item -LiteralPath $current -Force -ErrorAction SilentlyContinue
-            $target = Get-LinkTarget $item
-            if (-not $target) { break }
-            $hops++
-            if ($hops -gt 16) { return $null }   # a link loop, or someone being clever
-            if ([IO.Path]::IsPathRooted($target)) {
-                $current = $target
-            } else {
-                $current = Join-Path (Split-Path -Parent $current) $target
+    for ($i = 0; $i -lt $parts.Count; $i++) {
+        $current = Join-Path $current $parts[$i]
+        if (-not (Test-Path -LiteralPath $current)) { return $null }
+
+        $item = Get-Item -LiteralPath $current -Force -ErrorAction SilentlyContinue
+        $target = Get-LinkTarget $item
+        if ($target) {
+            if (-not [IO.Path]::IsPathRooted($target)) {
+                $target = Join-Path (Split-Path -Parent $current) $target
             }
-            $current = [IO.Path]::GetFullPath($current)
+            if ($i + 1 -lt $parts.Count) {
+                $rest = $parts[($i + 1)..($parts.Count - 1)] -join '\'
+                $target = Join-Path $target $rest
+            }
+            return Resolve-PhysicalPath -Path $target -Hops ($Hops + 1)
         }
     }
     [IO.Path]::GetFullPath($current)
