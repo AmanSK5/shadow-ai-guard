@@ -4,6 +4,13 @@
 > **Alpha release.** Early-stage and under active development. It works, but
 > has known limitations tracked in [Issues](../../issues).
 
+> **Free and open source.** Shadow AI Guard is available here at no charge
+> under Apache-2.0. Others may legitimately charge for hosting, deployment,
+> support or managed services, but the software itself can always be obtained
+> from this repository for free. Before buying anything based on it, check
+> what is actually being provided beyond the code. See
+> [TRADEMARKS.md](TRADEMARKS.md) for how the project name may be used.
+
 Shadow AI detection across every surface it actually appears on: browser, CLI,
 IDE, desktop, network and cloud. Built to run on infrastructure you already
 have, for roughly the cost of nothing.
