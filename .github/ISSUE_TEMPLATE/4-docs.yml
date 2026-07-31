@@ -1,0 +1,29 @@
+name: The instructions did not make sense
+description: A step assumed something you did not have or know
+labels: [documentation]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Worth reporting even if you worked it out. If you had to guess, the
+        next person will guess wrong.
+  - type: input
+    id: where
+    attributes:
+      label: Which document, and roughly where
+      placeholder: docs/getting-started.md, step 2
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What was unclear or missing
+    validations:
+      required: true
+  - type: textarea
+    id: resolution
+    attributes:
+      label: What you did instead, if you got past it
+      description: |
+        Often the fix: whatever you had to work out is what the page should
+        have said.

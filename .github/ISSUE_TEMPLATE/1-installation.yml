@@ -1,0 +1,43 @@
+name: Something would not install or run
+description: A step in the documentation failed on your machine
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If it failed with a security-looking error, or you think you have
+        found a vulnerability, please use a private security advisory
+        instead: https://github.com/AmanSK5/shadow-ai-guard/security/advisories/new
+  - type: dropdown
+    id: route
+    attributes:
+      label: Which route were you following
+      options:
+        - The demo (docker compose)
+        - A collector against my own machine
+        - A Kubernetes deployment
+        - Something else
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: OS and architecture
+      placeholder: macOS 15 on Apple Silicon, Windows 11 x64, Ubuntu 24.04...
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: |
+        The command you ran and what came back. Paste the output rather than
+        describing it: the exact error is usually the whole answer.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+      description: Skip this if it is obvious.
