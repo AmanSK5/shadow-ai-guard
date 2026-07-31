@@ -379,7 +379,7 @@ function Resolve-PhysicalPath {
 # real findings to prevent an unlikely one.
 function Resolve-UnderHome {
     param([string]$Path)
-    $real = Resolve-PhysicalPath $Path
+    $real = [IO.Path]::GetFullPath($Path)
     if (-not $real) { return $null }
 
     # Resolved once and kept: the profile is physically resolved too, or a
