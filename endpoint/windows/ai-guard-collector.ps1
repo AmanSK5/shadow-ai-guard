@@ -244,14 +244,19 @@ function Get-CollectorRegistry {
         -Headers @{ Authorization = "Bearer $Token" } -TimeoutSec 15 -ErrorAction Stop
 }
 
+# Skipped under -FunctionsOnly: fetching a registry is work, and the refusal
+# below would exit the caller's session before the functions further down
+# were ever defined.
 $Registry = $null
-try { $Registry = Get-CollectorRegistry } catch {
-    Write-Output "ai-guard: registry fetch failed ($($_.Exception.Message))"
-}
-if (-not $Registry) {
-    # An empty scan looks exactly like a clean machine. Refuse instead.
-    Write-Output 'ai-guard: refusing to scan without an identifier list'
-    exit 1
+if (-not $FunctionsOnly) {
+    try { $Registry = Get-CollectorRegistry } catch {
+        Write-Output "ai-guard: registry fetch failed ($($_.Exception.Message))"
+    }
+    if (-not $Registry) {
+        # An empty scan looks exactly like a clean machine. Refuse instead.
+        Write-Output 'ai-guard: refusing to scan without an identifier list'
+        exit 1
+    }
 }
 
 # One finding per surface+tool per run: a tool can match several identifiers
