@@ -56,7 +56,12 @@ function Get-ConsoleUserProfile {
             $prof = Join-Path 'C:\Users' $owner.User
             if (Test-Path $prof) { return @{ User = $owner.User; Home = $prof } }
         }
-    } catch { }
+    } catch {
+        # Ordinary: no interactive session, or explorer.exe is not running.
+        # The profile below is a real answer, not a guess of last resort, so
+        # this is noted rather than reported.
+        Write-Verbose "console user lookup failed: $($_.Exception.Message)"
+    }
     $candidate = Get-ChildItem 'C:\Users' -Directory -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -notin @('Public','Default','Default User','All Users','defaultuser0') } |
         Sort-Object LastWriteTime -Descending | Select-Object -First 1
@@ -75,7 +80,16 @@ $UserHome = $Console.Home
 $ConsoleUser = $Console.User
 
 $Serial = ''
-try { $Serial = (Get-CimInstance Win32_BIOS -ErrorAction Stop).SerialNumber.Trim() } catch { }
+try {
+    $Serial = (Get-CimInstance Win32_BIOS -ErrorAction Stop).SerialNumber.Trim()
+} catch {
+    # Said out loud, because the fallback below changes what every finding
+    # from this machine is keyed on. One device reporting a hostname where
+    # the rest report serials reads as a deliberate difference rather than a
+    # failed WMI query, and it splits that device into two on any dashboard
+    # that groups by device.
+    Write-Output "ai-guard: serial lookup failed ($($_.Exception.Message)), using COMPUTERNAME"
+}
 if (-not $Serial) { $Serial = $env:COMPUTERNAME }
 
 $Now = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
@@ -117,7 +131,14 @@ function Get-JsonStringField {
 # tracking brace depth and string state, so it works whether the config is
 # pretty-printed or written on a single line. Returns a sorted comma-joined
 # string, or ''.
+# The plural is correct: this returns every server named in the config, not
+# one. Renaming it to satisfy the rule would make the name less true than the
+# warning it silences, so the rule is suppressed instead. The attribute
+# belongs inside the function, above param: PowerShell rejects it in front of
+# the declaration.
 function Get-McpServerNames {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '',
+        Justification = 'Returns every server named in the config, not one.')]
     param([string]$Path)
     $text = Get-Content $Path -Raw
     $m = [regex]::Match($text, '"mcpServers"\s*:\s*\{')
@@ -385,7 +406,12 @@ function Get-JwtClaim {
         $json = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($b64))
         $m = [regex]::Match($json, '"' + [regex]::Escape($Claim) + '"\s*:\s*"([^"]*)"')
         if ($m.Success) { return $m.Groups[1].Value }
-    } catch { }
+    } catch {
+        # A token that will not decode means a finding with no account
+        # domain, which the caller already reports as presence only. Noted
+        # for anyone debugging why a tool shows up without an account.
+        Write-Verbose "jwt claim '$Claim' could not be read: $($_.Exception.Message)"
+    }
     return ''
 }
 
