@@ -72,10 +72,6 @@ if (-not $Console) {
     exit 0
 }
 $UserHome = $Console.Home
-# The profile path with any reparse points resolved, and a trailing
-# separator so a sibling directory whose name merely starts the same way
-# cannot pass the containment check below.
-$UserHomeReal = [IO.Path]::GetFullPath($UserHome).TrimEnd('\') + '\'
 $ConsoleUser = $Console.User
 
 $Serial = ''
@@ -262,6 +258,72 @@ function Test-SafeRelativePath {
 }
 
 
+# Get-LinkTarget <item> - where a reparse point points, or $null.
+#
+# Hard links are deliberately not followed. A hard link is not a redirect:
+# both names are equally the file, and resolving one to the other would move
+# an ordinary file to some unrelated path, possibly outside the profile, for
+# no reason. Windows PowerShell exposes LinkType; PowerShell 6 and later
+# expose LinkTarget, which is already null for a hard link.
+function Get-LinkTarget {
+    param($Item)
+    if (-not $Item) { return $null }
+    $type = $null
+    if ($Item.PSObject.Properties['LinkType']) { $type = $Item.LinkType }
+    if ($type -and $type -ne 'SymbolicLink' -and $type -ne 'Junction') { return $null }
+    if ($Item.PSObject.Properties['LinkTarget'] -and $Item.LinkTarget) {
+        return $Item.LinkTarget
+    }
+    if ($Item.PSObject.Properties['Target'] -and $Item.Target) {
+        return @($Item.Target)[0]
+    }
+    return $null
+}
+
+# Resolve-PhysicalPath <path> - the path with every reparse point resolved.
+#
+# Walks the path a component at a time, because a junction partway along is
+# invisible from the end of it: Get-Item on the final file reports no link,
+# and GetFullPath only tidies the text. So
+#
+#   C:\Users\alice\AppData\Roaming\Claude   -> junction outside the profile
+#   C:\Users\alice\AppData\Roaming\Claude\config.json
+#
+# reads as a path inside the profile while the file is somewhere else. The
+# macOS and Linux collectors get this free from pwd -P; Windows has no
+# equivalent that works on both Windows PowerShell and PowerShell 7, so the
+# walk is done here.
+function Resolve-PhysicalPath {
+    param([string]$Path)
+    if (-not $Path) { return $null }
+    $full = [IO.Path]::GetFullPath($Path)
+    $root = [IO.Path]::GetPathRoot($full)
+    if (-not $root) { return $null }
+
+    $current = $root
+    $parts = $full.Substring($root.Length).Split(
+        [char[]]@('\', '/'), [StringSplitOptions]::RemoveEmptyEntries)
+    foreach ($part in $parts) {
+        $current = Join-Path $current $part
+        $hops = 0
+        while ($true) {
+            if (-not (Test-Path -LiteralPath $current)) { return $null }
+            $item = Get-Item -LiteralPath $current -Force -ErrorAction SilentlyContinue
+            $target = Get-LinkTarget $item
+            if (-not $target) { break }
+            $hops++
+            if ($hops -gt 16) { return $null }   # a link loop, or someone being clever
+            if ([IO.Path]::IsPathRooted($target)) {
+                $current = $target
+            } else {
+                $current = Join-Path (Split-Path -Parent $current) $target
+            }
+            $current = [IO.Path]::GetFullPath($current)
+        }
+    }
+    [IO.Path]::GetFullPath($current)
+}
+
 # Resolve-UnderHome <path> - the real path if it stays inside the profile,
 # $null if it does not.
 #
@@ -275,30 +337,22 @@ function Test-SafeRelativePath {
 # real findings to prevent an unlikely one.
 function Resolve-UnderHome {
     param([string]$Path)
-    if (-not $Path) { return $null }
-    if (-not (Test-Path -LiteralPath $Path)) { return $null }
-    $p = $Path
-    for ($hops = 0; $hops -lt 16; $hops++) {
-        $item = Get-Item -LiteralPath $p -Force -ErrorAction SilentlyContinue
-        if (-not $item) { return $null }
-        # LinkTarget on PowerShell 6+, Target on Windows PowerShell 5.1.
-        $target = $null
-        if ($item.PSObject.Properties['LinkTarget'] -and $item.LinkTarget) {
-            $target = $item.LinkTarget
-        } elseif ($item.PSObject.Properties['Target'] -and $item.Target) {
-            $target = @($item.Target)[0]
+    $real = Resolve-PhysicalPath $Path
+    if (-not $real) { return $null }
+
+    # Resolved once and kept: the profile is physically resolved too, or a
+    # machine whose whole profile is redirected would fail every check. The
+    # trailing separator stops a sibling directory whose name merely starts
+    # the same way from passing.
+    if (-not $script:UserHomeResolved) {
+        $profileRoot = Resolve-PhysicalPath $UserHome
+        if (-not $profileRoot) {
+            $profileRoot = [IO.Path]::GetFullPath($UserHome)
         }
-        if (-not $target) { break }
-        if ([IO.Path]::IsPathRooted($target)) {
-            $p = $target
-        } else {
-            $p = Join-Path (Split-Path -Parent $p) $target
-        }
-        if (-not (Test-Path -LiteralPath $p)) { return $null }
+        $script:UserHomeResolved = $profileRoot.TrimEnd('\') + '\'
     }
-    $full = [IO.Path]::GetFullPath($p)
-    if ($full.StartsWith($UserHomeReal, [StringComparison]::OrdinalIgnoreCase)) {
-        return $full
+    if ($real.StartsWith($script:UserHomeResolved, [StringComparison]::OrdinalIgnoreCase)) {
+        return $real
     }
     return $null
 }
@@ -309,9 +363,6 @@ function Join-UserPath {
         Write-Output "ai-guard REFUSED: registry path not relative to profile"
         return $null
     }
-    # A single separator: the replacement string in -replace is not an
-    # escape context, so two backslashes here produced two in the path.
-    # Windows tolerated it, which is why it went unnoticed.
     $joined = Join-Path $UserHome ($Rel -replace '/', '\')
     # Not every caller is about to read the file; some only test
     # existence. Resolve when it exists so the containment check applies
