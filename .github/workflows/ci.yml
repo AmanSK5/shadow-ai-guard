@@ -285,6 +285,76 @@ jobs:
         working-directory: demo
         run: docker compose down -v
 
+  windows-path-containment:
+    # Two containment bugs were found in this code by reading it, an hour
+    # apart: a junction partway along a path, then a link whose target passed
+    # through one. Each was verified once by hand on a VM and never again.
+    # The Linux collector is driven end to end here; Windows had a style
+    # linter and nothing else.
+    #
+    # Junctions rather than symlinks: symlinks need Developer Mode or an
+    # elevated session, junctions do not, and junctions are what a redirected
+    # profile folder actually is.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: path containment holds
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          # -FunctionsOnly loads the functions and stops before the scans, so
+          # this tests the shipped code rather than a copy of it.
+          . .\endpoint\windows\ai-guard-collector.ps1 -FunctionsOnly
+
+          $root    = Join-Path $env:RUNNER_TEMP 'containment'
+          $profileDir = Join-Path $root 'profile'
+          $outside = Join-Path $root 'outside'
+          New-Item -ItemType Directory -Path $profileDir, $outside -Force | Out-Null
+          New-Item -ItemType Directory -Path (Join-Path $outside 'sub') -Force | Out-Null
+
+          # $UserHome has to be set before the first call: Resolve-UnderHome
+          # resolves the profile once and keeps it.
+          $UserHome = $profileDir
+
+          '{}' | Out-File (Join-Path $profileDir 'ordinary.json')
+          '{}' | Out-File (Join-Path $outside 'sub\config.json')
+
+          # a redirected folder that stays inside the profile
+          New-Item -ItemType Directory -Path (Join-Path $profileDir 'real') -Force | Out-Null
+          '{}' | Out-File (Join-Path $profileDir 'real\ok.json')
+          New-Item -ItemType Junction -Path (Join-Path $profileDir 'inside') `
+                   -Target (Join-Path $profileDir 'real') | Out-Null
+
+          # a junction straight out of the profile
+          New-Item -ItemType Junction -Path (Join-Path $profileDir 'escape') `
+                   -Target $outside | Out-Null
+
+          # and a junction whose target passes through that one
+          New-Item -ItemType Junction -Path (Join-Path $profileDir 'nested') `
+                   -Target (Join-Path $profileDir 'escape\sub') | Out-Null
+
+          $cases = @(
+            @{ name = 'ordinary file';                  path = Join-Path $profileDir 'ordinary.json';        allow = $true  },
+            @{ name = 'junction inside the profile';    path = Join-Path $profileDir 'inside\ok.json';       allow = $true  },
+            @{ name = 'junction out of the profile';    path = Join-Path $profileDir 'escape\sub\config.json'; allow = $false },
+            @{ name = 'junction through a junction';    path = Join-Path $profileDir 'nested\config.json';    allow = $false },
+            @{ name = 'file that is not there';         path = Join-Path $profileDir 'missing.json';         allow = $false }
+          )
+
+          $failed = 0
+          foreach ($case in $cases) {
+            $got = Resolve-UnderHome $case.path
+            $allowed = [bool]$got
+            if ($allowed -eq $case.allow) {
+              Write-Host ("ok    {0,-32} allowed={1}" -f $case.name, $allowed)
+            } else {
+              Write-Host ("::error::{0}: expected allowed={1}, got {2}" -f $case.name, $case.allow, $allowed)
+              $failed++
+            }
+          }
+          if ($failed -gt 0) { exit 1 }
+
   build-images:
     # main and tags only: PRs validate, they do not publish.
     if: github.event_name == 'push'
@@ -292,7 +362,8 @@ jobs:
       contents: read
       packages: write
     needs: [placeholder-guard, shellcheck, collector-delivery-state,
-            registry-validate, receiver-test, scanner-test, helm, demo-smoke]
+            registry-validate, receiver-test, scanner-test, helm, demo-smoke,
+            windows-path-containment]
     runs-on: ubuntu-latest
     strategy:
       matrix:

@@ -27,8 +27,13 @@
   in the Intune console doubles as a fleet health/attention view.
 
   Configuration is baked in below rather than parameterised: remediation
-  scripts take no arguments.
+  scripts take no arguments. The one switch it does take is not
+  configuration: -FunctionsOnly loads the functions and stops before the
+  scans, so the path containment logic can be tested without running a
+  collection. Intune never passes it.
 #>
+
+param([switch]$FunctionsOnly)
 
 # ------------------------------------------------------------------ config --
 $ReceiverBase    = 'https://ai-guard.example.com'   # your receiver's public ingest URL
@@ -425,6 +430,11 @@ function Get-JwtClaim {
     }
     return ''
 }
+
+# Stop here when only the functions were wanted. Dot-sourcing the whole
+# script otherwise runs a collection, and the exit calls further down would
+# end the caller's session.
+if ($FunctionsOnly) { return }
 
 # ------------------------------------------------------------------ scans --
 
