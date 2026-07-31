@@ -1,0 +1,10 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/AmanSK5/shadow-ai-guard/security/advisories/new
+    about: >-
+      Privately, rather than in a public issue. Anything where the report
+      itself would tell someone how to exploit it.
+  - name: How to try this and what is worth reporting
+    url: https://github.com/AmanSK5/shadow-ai-guard/blob/main/TESTING.md
+    about: Three routes, none of which needs a company tenant or an MDM.

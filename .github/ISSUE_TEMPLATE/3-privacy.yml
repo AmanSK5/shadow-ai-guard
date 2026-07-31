@@ -1,0 +1,36 @@
+name: Something collected surprised me
+description: The data in a finding did not match what the documentation says
+labels: [privacy]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is the most useful report anyone can send. The privacy claims in
+        `docs/deployment-privacy.md` and `SECURITY.md` are the ones the whole
+        project rests on, and a mismatch between them and what actually
+        arrives is worth more than a crash.
+
+        If you believe the mismatch is exploitable rather than documentary,
+        use a private security advisory instead:
+        https://github.com/AmanSK5/shadow-ai-guard/security/advisories/new
+  - type: textarea
+    id: what
+    attributes:
+      label: What was collected
+      description: |
+        Redact anything real. The field name and the shape of the value are
+        enough.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What the documentation led you to expect
+      description: A quote or a link to the line is ideal.
+    validations:
+      required: true
+  - type: input
+    id: component
+    attributes:
+      label: Which component produced it
+      placeholder: macOS collector, browser extension, Entra scanner...

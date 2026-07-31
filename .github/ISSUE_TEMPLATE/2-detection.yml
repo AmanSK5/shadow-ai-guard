@@ -1,0 +1,51 @@
+name: A detection was wrong or missing
+description: A tool you have was not found, or a finding named the wrong thing
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do not paste a real finding with a colleague's name or email
+        in it. The fields that matter are the tool, the surface and the
+        evidence string.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Which way round
+      options:
+        - A tool I have installed was not detected
+        - A finding named the wrong tool
+        - The account domain was wrong
+        - Something was reported that is not an AI tool
+    validations:
+      required: true
+  - type: input
+    id: tool
+    attributes:
+      label: The tool involved
+      placeholder: Claude Code, Grammarly extension, Copilot...
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: OS and architecture
+    validations:
+      required: true
+  - type: textarea
+    id: detail
+    attributes:
+      label: What you saw
+      description: |
+        The finding if you have one, with names removed, or a description of
+        what was on the machine and what the collector reported.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: where
+    attributes:
+      label: Where the tool actually lives, if you know
+      description: |
+        A config path or install location. This is usually what makes a
+        missed detection fixable: the registry is looking in the wrong place.
