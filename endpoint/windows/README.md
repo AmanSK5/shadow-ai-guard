@@ -33,6 +33,28 @@ token cannot expand). Commit only the placeholder version; the tokenised copy
 exists only inside Intune. CI fails the build if the placeholder is missing, 
 so a tokenised copy cannot reach main by accident.
 
+## Trying it against a local receiver
+
+No Intune needed. Edit the three variables at the top of the script, then run
+it from an elevated PowerShell:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass -Force
+.\ai-guard-collector.ps1
+```
+
+With `$ReceiverBase = 'http://localhost:8080'` and `$Token = 'demo-token'` it
+reports to the demo in `demo/`, so `docker compose up` there gives you
+somewhere for the findings to land.
+
+Set `$CorporateDomains` to something that is not yours and your own accounts
+show up as personal findings, which is the quickest way to see exactly what
+the collector reports about you.
+
+Leaving `$ReceiverBase` empty prints findings to the console instead of
+POSTing them. Put the placeholder token back before committing: CI fails the
+build if it is missing.
+
 ## Intune deployment
 
 Deployed as a **Platform script** (Devices, Scripts and remediations,
