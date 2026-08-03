@@ -59,8 +59,35 @@ On a current Homebrew or Debian Python the pip installs want a virtualenv:
 `python3 -m venv .venv && source .venv/bin/activate` first.
 
 CI also runs the demo, renders the Helm chart, checks the registry shipped in
-the chart has not drifted, and tests Windows path containment on a real
-runner. A green run means all of that passed, not just the tests above.
+the chart has not drifted, checks every `requirements.lock` still matches its
+`requirements.in`, and tests Windows path containment on a real runner. A
+green run means all of that passed, not just the tests above.
+
+## Changing a dependency
+
+Each component has a `requirements.in` for what it asks for and a
+`requirements.lock` for what it gets, pinned with hashes. Nothing installs
+from the `.in`: CI, the Dockerfiles and the Trivy scans all read the lock. So
+editing the `.in` on its own changes what the project claims to depend on
+without changing anything it ships.
+
+Edit the `.in`, then regenerate:
+
+```bash
+cd receiver   # or scanner, or discovery
+make lock         # recompile, keeping versions already pinned
+make lock-check   # what CI runs: fails if the committed lock is stale
+```
+
+Commit both files in the same commit. `make lock` compiles inside the same
+base image the component ships on, because pip-compile bakes in environment
+markers from the interpreter running it, so Docker needs to be running.
+pip-tools is pinned in the Makefile so the lock you generate and the lock CI
+checks come from the same version.
+
+`make lock` keeps existing pins and will not clear a CVE in a transitive
+dependency on its own. `make upgrade` moves everything it can, which is a
+much larger diff and wants the tests run before committing.
 
 ## Adding a tool to the registry
 
