@@ -127,6 +127,53 @@ jobs:
           python registry/build.py --check
           python -m pytest -q registry/
 
+  lock-drift:
+    # Nothing installs from requirements.in. This workflow, the Dockerfiles and
+    # the Trivy workflow all read requirements.lock, so an edit to the .in alone
+    # ships nothing and still goes green. That is how uvicorn sat eighteen minor
+    # releases behind through several Dependabot PRs that each passed CI and
+    # were closed as no-ops.
+    #
+    # Recompiles and fails if the committed lock is not what the .in currently
+    # produces. Calls `make lock-check` rather than repeating the pip-compile
+    # command, so there is one definition of what the lock should be, the same
+    # reason registry.yaml is the single source for the compiled views.
+    #
+    # pip-tools is pinned in the component Makefiles. Without that this job
+    # fails whenever pip-tools ships a release, for a reason unrelated to the
+    # change under review, and a check that fails at random gets ignored.
+    runs-on: ubuntu-latest
+    strategy:
+      # Report every stale component in one run. Otherwise you fix one, push,
+      # and find the next.
+      fail-fast: false
+      matrix:
+        component: [receiver, scanner, discovery]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: the committed lock matches requirements.in
+        working-directory: ${{ matrix.component }}
+        run: |
+          # pip-compile writes the entire lock to stdout, thousands of lines
+          # that bury the result. Keep it for the failure path only.
+          if ! make lock >/tmp/compile.log 2>&1; then
+            echo "::error::pip-compile failed for ${{ matrix.component }}"
+            tail -40 /tmp/compile.log
+            exit 1
+          fi
+          if ! git diff --quiet requirements.lock; then
+            echo "::error::${{ matrix.component }}/requirements.lock is stale. Run 'make lock' in ${{ matrix.component }}/ and commit the result."
+            echo ""
+            git diff --stat requirements.lock
+            echo ""
+            echo "Versions added or removed:"
+            # Package names contain digits, dots and hyphens: h11, rpds-py,
+            # markdown-it-py. A narrower pattern drops them silently.
+            git diff requirements.lock | grep -E "^[+-][a-zA-Z0-9_.-]+==" || true
+            exit 1
+          fi
+          echo "${{ matrix.component }}/requirements.lock is current."
+
   receiver-test:
     runs-on: ubuntu-latest
     steps:
