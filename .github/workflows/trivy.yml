@@ -48,8 +48,13 @@ on:
 permissions:
   contents: read
   # Required to publish SARIF to code scanning. Not granted to pull requests
-  # from forks, which is why every upload is continue-on-error: a fork PR
+  # from forks, which is why every upload tolerates failure on a fork PR: it
   # should fail on findings, not on a permission it was never going to have.
+  #
+  # That tolerance is scoped to fork PRs only. It used to be unconditional,
+  # which meant an upload failing on main left the Security tab quietly
+  # unfed while the run stayed green, and the only symptom was an absence of
+  # new findings, indistinguishable from having none.
   security-events: write
 
 env:
@@ -92,7 +97,7 @@ jobs:
 
       - name: publish dependency and secret findings
         uses: github/codeql-action/upload-sarif@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4
-        continue-on-error: true
+        continue-on-error: ${{ github.event.pull_request.head.repo.fork == true }}
         with:
           sarif_file: ${{ runner.temp }}/sarif/fs.sarif
           # Distinct category per scan. Without it each upload replaces the
@@ -137,7 +142,7 @@ jobs:
       - name: publish misconfiguration findings
         if: always()
         uses: github/codeql-action/upload-sarif@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4
-        continue-on-error: true
+        continue-on-error: ${{ github.event.pull_request.head.repo.fork == true }}
         with:
           sarif_file: ${{ runner.temp }}/sarif/config.sarif
           category: trivy-config
@@ -195,7 +200,7 @@ jobs:
 
       - name: publish image findings
         uses: github/codeql-action/upload-sarif@f205ea1c3313d32999d8d6a48b4f6530d4437b38 # v4.37.4
-        continue-on-error: true
+        continue-on-error: ${{ github.event.pull_request.head.repo.fork == true }}
         with:
           sarif_file: ${{ runner.temp }}/sarif/image.sarif
           # Per component: one category for all three would mean the last
