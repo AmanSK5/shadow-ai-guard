@@ -84,6 +84,9 @@ digging through subfolders.
 - [Architecture](docs/architecture.md) - the mental model: the finding schema,
   and why the pieces are shaped this way
 - [Receiver](receiver/README.md) - the one service everything reports to: every variable and endpoint, plus an example deployment to adapt
+- [Helm chart](charts/ai-guard/README.md) - the shortest path to a running
+  receiver: every value, the token behaviour, and updating the registry
+  without a chart release
 
 **Deploying each surface**
 - [macOS endpoint collector](endpoint/macos/README.md) - via Jamf
@@ -178,10 +181,12 @@ finding can be followed up with the right person; see
   `.env` (see `scanner/README.md`); deployed scanners read from Kubernetes
   Secrets or your secret store.
 
-Prebuilt images are published to GHCR by CI. A Helm chart is in progress;
-until then, the receiver is a Deployment with the registry ConfigMap mounted
-at `/etc/ai-guard`, and the scanners are CronJobs. See each component's
-README for specifics.
+Prebuilt images are published to GHCR by CI. A Helm chart is at
+[charts/ai-guard](charts/ai-guard/README.md), with the compiled registry
+inside it, so an install needs no build step. Deploying by hand instead, the
+receiver is a Deployment with the registry ConfigMap mounted at
+`/etc/ai-guard`, and the scanners are CronJobs. See each component's README
+for specifics.
 
 ## Deployment order
 
@@ -204,17 +209,23 @@ through end to end for a minimum deployment.
 This is an alpha, released early on purpose. It runs in production in one
 environment, and the rough edges are labelled rather than hidden. The list
 has changed since the first release: the registry fallback drift, the Entra 
-scanner counting failed sign-ins as usage, and browser extension inventory 
-are fixed and tested. The current ones:
+scanner counting failed sign-ins as usage, ongoing delegated access going
+unreported, and browser extension inventory are fixed and tested. The
+current ones:
 
 - **Snap Chromium profiles.** The collectors inventory installed browser
   extensions from Chrome, Chromium, Brave and Edge profiles, but snap
   Chromium on Linux keeps its profile under `~/snap` and is not read, so an
   AI extension there is invisible.
-- **Non-interactive sign-ins.** The Entra scanner sees interactive sign-ins
-  only. Silent token refreshes, which are most of the volume, are invisible
-  to it ([#23](https://github.com/AmanSK5/shadow-ai-guard/issues/23)).
-  Sign-in findings are a floor, not a count.
+- **Sign-in coverage.** The Entra sign-in scan reads interactive sign-ins
+  only. Non-interactive ones, which are typically a vendor's backend using a
+  token it already holds rather than a person signing in, are covered
+  separately as delegated access findings: one per user and app per day,
+  carrying the OAuth scopes the app is using. Service principal and managed
+  identity sign-ins are not read as usage; the service principal and consent
+  scans show that a grant exists, not that anything is using it. The
+  delegated access query needs the Graph beta endpoint, because the
+  `signInEventTypes` filter is not available on v1.0.
 - **The Windows delivery path.** The Linux collector is driven end to end in
   CI and the macOS path has been run on a fresh cluster; the Windows
   collector has had the least real-world running. Pilot on one machine

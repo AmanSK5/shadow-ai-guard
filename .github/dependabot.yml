@@ -16,8 +16,14 @@ updates:
     schedule:
       interval: weekly
 
-  # Touches requirements.in only, not the .lock files.
-  # Every PR here needs a lock regeneration before it will pass CI.
+  # Touches requirements.in only, never the .lock files, and nothing installs
+  # from requirements.in: CI, the Dockerfiles and Trivy all read the lock. A
+  # PR from here therefore ships nothing until the lock is regenerated.
+  #
+  # The lock-drift job in ci.yml enforces that, so these PRs fail until you
+  # check out the branch, run `make lock` in the component directory and push
+  # the result. Before that job existed they passed green and were closed as
+  # no-ops, which is how uvicorn reached eighteen minor releases behind.
   - package-ecosystem: pip
     directories:
       - /receiver

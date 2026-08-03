@@ -20,7 +20,7 @@ shared dashboard.
 
 | Scanner | What it catches | API |
 |---|---|---|
-| **Entra ID** | SSO sign-ins to AI tools, service principals, OAuth consent grants | Microsoft Graph |
+| **Entra ID** | SSO sign-ins to AI tools, ongoing delegated access, service principals, OAuth consent grants | Microsoft Graph |
 | **SentinelOne** | DNS lookups and network connections to AI service domains from managed endpoints | Deep Visibility |
 | **Exchange** | Signup/verification emails from AI service sender domains | Microsoft Graph |
 | **Intune** | AI desktop apps discovered on Windows devices | Microsoft Graph |
@@ -28,7 +28,9 @@ shared dashboard.
 | **MCP scanner** | Security risk assessment of MCP server integrations | Static analysis |
 
 Each layer catches what the others miss: Entra sees OAuth flows but not
-native signups; SentinelOne sees all browsing to AI domains regardless of
+native signups, and its delegated access scan sees a service still using a
+token nobody has interactively signed in with for weeks; SentinelOne sees
+all browsing to AI domains regardless of
 auth method, which is the proxy replacement for fully remote
 organisations; Exchange catches the signup trail even without SSO;
 Intune and Jamf see installed software; the MCP scanner evaluates
@@ -178,9 +180,15 @@ A security tool with compromised dependencies would be ironic.
 - `make upgrade` regenerates allowing every package to move to its newest
   compatible version; this is the one that clears a CVE, `make lock` alone
   will not
+- `make lock-check` recompiles and fails if the committed lock is not what
+  requirements.in produces. CI runs this on every push, because nothing
+  installs from requirements.in: editing it alone changes what the project
+  claims to depend on without changing anything it ships
 - `make verify` confirms the installed set still matches
 - both compile inside `python:3.12-slim` so the lock matches the interpreter
-  the image ships, not whatever Python you happen to have
+  the image ships, not whatever Python you happen to have, and pip-tools is
+  pinned in the Makefile so the lock you generate and the lock CI checks come
+  from the same version
 
 This protects against a compromised package version on PyPI and unpinned
 transitive dependencies. It does not protect against a compromised
