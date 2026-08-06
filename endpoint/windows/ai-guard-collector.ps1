@@ -16,8 +16,12 @@
       the Jamf /var/root bug that silently produced an empty pilot.
     * Fail loudly. A collector that swallows POST errors across a fleet
       produces a healthy-looking dashboard and false confidence.
-    * Throttle info findings to one report per day; warns (personal
-      accounts) and never-seen findings report on every run.
+    * Throttle info findings to one report per day and warn findings
+      (personal accounts) to one per hour. A personal account is a
+      persistent state, not an event, so repeating it at every check-in
+      adds volume without adding information. Never-seen findings report
+      immediately at any severity, so an account switch still surfaces on
+      the next run.
     * Report the account domain in account_domain; the console username is
       sent in the user field. Both are already known to IT through the MDM.
 
@@ -44,6 +48,7 @@ $StateDir  = 'C:\ProgramData\ai-guard'
 $StateFile = Join-Path $StateDir 'reported.state.json'
 $Breadcrumb = Join-Path $StateDir 'last_scan.txt'
 $InfoReportIntervalHours = 24
+$WarnReportIntervalHours = 1
 
 $Endpoint = ''
 if ($ReceiverBase) { $Endpoint = ($ReceiverBase.TrimEnd('/')) + '/report' }
@@ -190,9 +195,12 @@ function Send-Finding {
 
     if ($Account) { $SummaryParts.Add("$Tool($Account)") } else { $SummaryParts.Add($Tool) }
 
+    # Throttle by severity: info daily, warn hourly. A key with no previous
+    # timestamp falls through regardless, so new findings are never delayed.
     $key = "$Surface|$Tool|$Account"
-    if ($severity -eq 'info' -and $StateOld.ContainsKey($key)) {
-        if (($NowEpoch - $StateOld[$key]) -lt ($InfoReportIntervalHours * 3600)) {
+    $intervalHours = if ($severity -eq 'warn') { $WarnReportIntervalHours } else { $InfoReportIntervalHours }
+    if ($StateOld.ContainsKey($key)) {
+        if (($NowEpoch - $StateOld[$key]) -lt ($intervalHours * 3600)) {
             $StateNew[$key] = $StateOld[$key]
             $script:Suppressed++
             return

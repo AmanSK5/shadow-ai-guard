@@ -43,14 +43,17 @@ CORP_DOMAINS="${6:-}"
 SUMMARY_DIR="/Library/Application Support/ai-guard"
 SUMMARY_FILE="$SUMMARY_DIR/last_scan.txt"
 
-# Report throttling. The policy runs at every recurring check-in (~20 min)
-# so personal-account findings surface fast, but unchanged inventory (info)
-# findings only need reporting once a day. STATE_FILE holds one line per
-# already-reported info finding: "<key> <epoch>". warn findings are never
-# throttled. A finding not yet in the state file (new tool, new account)
-# reports immediately, so a fresh install surfaces within one check-in.
+# Report throttling. The policy runs at every recurring check-in (~20 min).
+# Unchanged inventory (info) findings only need reporting once a day; warn
+# findings (personal accounts) report hourly, since a personal account is a
+# persistent state rather than an event and the first report already said it.
+# STATE_FILE holds one line per already-reported finding: "<key> <epoch>".
+# A finding not yet in the state file (new tool, new account) reports
+# immediately at any severity, so a fresh install or an account switch
+# surfaces within one check-in.
 STATE_FILE="$SUMMARY_DIR/reported.state"
 INFO_REPORT_INTERVAL=$(( 24 * 3600 ))
+WARN_REPORT_INTERVAL=$(( 3600 ))
 NOW_EPOCH=$(/bin/date +%s)
 STATE_OLD=""
 [ -f "$STATE_FILE" ] && STATE_OLD=$(/bin/cat "$STATE_FILE" 2>/dev/null)
@@ -153,21 +156,24 @@ report() {
     esac
   fi
 
-  # Throttle: info findings already reported within the interval are
-  # suppressed; warns always go. Key includes the account domain, so a
-  # tool switching from corporate to personal account is a NEW key and
-  # reports immediately even though the tool itself was known.
+  # Report throttling. The policy runs at every recurring check-in (~20 min).
+  # Unchanged inventory (info) findings only need reporting once a day; warn
+  # findings (personal accounts) report hourly, since a personal account is a
+  # persistent state rather than an event and the first report already told us.
+  # Throttle by severity: info daily, warn hourly. A key with no previous
+  # timestamp falls through regardless, so new findings are never delayed.
   local key="${surface}|${tool}|${acct}"
-  if [ "$severity" = "info" ]; then
-    local last
-    last=$(state_lookup "$key")
-    if [ -n "$last" ] && [ $(( NOW_EPOCH - last )) -lt "$INFO_REPORT_INTERVAL" ]; then
-      STATE_NEW="${STATE_NEW}${key} ${last}
+  local interval="$INFO_REPORT_INTERVAL"
+  [ "$severity" = "warn" ] && interval="$WARN_REPORT_INTERVAL"
+
+  local last
+  last=$(state_lookup "$key")
+  if [ -n "$last" ] && [ $(( NOW_EPOCH - last )) -lt "$interval" ]; then
+    STATE_NEW="${STATE_NEW}${key} ${last}
 "
-      SUPPRESSED=$((SUPPRESSED + 1))
-      if [ -n "$acct" ]; then SUMMARY_PARTS+=("$tool($acct)"); else SUMMARY_PARTS+=("$tool"); fi
-      return 0
-    fi
+    SUPPRESSED=$((SUPPRESSED + 1))
+    if [ -n "$acct" ]; then SUMMARY_PARTS+=("$tool($acct)"); else SUMMARY_PARTS+=("$tool"); fi
+    return 0
   fi
 
   # severity and reported_at are generated here, so they need no escaping.
