@@ -76,9 +76,9 @@ username in `user`.
 
 ## Reporting behaviour
 
-Identical to the other collectors: warn findings (personal accounts) post
-every run; info findings post at most once per 24 hours (state in
-`/var/lib/ai-guard/`); a new tool or an account change posts immediately.
+Identical to the other collectors: warn findings post at most once per hour, info findings 
+at most once per 24 hours (state in /var/lib/ai-guard/). A new tool or an account change 
+is a new key and reports immediately at either severity.
 If the registry cannot be fetched or parsed the script exits non-zero and
 reports nothing, on the principle that an empty scan is indistinguishable
 from a clean machine.

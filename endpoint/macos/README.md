@@ -29,11 +29,13 @@ reports as `warn`; everything else is `info`.
 
 ## Reporting behaviour
 
-- `warn` findings report on every run.
-- `info` findings report at most once per 24 hours (state kept in
-  `/Library/Application Support/ai-guard/`), so you can schedule the policy
-  frequently without flooding your logs. A new tool or an account change
-  reports immediately.
+- `warn` findings (personal accounts) report at most once per hour. A
+  personal account is a persistent state rather than an event, so repeating
+  it at every check-in adds volume without adding information.
+- `info` findings report at most once per 24 hours. State for both is kept in
+  `/Library/Application Support/ai-guard/`, so you can schedule the policy
+  frequently without flooding your logs. A new tool or an account change is a
+  new key and reports immediately at either severity.
 - If the registry cannot be fetched or parsed, the script exits 1 and reports
   nothing, on the principle that an empty scan is indistinguishable from a
   clean machine. The failure is visible in the policy log and as a failed
