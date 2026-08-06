@@ -93,10 +93,9 @@ after a sync, check:
 
 ## Reporting behaviour
 
-Identical to macOS: warn findings post every run, info findings at most
-once per 24 hours (state in `C:\ProgramData\ai-guard\`), new tools and
-account changes post immediately. Parse failures are loud: they mark the
-breadcrumb, and the script exits 1.
+Identical to macOS: warn findings post at most once per hour, info findings
+at most once per 24 hours, state in C:\ProgramData\ai-guard\. A new tool or
+an account change reports immediately at either severity.
 
 One Windows-specific note: some AI tool config files cannot be parsed
 whole (Claude Code stores per-project state whose keys differ only in

@@ -52,6 +52,11 @@ STATE_FILE="$STATE_DIR/reported.state"
 SUMMARY_DIR="$STATE_DIR"
 SUMMARY_FILE="$SUMMARY_DIR/last_scan.txt"
 INFO_INTERVAL=$((24 * 3600))
+# warn findings (personal accounts) are a persistent state, not an event, so
+# repeating them at every run adds volume without adding information. The
+# first report already said it. New keys bypass the throttle entirely, so an
+# account switch still surfaces on the next run.
+WARN_INTERVAL=$((3600))
 
 PY=$(command -v python3 || true)
 
@@ -225,7 +230,7 @@ json_escape() {
 # report <surface> <tool> <account> <evidence>
 report() {
   local surface="$1" tool="$2" acct="$3" evidence="$4"
-  local severity="info" key prev
+  local severity="info" key prev interval
 
   if [ -n "$acct" ] && ! is_corp "$acct"; then
     severity="warn"; WARN_COUNT=$((WARN_COUNT + 1))
@@ -233,14 +238,17 @@ report() {
 
   if [ -n "$acct" ]; then SUMMARY="$SUMMARY $tool($acct);"; else SUMMARY="$SUMMARY $tool;"; fi
 
+  # Throttle by severity: info daily, warn hourly. A key with no previous
+  # timestamp falls through regardless, so new findings are never delayed.
   key="$surface|$tool|$acct"
-  if [ "$severity" = "info" ]; then
-    prev=$(state_get "$key")
-    if [ -n "$prev" ] && [ $((NOW_EPOCH - prev)) -lt "$INFO_INTERVAL" ]; then
-      printf '%s %s\n' "$key" "$prev" >> "$STATE_NEW"
-      SUPPRESSED=$((SUPPRESSED + 1))
-      return
-    fi
+  interval="$INFO_INTERVAL"
+  [ "$severity" = "warn" ] && interval="$WARN_INTERVAL"
+
+  prev=$(state_get "$key")
+  if [ -n "$prev" ] && [ $((NOW_EPOCH - prev)) -lt "$interval" ]; then
+    printf '%s %s\n' "$key" "$prev" >> "$STATE_NEW"
+    SUPPRESSED=$((SUPPRESSED + 1))
+    return
   fi
 
   # severity and reported_at are generated here, so they need no escaping.
