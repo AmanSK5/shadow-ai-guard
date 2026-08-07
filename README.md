@@ -153,6 +153,7 @@ it works with everything downstream:
   "os": "macos",
   "account_domain": "gmail.com",
   "device": "SERIAL123",
+  "device_name": "ASK-SERIAL123",
   "user": "aman.test",
   "evidence": "~/.claude.json",
   "severity": "warn",
@@ -165,6 +166,12 @@ it works with everything downstream:
 domains, `info` otherwise. The `user` field carries an account name so a
 finding can be followed up with the right person; see
 [privacy](docs/deployment-privacy.md) for exactly when it is populated.
+
+`device` carries the most stable identifier the source could get, usually a
+hardware serial, because that is what Jamf, Intune, SentinelOne and most RMMs
+key on. `device_name` carries the hostname, which is what a human recognises
+and what a platform with no serial can still join on. Dashboards prefer
+`device_name` and fall back to `device`.
 
 ## What you need
 

@@ -131,6 +131,7 @@ enforcement, and it rides the same pipeline.
   "os": "linux",
   "account_domain": "gmail.com",
   "device": "SERIAL123",
+  "device_name": "ASK-SERIAL123",
   "user": "jane.doe",
   "evidence": "~/.claude.json",
   "severity": "warn",
