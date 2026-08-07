@@ -2,10 +2,18 @@
 # Delivery-state tests for the Linux collector.
 #
 # What this covers: the throttle state machine in report(). Informational
-# findings report at most once per 24h, and the throttle timestamp advances
-# only after confirmed delivery. Get that wrong in the direction of advancing
-# too eagerly and a finding that never reached the receiver is never retried,
-# which is a silent gap in a tool whose whole job is not having silent gaps.
+# findings report at most once per 24h and warns at most once per hour, and
+# the throttle timestamp advances only after confirmed delivery. Get that
+# wrong in the direction of advancing too eagerly and a finding that never
+# reached the receiver is never retried, which is a silent gap in a tool whose
+# whole job is not having silent gaps.
+#
+# The warn interval exists because a personal account is a persistent state,
+# not an event: before it, one such finding reported at every check-in and
+# outweighed everything else in the platform's counts. The property that
+# makes the throttle safe is that a key with no prior timestamp falls through
+# at any severity, so a new tool or an account switch is never delayed. That
+# is asserted below rather than assumed.
 #
 # Why end-to-end rather than sourcing the functions: the collector is a system
 # script that resolves hardware serials, console users and fetches the registry
@@ -230,16 +238,63 @@ test_within_window_suppresses_without_posting() {
   if [ "$ts" = "$first" ]; then pass "$name"; else fail "$name (timestamp moved)"; fi
 }
 
-test_warn_ignores_the_throttle() {
-  local name="a warn finding posts again inside the 24h window"
+# backdate_state <seconds-ago> - move the key's timestamp into the past so a
+# window boundary can be crossed without sleeping through it.
+backdate_state() {
+  local ago="$1" when
+  when=$(( $(date -u +%s) - ago ))
+  sed -i "s|^\(${KEY//|/\\|}\) .*|\1 $when|" "$STATE_FILE"
+}
+
+test_warn_inside_window_suppresses() {
+  local name="a warn inside the hour is suppressed and makes no request"
   reset_state; start_receiver 200
-  run_collector notcorp.example        # personal account -> warn
+  run_collector notcorp.example        # personal account -> warn, first post
+  local first; first=$(state_ts "$KEY")
   stop_receiver
-  start_receiver 200
+  start_receiver 200                   # clears the POST log
   run_collector notcorp.example        # immediately again
+  local n ts; n=$(posts_made); ts=$(state_ts "$KEY")
+  stop_receiver
+  if [ "$n" -ne 0 ]; then fail "$name (made $n request(s))"; return; fi
+  if [ "$ts" = "$first" ]; then pass "$name"; else fail "$name (timestamp moved)"; fi
+}
+
+test_warn_outside_window_posts_again() {
+  local name="a warn older than an hour posts again"
+  reset_state; start_receiver 200
+  run_collector notcorp.example        # seed real state
+  stop_receiver
+  backdate_state 7200                  # two hours ago
+  start_receiver 200
+  run_collector notcorp.example
   local n; n=$(posts_made)
   stop_receiver
-  if [ "$n" -ge 1 ]; then pass "$name"; else fail "$name (throttled a warn)"; fi
+  if [ "$n" -ge 1 ]; then pass "$name"; else fail "$name (still throttled after 2h)"; fi
+}
+
+test_warn_with_no_prior_state_posts_immediately() {
+  local name="a warn with no prior state posts immediately"
+  reset_state; start_receiver 200
+  run_collector notcorp.example
+  local n; n=$(posts_made)
+  stop_receiver
+  if [ "$n" -ge 1 ]; then pass "$name"; else fail "$name (suppressed a new key)"; fi
+}
+
+test_info_still_throttled_beyond_the_warn_window() {
+  # The discriminating test: if both intervals were set to the same value,
+  # every other test here would still pass. This one would not.
+  local name="an info finding is still suppressed two hours in"
+  reset_state; start_receiver 200
+  run_collector                        # corporate account -> info
+  stop_receiver
+  backdate_state 7200                  # past the warn window, inside the info one
+  start_receiver 200
+  run_collector
+  local n; n=$(posts_made)
+  stop_receiver
+  if [ "$n" -eq 0 ]; then pass "$name"; else fail "$name (made $n request(s))"; fi
 }
 
 # ------------------------------------------------------------------- main --
@@ -289,7 +344,10 @@ test_failure_preserves_expired_timestamp
 test_transport_failure_behaves_like_non_2xx
 test_print_only_does_not_advance
 test_within_window_suppresses_without_posting
-test_warn_ignores_the_throttle
+test_warn_inside_window_suppresses
+test_warn_outside_window_posts_again
+test_warn_with_no_prior_state_posts_immediately
+test_info_still_throttled_beyond_the_warn_window
 
 echo
 echo "passed: $PASS  failed: $FAIL"
