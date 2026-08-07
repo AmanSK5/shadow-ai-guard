@@ -195,7 +195,7 @@ report() {
   # severity and reported_at are generated here, so they need no escaping.
   # Everything else came from the registry, the machine or a config file.
   local payload
-  payload=$(/usr/bin/printf '{"tool":"%s","surface":"%s","os":"macos","account_domain":"%s","device":"%s","device_name":"%s","user":"%s","evidence":"%s","severity":"%s","reported_at":"%s"}' \
+  payload=$(/usr/bin/printf '{"tool":"%s","surface":"%s","os":"macos","account_domain":"%s","device":"%s","device_name":"%s","user":"%s","evidence":"%s","severity":"%s","reported_at":"%s","source":"collector-macos"}' \
     "$(json_escape "$tool")" "$(json_escape "$surface")" "$(json_escape "$acct")" \
     "$(json_escape "$SERIAL")" "$(json_escape "$DEVICE_NAME")" \
     "$(json_escape "$CONSOLE_USER")" "$(json_escape "$evidence")" \
