@@ -80,6 +80,22 @@ HOME_DIR=$(/usr/bin/dscl . -read "/Users/$CONSOLE_USER" NFSHomeDirectory 2>/dev/
 HOME_REAL=$(cd "$HOME_DIR" 2>/dev/null && pwd -P) || HOME_REAL="$HOME_DIR"
 
 SERIAL=$(/usr/sbin/ioreg -rd1 -c IOPlatformExpertDevice | /usr/bin/awk -F'"' '/IOPlatformSerialNumber/{print $4}')
+
+# device carries the serial: immutable, and what Jamf, Intune, SentinelOne and
+# most RMMs key on. device_name carries the hostname, which is what a human
+# recognises and what platforms that have no serial can still join on. The
+# dashboard prefers device_name and falls back to device, so a collector that
+# sends only the serial shows a serial where the scanners show a name.
+DEVICE_NAME=$(/usr/sbin/scutil --get ComputerName 2>/dev/null || /bin/hostname -s 2>/dev/null || echo "")
+
+# Said out loud, because an empty serial changes what every finding from this
+# machine is keyed on. Silence here would look identical to a machine with no
+# AI tools on it.
+if [ -z "$SERIAL" ]; then
+  echo "[ai-guard] serial lookup failed via ioreg, falling back to hostname for device"
+  SERIAL="$DEVICE_NAME"
+fi
+
 NOW=$(/bin/date -u +%Y-%m-%dT%H:%M:%SZ)
 
 # ---------------------------------------------------------------- helpers ---
@@ -179,9 +195,10 @@ report() {
   # severity and reported_at are generated here, so they need no escaping.
   # Everything else came from the registry, the machine or a config file.
   local payload
-  payload=$(/usr/bin/printf '{"tool":"%s","surface":"%s","os":"macos","account_domain":"%s","device":"%s","user":"%s","evidence":"%s","severity":"%s","reported_at":"%s"}' \
+  payload=$(/usr/bin/printf '{"tool":"%s","surface":"%s","os":"macos","account_domain":"%s","device":"%s","device_name":"%s","user":"%s","evidence":"%s","severity":"%s","reported_at":"%s"}' \
     "$(json_escape "$tool")" "$(json_escape "$surface")" "$(json_escape "$acct")" \
-    "$(json_escape "$SERIAL")" "$(json_escape "$CONSOLE_USER")" "$(json_escape "$evidence")" \
+    "$(json_escape "$SERIAL")" "$(json_escape "$DEVICE_NAME")" \
+    "$(json_escape "$CONSOLE_USER")" "$(json_escape "$evidence")" \
     "$severity" "$NOW")
 
   local delivered=false

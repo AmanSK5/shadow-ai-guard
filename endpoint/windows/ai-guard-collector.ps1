@@ -89,6 +89,13 @@ if (-not $Console) {
 $UserHome = $Console.Home
 $ConsoleUser = $Console.User
 
+# device carries the serial: immutable, and what Jamf, Intune, SentinelOne and
+# most RMMs key on. device_name carries the hostname, which is what a human
+# recognises and what platforms with no serial can still join on. The dashboard
+# prefers device_name and falls back to device, so a collector that sends only
+# the serial shows a serial where the scanners show a name.
+$DeviceName = $env:COMPUTERNAME
+
 $Serial = ''
 try {
     $Serial = (Get-CimInstance Win32_BIOS -ErrorAction Stop).SerialNumber.Trim()
@@ -100,7 +107,7 @@ try {
     # that groups by device.
     Write-Output "ai-guard: serial lookup failed ($($_.Exception.Message)), using COMPUTERNAME"
 }
-if (-not $Serial) { $Serial = $env:COMPUTERNAME }
+if (-not $Serial) { $Serial = $DeviceName }
 
 $Now = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
 $NowEpoch = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
@@ -209,7 +216,8 @@ function Send-Finding {
 
     $payload = @{
         tool = $Tool; surface = $Surface; os = 'windows'
-        account_domain = $Account; device = $Serial; user = $ConsoleUser
+        account_domain = $Account; device = $Serial; device_name = $DeviceName
+        user = $ConsoleUser
         evidence = $Evidence; severity = $severity; reported_at = $Now
         source = 'collector-windows'
     } | ConvertTo-Json -Compress

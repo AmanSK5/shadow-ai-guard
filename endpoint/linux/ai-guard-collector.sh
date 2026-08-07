@@ -93,14 +93,27 @@ fi
 # keeps it to one subshell for the whole run.
 HOME_REAL=$(cd "$HOME_DIR" 2>/dev/null && pwd -P) || HOME_REAL="$HOME_DIR"
 
-# Stable device identifier. Prefer the DMI product serial (root can read it),
-# fall back to machine-id, then hostname. Never blank.
+# device carries the most stable identifier available: the DMI product serial
+# (root can read it), then machine-id, then hostname. That is what Jamf,
+# Intune, SentinelOne and most RMMs key on. device_name carries the hostname,
+# which is what a human recognises and what platforms with no serial can join
+# on. The dashboard prefers device_name and falls back to device, so a
+# collector sending only the serial shows a serial where scanners show a name.
+DEVICE_NAME=$(hostname 2>/dev/null || echo "")
+
 DEVICE=""
 if [ -r /sys/class/dmi/id/product_serial ]; then
   DEVICE=$(tr -d ' \n' < /sys/class/dmi/id/product_serial 2>/dev/null)
 fi
 [ -z "$DEVICE" ] && [ -r /etc/machine-id ] && DEVICE=$(cat /etc/machine-id 2>/dev/null)
-[ -z "$DEVICE" ] && DEVICE=$(hostname)
+# Said out loud. Falling back to the hostname changes what every finding from
+# this machine is keyed on, and a hostname is mutable where a serial is not.
+# Silence would make it indistinguishable from a machine that reported a real
+# serial, which is how one device becomes two on a dashboard that groups by it.
+if [ -z "$DEVICE" ]; then
+  echo "[ai-guard] no DMI serial or machine-id readable, using hostname for device"
+  DEVICE="$DEVICE_NAME"
+fi
 
 # --------------------------------------------------------------- helpers ---
 # domain_of <email> - strip local-part, lowercase. Never reports local-part.
@@ -254,9 +267,10 @@ report() {
   # severity and reported_at are generated here, so they need no escaping.
   # Everything else came from the registry, the machine or a config file.
   local payload
-  payload=$(printf '{"tool":"%s","surface":"%s","os":"linux","account_domain":"%s","device":"%s","user":"%s","evidence":"%s","severity":"%s","reported_at":"%s","source":"collector-linux"}' \
+  payload=$(printf '{"tool":"%s","surface":"%s","os":"linux","account_domain":"%s","device":"%s","device_name":"%s","user":"%s","evidence":"%s","severity":"%s","reported_at":"%s","source":"collector-linux"}' \
     "$(json_escape "$tool")" "$(json_escape "$surface")" "$(json_escape "$acct")" \
-    "$(json_escape "$DEVICE")" "$(json_escape "$CONSOLE_USER")" "$(json_escape "$evidence")" \
+    "$(json_escape "$DEVICE")" "$(json_escape "$DEVICE_NAME")" \
+    "$(json_escape "$CONSOLE_USER")" "$(json_escape "$evidence")" \
     "$severity" "$NOW")
   if [ -z "$ENDPOINT" ]; then
     echo "[ai-guard] FLAG (no endpoint set): $payload"
