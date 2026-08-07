@@ -283,15 +283,49 @@ function setup() {
 function dashboard() {
   if (!CFG.grafana_url) return `<h2>Dashboard</h2>
     <div class="note">No Grafana configured. Set <code>GRAFANA_URL</code> to a
-    Grafana that permits embedding (<code>allow_embedding</code>, and a decision
-    about how the frame authenticates) and its panels appear here. Everything
-    else in this portal works without it.</div>
-    <p class="lede">The portal does not replace Grafana. Grafana is better at
-    graphs; this is better at relationships. Charts are enrichment, not a
-    dependency.</p>`;
+    Grafana that permits embedding, then either <code>GRAFANA_PANELS</code> as
+    <code>dashboardUid:panelId:Title</code> entries separated by commas, or
+    <code>GRAFANA_DASHBOARD_UID</code> to embed a whole dashboard in one frame.
+    <br><br>
+    Grafana refuses to be framed by default. It needs
+    <code>allow_embedding = true</code> (<code>GF_SECURITY_ALLOW_EMBEDDING</code>),
+    a cookie <code>SameSite</code> setting that permits the frame, and a decision
+    about how the frame authenticates — anonymous access on a locked-down
+    Grafana, or an auth proxy. Those are yours to make; the portal cannot make
+    them for you.</div>
+    <p class="lede">Nothing else here depends on this. Grafana is better at
+    graphs and this is better at relationships, so charts are enrichment rather
+    than a dependency.</p>`;
+
+  const base = CFG.grafana_url, panels = CFG.grafana_panels || [];
+  const q = 'orgId=1&theme=dark&from=now-7d&to=now&kiosk';
+
+  if (!panels.length && CFG.grafana_dashboard_uid) {
+    return `<h2>Dashboard</h2>
+      <p class="lede">Embedded from ${esc(base)}. Set
+      <code>GRAFANA_PANELS</code> to pick individual panels instead of the
+      whole dashboard.</p>
+      <iframe src="${esc(base)}/d/${esc(CFG.grafana_dashboard_uid)}/?${q}"
+        style="width:100%;height:78vh;border:1px solid var(--bd);border-radius:10px;background:var(--sf)"
+        title="Grafana dashboard"></iframe>`;
+  }
+
+  if (!panels.length) return `<h2>Dashboard</h2>
+    <div class="note">Grafana is configured but nothing is selected to show.
+    Set <code>GRAFANA_PANELS</code> or <code>GRAFANA_DASHBOARD_UID</code>.</div>`;
+
+  const bad = panels.filter(p => p.error);
   return `<h2>Dashboard</h2>
-  <p class="lede">Panels embedded from ${esc(CFG.grafana_url)}.</p>
-  <p class="lede">Configure the panel ids you want in the portal settings.</p>`;
+  <p class="lede">Panels embedded from ${esc(base)}. If a frame stays blank,
+  Grafana is refusing to be framed rather than the panel being wrong — check
+  <code>allow_embedding</code> and the cookie <code>SameSite</code> setting.</p>
+  ${bad.length ? `<div class="note">${bad.map(b => esc(b.error)).join('<br>')}</div>` : ''}
+  <div style="display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(420px,1fr))">
+  ${panels.filter(p => !p.error).map(p => `
+    <iframe src="${esc(base)}/d-solo/${esc(p.uid)}/?${q}&panelId=${esc(p.panel_id)}"
+      style="width:100%;height:300px;border:1px solid var(--bd);border-radius:10px;background:var(--sf)"
+      title="${esc(p.title || 'Grafana panel')}"></iframe>`).join('')}
+  </div>`;
 }
 
 function render() {

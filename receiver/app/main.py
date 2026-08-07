@@ -109,6 +109,14 @@ LAST_REPORT = Gauge(
     "Unix time of the most recent finding per source surface",
     ["surface"],
 )
+TOOL_NORMALISED = Counter(
+    "aiguard_tool_normalised_total",
+    "Findings whose tool name was a known domain and was rewritten to the "
+    "registry id. A number that never moves means either every source already "
+    "sends ids, or the registry is not loaded.",
+    ["surface"],
+)
+
 REGISTRY_TOOLS = Gauge(
     "aiguard_registry_tools_total",
     "Number of tools in the served registry",
@@ -238,7 +246,33 @@ def _load_registry() -> dict | None:
         return None
 
 
-_load_registry()  # prime the gauge at boot
+# domain -> tool id. The browser extension reports the hostname it saw,
+# because at the point it fires that is all it has; every other source reports
+# the registry id. So one tool arrives as both chatgpt.com and chatgpt, splits
+# into two rows on every dashboard, and the counts for each are wrong.
+#
+# Normalising here rather than in each consumer means every downstream reader
+# agrees: Grafana, the portal, alerting. Fixing the extension to send the id is
+# the better long-term answer, but that is a release and a managed-update cycle
+# across two browsers, and findings already in flight would still be split.
+#
+# Unknown names pass through untouched. A tool the registry has never heard of
+# is a registry gap worth seeing, not something to quietly fold into a
+# neighbour.
+def _build_domain_map(reg: dict | None) -> dict[str, str]:
+    if not reg:
+        return {}
+    out: dict[str, str] = {}
+    for t in reg.get("tools", []):
+        tid = t.get("id")
+        if not tid:
+            continue
+        for d in t.get("domains") or []:
+            out[str(d).lower()] = tid
+    return out
+
+
+_DOMAIN_TO_TOOL = _build_domain_map(_load_registry())  # prime the gauge at boot
 
 
 @app.get("/healthz")
@@ -374,6 +408,17 @@ async def report(f: Finding, request: Request, authorization: str = Header(defau
         f.os = "unknown"
     if not f.reported_at:
         f.reported_at = datetime.now(timezone.utc).isoformat()
+
+    # A hostname where the registry knows a tool id: rewrite it, and keep what
+    # was sent. Nothing is discarded - the host lands in evidence when evidence
+    # is otherwise empty, so the original is still on the finding rather than
+    # only in whatever the sender happened to log.
+    canonical = _DOMAIN_TO_TOOL.get(f.tool.lower())
+    if canonical and canonical != f.tool:
+        if not f.evidence:
+            f.evidence = "site: %s" % f.tool
+        TOOL_NORMALISED.labels(surface=f.surface).inc()
+        f.tool = canonical
 
     # Loki: every finding, warn and info alike. Stdout always; direct push
     # when LOKI_PUSH_URL is set (parity with receiver v0.1.1).

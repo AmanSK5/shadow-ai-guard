@@ -18,6 +18,17 @@ Configuration, all optional except LOKI_URL:
   IDENTITY_MAP      CSV of key,identity for attaching people to devices
   GRAFANA_URL       base URL of a Grafana that allows embedding; unset means
                     the dashboard shows a note instead of a broken frame
+  GRAFANA_PANELS    what to embed, as "dashboardUid:panelId:Title" entries.
+                    The title is the frame's accessible name, not a visible
+                    caption: Grafana already renders the panel title inside
+                    the frame, and showing it twice reads as a mistake.
+                    Entries are separated by semicolons, not commas: Grafana
+                    panel titles routinely contain commas ("Top tools
+                    (devices, 7d)") and a comma separator silently split them
+                    into malformed halves. Unset with GRAFANA_DASHBOARD_UID
+                    set embeds the whole dashboard in one frame instead, which
+                    needs no panel ids and survives someone rearranging them
+  GRAFANA_DASHBOARD_UID  dashboard to embed whole, when no panels are listed
   CACHE_TTL_SECONDS how long a derived graph is reused, default 300
 """
 
@@ -36,7 +47,9 @@ LOKI_TOKEN = os.environ.get("LOKI_TOKEN") or None
 LOOKBACK_HOURS = float(os.environ.get("LOOKBACK_HOURS", "168"))
 REGISTRY_PATH = os.environ.get("REGISTRY_PATH", "/srv/registry/registry.yaml")
 IDENTITY_MAP = os.environ.get("IDENTITY_MAP", "")
-GRAFANA_URL = os.environ.get("GRAFANA_URL", "")
+GRAFANA_URL = os.environ.get("GRAFANA_URL", "").rstrip("/")
+GRAFANA_PANELS = os.environ.get("GRAFANA_PANELS", "")
+GRAFANA_DASHBOARD_UID = os.environ.get("GRAFANA_DASHBOARD_UID", "")
 CACHE_TTL = int(os.environ.get("CACHE_TTL_SECONDS", "300"))
 
 STATIC = Path(__file__).parent / "static"
@@ -86,9 +99,29 @@ def healthz():
 @app.get("/api/config")
 def config():
     """What the browser needs to know about this deployment."""
+    panels = []
+    for spec in GRAFANA_PANELS.split(";"):
+        spec = spec.strip()
+        if not spec:
+            continue
+        parts = spec.split(":", 2)
+        if len(parts) < 2:
+            # Said out loud rather than skipped: a panel that silently does not
+            # appear looks like Grafana refusing the frame, which sends someone
+            # off debugging headers for a typo in an environment variable.
+            panels.append({"error": "malformed GRAFANA_PANELS entry: %s" % spec})
+            continue
+        panels.append({
+            "uid": parts[0],
+            "panel_id": parts[1],
+            "title": parts[2] if len(parts) > 2 else "",
+        })
+
     return {
         "loki_configured": bool(LOKI_URL),
         "grafana_url": GRAFANA_URL,
+        "grafana_panels": panels,
+        "grafana_dashboard_uid": GRAFANA_DASHBOARD_UID,
         "lookback_hours": LOOKBACK_HOURS,
         "identity_map_configured": bool(IDENTITY_MAP and Path(IDENTITY_MAP).exists()),
         "cache_ttl_seconds": CACHE_TTL,

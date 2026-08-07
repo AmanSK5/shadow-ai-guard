@@ -38,6 +38,8 @@ The receiver stays one stateless container in all three.
 | `REGISTRY_PATH` | no | registry.yaml, for resolving domains to tool ids |
 | `IDENTITY_MAP` | no | CSV of `key,identity` attaching people to devices |
 | `GRAFANA_URL` | no | a Grafana that permits embedding; unset shows a note |
+| `GRAFANA_PANELS` | no | `dashboardUid:panelId:Title`, semicolon separated |
+| `GRAFANA_DASHBOARD_UID` | no | embed a whole dashboard instead of panels |
 | `CACHE_TTL_SECONDS` | no | how long a derived graph is reused, default 300 |
 
 ## Identity
@@ -119,6 +121,50 @@ A source that has never reported is either not set up or genuinely has nothing
 to say, and from a dashboard those are identical. Listing them turns "I
 deployed this and see an empty screen" into "the Entra scanner has never
 reported". It stays useful afterwards as an is-it-still-working view.
+
+## Embedding Grafana
+
+The Dashboard tab embeds Grafana panels, so the portal can be the one place
+someone looks. It is optional, and everything else works without it.
+
+Grafana refuses to be framed by default, deliberately: framing a session
+someone is logged into is how clickjacking works. Turning that off is a
+decision for the deployer, not something this portal can do on their behalf.
+It needs, on the Grafana side:
+
+    GF_SECURITY_ALLOW_EMBEDDING=true
+    GF_SECURITY_COOKIE_SAMESITE=none
+
+The second is easy to miss. A framed page is cross-site as far as the browser
+is concerned, so the default `Lax` cookie is not sent and the frame renders a
+login screen that no amount of `allow_embedding` will fix.
+
+Then decide how the frame authenticates: anonymous access on a Grafana that is
+locked down and read-only, or an auth proxy. The demo takes the first route
+because its Grafana is anonymous, viewer-only and bound to loopback.
+
+On the portal side, either name the panels:
+
+    GRAFANA_PANELS="ai-guard:2:Devices reporting (24h);ai-guard:6:Top tools (devices, 7d)"
+
+Semicolons, not commas. Panel titles routinely contain commas, and a comma
+separator splits "Top tools (devices, 7d)" into two malformed entries.
+
+or embed a whole dashboard in one frame, which needs no panel ids and survives
+someone rearranging them:
+
+    GRAFANA_DASHBOARD_UID=ai-guard
+
+The title is the frame's accessible name rather than a visible caption:
+Grafana renders the panel title inside the frame already, and showing it twice
+reads as a mistake.
+
+Panel ids come from the dashboard JSON. `GRAFANA_URL` is the URL a browser
+reaches Grafana on, not the one the portal container would use: the frames are
+loaded by the browser, not by the portal.
+
+If a frame stays blank, Grafana is refusing to be framed rather than the panel
+being wrong. Check the two settings above before the panel id.
 
 ## Running it
 
