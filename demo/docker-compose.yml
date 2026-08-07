@@ -5,9 +5,16 @@
 #
 #     docker compose up
 #
-# Then open http://localhost:3000 (anonymous, no login) and look at the
-# "Shadow AI" dashboard. Everything is fake: demo users are named after
-# Pokemon, findings are seeded by the `seeder` service below.
+# Then open either:
+#
+#   http://localhost:8091   the portal: devices, tools, people, and what is
+#                           reporting. Start here.
+#   http://localhost:3000   Grafana (anonymous, no login), the "Shadow AI"
+#                           dashboard.
+#
+# Both read the same findings and neither needs the other. Everything is fake:
+# demo users are named after Pokemon, findings are seeded by the `seeder`
+# service below.
 #
 # Stop and wipe with:  docker compose down -v
 
@@ -115,6 +122,34 @@ services:
       receiver:
         condition: service_healthy
     restart: "no"
+
+  # The governance portal: devices, tools, people and the relationships
+  # between them, derived from the same findings Grafana reads. Optional in a
+  # real deployment and optional here - stop this service and everything else
+  # still works, which is the point of it not being in the ingest path.
+  #
+  # Reads the compiled registry the builder produced, so tool names arriving
+  # from different detectors (chatgpt.com from the extension, chatgpt from
+  # everything else) resolve to one tool.
+  portal:
+    build: ../portal
+    environment:
+      LOKI_URL: "http://loki:3100"
+      REGISTRY_PATH: "/etc/ai-guard/registry.json"
+      # Short, because the demo is for clicking around. A real deployment
+      # wants the default 300 so a seven-day query is not rerun per page load.
+      CACHE_TTL_SECONDS: "10"
+      LOOKBACK_HOURS: "168"
+    volumes:
+      - registry-dist:/etc/ai-guard:ro
+    depends_on:
+      loki:
+        condition: service_healthy
+      registry-builder:
+        condition: service_completed_successfully
+    # Loopback only, same as everything else here.
+    ports:
+      - "127.0.0.1:8091:8091"
 
   # Serves the paste-guard demo page, and the real guard.js it loads.
   extension-demo:

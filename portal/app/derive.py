@@ -27,6 +27,7 @@ useful without a name on it.
 """
 
 import json
+import os
 import sys
 import time
 import urllib.parse
@@ -93,27 +94,40 @@ def fetch_from_loki(base, hours, token=None, limit=5000):
 
 
 def load_domain_map(path):
-    """domain -> tool id, from the registry. Detectors disagree on what to call
-    a tool: the browser extension reports the domain it saw, everything else
-    reports the registry id, so one tool arrives as chatgpt.com and chatgpt.
-    Resolving through the registry keeps the mapping in the one place that is
-    already the source of truth, rather than hardcoding a rule here."""
+    """domain -> tool id, from the registry.
+
+    Detectors disagree on what to call a tool: the browser extension reports
+    the domain it saw, everything else reports the registry id, so one tool
+    arrives as chatgpt.com and chatgpt. Resolving through the registry keeps
+    the mapping in the one place that is already the source of truth.
+
+    Accepts registry.yaml or the compiled registry.json, because which one is
+    to hand depends on the deployment: a checkout has the source, the Helm
+    chart and the demo ship the compiled artifact. Same shape either way.
+    """
+    if not path or not os.path.exists(path):
+        print("registry not found at %s: tool names will not be normalised"
+              % path, file=sys.stderr)
+        return {}
+
     try:
-        import yaml
+        with open(path) as fh:
+            if path.endswith(".json"):
+                reg = json.load(fh)
+            else:
+                import yaml
+                reg = yaml.safe_load(fh)
     except ImportError:
         print("pyyaml not installed: tool names will not be normalised",
               file=sys.stderr)
         return {}
-    try:
-        with open(path) as fh:
-            reg = yaml.safe_load(fh)
     except Exception as e:
-        print("could not read registry (%s): tool names will not be normalised" % e,
-              file=sys.stderr)
+        print("could not read registry (%s): tool names will not be normalised"
+              % e, file=sys.stderr)
         return {}
 
     out = {}
-    for t in reg.get("tools", []):
+    for t in (reg or {}).get("tools", []):
         tid = t.get("id")
         if not tid:
             continue
