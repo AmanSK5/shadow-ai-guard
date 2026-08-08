@@ -28,10 +28,45 @@ Three are equally valid:
 
 The receiver stays one stateless container in all three.
 
+## Authentication
+
+**Required.** The portal refuses to start without it.
+
+This page names who runs what on which machine, which is the most sensitive
+thing the platform produces. Coming up open because a variable was missed is
+the failure that matters: the portal is reachable, it looks like it works, and
+nothing says the door is off. So it fails closed and says why.
+
+    PORTAL_USER=admin
+    PORTAL_PASSWORD=...
+
+Basic auth is a floor rather than a ceiling: one shared credential, no
+per-user trail, and plaintext without TLS in front of it. **If you already run
+a reverse proxy, authenticate there instead** - it can do OIDC, mTLS or an
+allowlist against whatever you already have - and run the portal behind it
+with:
+
+    PORTAL_AUTH=none
+
+That opt-out logs a warning on every start, because an unauthenticated
+deployment should never be something nobody noticed. It is the right setting
+for localhost and for a proxy that authenticates for you, and the wrong one for
+anything reachable.
+
+OIDC in the portal itself is deliberately out of scope: correct, but heavy, and
+a lot of configuration surface for something that reads a log store.
+
+`/healthz` is unauthenticated on purpose. A liveness probe that needs a
+credential is a probe that fails for the wrong reason, and it returns nothing
+about the estate.
+
 ## Configuration
 
 | Variable | Required | Meaning |
 |---|---|---|
+| `PORTAL_USER` | yes* | basic auth username |
+| `PORTAL_PASSWORD` | yes* | basic auth password |
+| `PORTAL_AUTH` | yes* | `none` to run without auth, deliberately |
 | `LOKI_URL` | yes | Loki base URL, the same one the receiver writes to |
 | `LOKI_TOKEN` | no | bearer token, if your Loki needs one |
 | `LOOKBACK_HOURS` | no | default window, default 168 |
@@ -170,6 +205,9 @@ being wrong. Check the two settings above before the panel id.
 
     make lock                 # first time, or after editing requirements.in
     docker build -t ai-guard-portal .
-    docker run --rm -p 8091:8091 -e LOKI_URL=http://loki:3100 ai-guard-portal
+    docker run --rm -p 8091:8091 \
+      -e LOKI_URL=http://loki:3100 \
+      -e PORTAL_USER=admin -e PORTAL_PASSWORD=... \
+      ai-guard-portal
 
 Then open http://localhost:8091.

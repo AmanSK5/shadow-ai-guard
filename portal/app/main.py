@@ -10,7 +10,20 @@ Deliberately optional. Three deployments are equally valid: Grafana only,
 portal only, or both with Grafana panels embedded here. The receiver stays
 one stateless container either way.
 
-Configuration, all optional except LOKI_URL:
+Authentication is required, not optional. This page names who runs what on
+which machine, which is the most sensitive thing the platform produces, so it
+refuses to start rather than come up open by accident. Set PORTAL_USER and
+PORTAL_PASSWORD, or set PORTAL_AUTH=none deliberately for localhost. Basic auth
+is a floor, not a ceiling: it is one shared credential with no per-user trail,
+so anyone already running a reverse proxy should authenticate there instead and
+run this with PORTAL_AUTH=none behind it.
+
+Configuration, all optional except LOKI_URL and the auth pair:
+  PORTAL_USER       basic auth username
+  PORTAL_PASSWORD   basic auth password
+  PORTAL_AUTH       set to "none" to run without auth. Logs a warning on every
+                    start, because an unauthenticated deployment should never
+                    be something nobody noticed
   LOKI_URL          Loki base URL, e.g. http://loki:3100
   LOKI_TOKEN        bearer token, if your Loki needs one
   LOOKBACK_HOURS    default window, default 168
@@ -32,15 +45,70 @@ Configuration, all optional except LOKI_URL:
   CACHE_TTL_SECONDS how long a derived graph is reused, default 300
 """
 
+import logging
 import os
+import secrets
 import time
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 
 from app import derive
+
+log = logging.getLogger("portal")
+
+PORTAL_USER = os.environ.get("PORTAL_USER", "")
+PORTAL_PASSWORD = os.environ.get("PORTAL_PASSWORD", "")
+PORTAL_AUTH = os.environ.get("PORTAL_AUTH", "").lower()
+
+# Fail closed. Coming up open because a variable was missed is the failure
+# that matters here: the portal is reachable, it looks like it works, and
+# nothing says the door is off. Refusing to start is loud and immediate.
+if PORTAL_AUTH == "none":
+    log.warning(
+        "PORTAL_AUTH=none: this portal is running WITHOUT AUTHENTICATION. It "
+        "shows which people use which AI tools on which machines. That is fine "
+        "on localhost and behind a proxy that authenticates for it, and it is "
+        "not fine on anything reachable."
+    )
+elif not (PORTAL_USER and PORTAL_PASSWORD):
+    raise SystemExit(
+        "refusing to start without authentication.\n\n"
+        "This portal shows which people use which AI tools on which machines.\n"
+        "Set PORTAL_USER and PORTAL_PASSWORD, or set PORTAL_AUTH=none if you\n"
+        "mean it - localhost, or behind a proxy that authenticates for you.\n\n"
+        "Basic auth is one shared credential with no per-user trail. If you\n"
+        "already run a reverse proxy, authenticate there instead and run this\n"
+        "with PORTAL_AUTH=none behind it."
+    )
+
+_basic = HTTPBasic(auto_error=False)
+
+
+def require_auth(creds: HTTPBasicCredentials = Depends(_basic)):
+    """Compared with compare_digest so a wrong username and a wrong password
+    take the same time to reject: a difference there is enough to enumerate a
+    valid username one character at a time."""
+    if PORTAL_AUTH == "none":
+        return
+    if creds is None:
+        raise HTTPException(
+            status_code=401,
+            detail="authentication required",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    ok_user = secrets.compare_digest(creds.username, PORTAL_USER)
+    ok_pass = secrets.compare_digest(creds.password, PORTAL_PASSWORD)
+    if not (ok_user and ok_pass):
+        raise HTTPException(
+            status_code=401,
+            detail="invalid credentials",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+
 
 LOKI_URL = os.environ.get("LOKI_URL", "")
 LOKI_TOKEN = os.environ.get("LOKI_TOKEN") or None
@@ -91,13 +159,15 @@ def _findings(hours):
         )
 
 
+# Deliberately unauthenticated: a liveness probe that needs a credential is a
+# probe that fails for the wrong reason. It returns nothing about the estate.
 @app.get("/healthz")
 def healthz():
     return {"ok": True}
 
 
 @app.get("/api/config")
-def config():
+def config(_=Depends(require_auth)):
     """What the browser needs to know about this deployment."""
     panels = []
     for spec in GRAFANA_PANELS.split(";"):
@@ -129,7 +199,8 @@ def config():
 
 
 @app.get("/api/graph")
-def graph(hours: float = Query(default=None, gt=0, le=24 * 90)):
+def graph(hours: float = Query(default=None, gt=0, le=24 * 90),
+          _=Depends(require_auth)):
     hours = hours or LOOKBACK_HOURS
     def build():
         findings = _findings(hours)
@@ -142,7 +213,8 @@ def graph(hours: float = Query(default=None, gt=0, le=24 * 90)):
 
 
 @app.get("/api/status")
-def status(hours: float = Query(default=None, gt=0, le=24 * 90)):
+def status(hours: float = Query(default=None, gt=0, le=24 * 90),
+           _=Depends(require_auth)):
     hours = hours or LOOKBACK_HOURS
     def build():
         return derive.status_from(_findings(hours))
@@ -153,7 +225,8 @@ def status(hours: float = Query(default=None, gt=0, le=24 * 90)):
 
 @app.get("/api/suggest-identities")
 def suggest_identities(hours: float = Query(default=None, gt=0, le=24 * 90),
-                       fmt: str = Query(default="json", pattern="^(json|csv)$")):
+                       fmt: str = Query(default="json", pattern="^(json|csv)$"),
+                       _=Depends(require_auth)):
     """Proposed device -> identity mappings, for review.
 
     The portal will not apply these itself. Identity resolution belongs to the
@@ -181,8 +254,15 @@ def suggest_identities(hours: float = Query(default=None, gt=0, le=24 * 90),
 
 
 @app.get("/")
-def index():
+def index(_=Depends(require_auth)):
     return FileResponse(STATIC / "index.html")
 
 
-app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
+# The UI is inert without the APIs above, but an unauthenticated mount is
+# still a hole worth not leaving open.
+@app.get("/static/{path:path}")
+def static_files(path: str, _=Depends(require_auth)):
+    target = (STATIC / path).resolve()
+    if not str(target).startswith(str(STATIC.resolve())) or not target.is_file():
+        raise HTTPException(status_code=404, detail="not found")
+    return FileResponse(target)
