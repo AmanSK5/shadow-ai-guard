@@ -1,23 +1,29 @@
+# Python
 __pycache__/
 *.pyc
-registry/dist/
-.env
-.venv/
 *.egg-info/
-.env
 .venv/
-__pycache__/
-*.egg-info/
+
+# Built artifacts
 registry/dist/
+
+# Local configuration
+.env
 .DS_Store
+
+# Secrets. The compose route reads these from files rather than the
+# environment, so the files exist on a deployer's disk and must never be here.
+deploy/compose/secrets/
 *.pem
 *.key
 *.pfx
 *.p12
-.claude/
-# Maps named people to machines. Personal data, deployment-specific, and
-# committing it would publish colleagues' names.
+
+# Maps named people to the machines they use. Supplied by the deployer, not
+# derived, and personal data: it belongs wherever deployment configuration
+# lives, not in a repository.
 identity-map.csv
 **/identity-map.csv
-portal/.venv/
-receiver/.venv/
+
+# Tooling
+.claude/

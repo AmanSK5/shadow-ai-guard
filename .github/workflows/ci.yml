@@ -258,6 +258,131 @@ jobs:
           diff -q registry/dist/collector.json charts/ai-guard/files/collector.json \
             || { echo "::error::charts/ai-guard/files/collector.json is stale, copy registry/dist over it"; exit 1; }
 
+  compose-smoke:
+    # The production compose route, brought up the way a deployer would.
+    #
+    # It is not identical to what a deployer runs, and the difference is worth
+    # naming rather than hiding. Production points at a log store you already
+    # have; CI has none, so this uses the with-logs profile to stand one up.
+    # Everything else - the images, the registry builder, file-based secrets,
+    # the loopback binds - is the real thing.
+    #
+    # That gap is where a green job stops proving anything, so the checks below
+    # are about the parts the profile does not touch: that secrets are read
+    # from files, that the portal refuses to start without them, and that a
+    # finding posted to the receiver comes back out of the portal as an entity.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The images are built from this commit rather than pulled, so this tests
+      # the code in the PR. A deployer pulls a published tag; the compose file
+      # is the same either way.
+      - name: build the images this commit would publish
+        run: |
+          docker build -t ghcr.io/amansk5/shadow-ai-guard/receiver:ci receiver
+          docker build -t ghcr.io/amansk5/shadow-ai-guard/portal:ci portal
+
+      - name: set up secrets and config the way the README says
+        working-directory: deploy/compose
+        run: |
+          cp .env.example .env
+          mkdir -p secrets
+          openssl rand -hex 32 > secrets/auth_token
+          openssl rand -hex 24 > secrets/portal_password
+          chmod 600 secrets/*
+          {
+            echo "IMAGE_TAG=ci"
+            echo "LOKI_PUSH_URL=http://loki:3100/loki/api/v1/push"
+            echo "LOKI_URL=http://loki:3100"
+            echo "GRAFANA_ADMIN_PASSWORD=$(openssl rand -hex 12)"
+          } >> .env
+
+      - name: the compose file is valid
+        working-directory: deploy/compose
+        run: docker compose --profile with-logs config >/dev/null
+
+      - name: bring it up
+        working-directory: deploy/compose
+        run: docker compose --profile with-logs up -d
+
+      - name: the receiver becomes healthy
+        run: |
+          for _ in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:8080/healthz >/dev/null 2>&1 && break
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:8080/healthz
+
+      - name: the registry builder succeeded
+        working-directory: deploy/compose
+        run: |
+          cid=$(docker compose ps -aq registry-builder)
+          if [ -z "$cid" ]; then echo "::error::registry-builder never ran"; exit 1; fi
+          code=$(docker wait "$cid")
+          if [ "$code" != "0" ]; then
+            echo "::error::registry-builder exited $code"
+            docker logs "$cid"; exit 1
+          fi
+
+      - name: the receiver reads the token from the file, not the environment
+        working-directory: deploy/compose
+        run: |
+          token=$(cat secrets/auth_token)
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
+            -d '{"tool":"claude-code","surface":"cli","os":"linux","account_domain":"gmail.com","device":"CI-DEVICE","device_name":"ci-box","user":"ci","evidence":"~/.claude.json","severity":"warn","source":"collector-linux"}' \
+            http://127.0.0.1:8080/report)
+          if [ "$code" != "200" ] && [ "$code" != "204" ]; then
+            echo "::error::a finding with the file-supplied token was rejected ($code)"
+            docker compose logs receiver; exit 1
+          fi
+          # And the wrong token is refused, so the check above means something.
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+            -H "Authorization: Bearer wrong" -H 'Content-Type: application/json' \
+            -d '{"tool":"x","surface":"cli"}' http://127.0.0.1:8080/report)
+          if [ "$code" != "401" ]; then
+            echo "::error::a wrong token was not refused ($code)"; exit 1
+          fi
+
+      - name: the portal requires authentication
+        run: |
+          for _ in $(seq 1 30); do
+            curl -s -o /dev/null http://127.0.0.1:8091/healthz && break
+            sleep 2
+          done
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8091/)
+          if [ "$code" != "401" ]; then
+            echo "::error::the portal served its UI without credentials ($code)"; exit 1
+          fi
+
+      - name: the finding comes back out of the portal as an entity
+        working-directory: deploy/compose
+        run: |
+          pw=$(cat secrets/portal_password)
+          # Loki ingests asynchronously, so retry rather than sleeping once and
+          # hoping. A failure here means the whole chain is broken, not that it
+          # was slow.
+          for _ in $(seq 1 30); do
+            body=$(curl -s -u "admin:$pw" 'http://127.0.0.1:8091/api/graph?hours=1' || true)
+            echo "$body" | grep -q 'CI-DEVICE' && break
+            sleep 2
+          done
+          echo "$body" | grep -q 'CI-DEVICE' || {
+            echo "::error::the finding never appeared in the portal graph"
+            echo "$body" | head -c 2000
+            docker compose logs receiver portal loki; exit 1
+          }
+          echo "$body" | grep -q '"personal_accounts": \["gmail.com"\]' || {
+            echo "::error::the personal account was not flagged on the device"
+            echo "$body" | head -c 2000; exit 1
+          }
+
+      - name: tear down
+        if: always()
+        working-directory: deploy/compose
+        run: docker compose --profile with-logs down -v
+
   demo-smoke:
     # The demo is the first instruction in the README and the thing the
     # project asks people to run before trusting anything else. It broke and
@@ -423,7 +548,7 @@ jobs:
       packages: write
     needs: [placeholder-guard, shellcheck, collector-delivery-state,
             registry-validate, receiver-test, scanner-test, portal-test,
-            helm, demo-smoke,
+            helm, demo-smoke, compose-smoke,
             windows-path-containment]
     runs-on: ubuntu-latest
     strategy:
