@@ -42,7 +42,9 @@ else.
     mkdir -p secrets
     openssl rand -hex 32 > secrets/auth_token
     openssl rand -hex 24 > secrets/portal_password
-    chmod 600 secrets/*
+    chmod 700 secrets
+    chmod 640 secrets/*
+    sudo chown :65532 secrets/*
 
 Edit `.env`. At minimum, set `LOKI_URL` if you are running the portal, and pin
 `IMAGE_TAG` to a released version rather than leaving it at `latest`.
@@ -67,6 +69,26 @@ work without changing anything here.
 Both containers fail to start if a secret file is missing or unreadable. That
 is deliberate: falling back would start the receiver with an empty token, or the
 portal with an empty password that an empty input would match.
+
+### Permissions
+
+Both images run as uid 65532, and a Linux bind mount preserves ownership, so a
+secret file that only its owner can read is a file the container cannot read.
+The container then exits at startup rather than running with an empty
+credential, which is correct but looks like nothing happening.
+
+Hence the group ownership above: `640` with group `65532` means the container
+can read it and other users on the host cannot. `chmod 700 secrets` stops
+anyone listing the directory.
+
+If you would rather not use `sudo`, `chmod 644` works and is what most
+container images end up needing, but it means any local user can read the
+token. The directory mode does not save you there, because the container needs
+to traverse it.
+
+Docker Desktop on macOS papers over this: its file-sharing layer maps ownership,
+so `600` works there and fails on a Linux host. Worth knowing if you develop on
+a Mac and deploy on Linux.
 
 `secrets/` and `.env` are gitignored.
 

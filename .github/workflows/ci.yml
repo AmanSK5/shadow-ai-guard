@@ -290,7 +290,14 @@ jobs:
           mkdir -p secrets
           openssl rand -hex 32 > secrets/auth_token
           openssl rand -hex 24 > secrets/portal_password
-          chmod 600 secrets/*
+          # Both images run as uid 65532 and a Linux bind mount preserves
+          # ownership, so 600 owned by the runner is a file the container
+          # cannot read - it exits at startup rather than running with an
+          # empty credential. Docker Desktop on macOS maps ownership and hides
+          # this, which is how it passed locally and failed here.
+          chmod 700 secrets
+          chmod 640 secrets/*
+          sudo chown :65532 secrets/*
           {
             echo "IMAGE_TAG=ci"
             echo "LOKI_PUSH_URL=http://loki:3100/loki/api/v1/push"
@@ -307,12 +314,21 @@ jobs:
         run: docker compose --profile with-logs up -d
 
       - name: the receiver becomes healthy
+        working-directory: deploy/compose
         run: |
           for _ in $(seq 1 60); do
             curl -fsS http://127.0.0.1:8080/healthz >/dev/null 2>&1 && break
             sleep 2
           done
-          curl -fsS http://127.0.0.1:8080/healthz
+          # A bare "connection refused" says nothing about why. If it never
+          # came up, the container state and its logs are the answer, and
+          # printing them here beats a second run to find out.
+          if ! curl -fsS http://127.0.0.1:8080/healthz; then
+            echo "::error::the receiver never became reachable"
+            docker compose --profile with-logs ps -a
+            docker compose --profile with-logs logs
+            exit 1
+          fi
 
       - name: the registry builder succeeded
         working-directory: deploy/compose
@@ -346,12 +362,18 @@ jobs:
           fi
 
       - name: the portal requires authentication
+        working-directory: deploy/compose
         run: |
           for _ in $(seq 1 30); do
             curl -s -o /dev/null http://127.0.0.1:8091/healthz && break
             sleep 2
           done
           code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8091/)
+          if [ "$code" = "000" ]; then
+            echo "::error::the portal never became reachable"
+            docker compose --profile with-logs logs portal
+            exit 1
+          fi
           if [ "$code" != "401" ]; then
             echo "::error::the portal served its UI without credentials ($code)"; exit 1
           fi
