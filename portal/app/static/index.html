@@ -46,26 +46,48 @@ input{background:var(--sf2);border:1px solid var(--bd);color:var(--fg);border-ra
     <button data-v="dashboard">Dashboard</button>
   </nav>
   <input id="q" placeholder="filter…">
+  <span id="freshness" class="mono" style="font-size:11px;color:var(--mut)"></span>
+  <button id="refresh" class="back" style="margin:0">refresh</button>
 </header>
 <main id="app"></main>
 <script>
 let G = {devices:{},identities:{},tools:{},bridges:{},unattributed:[],counts:{}};
 let S = null, CFG = {}, loadError = '';
 
-async function load() {
+async function load(force) {
   app.innerHTML = '<p class="lede">Reading findings…</p>';
+  const q = force ? '?refresh=true' : '';
   try {
     CFG = await (await fetch('/api/config')).json();
-    const gr = await fetch('/api/graph');
+    const gr = await fetch('/api/graph' + q);
     if (!gr.ok) throw new Error((await gr.json()).detail || gr.statusText);
     G = await gr.json();
-    const sr = await fetch('/api/status');
+    const sr = await fetch('/api/status' + q);
     if (sr.ok) S = await sr.json();
     loadError = '';
   } catch (e) {
     loadError = String(e.message || e);
   }
   render();
+  showFreshness();
+}
+
+// The graph is cached, and a cache you cannot see is indistinguishable from a
+// portal that is not working: a finding that arrived a minute ago simply is
+// not there, with nothing on screen to say why.
+function showFreshness() {
+  const el = document.getElementById('freshness');
+  if (!el) return;
+  if (loadError || !G.derived_at) { el.textContent = ''; return; }
+  const tick = () => {
+    const age = Math.max(0, Math.round(Date.now() / 1000 - G.derived_at));
+    el.textContent = age < 5 ? 'just now'
+      : age < 90 ? age + 's ago'
+      : Math.round(age / 60) + 'm ago';
+  };
+  tick();
+  clearInterval(window._freshTimer);
+  window._freshTimer = setInterval(tick, 5000);
 }
 const app = document.getElementById('app'), q = document.getElementById('q');
 let view = 'setup', detail = null, filter = '';
@@ -338,5 +360,6 @@ document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
   b.classList.add('on'); view = b.dataset.v; detail = null; render();
 });
 q.oninput = e => { filter = e.target.value.toLowerCase(); detail = null; render(); };
+document.getElementById('refresh').onclick = () => load(true);
 load();
 </script>

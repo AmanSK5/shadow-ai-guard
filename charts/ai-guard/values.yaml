@@ -117,7 +117,10 @@ portal:
   # stops a seven-day query being rerun on every page load; it is not state,
   # since it rebuilds on restart.
   lookbackHours: 168
-  cacheTtlSeconds: 300
+  # Short enough that a finding which just arrived is not invisible, long
+  # enough to absorb a page refresh. The portal shows how old the data is and
+  # has a refresh control, so this is a comfort setting rather than a limit.
+  cacheTtlSeconds: 30
 
   # Optional. A ConfigMap with key identity-map.csv, mapping people to the
   # machines they use, where the key is a device identifier or a local
@@ -132,10 +135,18 @@ portal:
   # Optional. Embeds Grafana panels on the portal's dashboard tab.
   #
   # Grafana refuses to be framed by default, deliberately: framing a session
-  # someone is logged into is how clickjacking works. It needs
-  # allow_embedding, a cookie SameSite that permits the frame, and a decision
-  # about how the frame authenticates. url is the URL a BROWSER reaches
-  # Grafana on, not one resolvable inside the cluster.
+  # someone is logged into is how clickjacking works. On the Grafana side it
+  # needs allow_embedding, cookie_samesite=none, and - if your Grafana has a
+  # login at all - cookie_secure=true. That last one is easy to miss and locks
+  # you out of Grafana when it is: SameSite=None is only valid alongside
+  # Secure, so the browser silently discards the session cookie and every
+  # login bounces back to the login screen.
+  #
+  # url is the URL a BROWSER reaches Grafana on, not one resolvable inside the
+  # cluster: the frames are loaded by the browser.
+  #
+  # Panel ids are not knowable until Grafana is running with data, so this is
+  # usually a second pass. See the chart README.
   grafana:
     url: ""
     # dashboardUid:panelId:Title, semicolon separated. Semicolons because

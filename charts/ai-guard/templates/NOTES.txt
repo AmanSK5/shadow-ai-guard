@@ -32,8 +32,15 @@ Read the bearer token every source authenticates with:
 The portal is deployed too: devices, tools, people, and which of your sources
 are reporting versus silent.
 {{- if .Values.portal.ingress.enabled }}
+{{- if eq .Values.portal.ingress.className "tailscale" }}
+
+  Portal: https://{{ .Values.portal.ingress.host }}.<your-tailnet>.ts.net
+  (the Tailscale operator appends the tailnet name and issues the cert;
+  kubectl get ingress {{ include "ai-guard.portal.fullname" . }} shows the full address)
+{{- else }}
 
   Portal: https://{{ .Values.portal.ingress.host }}
+{{- end }}
 {{- else }}
 
   No ingress on the portal. Port-forward to reach it:

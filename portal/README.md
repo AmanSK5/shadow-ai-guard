@@ -75,7 +75,7 @@ about the estate.
 | `GRAFANA_URL` | no | a Grafana that permits embedding; unset shows a note |
 | `GRAFANA_PANELS` | no | `dashboardUid:panelId:Title`, semicolon separated |
 | `GRAFANA_DASHBOARD_UID` | no | embed a whole dashboard instead of panels |
-| `CACHE_TTL_SECONDS` | no | how long a derived graph is reused, default 300 |
+| `CACHE_TTL_SECONDS` | no | how long a derived graph is reused, default 30 |
 
 ## Identity
 
@@ -145,7 +145,7 @@ assessment calls for it. The portal only reads it.
       --from-file=identity-map.csv=./identity-map.csv
 
 The file is re-read whenever the derived graph is rebuilt, so an edit takes
-effect within `CACHE_TTL_SECONDS` (default 300) without a restart.
+effect within `CACHE_TTL_SECONDS` (default 30) without a restart.
 
 ## Setup view
 
@@ -169,10 +169,21 @@ It needs, on the Grafana side:
 
     GF_SECURITY_ALLOW_EMBEDDING=true
     GF_SECURITY_COOKIE_SAMESITE=none
+    GF_SECURITY_COOKIE_SECURE=true      # if your Grafana has a login
 
 The second is easy to miss. A framed page is cross-site as far as the browser
 is concerned, so the default `Lax` cookie is not sent and the frame renders a
 login screen that no amount of `allow_embedding` will fix.
+
+**The third locks you out of Grafana if you skip it.** `SameSite=None` is only
+valid on a cookie that also has `Secure`, so a browser silently discards the
+session cookie: you log in, it succeeds, and you land back on the login screen
+with nothing to explain why. Setting `cookie_secure` requires Grafana to be
+behind HTTPS, which it should be anyway.
+
+You only need it if your Grafana authenticates. An anonymous, read-only
+Grafana issues no session cookie, so the first two settings are enough - which
+is why the demo works without it and a real instance does not.
 
 Then decide how the frame authenticates: anonymous access on a Grafana that is
 locked down and read-only, or an auth proxy. The demo takes the first route
@@ -194,9 +205,45 @@ The title is the frame's accessible name rather than a visible caption:
 Grafana renders the panel title inside the frame already, and showing it twice
 reads as a mistake.
 
-Panel ids come from the dashboard JSON. `GRAFANA_URL` is the URL a browser
-reaches Grafana on, not the one the portal container would use: the frames are
-loaded by the browser, not by the portal.
+`GRAFANA_URL` is the URL a browser reaches Grafana on, not the one the portal
+container would use: the frames are loaded by the browser, not by the portal.
+
+### Finding the ids
+
+You will not know these until Grafana is running with data in it, so this is
+normally something you come back and do rather than set up front.
+
+Open the dashboard. The address bar gives you the uid:
+
+    https://grafana.example.com/d/ai-guard/ai-guard-shadow-ai-visibility
+                                   ^^^^^^^^ uid
+
+Then any panel's menu, Share, Link. That URL ends with `viewPanel=<n>`, and
+that number is the panel id:
+
+    ...?orgId=1&from=now-7d&to=now&viewPanel=19
+                                              ^^ panel id
+
+So that panel is `ai-guard:19:Whatever you want to call it`.
+
+### Applying them afterwards
+
+**Docker Compose:** edit `.env`, then recreate the container. A restart does
+not reread the file.
+
+    docker compose up -d portal
+
+**Helm:**
+
+    helm upgrade ai-guard charts/ai-guard --reset-then-reuse-values \
+      --set portal.grafana.url=https://grafana.example.com \
+      --set-string 'portal.grafana.panels=ai-guard:19:Devices reporting'
+
+Two things there matter. `--reset-then-reuse-values`, not `--reuse-values`:
+the latter keeps only the values you previously set, so any chart default you
+have not overridden goes missing, and the templates fail on the gaps. And
+`--set-string`, because the value contains colons and commas that `--set`
+would try to parse as structure.
 
 If a frame stays blank, Grafana is refusing to be framed rather than the panel
 being wrong. Check the two settings above before the panel id.

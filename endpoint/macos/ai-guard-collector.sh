@@ -317,6 +317,27 @@ registry_tsv() {
 }
 
 if ! fetch_registry; then
+  # Distinguish "no receiver configured" from "the receiver did not answer".
+  # Both used to print the same line, which reads as a network problem when it
+  # is a missing parameter - and prints a URL with no host in front of it,
+  # which is the giveaway nobody notices. This script takes its configuration
+  # as positional parameters because Jamf passes script parameters, not
+  # environment variables; running it by hand needs the same shape.
+  if [ -z "$RECEIVER_BASE" ]; then
+    echo "[ai-guard] no receiver configured. This script reads its settings as"
+    echo "[ai-guard] positional parameters, because that is how Jamf passes"
+    echo "[ai-guard] them. Environment variables are ignored."
+    echo "[ai-guard]"
+    echo "[ai-guard]   Jamf: set parameters 4, 5 and 6 on the policy."
+    echo "[ai-guard]   By hand: \$1-\$3 are Jamf's own, so pass three empty"
+    echo "[ai-guard]   strings first:"
+    echo "[ai-guard]"
+    echo "[ai-guard]     sudo ./ai-guard-collector.sh \"\" \"\" \"\" \\"
+    echo "[ai-guard]       https://receiver.example.com <token> example.com"
+    echo "[ai-guard]"
+    echo "[ai-guard] Refusing to scan: an empty scan looks like a clean machine."
+    exit 1
+  fi
   echo "[ai-guard] registry fetch failed: ${RECEIVER_BASE%/}/registry/collector"
   echo "[ai-guard] refusing to scan without an identifier list - an empty scan looks like a clean machine"
   exit 1
