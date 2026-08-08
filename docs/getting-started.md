@@ -1,195 +1,97 @@
 # Getting started
 
-This guide takes you from a clone to your first finding on a dashboard. It
-deploys the minimum viable platform: the receiver, plus one endpoint
-collector. Once that thread works end to end, adding the other surfaces is
-repetition rather than new concepts.
+From a running receiver to your first finding on a dashboard. Once that thread
+works end to end, adding the other surfaces is repetition rather than new
+concepts.
 
-If you just want to see what the dashboard looks like without deploying
+If you just want to see what any of this looks like without deploying
 anything, skip to the demo at the end.
 
 ## What you are building
 
 ```
 one collector ──► receiver ──► logs (Loki) ──► Grafana dashboard
-                     │
+                     │                            or the portal
               registry (served to the collector at runtime)
 ```
 
-Everything else in the project is more sources feeding the same receiver.
-Get one source working first.
+Everything else in the project is more sources feeding the same receiver. Get
+one source working first.
 
 ## Prerequisites
 
-- A Kubernetes cluster you can deploy to. Anything conformant works; nothing
-  in the core is cloud specific.
-- A log pipeline that ingests container stdout. The provided dashboard
-  assumes Loki, but the receiver's only output is JSON lines, so any pipeline
-  that scrapes stdout works.
-- Grafana, to import the dashboard.
-- One macOS, Windows, or Linux machine you can run a script on as
-  root/admin, to be your first endpoint.
+- **A running receiver.** Two routes, both producing the same thing:
+  [Docker Compose](../deploy/compose/README.md) on a host, or
+  [Kubernetes](deployment/kubernetes.md). See
+  [the routes](deployment/README.md) if you are not sure which.
+- **A log pipeline that ingests container stdout.** The dashboard assumes
+  Loki, but the receiver's only output is JSON lines, so anything that scrapes
+  stdout works.
+- **Grafana**, to import the dashboard. Optional if you only want the portal.
+- **One macOS, Windows or Linux machine** you can run a script on as
+  root or admin, to be your first endpoint.
 
-You do not need Alertmanager, the cloud scanners, or the browser extension
-to get started. Add those once the basic thread works. When you do add the
-browser surface, [../extension/README.md](../extension/README.md) covers
-packing, hosting and MDM deployment, including the paste guard.
+You do not need Alertmanager, the cloud scanners or the browser extension to
+get started. Add those once the basic thread works.
 
-## 1. Deploy the receiver
+You also need the **bearer token** your receiver was deployed with. Every
+source authenticates with it. The route you followed says where to find it.
 
-The receiver is a single container. Prebuilt images are published to GHCR by
-CI, so you do not need to build anything:
+## 1. Roll out one collector
 
-```
-ghcr.io/amansk5/shadow-ai-guard/receiver:latest
-```
+Pick the OS of your test machine and follow its README:
 
-Published for `linux/amd64` and `linux/arm64`, so the same tag works on
-Graviton, Apple Silicon and a Raspberry Pi without anything extra. Check what
-a tag resolves to with:
+- macOS: [`endpoint/macos/README.md`](../endpoint/macos/README.md) (Jamf, or
+  run the script directly)
+- Windows: [`endpoint/windows/README.md`](../endpoint/windows/README.md)
+  (Intune)
+- Linux: [`endpoint/linux/README.md`](../endpoint/linux/README.md) (any RMM,
+  cron, or config management)
 
-```bash
-docker buildx imagetools inspect ghcr.io/amansk5/shadow-ai-guard/receiver:latest
-```
+For a first test you can run the script directly as root or admin, with no MDM
+at all, by setting three values (each README shows how per platform):
 
-### The short way
-
-If you use Helm, the chart does this step and the next one in a single
-command, with the compiled registry already inside it:
-
-```bash
-helm install ai-guard charts/ai-guard \
-  --namespace ai-guard --create-namespace \
-  --set loki.pushUrl=http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push \
-  --set ingress.enabled=true \
-  --set ingress.host=ai-guard.example.com
-```
-
-Read the token it generated, then skip to step 3:
-
-```bash
-kubectl -n ai-guard get secret ai-guard \
-  -o jsonpath='{.data.authToken}' | base64 -d; echo
-```
-
-`charts/ai-guard/README.md` covers the values, including how to bring your
-own token or your own registry ConfigMap. The rest of steps 1 and 2 is the
-same thing by hand.
-
-### By hand
-
-Pick a namespace and use it consistently from here on. The Secret, the
-ConfigMap and the Deployment all have to land in the same one:
-
-```bash
-export NS=ai-guard
-kubectl create namespace "$NS"
-```
-
-Create its bearer token as a Kubernetes Secret. Every source authenticates
-to the receiver with this one token:
-
-```bash
-kubectl -n "$NS" create secret generic ai-guard-receiver \
-  --from-literal=authToken="$(openssl rand -hex 32)"
-```
-
-Deploy the receiver with that Secret mounted as the `AUTH_TOKEN` environment
-variable, and expose it on an ingress your endpoints can reach. The receiver
-listens on port 8080 and needs, at minimum:
-
-- `AUTH_TOKEN` from the Secret above
-- the registry ConfigMap mounted at `/etc/ai-guard` (next step)
-
-If you deploy before the ConfigMap from step 2 exists, the pod sits in
-ContainerCreating with a FailedMount event. That is normal: create the
-ConfigMap and the kubelet mounts it within a minute, no restart needed.
-
-Optional environment variables, all off by default:
-- `ALERTMANAGER_URL`, set to enable alerting; unset means findings are
-  logged and dashboarded but nothing pages
-- `DISPLAY_TZ`, timezone for the human-readable timestamp on alerts
-  (default UTC)
-
-Confirm it is up:
-
-```bash
-curl -s https://your-receiver-host/healthz
-# {"ok": true, "version": "..."}
-```
-`receiver/README.md` documents every variable and endpoint, and
-`receiver/deploy/receiver.yaml` is a working example manifest to adapt.
-
-## 2. Publish the registry
-
-The registry is the list of AI tools to detect. Collectors fetch it from the
-receiver at runtime, so it lives in a ConfigMap the receiver serves.
-
-`build.py` needs `pyyaml` and `jsonschema`. On current Homebrew or Debian
-Python (PEP 668), install them in a venv:
-
-Same namespace as step 1. If you are in a new shell, `export NS=ai-guard` first.
-
-```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install pyyaml jsonschema
-python registry/build.py
-kubectl -n "$NS" create configmap ai-guard-registry \
-  --from-file=registry.json=registry/dist/registry.json \
-  --from-file=collector.json=registry/dist/collector.json
-```
-
-The receiver reads the registry per request, and the kubelet syncs ConfigMap
-changes into the pod, so updating the registry later is a rebuild and a
-`kubectl apply` with no receiver restart.
-
-Confirm the receiver serves it:
-
-```bash
-curl -s -H "Authorization: Bearer $TOKEN" \
-  https://your-receiver-host/registry/collector | head
-```
-
-## 3. Roll out one collector
-
-Pick the OS of your test machine and follow its collector README:
-
-- macOS: `endpoint/macos/README.md` (Jamf, or run the script directly)
-- Windows: `endpoint/windows/README.md` (Intune)
-- Linux: `endpoint/linux/README.md` (any RMM, cron, or config management)
-
-For a first test you can run the script directly on the machine as
-root/admin, without any MDM, by setting the three configuration values (the
-READMEs show how per platform):
-
-- receiver base URL
-- the bearer token from step 1
-- your corporate domains, comma separated (accounts on these are "work";
-  everything else is a personal-account finding)
+- the receiver base URL
+- the bearer token
+- your corporate domains, comma separated. Accounts on these are "work";
+  everything else is a personal-account finding.
 
 Run it once. The collector reads the AI tool config files in the user's home
 directory and POSTs findings to the receiver.
 
-## 4. See the finding
+## 2. See the finding
 
-Check the receiver logs:
+Check the receiver's logs. Every finding it accepts is a JSON line on stdout,
+whether or not it also pushes to a log store:
 
 ```bash
-kubectl -n "$NS" logs deploy/ai-guard-receiver -c receiver --since=5m
+# Docker Compose
+docker compose logs receiver --since 5m
+
+# Kubernetes
+kubectl -n ai-guard logs deploy/ai-guard-receiver --since=5m
 ```
 
-You should see a JSON finding line with the tool, surface, account domain,
-device, and user. That is the whole pipeline working: a config file on a
-machine became a structured finding in your log store.
+You should see a line carrying the tool, surface, account domain, device and
+user. That is the whole pipeline working: a config file on a machine became a
+structured finding in your log store.
 
-## 5. Import the dashboard
+**If the collector reported success and you see nothing**, the collector never
+reached the receiver: check the URL and token it was given. **If you see the
+finding here but not in Grafana or the portal**, the push to the log store is
+failing rather than the collector - look for `"kind": "error"` in the same
+logs, which names the URL and the likely cause.
 
-In Grafana, import `dashboards/ai-guard.json`. Set the datasource variables
-to your Loki (and Prometheus, if used), and set the corporate domains
-variable to your domains. The finding from step 4 should appear in the "who
-is running what" table, coloured by whether the account is personal or work.
+## 3. Import the dashboard
 
-## 6. Optional: the portal
+In Grafana, import `dashboards/ai-guard.json`. Set the datasource variables to
+your Loki (and Prometheus, if used), and set the corporate domains variable to
+your domains.
+
+The finding from step 2 should appear in the "who is running what" table,
+coloured by whether the account is personal or work.
+
+## 4. Optional: the portal
 
 Grafana answers how much and when. The portal answers what belongs to what:
 which tools a device has, which devices a person uses, and which of your
@@ -197,39 +99,47 @@ sources are reporting versus silent. It reads the same logs, writes nothing,
 and is not in the ingest path, so it can be added or removed without touching
 anything above.
 
-It refuses to start without authentication, because it names who runs what on
-which machine:
+On the compose route it is already there, on port 8091. Otherwise:
 
-```
+```bash
 docker run --rm -p 8091:8091 \
   -e LOKI_URL=http://your-loki:3100 \
   -e PORTAL_USER=admin -e PORTAL_PASSWORD=... \
-  ghcr.io/amansk5/shadow-ai-guard/portal:main
+  ghcr.io/amansk5/shadow-ai-guard/portal:0.4.0
 ```
 
-It opens on a setup view showing which sources are reporting and what each
-silent one needs, derived from the findings themselves rather than from
-configuration being present. Straight after step 4 that view is mostly empty,
-which is the honest picture: one collector reporting and everything else not
-yet configured.
+It refuses to start without authentication, because it names who runs what on
+which machine.
 
-`portal/README.md` covers attaching people to devices, embedding Grafana
-panels, and why basic auth is a floor rather than a ceiling.
+It opens on a setup view showing which sources are reporting and what each
+silent one needs, derived from findings rather than from configuration being
+present. Straight after step 2 that view is mostly empty, which is the honest
+picture rather than a broken one: one collector reporting and everything else
+not yet configured.
+
+[`portal/README.md`](../portal/README.md) covers attaching people to devices,
+embedding Grafana panels, and why basic auth is a floor rather than a ceiling.
 
 ## Where to go next
 
-- Add more collectors (the other two OSes) by repeating step 3.
-- Add cloud and network detection: `scanner/README.md` covers the Entra,
-  Exchange, Intune, Jamf, and SentinelOne scanners, each optional.
-- Turn on alerting: set `ALERTMANAGER_URL` on the receiver so personal
-  account findings page you.
-- Understand the design before extending it: `docs/architecture.md`.
-- Before deploying for real, read `docs/deployment-privacy.md`: this is
-  workplace monitoring and usually warrants a DPIA.
+- Add the other two collectors by repeating step 1.
+- Add cloud and network detection:
+  [`scanner/README.md`](../scanner/README.md) covers the Entra, Exchange,
+  Intune, Jamf and SentinelOne scanners, each optional.
+- Add the browser surface:
+  [`extension/README.md`](../extension/README.md) covers packing, hosting and
+  MDM deployment, including the paste guard.
+- Turn on alerting: set `ALERTMANAGER_URL` on the receiver so personal-account
+  findings page you.
+- Understand the design before extending it:
+  [`docs/architecture.md`](architecture.md).
+- Before deploying for real, read
+  [`docs/deployment-privacy.md`](deployment-privacy.md). This is workplace
+  monitoring and usually warrants a DPIA.
 
-## Just want to see the dashboard?
+## Just want to see it?
 
-The demo in `demo/` needs no cluster and no real data: `docker compose up`
-brings up the receiver, Loki, Grafana, the portal and a seeder, with both
-populated in about five minutes. Grafana is on 3000 and the portal on 8091.
-`demo/README.md` covers it, including the paste guard demo page.
+The demo in [`demo/`](../demo/README.md) needs no cluster, no real data and no
+credentials. `docker compose up` brings up the receiver, Loki, Grafana, the
+portal and a seeder, with both populated in a few minutes. Grafana is on 3000
+and the portal on 8091.
