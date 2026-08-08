@@ -390,15 +390,43 @@ jobs:
             echo "$body" | grep -q 'CI-DEVICE' && break
             sleep 2
           done
-          echo "$body" | grep -q 'CI-DEVICE' || {
-            echo "::error::the finding never appeared in the portal graph"
-            echo "$body" | head -c 2000
-            docker compose logs receiver portal loki; exit 1
+          # Parsed, not grepped. The first version of this matched on
+          # '"personal_accounts": ["gmail.com"]' and failed on a correct
+          # response, because the API returns compact JSON and the space after
+          # the colon only exists when json.dumps is given an indent. An
+          # assertion that depends on whitespace tests the serialiser.
+          echo "$body" > /tmp/graph.json
+          python3 - <<'EOF'
+          import json, sys
+
+          with open("/tmp/graph.json") as fh:
+              raw = fh.read()
+          if not raw.strip():
+              print("::error::the portal returned nothing")
+              sys.exit(1)
+
+          g = json.loads(raw)
+          dev = g.get("devices", {}).get("CI-DEVICE")
+          if dev is None:
+              print("::error::the finding never appeared in the portal graph")
+              print(raw[:2000])
+              sys.exit(1)
+
+          checks = {
+              "personal account flagged": dev.get("personal_accounts") == ["gmail.com"],
+              "tool present": dev.get("tools") == ["claude-code"],
+              "surface recorded": dev.get("surfaces") == ["cli"],
+              "hostname carried through": dev.get("device_name") == "ci-box",
+              "source recorded": dev.get("sources") == ["collector-linux"],
+              "counts as collector coverage": dev.get("collector_seen") is True,
           }
-          echo "$body" | grep -q '"personal_accounts": \["gmail.com"\]' || {
-            echo "::error::the personal account was not flagged on the device"
-            echo "$body" | head -c 2000; exit 1
-          }
+          failed = [k for k, ok in checks.items() if not ok]
+          if failed:
+              print("::error::the graph is wrong: %s" % ", ".join(failed))
+              print(json.dumps(dev, indent=2))
+              sys.exit(1)
+          print("the finding came back as an entity, correct in every field checked")
+          EOF
 
       - name: tear down
         if: always()
