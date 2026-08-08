@@ -213,6 +213,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The chart-version check diffs against the base branch, which needs
+          # more than the default single commit.
+          fetch-depth: 0
       - name: ensure helm
         run: |
           if command -v helm >/dev/null 2>&1; then
@@ -225,6 +229,44 @@ jobs:
             tar xzf "helm-${V}-linux-amd64.tar.gz"
             sudo install linux-amd64/helm /usr/local/bin/helm
           fi
+      # appVersion decides which image tag a default `helm install` pulls, so
+      # a stale one deploys the wrong thing while reporting success. It sat at
+      # 0.2.0 through the 0.3.0 release because nothing looked at it.
+      #
+      # Only enforced on a tag build: on main it is normal for the chart to
+      # name the release being prepared rather than the last one cut.
+      - name: appVersion matches the tag being released
+        if: github.ref_type == 'tag'
+        run: |
+          want="${GITHUB_REF_NAME#v}"
+          have=$(grep -E '^appVersion:' charts/ai-guard/Chart.yaml \
+                 | sed -E 's/^appVersion:[[:space:]]*"?([^"]+)"?/\1/')
+          if [ "$have" != "$want" ]; then
+            echo "::error::charts/ai-guard/Chart.yaml appVersion is $have but the tag is $want."
+            echo "A default helm install would deploy $have while the release claims $want."
+            exit 1
+          fi
+          echo "appVersion $have matches tag $want."
+
+      # A chart change with an unchanged version is a change nobody is offered:
+      # a repo index compares this field to decide whether an upgrade exists.
+      - name: the chart version moved if the chart did
+        if: github.event_name == 'pull_request'
+        run: |
+          if ! git diff --quiet origin/${{ github.base_ref }} HEAD -- charts/; then
+            base=$(git show origin/${{ github.base_ref }}:charts/ai-guard/Chart.yaml \
+                   | grep -E '^version:' | awk '{print $2}')
+            head=$(grep -E '^version:' charts/ai-guard/Chart.yaml | awk '{print $2}')
+            if [ "$base" = "$head" ]; then
+              echo "::error::charts/ changed but Chart.yaml version is still $head."
+              echo "Bump it, or a repo index will not offer the change as an upgrade."
+              exit 1
+            fi
+            echo "chart changed, version moved $base -> $head."
+          else
+            echo "charts/ unchanged."
+          fi
+
       - name: lint and render the chart
         run: |
           helm lint charts/ai-guard
