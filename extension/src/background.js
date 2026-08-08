@@ -20,6 +20,14 @@ chrome.runtime.onMessage.addListener((msg) => {
     seen.set(key, now);
     report({
       tool: msg.tool,
+      // Absent until 1.2.0. The receiver defaults surface to "browser" and
+      // severity to "warn", so these findings looked right while carrying no
+      // source at all: on one fleet that was thousands a week that could not
+      // be traced to a detector. Defaults that happen to be correct are not
+      // the same as fields that are set.
+      surface: "browser",
+      source: "browser_extension",
+      severity: "warn",
       account_domain: msg.domain,
       reported_at: msg.ts,
     }).catch((e) => console.warn("[ai-account-guard] report failed", e));
@@ -128,9 +136,33 @@ async function getConfig() {
 // state need to know the difference: a POST that returned 401 or never left
 // the machine is not a delivered finding, and treating it as one is how a
 // device goes quiet without anything noticing.
+// chrome.runtime.getPlatformInfo returns "mac", "win", "linux", "cros",
+// "android", "openbsd". The receiver's vocabulary is macos, windows, linux,
+// unknown, and it coerces anything else to unknown - so ChromeOS reports
+// honestly as unknown rather than being forced into one of the three.
+const OS_NAMES = { mac: "macos", win: "windows", linux: "linux" };
+let osPromise = null;
+
+function detectOs() {
+  // Resolved once and reused. getPlatformInfo is async and cheap, but a
+  // service worker can be woken hundreds of times a day.
+  if (!osPromise) {
+    osPromise = chrome.runtime.getPlatformInfo()
+      .then((info) => OS_NAMES[info.os] || "unknown")
+      .catch(() => "unknown");
+  }
+  return osPromise;
+}
+
 async function report(payload) {
   const { endpoint, device, authToken } = await getConfig();
   payload.device = device;
+
+  // Set here rather than at each call site: three callers had three chances
+  // to forget it, and all three did. The receiver coerced the missing field
+  // to "unknown", so every browser finding was unattributable to an OS and
+  // nothing said why.
+  if (!payload.os) payload.os = await detectOs();
 
   if (!endpoint) {
     // No endpoint set (e.g. loaded unpacked with no MDM config). Surface the

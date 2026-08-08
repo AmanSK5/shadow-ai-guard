@@ -20,6 +20,19 @@ os.environ.setdefault("PORTAL_AUTH", "none")
 from app import derive  # noqa: E402
 
 
+# Sources set by something other than a scanner: the three endpoint collectors,
+# and the browser extension's two. Kept beside the test that uses it so adding
+# a source and forgetting this list fails loudly rather than quietly widening
+# the exclusion.
+NON_SCANNER_SOURCES = {
+    "collector-macos",
+    "collector-linux",
+    "collector-windows",
+    "browser_extension",
+    "paste_guard",
+}
+
+
 def finding(**kw):
     """A finding with sensible defaults, so each test states only what it is
     about."""
@@ -281,9 +294,12 @@ def test_the_expected_sources_match_what_the_scanners_emit():
     assert emitted, "could not read any DetectionSource values from %s" % base
 
     listed = {r["source"] for r in derive.status_from([])["sources"]}
-    # Collector and extension sources are set directly, not via the enum.
-    listed -= {"collector-macos", "collector-linux", "collector-windows",
-               "paste_guard"}
+    # Collectors and the browser extension set their source directly rather
+    # than through DetectionSource, because neither is a scanner. They are
+    # named here rather than pattern-matched: a rule like "anything starting
+    # with collector-" would silently absorb a typo, which is the failure this
+    # test exists to catch.
+    listed -= NON_SCANNER_SOURCES
 
     missing = emitted - listed
     assert not missing, (
@@ -296,4 +312,16 @@ def test_the_expected_sources_match_what_the_scanners_emit():
     assert not stale, (
         "sources the portal lists that no scanner emits, so they would show as "
         "permanently not reporting: %s" % sorted(stale)
+    )
+
+def test_every_non_scanner_source_is_actually_listed():
+    """The exclusion list above is a hardcoded copy, and a hardcoded copy that
+    nothing checks is the thing this file keeps catching elsewhere. If a name
+    here is not in the portal's setup view, the exclusion is hiding a source
+    that would show as unrecognised in a real deployment."""
+    listed = {r["source"] for r in derive.status_from([])["sources"]}
+    missing = NON_SCANNER_SOURCES - listed
+    assert not missing, (
+        "excluded from the scanner cross-check but not listed in the setup "
+        "view either, so they would appear as unrecognised: %s" % sorted(missing)
     )
