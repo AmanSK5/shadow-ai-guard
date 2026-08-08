@@ -36,13 +36,15 @@ fits in with the rest.
   browser extension ──────┐
   (managed browser policy)│
                           │
-  endpoint collectors ────┤                        ┌─► logs ──► Grafana
-  macOS / Windows / Linux │                        │   (Loki, or       dashboard
-  (pushed by MDM or RMM)  ├──►  receiver  ──────────┤    anything that
-                          │                         │    takes JSON lines)
-  cloud scanners ─────────┤                         │
-  sign-in logs,           │                         └─► alerts ──► your channel
-  signup emails,          │                             (Alertmanager)
+  endpoint collectors ────┤                        ┌─► logs ─┬─► Grafana
+  macOS / Windows / Linux │                        │  (Loki,  │   dashboard
+  (pushed by MDM or RMM)  ├──►  receiver  ──────────┤   or     │
+                          │                        │  anything └─► portal
+  cloud scanners ─────────┤                        │  that         (optional)
+  sign-in logs,           │                        │  takes
+  signup emails,          │                        │  JSON lines)
+                          │                        └─► alerts ──► your channel
+                          │                              (Alertmanager)
   software inventory      │
                           │        ▲
   network / DNS scanner ──┘        │
@@ -54,7 +56,8 @@ fits in with the rest.
 
 Left to right: anything on the left sends the same kind of finding into the
 receiver, the receiver writes it to the logs and fires alerts, and Grafana reads
-the logs. The registry is the one shared thing everything leans on. Collectors
+the logs. The portal is optional and reads the same logs; it answers what
+belongs to what where the dashboard answers how much and when. The registry is the one shared thing everything leans on. Collectors
 pull their list of what-to-look-for from it at runtime, which is why adding a new
 AI tool is a one-line edit to a YAML file instead of a change you have to push to
 every machine.
@@ -198,6 +201,29 @@ It never adds to the registry itself; a person approves every change.
 database, and computes personal-vs-work from the corporate domain variable
 the deployer sets. Most panels count distinct devices or users, not events,
 so they are stable across receiver restarts.
+
+**portal**, optional, a second read-only view over the same findings. Where
+the dashboard answers how much and when, the portal answers what belongs to
+what. Findings arrive as a flat stream of isolated rows; a log store can
+filter and count them but cannot say that forty rows are the same twelve
+machines, or that a device seen by a collector and a device seen by DNS
+telemetry are one laptop. The portal derives those relationships on request
+and holds no database, so like the dashboard it is a view rather than a store,
+and losing it loses nothing.
+
+Its entry points differ because the sources do. Endpoint findings carry a
+device and a local username, and the username is a hint rather than a key: it
+is firstname.lastname on one enrolment, a local account on another, whatever
+the person chose on an unmanaged machine. The device is reliable, because
+every fleet tool keys on the serial. Cloud findings carry an identity and no
+device, because Entra and Exchange know people, not machines. The two meet at
+the person, and that join is a lookup the deployer owns against whatever they
+run: an MDM, an RMM, a CMDB, a spreadsheet. The portal proposes a mapping and
+will not apply one, because a mapping the platform invented and then acted on
+is how the wrong name ends up on a report. A device with no mapping stays
+unattributed, which is a legitimate answer rather than a failure: a small team
+with no MDM still learns that three machines are running Ollama on personal
+accounts.
 
 ## Why these choices
 

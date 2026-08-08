@@ -16,6 +16,17 @@ For privacy and DPIA guidance, see docs/deployment-privacy.md.
 Alert labels include the username, because it is part of the alert's
 dedup identity; scope Alertmanager UI access accordingly.
 
+The portal derives more than any single finding contains. A finding says one
+tool was seen on one device; the portal joins them into "this person uses these
+six tools across these three machines, two of them on personal accounts". That
+is a materially more sensitive artifact than the inputs, which is why it
+authenticates and why the identity map deserves the same care as the log store.
+
+The identity map is the sharpest example. It associates named people with the
+machines they use, it is supplied by the deployer rather than derived, and it
+should live wherever deployment configuration lives rather than in a
+repository. It is not in this one, and `.gitignore` says so.
+
 ## Authentication
 
 Reporting sources authenticate to the receiver with a single shared bearer
@@ -33,6 +44,26 @@ should accept before deploying:
 
 If that is unacceptable in your threat model, front the receiver with your
 own per-source authentication.
+
+### The portal
+
+The portal authenticates separately, and it is worth being plain about what
+that is. It is HTTP basic auth: one shared credential, no per-user trail, and
+plaintext without TLS in front of it. That is a floor, not a ceiling.
+
+It refuses to start without it. Coming up open because a variable was missed is
+the failure that matters for this component: it is reachable, it looks like it
+works, and nothing says the door is off. `PORTAL_AUTH=none` exists for
+localhost and for running behind a proxy that authenticates instead, and it
+logs a warning on every start so an unauthenticated deployment is never
+something nobody noticed.
+
+If you already run a reverse proxy, authenticate there. It can do OIDC, mTLS
+or an allowlist against whatever you already have, which is better than what
+the portal can offer on its own.
+
+`/healthz` is unauthenticated deliberately: a liveness probe that needs a
+credential fails for the wrong reason, and it returns nothing about the estate.
 
 ## Rotating the bearer token
 

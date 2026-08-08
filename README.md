@@ -87,6 +87,9 @@ digging through subfolders.
 - [Helm chart](charts/ai-guard/README.md) - the shortest path to a running
   receiver: every value, the token behaviour, and updating the registry
   without a chart release
+- [Portal](portal/README.md) - optional governance view: devices, tools,
+  people and the relationships between them, with Grafana panels embedded if
+  you want one place to look
 
 **Deploying each surface**
 - [macOS endpoint collector](endpoint/macos/README.md) - via Jamf
@@ -113,8 +116,9 @@ browser extension ─┐
 macOS collector  ──┤
 Windows collector ─┼──► receiver ──► logs (Loki) ──► Grafana dashboard
 Linux collector  ──┤       │
-cloud scanners  ───┤       └──────► Alertmanager ──► alerts (personal accounts)
-network scanner ───┘       ▲
+cloud scanners  ───┤       │                  └──► portal (optional)
+network scanner ───┘       └──────► Alertmanager ──► alerts (personal accounts)
+                           ▲
         registry (YAML, MR-reviewed) ── served to collectors at runtime
 ```
 
@@ -137,6 +141,14 @@ network scanner ───┘       ▲
   human approves every change.
 - **dashboards** - Grafana dashboard over Loki. Set your corporate domains in
   the dashboard variable and personal accounts light up red.
+- **portal** - optional. Findings are a flat stream of isolated rows, and a
+  log store can filter and count them but cannot say that forty rows are the
+  same twelve machines. The portal derives those relationships: which tools a
+  device has, which devices a person uses, which sources are reporting and
+  which are silent. It reads and never writes, holds no database, and is not
+  in the ingest path, so collection carries on if it falls over. Grafana is
+  better at graphs; this is better at relationships, and it can embed Grafana
+  panels if you want one place to look.
 
 The discovery job currently opens GitLab merge requests; a GitHub backend is
 on the roadmap.
