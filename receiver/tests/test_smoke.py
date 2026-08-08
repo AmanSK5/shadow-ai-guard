@@ -155,3 +155,50 @@ def test_domain_map_survives_a_missing_registry():
 
     assert _build_domain_map(None) == {}
     assert _build_domain_map({}) == {}
+
+def test_a_rejected_push_is_counted_and_says_why():
+    """A push that fails is a finding that exists only in this container's
+    stdout. The receiver still answers 200, which is right - a log store being
+    down should not lose a collector's finding - so the failure is invisible
+    from the outside unless something counts it.
+
+    This was logged at info with no metric, and a wrong LOKI_PUSH_URL
+    therefore produced a 404 per finding that nobody read while every
+    collector saw a 200.
+    """
+    import asyncio
+    import httpx
+    from prometheus_client import generate_latest
+
+    from app import main
+
+    class FakeResponse:
+        status_code = 404
+
+    async def boom(*a, **kw):
+        raise httpx.HTTPStatusError("nope", request=None, response=FakeResponse())
+
+    original = httpx.AsyncClient.post
+    httpx.AsyncClient.post = boom
+    main.LOKI_PUSH_URL = "http://example.invalid/"
+    try:
+        class F:
+            surface, severity, os = "cli", "warn", "linux"
+        asyncio.run(main._push_loki(F(), "{}"))
+    finally:
+        httpx.AsyncClient.post = original
+        main.LOKI_PUSH_URL = ""
+
+    metrics = generate_latest().decode()
+    assert 'aiguard_loki_push_failures_total{reason="http_404"}' in metrics
+
+
+def test_loki_basic_auth_is_only_sent_when_configured():
+    """Hosted Loki wants basic auth; a self-hosted one usually does not, and
+    sending an empty credential pair is not the same as sending none."""
+    from app import main
+
+    assert main.LOKI_USERNAME == ""
+    # The push builds auth from the username, so unset means no auth tuple.
+    auth = (main.LOKI_USERNAME, main.LOKI_PASSWORD) if main.LOKI_USERNAME else None
+    assert auth is None

@@ -55,6 +55,8 @@ services:
       # confined to the filesystem. That is better and it is not encryption.
       AUTH_TOKEN_FILE: /run/secrets/auth_token
       LOKI_PUSH_URL: ${LOKI_PUSH_URL:-}
+      LOKI_USERNAME: ${LOKI_USERNAME:-}
+      LOKI_PASSWORD: ${LOKI_PASSWORD:-}
       ALERTMANAGER_URL: ${ALERTMANAGER_URL:-}
       REGISTRY_PATH: /etc/ai-guard/registry.json
       COLLECTOR_REGISTRY_PATH: /etc/ai-guard/collector.json
