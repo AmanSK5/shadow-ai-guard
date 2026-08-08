@@ -1,0 +1,16 @@
+{{- if .Values.portal.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ai-guard.portal.fullname" . }}
+  labels:
+    {{- include "ai-guard.portal.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.portal.service.type }}
+  selector:
+    {{- include "ai-guard.portal.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.portal.service.port }}
+      targetPort: http
+{{- end }}

@@ -38,10 +38,42 @@ nothing said which was which, so:
 `helm install` deployed a receiver a full release behind while reporting
 success. That is why CI checks it now.
 
-The portal is not in this chart yet. The Kubernetes route deploys the receiver;
-the portal is available on the Docker Compose route
-([../../deploy/compose/README.md](../../deploy/compose/README.md)) and is
-optional either way.
+## The portal
+
+Enabled by default. Deploying the receiver should give you somewhere to look at
+what it collected, rather than a service with no face until you find a second
+document.
+
+It needs one thing set:
+
+    --set portal.lokiUrl=http://loki.monitoring.svc.cluster.local:3100
+
+That is the **base** URL, not the push endpoint - the portal appends its own
+query path, unlike `loki.pushUrl` which the receiver POSTs to verbatim.
+
+The portal refuses to start without authentication, because it names who runs
+what on which machine. The chart generates a password on first install and
+keeps it across upgrades, the same way it handles the bearer token:
+
+    kubectl get secret <release>-ai-guard-portal \
+      -o jsonpath='{.data.password}' | base64 -d; echo
+
+Basic auth is one shared credential with no per-user trail. If your ingress can
+do OIDC or mTLS, do it there and set `portal.auth.mode=none` behind it - that
+logs a warning on every start, so an unauthenticated deployment is never
+something nobody noticed.
+
+`portal.enabled=false` if you only want the receiver.
+
+**Upgrading from a release before 0.4.0:** the portal appears as a new
+Deployment with a generated password. It is additive - nothing about the
+receiver changes - and its ingress is off by default, so nothing new is exposed
+until you decide to expose it.
+
+The portal uses its own `app.kubernetes.io/name` rather than a component label
+on the shared one. A Deployment's selector is immutable, so adding a label to
+the receiver's selector would fail every upgrade from a release that predates
+the portal.
 
 ## Values
 
