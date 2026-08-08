@@ -492,10 +492,19 @@ def status_from(findings):
         ("endpoint", "collector-windows", "Windows collector", "endpoint/windows/README.md",
          "Deploy ai-guard-collector.ps1 as an Intune platform script. Same "
          "three variables, set at the top of the script or as parameters."),
-        ("browser", "paste_guard", "Browser extension", "extension/README.md",
+        ("browser", "browser_extension", "Browser extension: accounts",
+         "extension/README.md",
          "Push the extension by managed policy (Jamf for Chrome/Edge on macOS, "
          "Intune ADMX on Windows) with the receiver URL and token in the "
-         "managed configuration."),
+         "managed configuration. Reports which account is signed into an AI "
+         "tool in the browser."),
+        ("browser", "paste_guard", "Browser extension: paste guard",
+         "extension/README.md",
+         "Part of the same extension. Reports pastes it stopped or flagged, "
+         "and a daily heartbeat proving the whole chain works on that device. "
+         "Silent while the accounts row reports means nobody has pasted "
+         "anything matching a detector, which is a different thing from not "
+         "being deployed."),
         ("cloud", "entra_sign_in", "Entra sign-ins", "scanner/README.md",
          "Register an app in Entra with AuditLog.Read.All and Directory.Read.All, "
          "then set AIGUARD_ENTRA_TENANT_ID, _CLIENT_ID and _CLIENT_SECRET."),

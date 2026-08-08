@@ -10,11 +10,24 @@ The browser surface does two jobs on the pages of known AI tools:
   markings, and warns or blocks. Reports carry detector ids only; the pasted
   content never leaves the machine.
 
-Findings arrive at the receiver with `surface: browser`. Account flags use
-the site as the tool (e.g. `chatgpt.com`); paste-guard events additionally
-carry `source: paste_guard` and an `evidence` field of the form
-`paste <warned|blocked|overridden>: <detector ids>`. No receiver change is
-needed: both map onto the standard finding schema.
+Findings arrive at the receiver with `surface: browser` and the operating
+system the browser is running on. Two sources, because they answer different
+questions:
+
+- `browser_extension` - which account is signed into an AI tool. Account flags
+  use the site as the tool (e.g. `chatgpt.com`); the receiver resolves that to
+  the registry id, so it lands as `chatgpt` alongside every other source.
+- `paste_guard` - pastes stopped or flagged, with an `evidence` field of the
+  form `paste <warned|blocked|overridden>: <detector ids>`, plus a daily
+  heartbeat. The pasted content never leaves the machine.
+
+Both map onto the standard finding schema, so no receiver change is needed.
+
+Before 1.2.0, account flags carried no `source` and nothing carried `os`. The
+receiver defaulted the missing fields, so the findings looked correct while
+being untraceable to a detector: on one fleet that was thousands a week. If
+you are running an older build, expect those two fields to start appearing
+rather than to change.
 
 ## What the paste guard detects
 
