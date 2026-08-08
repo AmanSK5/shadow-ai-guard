@@ -270,14 +270,21 @@ jobs:
       - name: lint and render the chart
         run: |
           helm lint charts/ai-guard
-          # Render both shapes: the default, and with an ingress, since the
-          # ingress template is the only conditional block of any size.
+          # Render every shape with a conditional block of any size: the
+          # default, the receiver ingress, the portal turned off, the portal
+          # with its own ingress, and the portal with authentication disabled.
           #
           # helm renders an undefined value as the string <no value> and exits
           # zero, so a missing default reaches the cluster as a manifest that
           # is valid YAML and wrong. Grep for it rather than trust the exit
           # code.
-          for args in "" "--set ingress.enabled=true"; do
+          for args in "" \
+                      "--set ingress.enabled=true" \
+                      "--set portal.enabled=false" \
+                      "--set portal.ingress.enabled=true --set portal.lokiUrl=http://loki:3100" \
+                      "--set portal.auth.mode=none" \
+                      "--set portal.identityMap.existingConfigMap=my-map" \
+                      "--set portal.grafana.url=https://grafana.example.com --set portal.grafana.panels=a:1:B"; do
             # shellcheck disable=SC2086
             rendered=$(helm template ai-guard charts/ai-guard $args)
             if grep -q '<no value>' <<<"$rendered"; then

@@ -1,0 +1,124 @@
+{{- if .Values.portal.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ai-guard.portal.fullname" . }}
+  labels:
+    {{- include "ai-guard.portal.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.portal.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "ai-guard.portal.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ai-guard.portal.selectorLabels" . | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      automountServiceAccountToken: {{ .Values.automountServiceAccountToken }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: portal
+          image: "{{ .Values.portal.image.repository }}{{ if .Values.portal.image.digest }}@{{ .Values.portal.image.digest }}{{ else }}:{{ .Values.portal.image.tag | default .Chart.AppVersion }}{{ end }}"
+          imagePullPolicy: {{ .Values.portal.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8091
+          env:
+            # Not enforced at template time. The portal starts without it and
+            # says what is missing, which is how the rest of it behaves: its
+            # setup view exists precisely to tell an operator what is not
+            # configured yet. A template that refuses to render is a worse
+            # version of the same message, delivered before anyone can see it.
+            - name: LOKI_URL
+              value: {{ .Values.portal.lokiUrl | quote }}
+            {{- if eq .Values.portal.auth.mode "none" }}
+            # Deliberate, and it logs a warning on every start. Correct behind
+            # something that authenticates for it; wrong on anything reachable.
+            - name: PORTAL_AUTH
+              value: "none"
+            {{- else }}
+            - name: PORTAL_USER
+              value: {{ .Values.portal.auth.username | quote }}
+            - name: PORTAL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ai-guard.portal.secretName" . }}
+                  key: password
+            {{- end }}
+            - name: REGISTRY_PATH
+              value: /etc/ai-guard/registry.json
+            - name: LOOKBACK_HOURS
+              value: {{ .Values.portal.lookbackHours | quote }}
+            - name: CACHE_TTL_SECONDS
+              value: {{ .Values.portal.cacheTtlSeconds | quote }}
+            {{- with .Values.portal.identityMap.existingConfigMap }}
+            - name: IDENTITY_MAP
+              value: /etc/ai-guard-identity/identity-map.csv
+            {{- end }}
+            {{- with .Values.portal.grafana.url }}
+            - name: GRAFANA_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.portal.grafana.panels }}
+            - name: GRAFANA_PANELS
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.portal.grafana.dashboardUid }}
+            - name: GRAFANA_DASHBOARD_UID
+              value: {{ . | quote }}
+            {{- end }}
+          volumeMounts:
+            - name: registry
+              mountPath: /etc/ai-guard
+              readOnly: true
+            {{- with .Values.portal.identityMap.existingConfigMap }}
+            - name: identity-map
+              mountPath: /etc/ai-guard-identity
+              readOnly: true
+            {{- end }}
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.portal.resources | nindent 12 }}
+      volumes:
+        - name: registry
+          configMap:
+            name: {{ include "ai-guard.registryConfigMap" . }}
+        {{- with .Values.portal.identityMap.existingConfigMap }}
+        # Maps named people to the machines they use. Personal data: a Secret
+        # is a defensible choice here too, and the portal only reads it.
+        - name: identity-map
+          configMap:
+            name: {{ . }}
+        {{- end }}
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

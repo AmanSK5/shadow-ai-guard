@@ -27,5 +27,39 @@ Read the bearer token every source authenticates with:
   kubectl -n {{ .Release.Namespace }} get secret {{ include "ai-guard.secretName" . }} \
     -o jsonpath='{.data.authToken}' | base64 -d; echo
 
-Next: import dashboards/ai-guard.json into Grafana, then roll out one
-collector (docs/getting-started.md step 3).
+{{- if .Values.portal.enabled }}
+
+The portal is deployed too: devices, tools, people, and which of your sources
+are reporting versus silent.
+{{- if .Values.portal.ingress.enabled }}
+
+  Portal: https://{{ .Values.portal.ingress.host }}
+{{- else }}
+
+  No ingress on the portal. Port-forward to reach it:
+
+    kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "ai-guard.portal.fullname" . }} 8091:{{ .Values.portal.service.port }}
+{{- end }}
+{{- if eq .Values.portal.auth.mode "none" }}
+
+  It is running WITHOUT AUTHENTICATION (portal.auth.mode=none). It shows which
+  people use which AI tools on which machines. Correct behind something that
+  authenticates for it; wrong on anything reachable.
+{{- else }}
+
+  Log in as {{ .Values.portal.auth.username }}. Read the password:
+
+    kubectl -n {{ .Release.Namespace }} get secret {{ include "ai-guard.portal.secretName" . }} \
+      -o jsonpath='{.data.password}' | base64 -d; echo
+
+  Basic auth is one shared credential with no per-user trail. If your ingress
+  can do OIDC or mTLS, do it there and set portal.auth.mode=none behind it.
+{{- end }}
+
+  It opens on a setup view showing which sources are reporting and what each
+  silent one needs. Right now that is almost all of them, which is the honest
+  picture rather than a broken one.
+{{- end }}
+
+Next: roll out one collector (docs/getting-started.md), then import
+dashboards/ai-guard.json into Grafana if you want the time-series view too.
