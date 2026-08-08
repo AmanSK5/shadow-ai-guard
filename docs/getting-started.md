@@ -189,6 +189,33 @@ to your Loki (and Prometheus, if used), and set the corporate domains
 variable to your domains. The finding from step 4 should appear in the "who
 is running what" table, coloured by whether the account is personal or work.
 
+## 6. Optional: the portal
+
+Grafana answers how much and when. The portal answers what belongs to what:
+which tools a device has, which devices a person uses, and which of your
+sources are reporting versus silent. It reads the same logs, writes nothing,
+and is not in the ingest path, so it can be added or removed without touching
+anything above.
+
+It refuses to start without authentication, because it names who runs what on
+which machine:
+
+```
+docker run --rm -p 8091:8091 \
+  -e LOKI_URL=http://your-loki:3100 \
+  -e PORTAL_USER=admin -e PORTAL_PASSWORD=... \
+  ghcr.io/amansk5/shadow-ai-guard/portal:main
+```
+
+It opens on a setup view showing which sources are reporting and what each
+silent one needs, derived from the findings themselves rather than from
+configuration being present. Straight after step 4 that view is mostly empty,
+which is the honest picture: one collector reporting and everything else not
+yet configured.
+
+`portal/README.md` covers attaching people to devices, embedding Grafana
+panels, and why basic auth is a floor rather than a ceiling.
+
 ## Where to go next
 
 - Add more collectors (the other two OSes) by repeating step 3.
@@ -203,6 +230,6 @@ is running what" table, coloured by whether the account is personal or work.
 ## Just want to see the dashboard?
 
 The demo in `demo/` needs no cluster and no real data: `docker compose up`
-brings up the receiver, Loki, Grafana and a seeder, with the dashboard
-populated in about five minutes. `demo/README.md` covers it, including the
-paste guard demo page.
+brings up the receiver, Loki, Grafana, the portal and a seeder, with both
+populated in about five minutes. Grafana is on 3000 and the portal on 8091.
+`demo/README.md` covers it, including the paste guard demo page.
