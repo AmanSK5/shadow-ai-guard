@@ -21,6 +21,13 @@ run this with PORTAL_AUTH=none behind it.
 Configuration, all optional except LOKI_URL and the auth pair:
   PORTAL_USER       basic auth username
   PORTAL_PASSWORD   basic auth password
+
+Any of PORTAL_USER, PORTAL_PASSWORD and LOKI_TOKEN can be given as
+NAME_FILE pointing at a file instead. Compose has no real secret story: an
+environment variable is visible in docker inspect and in every child process's
+environment, while a file is at least confined to the filesystem. It is not
+encryption.
+
   PORTAL_AUTH       set to "none" to run without auth. Logs a warning on every
                     start, because an unauthenticated deployment should never
                     be something nobody noticed
@@ -60,8 +67,37 @@ from app import derive
 
 log = logging.getLogger("portal")
 
-PORTAL_USER = os.environ.get("PORTAL_USER", "")
-PORTAL_PASSWORD = os.environ.get("PORTAL_PASSWORD", "")
+
+# Secrets can come from a file instead of the environment. Docker Compose has
+# no real secret story: an environment variable is visible in `docker inspect`,
+# in /proc, and in every child process's environment, while a file is confined
+# to the filesystem. Better, but still plaintext on the same disk - this is not
+# encryption, and the deployment docs say so rather than implying otherwise.
+def _secret(name: str, default: str = "") -> str:
+    path = os.environ.get(name + "_FILE")
+    if path:
+        if os.environ.get(name):
+            # Ambiguous rather than harmless: someone believes one of these is
+            # in effect, and it is not necessarily the one they think.
+            log.warning(
+                "%s and %s_FILE are both set. The file wins; unset the "
+                "environment variable to remove the ambiguity.", name, name,
+            )
+        try:
+            with open(path) as fh:
+                # Stripped. Almost every way of writing a file leaves a
+                # trailing newline, and a password differing by one fails
+                # authentication with no indication why.
+                return fh.read().strip()
+        except OSError as e:
+            raise SystemExit(
+                "%s_FILE is set to %s and it could not be read: %s" % (name, path, e)
+            )
+    return os.environ.get(name, default)
+
+
+PORTAL_USER = _secret("PORTAL_USER")
+PORTAL_PASSWORD = _secret("PORTAL_PASSWORD")
 PORTAL_AUTH = os.environ.get("PORTAL_AUTH", "").lower()
 
 # Fail closed. Coming up open because a variable was missed is the failure
@@ -111,7 +147,7 @@ def require_auth(creds: HTTPBasicCredentials = Depends(_basic)):
 
 
 LOKI_URL = os.environ.get("LOKI_URL", "")
-LOKI_TOKEN = os.environ.get("LOKI_TOKEN") or None
+LOKI_TOKEN = _secret("LOKI_TOKEN") or None
 LOOKBACK_HOURS = float(os.environ.get("LOOKBACK_HOURS", "168"))
 REGISTRY_PATH = os.environ.get("REGISTRY_PATH", "/srv/registry/registry.yaml")
 IDENTITY_MAP = os.environ.get("IDENTITY_MAP", "")

@@ -45,7 +45,45 @@ from pydantic import BaseModel, Field
 
 # ------------------------------------------------------------------ config --
 
-AUTH_TOKEN = os.environ["AUTH_TOKEN"]
+# Secrets can come from a file instead of the environment. Docker Compose has
+# no real secret story: an environment variable is visible in `docker inspect`,
+# in /proc, and in every child process's environment, while a file is confined
+# to the filesystem. Better, but still plaintext on the same disk - this is not
+# encryption, and the deployment docs say so rather than implying otherwise.
+def _secret(name: str, default: str | None = None) -> str:
+    path = os.environ.get(name + "_FILE")
+    if path:
+        if os.environ.get(name):
+            # Ambiguous rather than harmless: someone believes one of these is
+            # in effect, and it is not necessarily the one they think.
+            print(
+                "ai-guard: %s and %s_FILE are both set. The file wins; unset "
+                "the environment variable to remove the ambiguity." % (name, name),
+                file=sys.stderr,
+            )
+        try:
+            with open(path) as fh:
+                # Stripped. Almost every way of writing a file leaves a
+                # trailing newline, and a token differing by one fails
+                # authentication with no indication why.
+                return fh.read().strip()
+        except OSError as e:
+            raise SystemExit(
+                "%s_FILE is set to %s and it could not be read: %s" % (name, path, e)
+            )
+
+    val = os.environ.get(name)
+    if val is not None:
+        return val
+    if default is not None:
+        return default
+    raise SystemExit(
+        "%s is not set. Provide it directly, or set %s_FILE to a file "
+        "containing it." % (name, name)
+    )
+
+
+AUTH_TOKEN = _secret("AUTH_TOKEN")
 # Built once so the comparison below is against a fixed string.
 _EXPECTED_AUTH = f"Bearer {AUTH_TOKEN}"
 # Findings are small: a large one is a few hundred bytes. The cap exists so an

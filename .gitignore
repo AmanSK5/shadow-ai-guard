@@ -20,3 +20,4 @@ registry/dist/
 identity-map.csv
 **/identity-map.csv
 portal/.venv/
+receiver/.venv/
