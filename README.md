@@ -79,14 +79,13 @@ digging through subfolders.
   what each one proves, and what is worth reporting back
 
 **Getting it running**
-- [Getting started](docs/getting-started.md) - clone to your first finding on
-  a dashboard, the minimum viable deployment
+- [Deployment](docs/deployment/README.md) - two routes, Docker Compose or
+  Kubernetes, and what is the same either way. Start here.
+- [Getting started](docs/getting-started.md) - from a running receiver to your
+  first finding on a dashboard
 - [Architecture](docs/architecture.md) - the mental model: the finding schema,
   and why the pieces are shaped this way
 - [Receiver](receiver/README.md) - the one service everything reports to: every variable and endpoint, plus an example deployment to adapt
-- [Helm chart](charts/ai-guard/README.md) - the shortest path to a running
-  receiver: every value, the token behaviour, and updating the registry
-  without a chart release
 - [Portal](portal/README.md) - optional governance view: devices, tools,
   people and the relationships between them, with Grafana panels embedded if
   you want one place to look
@@ -187,41 +186,40 @@ and what a platform with no serial can still join on. Dashboards prefer
 
 ## What you need
 
-- A Kubernetes cluster for the receiver and scanner CronJobs. Anything
-  conformant works; nothing in the core is cloud-specific.
-- A log pipeline that ingests container stdout. The provided dashboard
-  assumes Loki, but the receiver's only output is JSON lines.
-- Grafana for the dashboard, Alertmanager for alerting (optional).
+- **Somewhere to run two containers.** A host with Docker Compose, or a
+  Kubernetes cluster. The receiver is one stateless container and the portal
+  is another, so an orchestrator is a fine place to put them and not a
+  requirement. [Both routes](docs/deployment/README.md).
+- A log pipeline that ingests container stdout. The dashboard assumes Loki,
+  but the receiver's only output is JSON lines.
+- Grafana for the dashboard, Alertmanager for alerting. Both optional.
 - At least one detection source per surface you care about. Currently
   supported: Microsoft Graph (Entra, Exchange, Intune), Jamf Pro,
   SentinelOne, Chrome/Edge managed extension policy, and endpoint collectors
   for macOS, Windows and Linux.
-- Secrets for whichever sources you enable. Local development uses a
-  `.env` (see `scanner/README.md`); deployed scanners read from Kubernetes
-  Secrets or your secret store.
+- Secrets for whichever sources you enable. Kubernetes Secrets on that route;
+  files on disk on the compose route, because an environment variable is
+  visible in `docker inspect` and in every child process's environment.
 
-Prebuilt images are published to GHCR by CI. A Helm chart is at
-[charts/ai-guard](charts/ai-guard/README.md), with the compiled registry
-inside it, so an install needs no build step. Deploying by hand instead, the
-receiver is a Deployment with the registry ConfigMap mounted at
-`/etc/ai-guard`, and the scanners are CronJobs. See each component's README
-for specifics.
+Prebuilt multi-arch images are published to GHCR by CI, so nothing needs
+building. The scanners run as scheduled jobs: CronJobs on Kubernetes, or
+anything that runs a container on a schedule.
 
 ## Deployment order
 
-1. Deploy the receiver, create its bearer token Secret, expose it on an
-   ingress endpoints can reach.
-2. Publish the registry: `python registry/build.py`, then load
-   `registry/dist/registry.json` and `registry/dist/collector.json` into the
-   ConfigMap the receiver mounts.
-3. Enable the scanners your estate supports and schedule them.
-4. Roll out the endpoint collectors through your MDM or RMM. Pilot on one
-   machine first; the deployment notes in `endpoint/*/README.md` are written
-   from doing exactly that.
-5. Import the dashboard, set the corporate domains variable.
+1. Deploy the receiver and publish the registry. Both routes do these
+   together: [Docker Compose](deploy/compose/README.md) or
+   [Kubernetes](docs/deployment/kubernetes.md).
+2. Roll out one endpoint collector through your MDM or RMM, or by running the
+   script directly. Pilot on one machine first; the notes in
+   `endpoint/*/README.md` are written from doing exactly that.
+3. Import the dashboard and set the corporate domains variable, or run the
+   portal, or both.
+4. Enable the scanners your estate supports and schedule them.
+5. Add the browser extension by managed policy.
 
-New here? [docs/getting-started.md](docs/getting-started.md) walks this
-through end to end for a minimum deployment.
+New here? [docs/getting-started.md](docs/getting-started.md) walks steps 2
+onwards end to end.
 
 ## Status and known limitations
 
