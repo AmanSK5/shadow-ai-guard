@@ -250,10 +250,17 @@ jobs:
 
       # A chart change with an unchanged version is a change nobody is offered:
       # a repo index compares this field to decide whether an upgrade exists.
+      #
+      # README excluded. It is not in what a repo index compares and not in
+      # what gets installed, so a corrected sentence is not an upgrade. The
+      # first version of this check fired on a one-line documentation fix,
+      # and a guard that fires on prose gets bypassed rather than obeyed -
+      # bump-the-version-to-quiet-CI becomes the reflex, and then it is not
+      # guarding anything.
       - name: the chart version moved if the chart did
         if: github.event_name == 'pull_request'
         run: |
-          if ! git diff --quiet origin/${{ github.base_ref }} HEAD -- charts/; then
+          if ! git diff --quiet origin/${{ github.base_ref }} HEAD -- charts/ ':!charts/**/README.md'; then
             base=$(git show origin/${{ github.base_ref }}:charts/ai-guard/Chart.yaml \
                    | grep -E '^version:' | awk '{print $2}')
             head=$(grep -E '^version:' charts/ai-guard/Chart.yaml | awk '{print $2}')
