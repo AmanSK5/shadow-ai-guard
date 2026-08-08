@@ -48,13 +48,30 @@ Pick the OS of your test machine and follow its README:
 - Linux: [`endpoint/linux/README.md`](../endpoint/linux/README.md) (any RMM,
   cron, or config management)
 
-For a first test you can run the script directly as root or admin, with no MDM
-at all, by setting three values (each README shows how per platform):
+Each needs the same three values:
 
 - the receiver base URL
 - the bearer token
 - your corporate domains, comma separated. Accounts on these are "work";
   everything else is a personal-account finding.
+
+**How you pass them differs per platform**, because each matches its delivery
+mechanism, and this is the thing most likely to stop a first run:
+
+- **macOS** takes them as positional parameters, because that is how Jamf
+  passes script parameters. Environment variables are ignored. Running it by
+  hand means passing three empty strings first, since `$1`-`$3` are Jamf's own:
+
+      sudo ./ai-guard-collector.sh "" "" "" \
+        https://receiver.example.com <token> example.com
+
+- **Linux** takes environment variables: `AIGUARD_RECEIVER_BASE`,
+  `AIGUARD_TOKEN`, `AIGUARD_CORP_DOMAINS`.
+- **Windows** takes them at the top of the script or as Intune script
+  parameters.
+
+You can run any of them directly as root or admin with no MDM at all, which is
+the fastest way to see a finding.
 
 Run it once. The collector reads the AI tool config files in the user's home
 directory and POSTs findings to the receiver.

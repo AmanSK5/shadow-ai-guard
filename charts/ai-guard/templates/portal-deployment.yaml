@@ -1,4 +1,17 @@
 {{- if .Values.portal.enabled }}
+{{/*
+  helm upgrade --reuse-values keeps only the values previously set and drops
+  every chart default underneath them, so .Values.portal can arrive as a map
+  containing nothing but whatever the last install happened to override. The
+  templates below then fail on a nil pointer several frames deep, which tells
+  the operator nothing about what they did.
+
+  Helm's own answer is --reset-then-reuse-values. This says so rather than
+  crashing.
+*/}}
+{{- if not .Values.portal.service }}
+{{- fail (printf "\n\nThe portal values are incomplete: portal.service is missing, so the chart defaults were dropped.\n\nThis is what `helm upgrade --reuse-values` does - it keeps only the values you set previously and discards everything underneath them, including defaults added by a newer chart.\n\nUse --reset-then-reuse-values instead, which resets to the chart defaults and then reapplies your stored values on top:\n\n  helm upgrade %s charts/ai-guard --reset-then-reuse-values --set portal.enabled=true\n" .Release.Name) }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
