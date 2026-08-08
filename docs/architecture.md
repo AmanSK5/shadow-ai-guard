@@ -118,10 +118,17 @@ grow from there. A few common shapes:
 Either way the receiver, the logs, the dashboard and the registry don't change.
 Only the left-hand side does.
 
-The browser surface is also the one place the platform prevents rather
-than observes: the extension's paste guard scans pastes into AI tools
-on-device and warns or blocks before content reaches the page, reporting
-detector ids through the same finding schema (`source: paste_guard`).
+The browser surface reports under two sources, because it answers two
+questions. `browser_extension` says which account is signed into an AI tool.
+`paste_guard` says what was stopped or flagged on the way into one, plus a
+daily heartbeat proving the chain works on that device. Both are the same
+extension; keeping them apart means "nobody has pasted anything matching a
+detector" is legible as a different state from "the extension is not
+deployed".
+
+The paste guard is also the one place the platform prevents rather than
+observes: it scans pastes into AI tools on-device and warns or blocks before
+content reaches the page, reporting detector ids and never the matched text.
 Everything else in this document describes detection; that one control is
 enforcement, and it rides the same pipeline.
 

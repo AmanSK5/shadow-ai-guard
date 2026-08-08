@@ -6,7 +6,7 @@ produce the same findings. Pick whichever matches what you already run.
 | | [Docker Compose](../../deploy/compose/README.md) | [Kubernetes](kubernetes.md) |
 |---|---|---|
 | what it is | two containers on a host | a Deployment, a Secret and a ConfigMap |
-| the portal | included | not yet: the chart deploys the receiver only |
+| the portal | included | included, enabled by default |
 | TLS and exposure | a reverse proxy you run | an ingress controller |
 | secrets | files on disk, mode-protected | Kubernetes Secrets, or your secret store |
 | best when | you have a VM and no cluster, or want the smallest thing that works | you already run a cluster |
