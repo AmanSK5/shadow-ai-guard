@@ -32,7 +32,7 @@ nothing said which was which, so:
 | the git tag, e.g. `v0.4.0` | the release. What CI publishes images under. |
 | `Chart.yaml` `appVersion` | the release this chart installs. `image.tag` defaults to it, so **this is what gets pulled**. CI fails a tag build if it disagrees with the tag. |
 | `Chart.yaml` `version` | the chart's own version. Bump it whenever anything under `charts/` changes: a repo index compares it to decide whether an upgrade exists. |
-| the receiver's `/healthz` version | the receiver component's own number, maintained independently of the release. Useful for telling two builds apart; not a release version. |
+| `/healthz` version | what the image was built from: the release on a tag build, `main-<sha>` on a build off main, `dev` on a local one. Set at build time, so it cannot drift from what is running. |
 
 `appVersion` sat at `0.2.0` through the `0.3.0` release, so a default
 `helm install` deployed a receiver a full release behind while reporting

@@ -262,7 +262,17 @@ class Finding(BaseModel):
 
 # --------------------------------------------------------------------- app --
 
-app = FastAPI(title="ai-guard-receiver", version="0.1.6")
+# Set at build time from the release tag, or the commit for a build off main.
+# It was a hand-maintained constant, which drifted the way hand-maintained
+# constants do: /healthz reported 0.1.6 while the release was 0.4.0, so the
+# one endpoint an operator would check to answer "am I running what I think
+# I am" answered a different question.
+#
+# "dev" is the honest answer for a local build, and more useful than a stale
+# number that looks authoritative.
+APP_VERSION = os.environ.get("APP_VERSION", "dev")
+
+app = FastAPI(title="ai-guard-receiver", version=APP_VERSION)
 
 
 # Paths that require the bearer token. /healthz and /metrics stay open:
