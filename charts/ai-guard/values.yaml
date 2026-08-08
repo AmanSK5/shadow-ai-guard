@@ -64,6 +64,109 @@ ingress:
   # a short name like "ai-guard": the operator issues the cert and serves it
   # at https://ai-guard.<tailnet>.ts.net.
 
+# ---------------------------------------------------------------- portal ----
+#
+# A governance view over the findings the receiver already collects: which
+# tools a device has, which devices a person uses, which of your sources are
+# reporting and which are silent. It reads and never writes, holds no
+# database, and is not in the ingest path, so it can be removed at any time
+# and collection carries on.
+#
+# On by default: deploying the receiver should give you somewhere to look at
+# what it collected. Set enabled: false if you only want the receiver.
+portal:
+  enabled: true
+
+  image:
+    repository: ghcr.io/amansk5/shadow-ai-guard/portal
+    tag: ""          # defaults to the chart's appVersion
+    digest: ""
+    pullPolicy: IfNotPresent
+
+  replicaCount: 1
+
+  # Where the portal reads findings back from: the same log store the receiver
+  # writes to, reachable from inside the cluster. Leave it empty and the portal
+  # still starts and tells you it is missing, rather than failing to install.
+  # This is the BASE url; the portal appends its own query path, unlike
+  # loki.pushUrl above which is the full push endpoint.
+  #   e.g. http://loki.monitoring.svc.cluster.local:3100
+  lokiUrl: ""
+
+  # The portal names who runs what on which machine, so it refuses to start
+  # without authentication.
+  #
+  #   mode: basic   username plus a password, generated if you do not set one
+  #   mode: none    no authentication. Correct behind a proxy or a mesh that
+  #                 authenticates for it; wrong on anything reachable. Logs a
+  #                 warning on every start.
+  #
+  # Basic auth is one shared credential with no per-user trail. If your
+  # ingress can do OIDC or mTLS, do it there and set mode: none.
+  #
+  # Leave password unset and the chart generates one on first install and
+  # keeps it across upgrades. Read it back with:
+  #   kubectl get secret <release>-ai-guard-portal -o jsonpath='{.data.password}' | base64 -d
+  auth:
+    mode: basic
+    username: admin
+    password: ""
+    existingSecret: ""     # a Secret you created yourself, with key `password`
+
+  # How far back it looks, and how long a derived graph is reused. The cache
+  # stops a seven-day query being rerun on every page load; it is not state,
+  # since it rebuilds on restart.
+  lookbackHours: 168
+  cacheTtlSeconds: 300
+
+  # Optional. A ConfigMap with key identity-map.csv, mapping people to the
+  # machines they use, where the key is a device identifier or a local
+  # username. The portal proposes one at /api/suggest-identities?fmt=csv and
+  # will not apply it: these are string matches, and a mapping the platform
+  # invented and then acted on is how the wrong name lands on a report.
+  #
+  # This is personal data. A Secret is a defensible choice instead.
+  identityMap:
+    existingConfigMap: ""
+
+  # Optional. Embeds Grafana panels on the portal's dashboard tab.
+  #
+  # Grafana refuses to be framed by default, deliberately: framing a session
+  # someone is logged into is how clickjacking works. It needs
+  # allow_embedding, a cookie SameSite that permits the frame, and a decision
+  # about how the frame authenticates. url is the URL a BROWSER reaches
+  # Grafana on, not one resolvable inside the cluster.
+  grafana:
+    url: ""
+    # dashboardUid:panelId:Title, semicolon separated. Semicolons because
+    # panel titles contain commas.
+    panels: ""
+    # Or embed a whole dashboard in one frame, which needs no panel ids.
+    dashboardUid: ""
+
+  service:
+    type: ClusterIP
+    port: 8091
+
+  # Unlike the receiver, nothing has to reach the portal except people. Leave
+  # this off and reach it with kubectl port-forward until you have decided how
+  # it should be exposed and authenticated.
+  ingress:
+    enabled: false
+    className: ""
+    host: ai-guard-portal.example.com
+    annotations: {}
+    tls:
+      enabled: true
+      secretName: ai-guard-portal-tls
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 96Mi
+    limits:
+      memory: 256Mi
+
 # The receiver never calls the Kubernetes API, so it has no use for a
 # ServiceAccount token. Mounting one anyway hands a credential to anything
 # that gets code execution in the pod.
