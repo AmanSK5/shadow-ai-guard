@@ -1,0 +1,342 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>ai-guard portal</title>
+<style>
+:root{--bg:oklch(.16 .012 250);--fg:oklch(.93 .008 250);--sf:oklch(.2 .014 250);
+--sf2:oklch(.24 .016 250);--pri:oklch(.8 .17 155);--acc:oklch(.72 .13 215);
+--warn:oklch(.79 .15 78);--dstr:oklch(.63 .21 25);--mut:oklch(.68 .018 250);
+--bd:oklch(.3 .016 250)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
+code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+header{border-bottom:1px solid var(--bd);padding:14px 20px;display:flex;gap:18px;align-items:center;flex-wrap:wrap;position:sticky;top:0;background:var(--bg);z-index:5}
+header b{font-family:ui-monospace,monospace}
+nav button{background:none;border:0;color:var(--mut);font:inherit;cursor:pointer;padding:6px 10px;border-radius:6px}
+nav button.on{background:color-mix(in oklch,var(--pri) 15%,transparent);color:var(--pri)}
+nav button:hover{color:var(--fg)}
+main{padding:20px;max-width:1200px;margin:0 auto}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:1px;background:var(--bd);border:1px solid var(--bd);border-radius:10px;overflow:hidden;margin-bottom:22px}
+.stats div{background:var(--sf);padding:14px 16px}
+.stats dt{font:600 22px/1.2 ui-monospace,monospace;color:var(--pri)}
+.stats dd{margin:4px 0 0;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut)}
+.card{background:var(--sf);border:1px solid var(--bd);border-radius:10px;padding:14px 16px;margin-bottom:10px;cursor:pointer}
+.card:hover{border-color:color-mix(in oklch,var(--pri) 50%,transparent)}
+.card h3{margin:0 0 6px;font-size:15px;font-family:ui-monospace,monospace}
+.card .sub{color:var(--mut);font-size:12px}
+.pill{display:inline-block;border:1px solid currentColor;border-radius:999px;padding:1px 8px;font-size:11px;margin:2px 4px 2px 0;font-family:ui-monospace,monospace}
+.p-warn{color:var(--dstr)} .p-ok{color:var(--pri)} .p-mut{color:var(--mut)} .p-acc{color:var(--acc)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-weight:400;color:var(--mut);border-bottom:1px solid var(--bd);padding:6px 10px 6px 0;font-size:12px}
+td{padding:7px 10px 7px 0;border-bottom:1px solid color-mix(in oklch,var(--bd) 45%,transparent);font-family:ui-monospace,monospace;font-size:12px}
+.note{background:color-mix(in oklch,var(--warn) 10%,transparent);border:1px solid color-mix(in oklch,var(--warn) 40%,transparent);color:var(--warn);border-radius:8px;padding:12px 14px;margin-bottom:18px;font-size:13px}
+.back{background:none;border:1px solid var(--bd);color:var(--mut);border-radius:6px;padding:5px 10px;cursor:pointer;font:inherit;margin-bottom:14px}
+h2{font-size:19px;margin:0 0 4px}
+.lede{color:var(--mut);font-size:13px;margin:0 0 16px}
+input{background:var(--sf2);border:1px solid var(--bd);color:var(--fg);border-radius:6px;padding:6px 10px;font:inherit;min-width:220px}
+</style>
+<header>
+  <b>shadow-ai-guard</b>
+  <nav>
+    <button data-v="setup" class="on">Setup</button>
+    <button data-v="overview">Overview</button>
+    <button data-v="devices">Devices</button>
+    <button data-v="people">People</button>
+    <button data-v="tools">Tools</button>
+    <button data-v="coverage">Coverage</button>
+    <button data-v="dashboard">Dashboard</button>
+  </nav>
+  <input id="q" placeholder="filter…">
+</header>
+<main id="app"></main>
+<script>
+let G = {devices:{},identities:{},tools:{},bridges:{},unattributed:[],counts:{}};
+let S = null, CFG = {}, loadError = '';
+
+async function load() {
+  app.innerHTML = '<p class="lede">Reading findings…</p>';
+  try {
+    CFG = await (await fetch('/api/config')).json();
+    const gr = await fetch('/api/graph');
+    if (!gr.ok) throw new Error((await gr.json()).detail || gr.statusText);
+    G = await gr.json();
+    const sr = await fetch('/api/status');
+    if (sr.ok) S = await sr.json();
+    loadError = '';
+  } catch (e) {
+    loadError = String(e.message || e);
+  }
+  render();
+}
+const app = document.getElementById('app'), q = document.getElementById('q');
+let view = 'setup', detail = null, filter = '';
+
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const ents = o => Object.entries(o || {});
+const label = (k, d) => d.device_name || k;
+const match = s => !filter || String(s).toLowerCase().includes(filter);
+
+function overview() {
+  const devs = ents(G.devices), tools = ents(G.tools);
+  const personal = devs.filter(([,d]) => (d.personal_accounts||[]).length);
+  const gaps = devs.filter(([,d]) => d.scanner_seen && !d.collector_seen);
+  const attributed = devs.filter(([,d]) => d.person);
+  return `<dl class="stats">
+    <div><dt>${tools.length}</dt><dd>AI tools</dd></div>
+    <div><dt>${devs.length}</dt><dd>devices</dd></div>
+    <div><dt>${ents(G.identities).length}</dt><dd>identities</dd></div>
+    <div><dt>${personal.length}</dt><dd>on personal accounts</dd></div>
+    <div><dt>${gaps.length}</dt><dd>coverage gaps</dd></div>
+    <div><dt>${attributed.length}</dt><dd>attributed to a person</dd></div>
+  </dl>
+  ${attributed.length === 0 ? `<div class="note">No device is attributed to a
+  person. That is expected until an identity map is supplied: this platform
+  does not resolve identity itself, it carries enough for you to resolve it
+  against whatever you run — an MDM, an RMM, a CMDB, or a spreadsheet.
+  <br><br>
+  <a href="/api/suggest-identities?fmt=csv" style="color:var(--pri)">Download a
+  proposed map</a>, correct it, and point <code>IDENTITY_MAP</code> at it.
+  The proposals are string matches against local usernames, not authoritative:
+  review before use.
+  <br><br>
+  Devices with no mapping stay unattributed, which is a legitimate answer.
+  Everything else on this page works without it.</div>` : ''}
+  <h2>Personal accounts</h2>
+  <p class="lede">A sanctioned tool on a personal account is unmanaged data flow,
+  invisible spend and an offboarding gap. These are leads to follow up, not verdicts.</p>
+  ${personal.length ? personal.map(([k,d]) => card(k,d)).join('') :
+    '<p class="lede">None seen.</p>'}`;
+}
+
+function card(k, d) {
+  return `<div class="card" onclick="open_('device','${esc(k)}')">
+    <h3>${esc(label(k,d))}</h3>
+    <div class="sub">${(d.tools||[]).map(t=>`<span class="pill p-mut">${esc(t)}</span>`).join('')}</div>
+    <div class="sub" style="margin-top:6px">
+      ${(d.personal_accounts||[]).map(a=>`<span class="pill p-warn">${esc(a)}</span>`).join('')}
+      ${d.person?`<span class="pill p-ok">${esc(d.person)}</span>`:''}
+      ${(d.local_users||[]).map(u=>`<span class="pill p-mut">${esc(u)}</span>`).join('')}
+    </div></div>`;
+}
+
+function devices() {
+  const rows = ents(G.devices)
+    .filter(([k,d]) => match(k) || match(d.device_name) || (d.local_users||[]).some(match) || (d.tools||[]).some(match))
+    .sort((a,b) => (b[1].tools||[]).length - (a[1].tools||[]).length);
+  return `<h2>Devices</h2><p class="lede">${rows.length} shown. The key is the most
+  stable identifier the source could get, usually a serial. Click for detail.</p>
+  ${rows.map(([k,d]) => card(k,d)).join('')}`;
+}
+
+function people() {
+  const rows = ents(G.identities).filter(([k]) => match(k))
+    .sort((a,b) => (b[1].tools||[]).length - (a[1].tools||[]).length);
+  return `<h2>People</h2><p class="lede">Identities come from cloud sources, which know people rather
+  than machines. Devices appear here only where an identity map attaches them —
+  see <a href="/api/suggest-identities?fmt=csv" style="color:var(--pri)">a
+  proposed map</a> to start one.</p>
+  <table><tr><th>identity</th><th>tools</th><th>devices</th></tr>
+  ${rows.map(([k,i]) => `<tr><td>${esc(k)}</td>
+    <td>${(i.tools||[]).map(t=>`<span class="pill p-mut">${esc(t)}</span>`).join('')}</td>
+    <td>${(i.devices||[]).map(d=>`<span class="pill p-acc">${esc(d)}</span>`).join('') || '<span class="pill p-mut">unmapped</span>'}</td></tr>`).join('')}
+  </table>`;
+}
+
+function tools() {
+  const rows = ents(G.tools).filter(([k]) => match(k))
+    .sort((a,b) => (b[1].devices||[]).length - (a[1].devices||[]).length);
+  return `<h2>Tools</h2><p class="lede">Surfaces are kept apart on purpose: the same
+  tool in a browser, a desktop app and a CLI are different exposures.</p>
+  <table><tr><th>tool</th><th>devices</th><th>identities</th><th>by surface</th></tr>
+  ${rows.map(([k,t]) => `<tr onclick="open_('tool','${esc(k)}')" style="cursor:pointer">
+    <td>${esc(k)}</td><td>${(t.devices||[]).length}</td><td>${(t.identities||[]).length}</td>
+    <td>${ents(t.devices_by_surface||{}).sort((a,b)=>b[1].length-a[1].length)
+      .map(([s,v])=>`<span class="pill p-acc">${esc(s||'none')} ${v.length}</span>`).join('')}</td>
+  </tr>`).join('')}</table>
+  ${ents(G.bridges||{}).length ? `<h2 style="margin-top:26px">Bridge targets</h2>
+  <p class="lede">Where an AI tool reached. Not a tool inventory: these are
+  destinations of an integration, not something someone installed.</p>
+  <table><tr><th>resource</th><th>devices</th></tr>
+  ${ents(G.bridges).sort((a,b)=>b[1].devices.length-a[1].devices.length)
+    .map(([k,b])=>`<tr><td>${esc(k)}</td><td>${b.devices.length}</td></tr>`).join('')}
+  </table>` : ''}`;
+}
+
+function coverage() {
+  const gaps = ents(G.devices).filter(([,d]) => d.scanner_seen && !d.collector_seen);
+  return `<h2>Coverage</h2><p class="lede">An inventory or telemetry source knows
+  these machines, but no endpoint collector reports from them. An empty collector
+  result and an undeployed collector look identical on a dashboard, which is why
+  they are listed rather than counted.</p>
+  ${gaps.length ? `<table><tr><th>device</th><th>sources</th><th>tools seen</th></tr>
+  ${gaps.map(([k,d])=>`<tr><td>${esc(label(k,d))}</td>
+    <td>${(d.sources||[]).map(s=>`<span class="pill p-mut">${esc(s)}</span>`).join('')}</td>
+    <td>${(d.tools||[]).length}</td></tr>`).join('')}</table>`
+  : '<p class="lede">Every device with a scanner finding also has a collector reporting.</p>'}`;
+}
+
+function deviceDetail(k) {
+  const d = G.devices[k]; if (!d) return '<p>not found</p>';
+  const bridges = ents(G.bridges||{}).filter(([,b]) => (b.devices||[]).includes(k)).map(([n])=>n);
+  return `<button class="back" onclick="open_(null)">back</button>
+  <h2>${esc(label(k,d))}</h2>
+  <p class="lede">${esc(k)} · ${(d.os||[]).join(', ') || 'os unknown'} · ${d.findings} findings</p>
+  <table>
+    <tr><th>person</th><td>${d.person ? esc(d.person) : '<span class="pill p-mut">unattributed</span>'}</td></tr>
+    <tr><th>local users</th><td>${(d.local_users||[]).join(', ') || '—'}</td></tr>
+    <tr><th>surfaces</th><td>${(d.surfaces||[]).filter(Boolean).join(', ')}</td></tr>
+    <tr><th>sources</th><td>${(d.sources||[]).join(', ') || '—'}</td></tr>
+    <tr><th>accounts</th><td>${(d.accounts||[]).map(a =>
+      `<span class="pill ${(d.personal_accounts||[]).includes(a)?'p-warn':'p-ok'}">${esc(a)}</span>`).join('') || '—'}</td></tr>
+    <tr><th>tools</th><td>${(d.tools||[]).map(t=>`<span class="pill p-mut">${esc(t)}</span>`).join('')}</td></tr>
+    <tr><th>bridge targets</th><td>${bridges.map(b=>`<span class="pill p-acc">${esc(b)}</span>`).join('') || '—'}</td></tr>
+  </table>`;
+}
+
+function toolDetail(k) {
+  const t = G.tools[k]; if (!t) return '<p>not found</p>';
+  return `<button class="back" onclick="open_(null)">back</button>
+  <h2>${esc(k)}</h2>
+  <p class="lede">${(t.devices||[]).length} devices · ${(t.identities||[]).length} identities · ${t.findings} findings</p>
+  <table><tr><th>by surface</th><td>${ents(t.devices_by_surface||{})
+    .sort((a,b)=>b[1].length-a[1].length)
+    .map(([s,v])=>`<span class="pill p-acc">${esc(s||'none')} ${v.length}</span>`).join('')}</td></tr>
+  <tr><th>accounts</th><td>${(t.accounts||[]).join(', ') || '—'}</td></tr></table>
+  <h2 style="margin-top:22px;font-size:16px">Devices</h2>
+  ${(t.devices||[]).map(dk => G.devices[dk] ? card(dk, G.devices[dk]) : '').join('')}`;
+}
+
+function setup() {
+  if (loadError) return `<h2>Setup</h2>
+    <div class="note">Could not read findings: ${esc(loadError)}</div>
+    <p class="lede">The portal reads from Loki; it does not collect anything
+    itself. Set <code>LOKI_URL</code> to the same Loki the receiver writes to.</p>`;
+  if (!S) return '<h2>Setup</h2><p class="lede">No status available.</p>';
+
+  const g = S.groups || [];
+  return `<h2>Setup</h2>
+  <p class="lede">What is reporting, derived from findings rather than from
+  configuration being present. A source that has never reported is either not
+  set up or genuinely has nothing to say, and those look identical from a
+  dashboard — so they are listed rather than counted.</p>
+
+  <dl class="stats">
+    ${g.map(x => `<div><dt>${x.reporting}/${x.total}</dt><dd>${esc(x.group)}</dd></div>`).join('')}
+  </dl>
+
+  ${S.reporting === 0 ? `<div class="note">Nothing has reported in the last
+  ${esc(S.hours)} hours. If you have just deployed the receiver that is
+  expected: roll one collector or enable one scanner and it appears here.</div>` : ''}
+
+  ${g.map(x => `
+    <h2 style="margin-top:22px;font-size:16px">${esc(x.group)}
+      <span class="pill ${x.reporting ? 'p-ok' : 'p-mut'}">${x.reporting} of ${x.total}</span></h2>
+    <table><tr><th>source</th><th>status</th><th>findings</th><th>devices</th><th>last seen</th></tr>
+    ${x.sources.map(r => `<tr>
+      <td>${esc(r.label)}<br><span class="mono" style="font-size:11px;color:var(--mut)">${esc(r.source)}</span>
+        ${r.reporting ? '' : `<div style="margin-top:6px;font-family:inherit;font-size:12px;color:var(--mut);max-width:52ch;line-height:1.5">
+          ${esc(r.needs || '')}
+          <br><span class="mono" style="font-size:11px">${esc(r.doc)}</span></div>`}</td>
+      <td>${r.reporting ? '<span class="pill p-ok">reporting</span>'
+                        : '<span class="pill p-mut">not reporting</span>'}</td>
+      <td>${r.findings || '—'}</td><td>${r.devices || '—'}</td>
+      <td>${esc((r.last_seen || '—').replace('T',' ').replace('Z',''))}</td>
+    </tr>`).join('')}</table>`).join('')}
+
+  <h2 style="margin-top:28px;font-size:16px">Attaching people to devices
+    <span class="pill ${CFG.identity_map_configured ? 'p-ok' : 'p-mut'}">${
+      CFG.identity_map_configured ? 'map configured' : 'no map'}</span></h2>
+  <p class="lede">This platform does not resolve identity itself. Endpoint
+  findings carry a device and a local username, and that username is a hint
+  rather than a key: it is firstname.lastname on one enrolment, a local account
+  on another, and whatever the person chose on an unmanaged machine. Cloud
+  findings carry an identity and no device. The two meet at the person, and
+  that join is a lookup you own against whatever you run — an MDM, an RMM, a
+  CMDB, or a spreadsheet.</p>
+  ${CFG.identity_map_configured ? `<p class="lede">A map is configured.
+  Devices it does not cover stay unattributed, which is a legitimate answer.</p>`
+  : `<ol class="lede" style="padding-left:18px;line-height:2">
+    <li><a href="/api/suggest-identities?fmt=csv" style="color:var(--pri)">Download
+      a proposed map</a>. It matches local usernames against the identities your
+      cloud sources report, and lists everything it could not match for you to
+      fill in.</li>
+    <li>Review every line. These are string matches, not authoritative: a wrong
+      line puts the wrong person's name against someone else's activity.</li>
+    <li>Save it outside this repository. It associates named people with
+      machines, so it is personal data and belongs wherever you keep deployment
+      configuration, not in git.</li>
+    <li>Set <code>IDENTITY_MAP</code> to its path. In Docker, mount it read-only;
+      in Kubernetes, a ConfigMap or Secret mounted as a file.</li>
+  </ol>
+  <p class="lede">The file is re-read whenever the graph rebuilds, so an edit
+  takes effect within ${esc(CFG.cache_ttl_seconds || 300)} seconds without a
+  restart. Devices with no mapping stay unattributed and everything else keeps
+  working.</p>`}
+
+  ${(S.unexpected || []).length ? `<h2 style="margin-top:26px;font-size:16px">Unrecognised sources</h2>
+  <p class="lede">Reporting, but not a source this build knows about. Either
+  something newer than this portal, or a source string that does not match what
+  the scanners emit — both worth chasing rather than ignoring.</p>
+  <table><tr><th>source</th></tr>${S.unexpected.map(u =>
+    `<tr><td>${esc(u)}</td></tr>`).join('')}</table>` : ''}`;
+}
+
+function dashboard() {
+  if (!CFG.grafana_url) return `<h2>Dashboard</h2>
+    <div class="note">No Grafana configured. Set <code>GRAFANA_URL</code> to a
+    Grafana that permits embedding, then either <code>GRAFANA_PANELS</code> as
+    <code>dashboardUid:panelId:Title</code> entries separated by commas, or
+    <code>GRAFANA_DASHBOARD_UID</code> to embed a whole dashboard in one frame.
+    <br><br>
+    Grafana refuses to be framed by default. It needs
+    <code>allow_embedding = true</code> (<code>GF_SECURITY_ALLOW_EMBEDDING</code>),
+    a cookie <code>SameSite</code> setting that permits the frame, and a decision
+    about how the frame authenticates — anonymous access on a locked-down
+    Grafana, or an auth proxy. Those are yours to make; the portal cannot make
+    them for you.</div>
+    <p class="lede">Nothing else here depends on this. Grafana is better at
+    graphs and this is better at relationships, so charts are enrichment rather
+    than a dependency.</p>`;
+
+  const base = CFG.grafana_url, panels = CFG.grafana_panels || [];
+  const q = 'orgId=1&theme=dark&from=now-7d&to=now&kiosk';
+
+  if (!panels.length && CFG.grafana_dashboard_uid) {
+    return `<h2>Dashboard</h2>
+      <p class="lede">Embedded from ${esc(base)}. Set
+      <code>GRAFANA_PANELS</code> to pick individual panels instead of the
+      whole dashboard.</p>
+      <iframe src="${esc(base)}/d/${esc(CFG.grafana_dashboard_uid)}/?${q}"
+        style="width:100%;height:78vh;border:1px solid var(--bd);border-radius:10px;background:var(--sf)"
+        title="Grafana dashboard"></iframe>`;
+  }
+
+  if (!panels.length) return `<h2>Dashboard</h2>
+    <div class="note">Grafana is configured but nothing is selected to show.
+    Set <code>GRAFANA_PANELS</code> or <code>GRAFANA_DASHBOARD_UID</code>.</div>`;
+
+  const bad = panels.filter(p => p.error);
+  return `<h2>Dashboard</h2>
+  <p class="lede">Panels embedded from ${esc(base)}. If a frame stays blank,
+  Grafana is refusing to be framed rather than the panel being wrong — check
+  <code>allow_embedding</code> and the cookie <code>SameSite</code> setting.</p>
+  ${bad.length ? `<div class="note">${bad.map(b => esc(b.error)).join('<br>')}</div>` : ''}
+  <div style="display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(420px,1fr))">
+  ${panels.filter(p => !p.error).map(p => `
+    <iframe src="${esc(base)}/d-solo/${esc(p.uid)}/?${q}&panelId=${esc(p.panel_id)}"
+      style="width:100%;height:300px;border:1px solid var(--bd);border-radius:10px;background:var(--sf)"
+      title="${esc(p.title || 'Grafana panel')}"></iframe>`).join('')}
+  </div>`;
+}
+
+function render() {
+  if (detail) { app.innerHTML = detail[0]==='device' ? deviceDetail(detail[1]) : toolDetail(detail[1]); return; }
+  app.innerHTML = ({setup, overview, devices, people, tools, coverage, dashboard})[view]();
+}
+function open_(kind, key) { detail = kind ? [kind, key] : null; render(); window.scrollTo(0,0); }
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('nav button').forEach(x => x.classList.remove('on'));
+  b.classList.add('on'); view = b.dataset.v; detail = null; render();
+});
+q.oninput = e => { filter = e.target.value.toLowerCase(); detail = null; render(); };
+load();
+</script>

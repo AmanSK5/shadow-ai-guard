@@ -128,3 +128,30 @@ def test_occurrence_count_must_be_positive():
 def test_metrics_stays_open():
     """Unauthenticated on purpose: it carries only bounded label values."""
     assert client.get("/metrics").status_code == 200
+
+def test_domain_tool_name_is_normalised_to_the_registry_id():
+    """The extension reports the hostname it saw; everything else reports the
+    registry id. Without this, one tool is two rows on every dashboard."""
+    from app.main import _build_domain_map
+
+    reg = {"tools": [{"id": "chatgpt", "domains": ["chatgpt.com", "openai.com"]}]}
+    m = _build_domain_map(reg)
+    assert m["chatgpt.com"] == "chatgpt"
+    assert m["openai.com"] == "chatgpt"
+
+
+def test_unknown_tool_names_are_left_alone():
+    """A name the registry has never heard of is a registry gap worth seeing,
+    not something to quietly fold into a neighbour."""
+    from app.main import _build_domain_map
+
+    m = _build_domain_map({"tools": [{"id": "chatgpt", "domains": ["chatgpt.com"]}]})
+    assert "something-else.example" not in m
+
+
+def test_domain_map_survives_a_missing_registry():
+    """No registry means no normalisation, not a crash on every report."""
+    from app.main import _build_domain_map
+
+    assert _build_domain_map(None) == {}
+    assert _build_domain_map({}) == {}

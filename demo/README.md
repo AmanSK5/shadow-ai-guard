@@ -26,6 +26,29 @@ Stop and wipe everything:
 docker compose down -v
 ```
 
+## The portal
+
+Open http://localhost:8091. It lands on a setup view showing which sources
+are reporting, derived from the findings themselves rather than from
+configuration being present: a source that has never reported is either not
+set up or genuinely has nothing to say, and those are identical from a
+dashboard, so each is listed with what it would need. In the demo most are
+not reporting, which is what a partly-configured deployment looks like.
+
+The other tabs are the part Grafana cannot do. Findings are a flat stream of
+isolated rows; the portal derives the relationships between them, so a device
+page shows every tool seen on that machine across every surface, and a tool
+page shows how many devices have it in a browser versus a desktop app versus
+a CLI. Those are different exposures and are deliberately not merged.
+
+Nobody is attached to a device until you supply an identity map, and the
+portal explains how on the setup page. It proposes one and will not apply it:
+the proposals are string matches against local usernames, and a mapping this
+platform invented and then acted on is how the wrong name ends up on a report.
+
+The portal is optional. Stop that one service and everything else here still
+works, which is the point of it not being in the ingest path.
+
 ## The dashboard
 
 Open http://localhost:3000 and look at the "Shadow AI" dashboard. It opens
