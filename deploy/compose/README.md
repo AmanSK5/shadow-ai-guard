@@ -92,6 +92,30 @@ a Mac and deploy on Linux.
 
 `secrets/` and `.env` are gitignored.
 
+## When findings stop arriving
+
+The receiver answers 200 to a reporting source even when the push to the log
+store fails, and that is deliberate: a log store being down should not lose a
+collector's finding, which is on stdout regardless. It does mean a
+misconfigured push is invisible from the collector's side.
+
+Three things make it visible:
+
+    docker compose logs receiver | grep '"kind": "error"'
+
+Push failures are logged at error with the URL and, for the two codes that
+account for almost every misconfiguration, the likely cause. A 404 means
+`LOKI_PUSH_URL` is the base URL rather than `/loki/api/v1/push`; a 401 or 403
+means `LOKI_USERNAME` and `LOKI_PASSWORD` are needed or wrong.
+
+`aiguard_loki_push_failures_total` counts them by reason on `/metrics`.
+
+`aiguard_loki_push_last_success_timestamp` is the one to alert on. Findings
+arrive irregularly, so a failure count alone cannot tell "nothing is being
+pushed because nothing is happening" from "everything is failing". Alert when
+`time() - aiguard_loki_push_last_success_timestamp` exceeds however long your
+estate can plausibly be silent.
+
 ## Exposure and TLS
 
 Ports bind to loopback. That is not the finished state - the receiver has to be

@@ -10,6 +10,7 @@ Windows remediation, scanner CronJob) and routes them:
 
 Carried over from v0.1.2:
   - bearer token auth (AUTH_TOKEN)
+  - optional basic auth to the log store (LOKI_USERNAME, LOKI_PASSWORD)
   - ALERT_TTL_MINUTES (default 120): persistent sessions collapse into one
     continuously active alert; Alertmanager repeat_interval governs re-pings
   - "detected" annotation pre-formatted in DISPLAY_TZ (default UTC)
@@ -94,6 +95,12 @@ ALERTMANAGER_URL = os.environ.get("ALERTMANAGER_URL", "")
 # If set, findings are POSTed straight to Loki (matches receiver v0.1.1
 # behaviour); stdout JSON logging happens regardless.
 LOKI_PUSH_URL = os.environ.get("LOKI_PUSH_URL", "")
+# Hosted Loki (Grafana Cloud and most managed offerings) wants basic auth.
+# Without these the only way to authenticate was to embed credentials in the
+# URL, where they end up in `docker inspect` and in every log line that
+# mentions the endpoint.
+LOKI_USERNAME = _secret("LOKI_USERNAME", "")
+LOKI_PASSWORD = _secret("LOKI_PASSWORD", "")
 ALERT_TTL_MINUTES = int(os.environ.get("ALERT_TTL_MINUTES", "120"))
 REGISTRY_PATH = os.environ.get("REGISTRY_PATH", "/etc/ai-guard/registry.json")
 # The endpoint collectors fetch their identifier lists from here at runtime
@@ -147,6 +154,31 @@ LAST_REPORT = Gauge(
     "Unix time of the most recent finding per source surface",
     ["surface"],
 )
+# A push that fails is a finding that exists only in this container's stdout.
+# The receiver still returns 200 to the reporting source, which is right - a
+# log store being down should not lose a collector's finding - but it means
+# the failure is invisible from the outside unless something counts it.
+LOKI_PUSH_FAILURES = Counter(
+    "aiguard_loki_push_failures_total",
+    "Pushes to the log store that failed, by reason. Any sustained increase "
+    "means findings are being accepted and not stored.",
+    ["reason"],
+)
+
+LOKI_PUSH_OK = Counter(
+    "aiguard_loki_push_total",
+    "Pushes to the log store that succeeded.",
+)
+
+# The one to alert on. Findings arrive irregularly, so a failure counter alone
+# cannot distinguish "nothing is being pushed because nothing is happening"
+# from "everything is failing". This is only set on success, so
+# time() - aiguard_loki_push_last_success_timestamp answers it directly.
+LOKI_PUSH_LAST_SUCCESS = Gauge(
+    "aiguard_loki_push_last_success_timestamp",
+    "Unix time of the last successful push to the log store.",
+)
+
 TOOL_NORMALISED = Counter(
     "aiguard_tool_normalised_total",
     "Findings whose tool name was a known domain and was rewritten to the "
@@ -377,13 +409,46 @@ async def _push_loki(f: Finding, line: str):
             }
         ]
     }
+    auth = (LOKI_USERNAME, LOKI_PASSWORD) if LOKI_USERNAME else None
     try:
         async with httpx.AsyncClient(timeout=5) as client:
-            r = await client.post(LOKI_PUSH_URL, json=payload)
+            r = await client.post(LOKI_PUSH_URL, json=payload, auth=auth)
             r.raise_for_status()
+    except httpx.HTTPStatusError as e:
+        # Logged at error, not info. This was info, and a wrong push URL
+        # therefore produced a 404 per finding that nobody read while the
+        # receiver kept answering 200 to every collector. The finding is not
+        # lost - it is on stdout - but it never reaches the log store, and
+        # from the outside that is indistinguishable from a quiet estate.
+        code = e.response.status_code
+        LOKI_PUSH_FAILURES.labels(reason=f"http_{code}").inc()
+        # A status code alone sends people to the wrong place. These two
+        # account for almost every misconfiguration, and naming the likely
+        # cause turns a wrong variable into a one-line fix.
+        hints = {
+            404: ("LOKI_PUSH_URL is probably the base URL rather than the "
+                  "push endpoint, which is /loki/api/v1/push"),
+            401: "LOKI_USERNAME and LOKI_PASSWORD are needed, or are wrong",
+            403: "LOKI_USERNAME and LOKI_PASSWORD are wrong, or lack write access",
+        }
+        entry = {
+            "app": "ai-guard-receiver", "kind": "error",
+            "error": f"loki push rejected with HTTP {code}",
+            "url": LOKI_PUSH_URL,
+        }
+        if code in hints:
+            entry["hint"] = hints[code]
+        log.error(json.dumps(entry))
     except httpx.HTTPError as e:
-        log.info(json.dumps({"app": "ai-guard-receiver", "kind": "error",
-                             "error": f"loki: {e}"}))
+        LOKI_PUSH_FAILURES.labels(reason=type(e).__name__).inc()
+        log.error(json.dumps({
+            "app": "ai-guard-receiver", "kind": "error",
+            "error": f"loki push failed: {e}",
+            "url": LOKI_PUSH_URL,
+        }))
+    else:
+        LOKI_PUSH_OK.inc()
+        LOKI_PUSH_LAST_SUCCESS.set(time.time())
 
 
 async def _fire_alert(f: Finding):
