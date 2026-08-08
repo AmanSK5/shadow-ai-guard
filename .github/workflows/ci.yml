@@ -329,8 +329,10 @@ jobs:
       # is the same either way.
       - name: build the images this commit would publish
         run: |
-          docker build -t ghcr.io/amansk5/shadow-ai-guard/receiver:ci receiver
-          docker build -t ghcr.io/amansk5/shadow-ai-guard/portal:ci portal
+          docker build --build-arg APP_VERSION=ci-test \
+            -t ghcr.io/amansk5/shadow-ai-guard/receiver:ci receiver
+          docker build --build-arg APP_VERSION=ci-test \
+            -t ghcr.io/amansk5/shadow-ai-guard/portal:ci portal
 
       - name: set up secrets and config the way the README says
         working-directory: deploy/compose
@@ -376,6 +378,15 @@ jobs:
             echo "::error::the receiver never became reachable"
             docker compose --profile with-logs ps -a
             docker compose --profile with-logs logs
+            exit 1
+          fi
+          # The build arg has to actually reach the running process. A version
+          # that silently falls back to "dev" in every published image is
+          # exactly the drift this replaced.
+          echo
+          if ! curl -fsS http://127.0.0.1:8080/healthz | grep -q '"version":"ci-test"'; then
+            echo "::error::the receiver did not report the version it was built with"
+            curl -fsS http://127.0.0.1:8080/healthz
             exit 1
           fi
 
@@ -702,6 +713,23 @@ jobs:
       # requirements.lock already carries the aarch64 wheel hashes:
       # pip-compile --generate-hashes records every distribution for a
       # version, not just the one the build host happens to need.
+      # The version the image reports on /healthz. A tag build says the
+      # release; a build off main says the commit, because "0.4.0" on a
+      # main build would claim to be a release it is not.
+      #
+      # This used to be a hardcoded constant in the source, and it drifted:
+      # the receiver reported 0.1.6 while the release was 0.4.0, so the one
+      # endpoint an operator checks to answer "am I running what I think I
+      # am" answered a different question.
+      - name: the version this image will report
+        id: appversion
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=main-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         if: steps.gate.outputs.build == 'true'
         with:
@@ -709,6 +737,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.tags.outputs.tags }}
+          build-args: |
+            APP_VERSION=${{ steps.appversion.outputs.value }}
 
       - name: confirm the manifest carries both architectures
         if: steps.gate.outputs.build == 'true'

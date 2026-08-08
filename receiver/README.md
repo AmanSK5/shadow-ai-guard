@@ -12,7 +12,7 @@ lists at runtime instead of carrying hardcoded copies.
 
 | method | path | auth | what |
 |--------|------|------|------|
-| GET  | `/healthz` | none | liveness and version |
+| GET  | `/healthz` | none | liveness, and the version the image was built from |
 | GET  | `/metrics` | none | Prometheus metrics |
 | GET  | `/registry` | bearer | the full compiled registry |
 | GET  | `/registry/collector` | bearer | the collector view of the registry |

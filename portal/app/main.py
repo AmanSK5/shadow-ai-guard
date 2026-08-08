@@ -157,7 +157,12 @@ CACHE_TTL = int(os.environ.get("CACHE_TTL_SECONDS", "300"))
 
 STATIC = Path(__file__).parent / "static"
 
-app = FastAPI(title="ai-guard portal", docs_url=None, redoc_url=None)
+# Set at build time from the release tag, or the commit for a build off main.
+# "dev" for a local build, which is honest.
+APP_VERSION = os.environ.get("APP_VERSION", "dev")
+
+app = FastAPI(title="ai-guard portal", version=APP_VERSION,
+              docs_url=None, redoc_url=None)
 
 # A derived graph, kept briefly. Not state in any meaningful sense: it rebuilds
 # from Loki on the next miss and on every restart. Without it, a 7 day query
@@ -198,7 +203,7 @@ def _findings(hours):
 # probe that fails for the wrong reason. It returns nothing about the estate.
 @app.get("/healthz")
 def healthz():
-    return {"ok": True}
+    return {"ok": True, "version": APP_VERSION}
 
 
 @app.get("/api/config")
@@ -230,6 +235,7 @@ def config(_=Depends(require_auth)):
         "lookback_hours": LOOKBACK_HOURS,
         "identity_map_configured": bool(IDENTITY_MAP and Path(IDENTITY_MAP).exists()),
         "cache_ttl_seconds": CACHE_TTL,
+        "version": APP_VERSION,
     }
 
 
