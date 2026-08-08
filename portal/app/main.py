@@ -61,7 +61,6 @@ from pathlib import Path
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
-from fastapi.staticfiles import StaticFiles
 
 from app import derive
 
@@ -294,11 +293,11 @@ def index(_=Depends(require_auth)):
     return FileResponse(STATIC / "index.html")
 
 
-# The UI is inert without the APIs above, but an unauthenticated mount is
-# still a hole worth not leaving open.
-@app.get("/static/{path:path}")
-def static_files(path: str, _=Depends(require_auth)):
-    target = (STATIC / path).resolve()
-    if not str(target).startswith(str(STATIC.resolve())) or not target.is_file():
-        raise HTTPException(status_code=404, detail="not found")
-    return FileResponse(target)
+# There is no /static route, deliberately. The UI is one self-contained file
+# with its CSS and JS inline, served by / above, so a route that resolved a
+# caller-supplied path under a directory would exist only to serve nothing.
+#
+# It did exist briefly, guarded by a prefix check, and CodeQL was right to flag
+# it: comparing resolved paths with startswith is a weak guard - /srv/static-x
+# has /srv/static as a prefix - and the safe version of a route that serves no
+# files is no route.
