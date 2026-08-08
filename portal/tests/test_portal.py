@@ -1,0 +1,299 @@
+"""Tests for the ai-guard portal.
+
+Most of these cover derive.py rather than the HTTP layer, because the
+derivation is where the portal can be quietly wrong. A route that returns the
+wrong status code is obvious; a graph that merges two machines into one, or
+reports a source as silent when it is reporting, looks exactly like a correct
+answer.
+
+Every case here corresponds to something that was actually wrong at some point
+during the build, or to a property the design depends on.
+"""
+
+import json
+import os
+
+# PORTAL_AUTH must be set before the app module is imported: main.py refuses to
+# start without authentication, and that refusal happens at module level.
+os.environ.setdefault("PORTAL_AUTH", "none")
+
+from app import derive  # noqa: E402
+
+
+def finding(**kw):
+    """A finding with sensible defaults, so each test states only what it is
+    about."""
+    f = {
+        "tool": "claude-code",
+        "surface": "cli",
+        "os": "macos",
+        "account_domain": "",
+        "device": "SERIAL1",
+        "device_name": "machine-1",
+        "user": "someone",
+        "evidence": "~/.claude.json",
+        "severity": "info",
+        "source": "collector-macos",
+    }
+    f.update(kw)
+    return f
+
+
+REGISTRY = {
+    "tools": [
+        {"id": "chatgpt", "domains": ["chatgpt.com", "chat.openai.com"]},
+        {"id": "claude", "domains": ["claude.ai"]},
+    ]
+}
+
+
+# --------------------------------------------------------------- tool names --
+
+def test_a_domain_resolves_to_the_registry_tool_id():
+    """The browser extension reports the hostname it saw; everything else
+    reports the registry id. Without this, one tool is two nodes."""
+    m = derive.load_domain_map_from(REGISTRY)
+    assert derive.normalise_tool("chatgpt.com", m) == "chatgpt"
+    assert derive.normalise_tool("claude.ai", m) == "claude"
+
+
+def test_a_name_the_registry_does_not_know_is_left_alone():
+    """A registry gap is worth seeing. Folding an unknown name into a
+    neighbour would hide it and inflate that neighbour's count."""
+    m = derive.load_domain_map_from(REGISTRY)
+    assert derive.normalise_tool("something-new.example", m) == "something-new.example"
+
+
+def test_a_canonical_id_is_not_rewritten():
+    m = derive.load_domain_map_from(REGISTRY)
+    assert derive.normalise_tool("claude-code", m) == "claude-code"
+
+
+# ------------------------------------------------------------------- graph --
+
+def test_surfaces_are_counted_separately_for_one_tool():
+    """The same tool in a browser, a desktop app and a CLI are different
+    exposures. Merging them into one number loses the distinction the platform
+    exists for."""
+    g = derive.graph_from([
+        finding(tool="chatgpt.com", surface="browser", device="A", source="paste_guard"),
+        finding(tool="chatgpt", surface="desktop", device="B", source="jamf_app"),
+        finding(tool="chatgpt", surface="cli", device="C"),
+    ], derive.load_domain_map_from(REGISTRY))
+
+    tool = g["tools"]["chatgpt"]
+    assert len(tool["devices"]) == 3
+    per = {k: len(v) for k, v in tool["devices_by_surface"].items()}
+    assert per == {"browser": 1, "desktop": 1, "cli": 1}
+
+
+def test_bridge_targets_are_not_tools():
+    """sentinelone_bridge reports where an AI tool reached. Slack and GitHub
+    in a tool inventory is the destination of an integration being mistaken
+    for the integration."""
+    g = derive.graph_from([
+        finding(tool="Slack", surface="cloud", source="sentinelone_bridge"),
+        finding(tool="claude-code"),
+    ], {})
+
+    assert "Slack" not in g["tools"]
+    assert "Slack" in g["bridges"]
+    assert "claude-code" in g["tools"]
+
+
+def test_the_guard_and_the_collector_are_not_tools_anyone_uses():
+    g = derive.graph_from([
+        finding(tool="paste-guard", surface="browser", source="paste_guard"),
+        finding(tool="ai-guard-collector", surface="endpoint",
+                evidence="heartbeat version=0.2.0 tools=0"),
+    ], {})
+    assert g["tools"] == {}
+
+
+def test_a_cloud_finding_becomes_an_identity_not_a_device():
+    """Entra and Exchange know people, not machines. A finding with no device
+    and a username is an identity; a local username on an endpoint is not."""
+    g = derive.graph_from([
+        finding(tool="fireflies", surface="cloud", device="", device_name="",
+                user="someone@example.com", source="entra_sign_in"),
+    ], {})
+
+    assert g["identities"]["someone@example.com"]["tools"] == ["fireflies"]
+    assert g["devices"] == {}
+
+
+def test_a_finding_with_neither_device_nor_user_is_unattributed():
+    """Counted and named rather than dropped: a finding that cannot be
+    attributed is still evidence something is there."""
+    g = derive.graph_from([
+        finding(tool="chatgpt", surface="cloud", device="", device_name="",
+                user="", source="exchange_email"),
+    ], {})
+
+    assert len(g["unattributed"]) == 1
+    assert g["unattributed"][0]["source"] == "exchange_email"
+
+
+def test_a_personal_account_is_flagged_on_the_device():
+    g = derive.graph_from([
+        finding(account_domain="gmail.com", severity="warn"),
+    ], {})
+    assert g["devices"]["SERIAL1"]["personal_accounts"] == ["gmail.com"]
+
+
+# ---------------------------------------------------------------- coverage --
+
+def test_coverage_is_judged_on_surface_not_on_source():
+    """source is not reliably populated: the macOS collector sent none until
+    recently and the browser extension predates the field. Judging on source
+    alone flagged every Mac in a fleet as uncovered while its cli findings sat
+    in the same graph."""
+    g = derive.graph_from([
+        finding(surface="desktop", source="jamf_app", user=""),
+        finding(surface="cli", source=""),   # a collector, saying nothing about itself
+    ], {})
+
+    d = g["devices"]["SERIAL1"]
+    assert d["collector_seen"] is True
+    assert d["scanner_seen"] is True
+
+
+def test_a_heartbeat_proves_coverage_on_a_machine_with_no_ai_tools():
+    """A scan that finds nothing and a collector that never ran produce the
+    same thing on a dashboard: silence."""
+    g = derive.graph_from([
+        finding(tool="claude", surface="desktop", source="jamf_app", user=""),
+        finding(tool="ai-guard-collector", surface="endpoint",
+                evidence="heartbeat version=0.2.0 tools=0"),
+    ], {})
+
+    d = g["devices"]["SERIAL1"]
+    assert d["collector_seen"] is True
+    assert d["collector_version"] == "0.2.0"
+
+
+def test_a_machine_only_an_inventory_knows_is_a_coverage_gap():
+    g = derive.graph_from([
+        finding(tool="microsoft-copilot", surface="desktop", device="NOAGENT",
+                device_name="", user="", os="windows", source="intune_app"),
+    ], {})
+
+    d = g["devices"]["NOAGENT"]
+    assert d["scanner_seen"] is True
+    assert d["collector_seen"] is False
+
+
+# ---------------------------------------------------------------- identity --
+
+def test_an_identity_map_attaches_a_person_to_a_device():
+    g = derive.graph_from(
+        [finding(user="jane.doe")],
+        {},
+        {"SERIAL1": "jane.doe@example.com"},
+    )
+    assert g["devices"]["SERIAL1"]["person"] == "jane.doe@example.com"
+
+
+def test_an_identity_map_can_key_on_the_local_username():
+    """Which key a deployer can supply depends on what they run: an MDM keys
+    on the serial, a spreadsheet is more likely to key on the login name."""
+    g = derive.graph_from(
+        [finding(user="jdoe")],
+        {},
+        {"jdoe": "jane.doe@example.com"},
+    )
+    assert g["devices"]["SERIAL1"]["person"] == "jane.doe@example.com"
+
+
+def test_a_device_with_no_mapping_stays_unattributed():
+    """A first-class state, not an error. A team with no MDM still learns
+    which machines run what."""
+    g = derive.graph_from([finding()], {}, {})
+    assert g["devices"]["SERIAL1"]["person"] == ""
+
+
+def test_suggestions_are_proposed_and_never_applied():
+    """These are string matches. A mapping the platform invented and then
+    acted on is how the wrong name ends up on a report."""
+    devices, identities, _t, _b, _u = derive.build([
+        finding(user="jane.doe"),
+        finding(tool="fireflies", surface="cloud", device="", device_name="",
+                user="jane.doe@example.com", source="entra_sign_in"),
+    ], {}, {})
+
+    matched, unmatched = derive.suggest_identity_rows(devices, identities)
+    assert matched[0]["identity"] == "jane.doe@example.com"
+    # Proposed only: nothing was attached.
+    assert devices["SERIAL1"]["person"] == ""
+
+
+# ------------------------------------------------------------------ status --
+
+def test_status_separates_reporting_from_silent():
+    st = derive.status_from([finding(source="collector-macos")])
+    by_source = {r["source"]: r for r in st["sources"]}
+    assert by_source["collector-macos"]["reporting"] is True
+    assert by_source["entra_sign_in"]["reporting"] is False
+
+
+def test_every_expected_source_says_what_it_needs():
+    """A status page that says "not reporting" and nothing else leaves the
+    reader exactly where they were."""
+    st = derive.status_from([])
+    assert all(r["needs"] for r in st["sources"])
+    assert all(r["doc"] for r in st["sources"])
+
+
+def test_an_unrecognised_source_is_surfaced_rather_than_ignored():
+    """This is what caught demo/seed.sh seeding scanner-entra, a value no
+    deployment produces."""
+    st = derive.status_from([finding(source="not-a-real-source")])
+    assert "not-a-real-source" in st["unexpected"]
+
+
+def test_the_expected_sources_match_what_the_scanners_emit():
+    """The portal's list is hardcoded and the real values live in
+    DetectionSource. They drifted once already: the list said entra_signin
+    where the scanner emits entra_sign_in, so a reporting source showed as
+    silent - the exact false signal this view exists to remove.
+
+    The enum is read from source rather than imported, so this runs without
+    the scanner package installed. A cross-component check that only runs
+    when someone happens to have both installed is a check that does not run.
+    """
+    import ast
+    import pathlib
+    import pytest
+
+    base = (pathlib.Path(__file__).resolve().parents[2]
+            / "scanner" / "ai_guard" / "scanners" / "base.py")
+    if not base.exists():
+        pytest.skip("scanner source not present next to the portal")
+
+    tree = ast.parse(base.read_text())
+    emitted = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef) and node.name == "DetectionSource":
+            for item in node.body:
+                if isinstance(item, ast.Assign) and isinstance(item.value, ast.Constant):
+                    emitted.add(item.value.value)
+
+    assert emitted, "could not read any DetectionSource values from %s" % base
+
+    listed = {r["source"] for r in derive.status_from([])["sources"]}
+    # Collector and extension sources are set directly, not via the enum.
+    listed -= {"collector-macos", "collector-linux", "collector-windows",
+               "paste_guard"}
+
+    missing = emitted - listed
+    assert not missing, (
+        "DetectionSource values the portal's setup view does not list, so they "
+        "would show as unrecognised rather than as a source to configure: %s"
+        % sorted(missing)
+    )
+
+    stale = listed - emitted
+    assert not stale, (
+        "sources the portal lists that no scanner emits, so they would show as "
+        "permanently not reporting: %s" % sorted(stale)
+    )

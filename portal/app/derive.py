@@ -126,6 +126,12 @@ def load_domain_map(path):
               % e, file=sys.stderr)
         return {}
 
+    return load_domain_map_from(reg)
+
+
+def load_domain_map_from(reg):
+    """The mapping itself, separated from reading a file so it can be tested
+    without one."""
     out = {}
     for t in (reg or {}).get("tools", []):
         tid = t.get("id")

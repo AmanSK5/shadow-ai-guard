@@ -148,7 +148,7 @@ jobs:
       # and find the next.
       fail-fast: false
       matrix:
-        component: [receiver, scanner, discovery]
+        component: [receiver, scanner, discovery, portal]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: the committed lock matches requirements.in
@@ -182,6 +182,19 @@ jobs:
         with: { python-version: '3.12' }
       - run: pip install --require-hashes -r receiver/requirements.lock -r .github/requirements-ci.txt
       - run: pytest receiver/ -q
+
+  portal-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with: { python-version: '3.12' }
+      - run: pip install --require-hashes -r portal/requirements.lock -r .github/requirements-ci.txt
+      # PORTAL_AUTH is set because main.py refuses to start without
+      # authentication, and that refusal happens at import.
+      - run: PORTAL_AUTH=none pytest portal/ -q
+        env:
+          PYTHONPATH: portal
 
   scanner-test:
     runs-on: ubuntu-latest
@@ -409,12 +422,13 @@ jobs:
       contents: read
       packages: write
     needs: [placeholder-guard, shellcheck, collector-delivery-state,
-            registry-validate, receiver-test, scanner-test, helm, demo-smoke,
+            registry-validate, receiver-test, scanner-test, portal-test,
+            helm, demo-smoke,
             windows-path-containment]
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        component: [receiver, scanner, discovery]
+        component: [receiver, scanner, discovery, portal]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
