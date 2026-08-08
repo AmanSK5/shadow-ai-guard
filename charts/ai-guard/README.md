@@ -70,6 +70,35 @@ Deployment with a generated password. It is additive - nothing about the
 receiver changes - and its ingress is off by default, so nothing new is exposed
 until you decide to expose it.
 
+Use `--reset-then-reuse-values`, not `--reuse-values`:
+
+    helm upgrade ai-guard charts/ai-guard --reset-then-reuse-values \
+      --set portal.lokiUrl=http://loki.monitoring.svc.cluster.local:3100
+
+`--reuse-values` keeps only the values you set previously and discards
+everything underneath them, including defaults a newer chart added. So the
+portal either silently does not appear - `portal.enabled` defaults to true, but
+that default is one of the ones dropped - or the templates fail on the gaps.
+The chart detects the second case and says this rather than failing on a nil
+pointer.
+
+### Adding Grafana panels later
+
+You will not know the panel ids until Grafana is running with data in it, so
+this is normally a second pass rather than something set at install:
+
+    helm upgrade ai-guard charts/ai-guard --reset-then-reuse-values \
+      --set portal.grafana.url=https://grafana.example.com \
+      --set-string 'portal.grafana.panels=ai-guard:19:Devices reporting'
+
+`--set-string` because the value contains colons and commas that `--set` would
+try to parse as structure.
+
+The uid is in the dashboard URL after `/d/`. The panel id is the
+`viewPanel=<n>` at the end of a panel's Share link. `portal/README.md` covers
+what Grafana itself needs before it will allow the frame - three settings, one
+of which locks you out of Grafana if you miss it.
+
 The portal uses its own `app.kubernetes.io/name` rather than a component label
 on the shared one. A Deployment's selector is immutable, so adding a label to
 the receiver's selector would fail every upgrade from a release that predates

@@ -49,7 +49,13 @@ encryption.
                     set embeds the whole dashboard in one frame instead, which
                     needs no panel ids and survives someone rearranging them
   GRAFANA_DASHBOARD_UID  dashboard to embed whole, when no panels are listed
-  CACHE_TTL_SECONDS how long a derived graph is reused, default 300
+  CACHE_TTL_SECONDS how long a derived graph is reused, default 30. It exists
+                    to absorb a page refresh and clicking between tabs, not to
+                    reduce load: Grafana runs one query per panel on every
+                    refresh, so a portal page load was already the lighter of
+                    the two. It started at 300, which meant a fresh install
+                    showed nothing for five minutes after the first collector
+                    ran, with nothing on screen saying the view was stale.
 """
 
 import logging
@@ -153,7 +159,7 @@ IDENTITY_MAP = os.environ.get("IDENTITY_MAP", "")
 GRAFANA_URL = os.environ.get("GRAFANA_URL", "").rstrip("/")
 GRAFANA_PANELS = os.environ.get("GRAFANA_PANELS", "")
 GRAFANA_DASHBOARD_UID = os.environ.get("GRAFANA_DASHBOARD_UID", "")
-CACHE_TTL = int(os.environ.get("CACHE_TTL_SECONDS", "300"))
+CACHE_TTL = int(os.environ.get("CACHE_TTL_SECONDS", "30"))
 
 STATIC = Path(__file__).parent / "static"
 
@@ -241,8 +247,13 @@ def config(_=Depends(require_auth)):
 
 @app.get("/api/graph")
 def graph(hours: float = Query(default=None, gt=0, le=24 * 90),
+          refresh: bool = Query(default=False),
           _=Depends(require_auth)):
+    """refresh=true skips the cache. A cache you cannot see past is
+    indistinguishable from a portal that is not working."""
     hours = hours or LOOKBACK_HOURS
+    if refresh:
+        _cache.pop("graph", None)
     def build():
         findings = _findings(hours)
         domain_map = derive.load_domain_map(REGISTRY_PATH)
@@ -255,8 +266,11 @@ def graph(hours: float = Query(default=None, gt=0, le=24 * 90),
 
 @app.get("/api/status")
 def status(hours: float = Query(default=None, gt=0, le=24 * 90),
+           refresh: bool = Query(default=False),
            _=Depends(require_auth)):
     hours = hours or LOOKBACK_HOURS
+    if refresh:
+        _cache.pop("status", None)
     def build():
         return derive.status_from(_findings(hours))
 

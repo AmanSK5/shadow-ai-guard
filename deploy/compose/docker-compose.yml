@@ -146,6 +146,11 @@ services:
       # login screen no amount of allow_embedding fixes.
       GF_SECURITY_ALLOW_EMBEDDING: ${GRAFANA_ALLOW_EMBEDDING:-false}
       GF_SECURITY_COOKIE_SAMESITE: ${GRAFANA_COOKIE_SAMESITE:-lax}
+      # SameSite=None is only valid on a cookie that also carries Secure, so
+      # without this the browser discards the session cookie and every login
+      # bounces back to the login screen with nothing explaining why. Requires
+      # HTTPS in front of Grafana, which a reverse proxy is providing anyway.
+      GF_SECURITY_COOKIE_SECURE: ${GRAFANA_COOKIE_SECURE:-false}
     volumes:
       - grafana-data:/var/lib/grafana
       - ../../dashboards:/var/lib/grafana/dashboards:ro
