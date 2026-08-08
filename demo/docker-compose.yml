@@ -5,9 +5,16 @@
 #
 #     docker compose up
 #
-# Then open http://localhost:3000 (anonymous, no login) and look at the
-# "Shadow AI" dashboard. Everything is fake: demo users are named after
-# Pokemon, findings are seeded by the `seeder` service below.
+# Then open either:
+#
+#   http://localhost:8091   the portal: devices, tools, people, and what is
+#                           reporting. Start here.
+#   http://localhost:3000   Grafana (anonymous, no login), the "Shadow AI"
+#                           dashboard.
+#
+# Both read the same findings and neither needs the other. Everything is fake:
+# demo users are named after Pokemon, findings are seeded by the `seeder`
+# service below.
 #
 # Stop and wipe with:  docker compose down -v
 
@@ -92,6 +99,16 @@ services:
       GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
       GF_AUTH_DISABLE_LOGIN_FORM: "true"
       GF_USERS_DEFAULT_THEME: "dark"
+      # Lets the portal embed panels. Off by default in Grafana, deliberately:
+      # framing a session someone is logged into is how clickjacking works.
+      # Safe here because this Grafana is anonymous, read-only and bound to
+      # loopback. In a real deployment this is a decision to make rather than
+      # a setting to copy, which is why the portal says so instead of assuming.
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      # A framed page is cross-site as far as the browser is concerned, so the
+      # default Lax cookie would not be sent and the frame would render a login
+      # screen no amount of allow_embedding fixes.
+      GF_SECURITY_COOKIE_SAMESITE: "none"
     volumes:
       - ./grafana/datasources:/etc/grafana/provisioning/datasources:ro
       - ./grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
@@ -115,6 +132,56 @@ services:
       receiver:
         condition: service_healthy
     restart: "no"
+
+  # The governance portal: devices, tools, people and the relationships
+  # between them, derived from the same findings Grafana reads. Optional in a
+  # real deployment and optional here - stop this service and everything else
+  # still works, which is the point of it not being in the ingest path.
+  #
+  # Reads the compiled registry the builder produced, so tool names arriving
+  # from different detectors (chatgpt.com from the extension, chatgpt from
+  # everything else) resolve to one tool.
+  portal:
+    build: ../portal
+    environment:
+      LOKI_URL: "http://loki:3100"
+      # The portal refuses to start without authentication, deliberately: it
+      # names who runs what on which machine. This demo is seeded with fake
+      # Pokemon users and bound to loopback, so it opts out explicitly rather
+      # than shipping a credential someone might carry into production.
+      PORTAL_AUTH: "none"
+      REGISTRY_PATH: "/etc/ai-guard/registry.json"
+      # Short, because the demo is for clicking around. A real deployment
+      # wants the default 300 so a seven-day query is not rerun per page load.
+      CACHE_TTL_SECONDS: "10"
+      LOOKBACK_HOURS: "168"
+      # The browser loads these frames, so this is the URL you reach Grafana
+      # on, not the one the portal container would use.
+      GRAFANA_URL: "http://localhost:3000"
+      # dashboardUid:panelId:Title, semicolon separated. Semicolons because
+      # panel titles contain commas: "Top tools (devices, 7d)" split into two
+      # broken entries when this was comma separated.
+      #
+      # Panel ids come from the dashboard JSON. Set GRAFANA_DASHBOARD_UID
+      # instead to embed the whole thing in one frame, which needs no ids and
+      # survives someone rearranging them.
+      GRAFANA_PANELS: >-
+        ai-guard:2:Devices reporting (24h);
+        ai-guard:6:Top tools (devices, 7d);
+        ai-guard:5:Findings by surface (7d);
+        ai-guard:4:Findings by severity (rate);
+        ai-guard:10:Devices with findings, by OS;
+        ai-guard:31:Pastes stopped (7d)
+    volumes:
+      - registry-dist:/etc/ai-guard:ro
+    depends_on:
+      loki:
+        condition: service_healthy
+      registry-builder:
+        condition: service_completed_successfully
+    # Loopback only, same as everything else here.
+    ports:
+      - "127.0.0.1:8091:8091"
 
   # Serves the paste-guard demo page, and the real guard.js it loads.
   extension-demo:

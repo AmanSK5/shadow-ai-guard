@@ -15,3 +15,9 @@ registry/dist/
 *.pfx
 *.p12
 .claude/
+# Maps named people to machines. Personal data, deployment-specific, and
+# committing it would publish colleagues' names.
+identity-map.csv
+**/identity-map.csv
+portal/.venv/
+receiver/.venv/
