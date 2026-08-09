@@ -272,6 +272,15 @@ def build(findings, domain_map=None, identity_map=None):
         "device_name": "", "os": set(), "tools": set(), "surfaces": set(),
         "local_users": set(), "sources": set(), "accounts": set(),
         "personal_accounts": set(), "findings": 0,
+        # tool -> the account domains that tool was seen signed into on this
+        # device. Kept paired rather than folded into the two flat sets above,
+        # because "this device has chatgpt and claude-code" plus "this device
+        # has gmail.com and example.com" cannot tell you which tool the
+        # personal account belongs to, and that is the question worth asking.
+        # An empty set is meaningful: the tool is present and no account
+        # identity was captured, which is what a software inventory finding
+        # gives you.
+        "tool_accounts": defaultdict(set),
         "person": "", "collector_seen": False, "scanner_seen": False,
         "collector_version": "",
     })
@@ -365,8 +374,13 @@ def build(findings, domain_map=None, identity_map=None):
             ev = f.get("evidence") or ""
             if ev.startswith("heartbeat version="):
                 d["collector_version"] = ev.split("version=", 1)[1].split()[0]
+            # setdefault before the acct check: a tool with no account seen
+            # has to appear in the mapping, or it silently vanishes from a
+            # view whose whole job is showing which tools lack an account.
+            d["tool_accounts"].setdefault(tool, set())
             if acct:
                 d["accounts"].add(acct)
+                d["tool_accounts"][tool].add(acct)
                 if severity == "warn":
                     d["personal_accounts"].add(acct)
             t["devices"].add(device)
@@ -416,12 +430,159 @@ def jsonable(d):
     return {k: (sorted(v) if isinstance(v, set) else v) for k, v in d.items()}
 
 
+def personal_accounts_from(findings, domain_map=None):
+    """One row per personal account seen on a tool, with when it was first and
+    last observed.
+
+    "Personal" is severity == "warn" with an account domain present, which is
+    the reporter's own judgement: the collector and the extension are told the
+    corporate domains and decide at the point of detection. The portal does not
+    re-derive it, because it may not hold the same list, and two definitions
+    that disagree is worse than one that is occasionally coarse.
+
+    Rows are keyed on the full tuple rather than on the account alone. The same
+    person signing into ChatGPT on a laptop and Claude on a desktop is two
+    findings worth following up separately, not one account with a longer list
+    of attributes.
+    """
+    domain_map = domain_map or {}
+    rows = {}
+    for f in findings:
+        if (f.get("severity") or "") != "warn":
+            continue
+        acct = (f.get("account_domain") or "").strip().lower()
+        if not acct:
+            continue
+        tool = f.get("tool") or ""
+        if not tool or tool in NOT_A_TOOL:
+            continue
+        source = f.get("source") or ""
+        if source in BRIDGE_SOURCES:
+            continue
+        tool = normalise_tool(tool, domain_map)
+
+        device = (f.get("device") or "").strip()
+        user = (f.get("user") or "").strip()
+        key = (user, acct, tool, device)
+        r = rows.get(key)
+        if r is None:
+            r = rows[key] = {
+                "user": user, "account_domain": acct, "tool": tool,
+                "device": device, "device_name": "", "os": "",
+                "surfaces": set(), "sources": set(),
+                "first_seen": "", "last_seen": "", "findings": 0,
+            }
+        r["findings"] += 1
+        if f.get("device_name"):
+            r["device_name"] = f["device_name"]
+        if f.get("os"):
+            r["os"] = f["os"]
+        if f.get("surface"):
+            r["surfaces"].add(f["surface"])
+        if source:
+            r["sources"].add(source)
+        # ISO 8601 in UTC sorts lexically, which is the whole reason the
+        # receiver writes it that way.
+        ts = f.get("reported_at") or ""
+        if ts:
+            if not r["first_seen"] or ts < r["first_seen"]:
+                r["first_seen"] = ts
+            if ts > r["last_seen"]:
+                r["last_seen"] = ts
+
+    out = [dict(r, surfaces=sorted(r["surfaces"]), sources=sorted(r["sources"]))
+           for r in rows.values()]
+    # Most recently seen first: the useful question is what is happening now,
+    # not what happened first.
+    out.sort(key=lambda r: (r["last_seen"], r["user"], r["tool"]), reverse=True)
+    return out
+
+
+def mcp_from(findings):
+    """One row per MCP server, with the tools that configured it and the
+    devices it was found on.
+
+    An MCP server is a standing integration rather than an application someone
+    opens: it holds its own credentials and can reach whatever it was pointed
+    at without the configuring tool being in use. Counting tools instead of
+    servers would answer the less interesting question.
+
+    Two evidence formats are read, because Loki holds both for as long as the
+    lookback window. The current collectors emit
+
+        .claude.json mcpServers: figma,context7
+
+    and older ones folded the list into the tool name instead
+
+        claude-code-mcp:figma,context7
+
+    which is why the second exists at all: every distinct combination of
+    servers became a separate tool, so a machine with two servers and a machine
+    with one looked like two unrelated tools rather than one server in common.
+    """
+    rows = {}
+    for f in findings:
+        if (f.get("surface") or "") != "mcp":
+            continue
+        tool = f.get("tool") or ""
+        if not tool:
+            continue
+
+        servers, base_tool = [], tool
+        ev = f.get("evidence") or ""
+        if "mcpServers:" in ev:
+            servers = [x.strip() for x in ev.split("mcpServers:", 1)[1].split(",")]
+        elif "-mcp:" in tool:
+            base_tool, listed = tool.split("-mcp:", 1)
+            base_tool += "-mcp"
+            servers = [x.strip() for x in listed.split(",")]
+        servers = [x for x in servers if x]
+        if not servers:
+            # A tool on the mcp surface with no server list is still worth
+            # recording: something configured MCP and the detail did not
+            # survive. Dropping it would understate the estate.
+            servers = ["(unnamed)"]
+
+        device = (f.get("device") or "").strip()
+        ts = f.get("reported_at") or ""
+        for srv in servers:
+            r = rows.get(srv)
+            if r is None:
+                r = rows[srv] = {"server": srv, "tools": set(), "devices": set(),
+                                 "device_names": set(), "findings": 0,
+                                 "first_seen": "", "last_seen": ""}
+            r["findings"] += 1
+            r["tools"].add(base_tool)
+            if device:
+                r["devices"].add(device)
+            if f.get("device_name"):
+                r["device_names"].add(f["device_name"])
+            if ts:
+                if not r["first_seen"] or ts < r["first_seen"]:
+                    r["first_seen"] = ts
+                if ts > r["last_seen"]:
+                    r["last_seen"] = ts
+
+    out = [dict(r, tools=sorted(r["tools"]), devices=sorted(r["devices"]),
+                device_names=sorted(r["device_names"]))
+           for r in rows.values()]
+    # Widest reach first: a server on twenty machines is a different problem
+    # from one on a single developer's laptop.
+    out.sort(key=lambda r: (len(r["devices"]), r["findings"]), reverse=True)
+    return out
+
+
 def graph_from(findings, domain_map=None, identity_map=None):
     """Everything above, assembled into the shape the API and the UI read."""
     devices, identities, tools, bridges, unattributed = build(
         findings, domain_map, identity_map)
     return {
-        "devices": {k: jsonable(v) for k, v in devices.items()},
+        "devices": {
+            k: dict(jsonable(v),
+                    tool_accounts={t2: sorted(a2) for t2, a2
+                                   in v["tool_accounts"].items()})
+            for k, v in devices.items()
+        },
         "identities": {k: jsonable(v) for k, v in identities.items()},
         "tools": {
             k: dict(jsonable(v),
@@ -431,6 +592,8 @@ def graph_from(findings, domain_map=None, identity_map=None):
         },
         "bridges": {k: jsonable(v) for k, v in bridges.items()},
         "unattributed": unattributed,
+        "personal_accounts": personal_accounts_from(findings, domain_map),
+        "mcp_servers": mcp_from(findings),
         "counts": {
             "findings": len(findings),
             "devices": len(devices),

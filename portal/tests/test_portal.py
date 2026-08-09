@@ -325,3 +325,163 @@ def test_every_non_scanner_source_is_actually_listed():
         "excluded from the scanner cross-check but not listed in the setup "
         "view either, so they would appear as unrecognised: %s" % sorted(missing)
     )
+
+# --------------------------------------------------------- tool/account pairs
+
+
+def test_device_keeps_tool_and_account_paired():
+    """The flat tools and accounts sets on a device cannot say which tool the
+    personal account belongs to, which is the question the pairing exists to
+    answer."""
+    g = derive.graph_from([
+        finding(tool="chatgpt", surface="browser", account_domain="gmail.com",
+                severity="warn", source="browser_extension"),
+        finding(tool="claude-code", account_domain="example.com"),
+    ])
+    pairs = g["devices"]["SERIAL1"]["tool_accounts"]
+    assert pairs["chatgpt"] == ["gmail.com"]
+    assert pairs["claude-code"] == ["example.com"]
+
+
+def test_tool_with_no_account_still_appears_in_the_pairing():
+    """A software inventory finding proves the app is installed and says
+    nothing about who is signed in. That is a third state, distinct from a
+    work account, and dropping it would hide it in the one view meant to show
+    which tools lack an account."""
+    g = derive.graph_from([finding(tool="codeium", surface="desktop",
+                                   account_domain="", source="jamf_app")])
+    pairs = g["devices"]["SERIAL1"]["tool_accounts"]
+    assert "codeium" in pairs
+    assert pairs["codeium"] == []
+
+
+# ------------------------------------------------------- personal account rows
+
+
+def test_personal_accounts_exclude_work_accounts_and_bridges():
+    """severity is the reporter's judgement, made where the corporate domain
+    list actually lives. Bridge findings are destinations an integration
+    reached, not accounts anyone signed into."""
+    rows = derive.graph_from([
+        finding(account_domain="gmail.com", severity="warn"),
+        finding(account_domain="example.com", severity="info"),
+        finding(tool="slack", surface="network", account_domain="gmail.com",
+                severity="warn", source="sentinelone_bridge"),
+    ])["personal_accounts"]
+    assert len(rows) == 1
+    assert rows[0]["account_domain"] == "gmail.com"
+    assert rows[0]["tool"] == "claude-code"
+
+
+def test_personal_accounts_aggregate_first_and_last_seen():
+    """Repeated findings for the same account on the same tool are one row.
+    Counting them separately would make a throttled heartbeat look like
+    repeated signups."""
+    rows = derive.graph_from([
+        finding(account_domain="gmail.com", severity="warn",
+                reported_at="2026-08-09T17:31:00Z"),
+        finding(account_domain="gmail.com", severity="warn",
+                reported_at="2026-07-28T09:12:00Z"),
+    ])["personal_accounts"]
+    assert len(rows) == 1
+    assert rows[0]["findings"] == 2
+    assert rows[0]["first_seen"] == "2026-07-28T09:12:00Z"
+    assert rows[0]["last_seen"] == "2026-08-09T17:31:00Z"
+
+
+def test_personal_accounts_separate_rows_per_tool_and_device():
+    """One person signing into two tools is two things to follow up, not one
+    account with a longer attribute list."""
+    rows = derive.graph_from([
+        finding(tool="chatgpt", surface="browser", account_domain="gmail.com",
+                severity="warn", source="browser_extension"),
+        finding(tool="claude", surface="browser", account_domain="gmail.com",
+                severity="warn", source="browser_extension"),
+        finding(tool="chatgpt", surface="browser", device="SERIAL2",
+                account_domain="gmail.com", severity="warn",
+                source="browser_extension"),
+    ])["personal_accounts"]
+    assert len(rows) == 3
+
+
+# ----------------------------------------------------------- overview widgets
+
+
+def _widgets_for(spec):
+    """The parser reads module-level config, so set it and reload."""
+    import importlib
+    import os
+    os.environ["PORTAL_AUTH"] = "none"
+    os.environ["OVERVIEW_WIDGETS"] = spec
+    import app.main as main
+    importlib.reload(main)
+    return main._widgets()
+
+
+def test_unknown_widget_is_reported_not_dropped():
+    """A widget that silently does not appear looks identical to one that
+    appeared with nothing to show, which sends someone debugging their data
+    instead of their config."""
+    out = _widgets_for("stat_row,not_a_widget")
+    assert out[0] == {"kind": "stat_row"}
+    assert out[1]["kind"] == "error"
+    assert "not_a_widget" in out[1]["error"]
+    assert "stat_row" in out[1]["error"], "the error should list what is valid"
+
+
+def test_no_widget_config_gives_a_usable_default():
+    """An empty landing page is a worse first impression than an opinionated
+    one, and a deployer who has not chosen yet has not chosen 'nothing'."""
+    out = _widgets_for("")
+    assert out
+    assert all(w["kind"] != "error" for w in out)
+
+
+def test_grafana_widget_keeps_its_reference():
+    out = _widgets_for("grafana:ai-usage-over-time")
+    assert out == [{"kind": "grafana", "ref": "ai-usage-over-time"}]
+
+
+# ------------------------------------------------------------- MCP servers
+
+
+def test_mcp_counts_servers_not_tools():
+    """An MCP server is the unit of exposure: it holds its own credentials and
+    reaches what it was pointed at whether or not the configuring tool is
+    open. One server reached by two tools is one thing to assess."""
+    rows = derive.graph_from([
+        finding(tool="claude-code-mcp", surface="mcp", device="S1",
+                evidence=".claude.json mcpServers: figma,context7"),
+        finding(tool="cursor-mcp", surface="mcp", device="S2",
+                evidence=".cursor/mcp.json mcpServers: figma"),
+    ])["mcp_servers"]
+    by = {r["server"]: r for r in rows}
+    assert set(by) == {"figma", "context7"}
+    assert len(by["figma"]["devices"]) == 2
+    assert by["figma"]["tools"] == ["claude-code-mcp", "cursor-mcp"]
+
+
+def test_mcp_reads_the_legacy_tool_name_format():
+    """Loki holds findings from before the server list moved out of the tool
+    name, for as long as the lookback window. Reading only the current format
+    would make the estate look like it shrank on the day of the fix."""
+    rows = derive.graph_from([
+        finding(tool="claude-code-mcp:figma,context7", surface="mcp",
+                device="S1", evidence=".claude.json mcpServers"),
+    ])["mcp_servers"]
+    by = {r["server"]: r for r in rows}
+    assert set(by) == {"figma", "context7"}
+    assert by["figma"]["tools"] == ["claude-code-mcp"], \
+        "the tool should be the base name, not the name with servers appended"
+
+
+def test_mcp_finding_with_no_server_list_is_still_counted():
+    """Something configured MCP and the detail did not survive. Dropping it
+    would understate the estate, which is the failure mode this whole project
+    is about."""
+    rows = derive.graph_from([
+        finding(tool="claude-code-mcp", surface="mcp", device="S1",
+                evidence="config file present"),
+    ])["mcp_servers"]
+    assert len(rows) == 1
+    assert rows[0]["server"] == "(unnamed)"

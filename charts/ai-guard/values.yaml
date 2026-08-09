@@ -145,6 +145,20 @@ portal:
   # url is the URL a BROWSER reaches Grafana on, not one resolvable inside the
   # cluster: the frames are loaded by the browser.
   #
+  # Which widgets the overview shows, in order. A deployment decision rather
+  # than a per-user one: the portal holds no state and has no users to hold it
+  # against, so this is the level at which an organisation shapes its landing
+  # page without the portal growing a database and an identity model.
+  #
+  # Known widgets: stat_row, top_tools, recent_personal_accounts,
+  # detection_coverage, source_health. A grafana:<panel title> entry embeds a
+  # panel named in grafana.panels below. An unknown name renders an error card
+  # naming what is valid, rather than quietly not appearing.
+  #
+  # Empty means a sensible default rather than an empty page.
+  overview:
+    widgets: []
+
   # Panel ids are not knowable until Grafana is running with data, so this is
   # usually a second pass. See the chart README.
   grafana:
