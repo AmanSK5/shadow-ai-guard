@@ -120,7 +120,17 @@ function showFreshness() {
   window._freshTimer = setInterval(tick, 5000);
 }
 const app = document.getElementById('app'), q = document.getElementById('q');
-let view = 'setup', detail = null, filter = '';
+// The view lives in the URL fragment. A reload landing back on Setup loses
+// where you were, and storing it would need somewhere to store it; the
+// fragment is free, survives a reload, and makes a view linkable to a
+// colleague. An unknown fragment falls back rather than rendering nothing.
+const VIEWS = ['overview','tools','people','devices','personal','mcp',
+               'setup','coverage','dashboard','settings'];
+const fromHash = () => {
+  const h = (location.hash || '').replace(/^#/, '');
+  return VIEWS.includes(h) ? h : 'setup';
+};
+let view = fromHash(), detail = null, filter = '';
 
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const ents = o => Object.entries(o || {});
@@ -201,9 +211,13 @@ const WIDGETS = {
       "${esc(w.ref)}". Named here but not defined there, so there is nothing
       to draw.</div></div>`;
     const q = 'orgId=1&theme=dark&from=now-7d&to=now&kiosk';
-    return `<div class="wcard w4"><h3>${esc(p.title || w.ref)}</h3>
+    // No heading of our own. The panel draws its own, from the dashboard, so a
+    // second one is both duplicated and less trustworthy: ours comes from
+    // GRAFANA_PANELS, which is a snapshot of a title someone can rename in
+    // Grafana at any time.
+    return `<div class="wcard w4" style="padding:10px">
       <iframe src="${esc(base)}/d-solo/${esc(p.uid)}/?${q}&panelId=${esc(p.panel_id)}"
-        style="width:100%;height:190px;border:0;border-radius:6px;background:var(--sf2)"
+        style="width:100%;height:210px;border:0;border-radius:6px;background:var(--sf2)"
         title="${esc(p.title || 'Grafana panel')}"></iframe></div>`;
   },
 
@@ -636,7 +650,11 @@ function drawNav() {
     }).join('')
   ).join('');
   n.querySelectorAll('button').forEach(b => b.onclick = () => {
-    view = b.dataset.v; detail = null; drawNav(); render();
+    view = b.dataset.v; detail = null;
+    // Replace rather than push: clicking through the nav should not fill the
+    // back button with every tab you glanced at.
+    history.replaceState(null, '', '#' + view);
+    drawNav(); render();
   });
   const fv = document.getElementById('footver');
   if (fv && CFG.version) fv.textContent = 'v' + CFG.version;
@@ -655,6 +673,11 @@ async function render() {
                     dashboard, personal, mcp})[view]();
 }
 function open_(kind, key) { detail = kind ? [kind, key] : null; render(); window.scrollTo(0,0); }
+// Someone editing the fragment, or arriving on a link to a view.
+window.addEventListener('hashchange', () => {
+  const h = fromHash();
+  if (h !== view) { view = h; detail = null; drawNav(); render(); }
+});
 q.oninput = e => { filter = e.target.value.toLowerCase(); detail = null; render(); };
 document.getElementById('refresh').onclick = () => load(true);
 load();
