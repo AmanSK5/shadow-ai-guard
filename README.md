@@ -28,7 +28,7 @@
 
 <p align="center">
   <img
-    src="assets/portal-setup.png"
+    src="assets/Shadow-AI-Guard-Portal.png"
     alt="Shadow AI Guard Setup"
     width="100%"
   />
@@ -149,14 +149,18 @@ made-up devices.
 Use the portal to explore people, devices, tools, source health and the
 relationships between them.
 
-https://github.com/user-attachments/assets/e955b71b-b5d0-4c01-8693-e2ddf486a916
+<p align="center" width="100%">
+<video src="https://github.com/user-attachments/assets/3546f20c-590a-4139-ac74-716c4a690f15" width="80%" controls></video>
+</p>
 
 ### Grafana
 
 Grafana is the deeper telemetry view: usage over time, personal versus work
 accounts, per-tool breakdowns and MCP findings.
 
-https://github.com/user-attachments/assets/f114e781-7053-4000-ba82-2b2d0fcc3e85
+<p align="center" width="100%">
+<video src="https://github.com/user-attachments/assets/f114e781-7053-4000-ba82-2b2d0fcc3e85" width="80%" controls></video>
+</p>
 
 ### Paste Guard
 
@@ -167,7 +171,9 @@ Paste a fake AWS key or payment card number and watch it get stopped before it
 reaches the page. The panel underneath shows the report that would have been
 sent, which never contains what you pasted.
 
-https://github.com/user-attachments/assets/16dd7857-935b-40c8-ad73-524b30271ec7
+<p align="center" width="100%">
+<video src="https://github.com/user-attachments/assets/16dd7857-935b-40c8-ad73-524b30271ec7" width="80%" controls></video>
+</p>
 
 When you want to run it for real, start with
 [docs/getting-started.md](docs/getting-started.md).
