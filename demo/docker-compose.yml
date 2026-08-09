@@ -155,6 +155,15 @@ services:
       # wants the default 300 so a seven-day query is not rerun per page load.
       CACHE_TTL_SECONDS: "10"
       LOOKBACK_HOURS: "168"
+      # Which widgets the overview draws, in order. Set here so the demo shows
+      # the feature rather than the default, and overridable from the shell:
+      #   OVERVIEW_WIDGETS=stat_row,top_tools docker compose up -d --force-recreate portal
+      #
+      # A grafana: entry refers to a panel in GRAFANA_PANELS below, by title or
+      # by panel id. Prefer the id where a title contains a comma, because this
+      # list is comma separated and the title would split into two entries that
+      # match nothing. GRAFANA_PANELS uses semicolons for that same reason.
+      OVERVIEW_WIDGETS: ${OVERVIEW_WIDGETS:-stat_row,top_tools,recent_personal_accounts,detection_coverage,source_health,grafana:31}
       # The browser loads these frames, so this is the URL you reach Grafana
       # on, not the one the portal container would use.
       GRAFANA_URL: "http://localhost:3000"
