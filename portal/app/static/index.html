@@ -24,9 +24,14 @@ nav .count{float:right;font-family:ui-monospace,monospace;font-size:11px;opacity
 .foot a:hover{color:var(--pri);border-bottom-color:color-mix(in oklch,var(--pri) 40%,transparent)}
 .topbar{display:flex;gap:14px;align-items:center;padding:12px 24px;border-bottom:1px solid var(--bd);position:sticky;top:0;background:var(--bg);z-index:5}
 main{padding:22px 24px;max-width:1180px}
-.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:10px;margin-bottom:10px}
-.w6{grid-column:span 6}.w4{grid-column:span 4}.w12{grid-column:span 12}
-@media(max-width:900px){.shell{grid-template-columns:1fr}aside{position:static;height:auto}.w6,.w4{grid-column:span 12}}
+/* Flex rather than a fixed 12 column grid. The widget list is a deployment
+   choice, so most counts do not divide evenly into a rigid grid and the last
+   row ends up with a hole in it. Growing the items instead means any number
+   fills its row. */
+.grid{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px}
+.grid>*{flex:1 1 auto;min-width:0}
+.w6{flex-basis:46%}.w4{flex-basis:30%}.w12{flex-basis:100%}
+@media(max-width:900px){.shell{grid-template-columns:1fr}aside{position:static;height:auto}.w6,.w4{flex-basis:100%}}
 .wcard{background:var(--sf);border:1px solid var(--bd);border-radius:10px;padding:14px 16px}
 .wcard h3{margin:0 0 8px;font-size:12px;font-family:ui-monospace,monospace;color:var(--mut);text-transform:uppercase;letter-spacing:.05em}
 .bar{display:flex;align-items:center;gap:8px;margin:5px 0;font-family:ui-monospace,monospace;font-size:12px}
