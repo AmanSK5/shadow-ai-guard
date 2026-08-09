@@ -1,7 +1,8 @@
 <a id="top"></a>
+
 <p align="center">
   <img
-    src="https://github.com/user-attachments/assets/ad101032-6054-4d89-ab12-2fb8e6d8eadf"
+    src="assets/shadow-ai-guard-title.png"
     alt="Shadow AI Guard"
     width="650"
   />
@@ -25,7 +26,13 @@
 
 ---
 
-![Shadow AI Guard Setup](https://github.com/user-attachments/assets/63c08128-fc5e-4056-9d49-2ac3fd6bf236)
+<p align="center">
+  <img
+    src="assets/portal-setup.png"
+    alt="Shadow AI Guard Setup"
+    width="100%"
+  />
+</p>
 
 > **Know what you can see, and what you can't.** Shadow AI Guard shows which detection sources are reporting, which are silent, and where your current visibility gaps are.
 
