@@ -99,6 +99,12 @@ finding here but not in Grafana or the portal**, the push to the log store is
 failing rather than the collector - look for `"kind": "error"` in the same
 logs, which names the URL and the likely cause.
 
+Nothing there? [Troubleshooting](../TROUBLESHOOTING.md) covers the usual
+reasons: a collector that printed nothing because the throttle suppressed a
+repeat, a receiver that accepted the finding but could not write it to Loki,
+and the parameters the macOS and Windows collectors need when you run them by
+hand rather than through Jamf or Intune.
+
 ## 3. Import the dashboard
 
 In Grafana, import `dashboards/ai-guard.json`. Set the datasource variables to

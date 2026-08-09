@@ -116,6 +116,10 @@ pushed because nothing is happening" from "everything is failing". Alert when
 `time() - aiguard_loki_push_last_success_timestamp` exceeds however long your
 estate can plausibly be silent.
 
+For failures outside this file, including collectors that report nothing,
+sources the portal lists as silent while they are sending, and the same
+machine appearing twice, see [Troubleshooting](../../TROUBLESHOOTING.md).
+
 ## Exposure and TLS
 
 Ports bind to loopback. That is not the finished state - the receiver has to be

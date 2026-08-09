@@ -159,6 +159,10 @@ almost every misconfiguration, the likely cause. A 404 usually means
 on: findings arrive irregularly, so a failure counter alone cannot tell
 "nothing is happening" from "everything is failing".
 
+For failures outside the log pipeline, including chart installs that stop on
+existing resources, `ImagePullBackOff`, and sources the portal lists as silent
+while they are sending, see [Troubleshooting](../../TROUBLESHOOTING.md).
+
 ## Then
 
 [Getting started](../getting-started.md) picks up here: rolling out a
