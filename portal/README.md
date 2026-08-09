@@ -76,6 +76,10 @@ about the estate.
 | `GRAFANA_PANELS` | no | `dashboardUid:panelId:Title`, semicolon separated |
 | `GRAFANA_DASHBOARD_UID` | no | embed a whole dashboard instead of panels |
 | `CACHE_TTL_SECONDS` | no | how long a derived graph is reused, default 30 |
+| `OVERVIEW_WIDGETS` | no | which widgets the overview shows, comma separated |
+| `DEPLOY_CHART_VERSION` | no | shown on the settings page, clearly unverified |
+| `DEPLOY_RELEASE` | no | as above |
+| `DEPLOY_NAMESPACE` | no | as above |
 
 ## Identity
 
@@ -146,6 +150,95 @@ assessment calls for it. The portal only reads it.
 
 The file is re-read whenever the derived graph is rebuilt, so an edit takes
 effect within `CACHE_TTL_SECONDS` (default 30) without a restart.
+
+## Sections
+
+| Section | What it answers |
+|---|---|
+| Overview | how the estate looks right now, in widgets you choose |
+| Tools | which AI tools appear, on how many devices, on which surfaces |
+| People | identities from cloud sources, and the devices an identity map attaches |
+| Devices | one row per machine, with each tool paired to the account it uses |
+| Personal accounts | every personal account seen, with first and last seen |
+| MCP servers | which MCP servers are configured, on which machines, by which tool |
+| Setup | which detection sources are reporting and which are silent |
+| Uncovered devices | machines a scanner knows about that no collector reports from |
+| Dashboard | Grafana, embedded |
+| Settings | what the portal can say about itself, for a support conversation |
+
+## Overview widgets
+
+`OVERVIEW_WIDGETS` is a comma separated list, drawn in order:
+
+```
+OVERVIEW_WIDGETS=stat_row,top_tools,recent_personal_accounts,detection_coverage
+```
+
+| Widget | Shows |
+|---|---|
+| `stat_row` | headline counts across the estate |
+| `top_tools` | tools by number of devices |
+| `recent_personal_accounts` | most recently seen personal accounts |
+| `detection_coverage` | how much of each surface is reporting |
+| `source_health` | sources listed as silent |
+| `grafana:<panel title>` | a panel named in `GRAFANA_PANELS` |
+
+Unset gives a sensible default rather than an empty page. An unknown name
+renders an error card naming what is valid, because a widget that silently does
+not appear looks identical to one that appeared with nothing to show, and that
+sends someone off debugging their data instead of their config.
+
+This is a deployment decision rather than a per-user one. The portal holds no
+state and has no users to hold it against, so an organisation shapes its landing
+page here and the portal stays something that can be deleted and reinstalled
+with nothing lost.
+
+## Personal accounts
+
+Its own section rather than a number on a summary page, because an approved
+tool signed into a personal account is still unmanaged data flow and an
+offboarding gap.
+
+"Personal" is the reporting source's judgement, not the portal's: the collector
+and the extension are told the corporate domains and decide at the point of
+detection. The portal does not re-derive it, because it may not hold the same
+list, and two definitions that disagree is worse than one that is occasionally
+coarse.
+
+Rows are keyed on the full tuple of person, account, tool and device. The same
+person signing into two tools is two things to follow up, not one account with
+a longer attribute list.
+
+## MCP servers
+
+Counted by server rather than by tool. An MCP server is a standing integration
+rather than an application someone opens: it holds its own credentials and can
+reach whatever it was pointed at whether or not the tool that configured it is
+in use.
+
+Server names come from the finding evidence. Two formats are read, because a
+Loki window holds both for a while: the current `mcpServers: figma,context7`,
+and the older form that folded the list into the tool name. That older form is
+why this exists at all, since every distinct combination of servers became a
+separate tool, and a machine with two servers looked unrelated to a machine
+with one of them.
+
+What a server can actually do wherever it points depends on the credentials it
+holds, which are not visible from here. The device count is reach, not risk.
+
+## Settings and diagnostics
+
+Read only, and split in two on purpose.
+
+Everything under Application, Loki, Registry and Access is something the portal
+verified about itself: it either reached Loki or it did not, loaded the registry
+or it did not. Anything it was merely told is grouped separately and labelled
+"Provided by deployment configuration", so a chart version nobody updated is
+never presented as a fact something checked. A Compose deployment leaves those
+fields empty rather than guessing.
+
+Credential values are never shown. Whether one is configured is useful; what it
+is, is not.
 
 ## Setup view
 
