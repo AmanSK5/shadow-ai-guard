@@ -72,6 +72,21 @@ spec:
               value: {{ .Values.portal.lookbackHours | quote }}
             - name: CACHE_TTL_SECONDS
               value: {{ .Values.portal.cacheTtlSeconds | quote }}
+            {{- with .Values.portal.overview.widgets }}
+            - name: OVERVIEW_WIDGETS
+              value: {{ join "," . | quote }}
+            {{- end }}
+            # Facts about this deployment that the portal cannot verify for
+            # itself. Passed in so a support conversation can start from what
+            # is actually running, and shown under a separate heading in the
+            # UI so a value nobody updated is never mistaken for one something
+            # checked.
+            - name: DEPLOY_CHART_VERSION
+              value: {{ printf "%s-%s" .Chart.Name .Chart.Version | quote }}
+            - name: DEPLOY_RELEASE
+              value: {{ .Release.Name | quote }}
+            - name: DEPLOY_NAMESPACE
+              value: {{ .Release.Namespace | quote }}
             {{- with .Values.portal.identityMap.existingConfigMap }}
             - name: IDENTITY_MAP
               value: /etc/ai-guard-identity/identity-map.csv

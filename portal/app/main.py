@@ -161,6 +161,20 @@ GRAFANA_PANELS = os.environ.get("GRAFANA_PANELS", "")
 GRAFANA_DASHBOARD_UID = os.environ.get("GRAFANA_DASHBOARD_UID", "")
 CACHE_TTL = int(os.environ.get("CACHE_TTL_SECONDS", "30"))
 
+# Which widgets the overview shows, in order. A deployment decision rather than
+# a per-user one: the portal holds no state and has no users to hold it
+# against, so this is the level at which an organisation can shape its landing
+# page without the portal growing a database and an identity model.
+OVERVIEW_WIDGETS = os.environ.get("OVERVIEW_WIDGETS", "")
+
+# Facts about how this was deployed that the portal cannot verify for itself.
+# Surfaced separately and labelled as such, because a value the deployment
+# claims is not the same kind of thing as a value the portal observed, and
+# presenting them together would make the whole page less trustworthy.
+DEPLOY_CHART = os.environ.get("DEPLOY_CHART_VERSION", "")
+DEPLOY_RELEASE = os.environ.get("DEPLOY_RELEASE", "")
+DEPLOY_NAMESPACE = os.environ.get("DEPLOY_NAMESPACE", "")
+
 STATIC = Path(__file__).parent / "static"
 
 # Set at build time from the release tag, or the commit for a build off main.
@@ -174,6 +188,14 @@ app = FastAPI(title="ai-guard portal", version=APP_VERSION,
 # from Loki on the next miss and on every restart. Without it, a 7 day query
 # runs on every page load, which is slow for the reader and unkind to Loki.
 _cache: dict = {}
+
+STARTED_AT = time.time()
+
+# When Loki last answered. The distinction that matters on a status page is
+# between "nothing is happening" and "we cannot see whether anything is
+# happening", and only this tells them apart.
+_last_loki_ok: float = 0.0
+_last_loki_error: str = ""
 
 
 def _cached(key, hours, builder):
@@ -193,9 +215,14 @@ def _findings(hours):
             detail="LOKI_URL is not set. The portal reads findings from Loki; "
                    "point it at the same Loki the receiver writes to.",
         )
+    global _last_loki_ok, _last_loki_error
     try:
-        return derive.fetch_from_loki(LOKI_URL, hours, LOKI_TOKEN)
+        out = derive.fetch_from_loki(LOKI_URL, hours, LOKI_TOKEN)
+        _last_loki_ok = time.time()
+        _last_loki_error = ""
+        return out
     except Exception as e:
+        _last_loki_error = str(e)
         # Say which of the two this is. A portal that shows an empty graph
         # when it cannot reach Loki is indistinguishable from one reporting a
         # clean estate, which is the failure this project keeps finding.
@@ -242,6 +269,101 @@ def config(_=Depends(require_auth)):
         "identity_map_configured": bool(IDENTITY_MAP and Path(IDENTITY_MAP).exists()),
         "cache_ttl_seconds": CACHE_TTL,
         "version": APP_VERSION,
+        "overview_widgets": _widgets(),
+    }
+
+
+# The widgets the overview knows how to draw. A name not in here is a typo or
+# a value written against a different version, and either way the honest thing
+# is to say so: a widget that silently does not appear looks identical to one
+# that appeared and had nothing to show, which is the confusion this project
+# exists to remove.
+KNOWN_WIDGETS = {
+    "stat_row": "Headline counts across the estate",
+    "top_tools": "Tools by number of devices",
+    "recent_personal_accounts": "Most recently seen personal accounts",
+    "detection_coverage": "How much of each surface is reporting",
+    "source_health": "Sources reporting versus silent",
+}
+
+DEFAULT_WIDGETS = ["stat_row", "top_tools", "recent_personal_accounts",
+                   "detection_coverage"]
+
+
+def _widgets():
+    """Parse OVERVIEW_WIDGETS into what the browser should draw.
+
+    grafana:<panel-title> entries are resolved against GRAFANA_PANELS rather
+    than repeating panel ids in two places.
+    """
+    raw = [w.strip() for w in OVERVIEW_WIDGETS.split(",") if w.strip()]
+    if not raw:
+        return [{"kind": w} for w in DEFAULT_WIDGETS]
+    out = []
+    for w in raw:
+        if w.startswith("grafana:"):
+            out.append({"kind": "grafana", "ref": w.split(":", 1)[1]})
+        elif w in KNOWN_WIDGETS:
+            out.append({"kind": w})
+        else:
+            out.append({
+                "kind": "error",
+                "error": "unknown widget %r. Known widgets: %s"
+                         % (w, ", ".join(sorted(KNOWN_WIDGETS))),
+            })
+    return out
+
+
+@app.get("/api/diagnostics")
+def diagnostics(_=Depends(require_auth)):
+    """What the portal can say about itself, for a support conversation.
+
+    Everything under "runtime" is observed: the portal either did the thing or
+    it did not. Everything under "deployment" was passed in and is labelled, so
+    a chart version nobody updated cannot be mistaken for a chart version
+    something checked.
+
+    No secret values, ever. Whether a credential is configured is useful.
+    What it is, is not.
+    """
+    reg_ok, reg_tools, reg_err = False, 0, ""
+    try:
+        dm = derive.load_domain_map(REGISTRY_PATH)
+        reg_ok = bool(dm)
+        reg_tools = len(set(dm.values())) if dm else 0
+    except Exception as e:  # pragma: no cover - defensive
+        reg_err = str(e)
+
+    return {
+        "runtime": {
+            "version": APP_VERSION,
+            "started_at": STARTED_AT,
+            "uptime_seconds": round(time.time() - STARTED_AT),
+            "loki_configured": bool(LOKI_URL),
+            "loki_last_success": _last_loki_ok or None,
+            "loki_last_error": _last_loki_error,
+            "lookback_hours": LOOKBACK_HOURS,
+            "cache_ttl_seconds": CACHE_TTL,
+            "auth_mode": PORTAL_AUTH or "basic",
+            "auth_configured": bool(PORTAL_AUTH != "none"),
+            "registry_loaded": reg_ok,
+            "registry_tools": reg_tools,
+            "registry_error": reg_err,
+            "registry_path": REGISTRY_PATH,
+            "identity_map_configured": bool(
+                IDENTITY_MAP and Path(IDENTITY_MAP).exists()),
+            "grafana_configured": bool(GRAFANA_URL),
+            "grafana_panels": len([w for w in _widgets()
+                                   if w["kind"] == "grafana"]),
+            "overview_widgets": _widgets(),
+        },
+        # Passed in by whatever deployed this. The portal cannot check any of
+        # it. Empty on a deployment that does not set it, rather than guessed.
+        "deployment": {
+            "chart_version": DEPLOY_CHART,
+            "release": DEPLOY_RELEASE,
+            "namespace": DEPLOY_NAMESPACE,
+        },
     }
 
 
@@ -311,6 +433,15 @@ def suggest_identities(hours: float = Query(default=None, gt=0, le=24 * 90),
 @app.get("/")
 def index(_=Depends(require_auth)):
     return FileResponse(STATIC / "index.html")
+
+
+# Served by name rather than mounting the whole static directory. A mount would
+# also expose index.html without the auth dependency above, and the point of
+# the dependency is that this portal does not answer to anyone who has not
+# authenticated.
+@app.get("/logo.png")
+def logo(_=Depends(require_auth)):
+    return FileResponse(STATIC / "logo.png", media_type="image/png")
 
 
 # There is no /static route, deliberately. The UI is one self-contained file
