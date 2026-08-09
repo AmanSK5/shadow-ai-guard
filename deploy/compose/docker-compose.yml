@@ -97,6 +97,16 @@ services:
       GRAFANA_URL: ${GRAFANA_URL:-}
       GRAFANA_PANELS: ${GRAFANA_PANELS:-}
       GRAFANA_DASHBOARD_UID: ${GRAFANA_DASHBOARD_UID:-}
+      # Which widgets the overview shows, in order. Comma separated. Known
+      # names: stat_row, top_tools, recent_personal_accounts,
+      # detection_coverage, source_health, and grafana:<panel title> for a
+      # panel named in GRAFANA_PANELS. Empty gives a sensible default rather
+      # than an empty page; an unknown name renders an error card naming what
+      # is valid, rather than quietly not appearing.
+      OVERVIEW_WIDGETS: ${OVERVIEW_WIDGETS:-}
+      # There is no chart here, so the portal's settings page shows this and
+      # leaves the Kubernetes-only fields empty rather than guessing at them.
+      DEPLOY_CHART_VERSION: ${DEPLOY_CHART_VERSION:-compose}
     volumes:
       - registry-dist:/etc/ai-guard:ro
       - ./secrets/portal_password:/run/secrets/portal_password:ro
