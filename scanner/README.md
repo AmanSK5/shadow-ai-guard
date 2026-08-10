@@ -120,7 +120,13 @@ Required Graph API application permissions:
 | `Application.Read.All` | Entra | List service principals and consent grants |
 | `Mail.ReadBasic.All` | Exchange | Message metadata only, for signup email detection |
 | `DeviceManagementApps.Read.All` | Intune | Read discovered apps inventory |
+| `DeviceManagementManagedDevices.Read.All` | Intune | Per-device attribution: serials, users and sync times |
 | `User.Read.All` | All | Enumerate users |
+
+Without `DeviceManagementManagedDevices.Read.All` the Intune scanner still
+runs, but every finding degrades to an aggregate device count with no user and
+no device, and the scan reports that it happened. A permissions gap should not
+be indistinguishable from an estate where nobody can be attributed.
 
 ## Policy configuration
 

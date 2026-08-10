@@ -41,10 +41,24 @@ scanners:
   # Intune — discovered apps on Windows devices (optional)
   # SentinelOne already catches active usage, so this is supplementary
   # Uses the same app registration as Entra
+  #
+  # Needs DeviceManagementManagedDevices.Read.All as well as
+  # DeviceManagementApps.Read.All. Without it, findings degrade to aggregate
+  # counts with no user or device, and the scan says so rather than passing
+  # them off as a clean result.
   intune:
     enabled: true
     credential_env_prefix: AIGUARD_ENTRA
-    options: {}
+    options:
+      # Skip devices whose last sync is older than this. Intune keeps a device
+      # record until someone removes it, so a laptop that left with a leaver
+      # still reports the AI apps that were on it. 0 disables the filter.
+      stale_device_days: 90
+      # Seconds between per-app device lookups. Graph throttles
+      # detectedApps/{id}/managedDevices hard: twenty one matched apps queried
+      # back to back had most of their calls refused. Costs about a second per
+      # matched app. 0 is right for a tenant small enough not to be throttled.
+      app_lookup_delay_seconds: 1.0
 
   # JAMF Pro — app inventory on Macs (optional)
   # SentinelOne already catches active usage, so this is supplementary
