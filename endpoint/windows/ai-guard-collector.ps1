@@ -579,8 +579,14 @@ foreach ($m in $Registry.mcp) {
     try {
         $names = Get-McpServerNames -Path $f
         if ($names) {
-            Send-FindingOnce -Surface 'mcp' -Tool "$($m.tool)-mcp:$names" -Account '' `
-                -Evidence "$($m.path) mcpServers"
+            # The tool is the tool. The server list is evidence, not
+            # identity: folding it into the name made every distinct
+            # combination of servers a separate tool, so a machine with
+            # figma and context7 looked unrelated to a machine with figma
+            # alone. About twenty two near-identical rows where there
+            # should have been three.
+            Send-FindingOnce -Surface 'mcp' -Tool "$($m.tool)-mcp" -Account '' `
+                -Evidence "$($m.path) mcpServers: $names"
         }
     } catch {
         Write-Output "ai-guard PARSE-FAILED: mcp $f ($($_.Exception.Message))"

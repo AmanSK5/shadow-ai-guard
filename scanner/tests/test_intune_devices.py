@@ -89,6 +89,11 @@ def test_genuinely_empty_is_not_reported_as_an_error(monkeypatch):
 
 
 def test_successful_lookup_produces_per_device_findings(monkeypatch):
+    """Note this exercises the fallback: _scan_discovered_apps is called
+    without a device map, so findings carry the sub-resource's device name
+    rather than a serial. Serial identity is covered in
+    test_intune_device_map.py, which builds the map first as scan() does.
+    """
     _patch_paginate(monkeypatch, DEVICES)
     findings, errors = asyncio.run(_scanner()._scan_discovered_apps(client=None))
 
