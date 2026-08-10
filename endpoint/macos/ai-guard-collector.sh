@@ -588,7 +588,12 @@ while IFS="$SEP" read -r _kind tool path os; do
   f=$(resolve_under_home "$HOME_DIR/$path") || continue
   [ -f "$f" ] || continue
   servers=$(json_keys "$f" mcpServers)
-  [ -n "$servers" ] && report_once "mcp" "${tool}-mcp:$servers" "" "$path mcpServers"
+  # The tool is the tool. The server list is evidence, not identity: folding it
+  # into the name made every distinct combination of servers a separate tool,
+  # so a machine with figma and context7 looked unrelated to a machine with
+  # figma alone. About twenty two near-identical rows where there should have
+  # been three.
+  [ -n "$servers" ] && report_once "mcp" "${tool}-mcp" "" "$path mcpServers: $servers"
 done < <(printf '%s\n' "$REG_TSV" | /usr/bin/grep "^mcp${SEP}")
 
 # ---------------------------------------------------------------- summary ---

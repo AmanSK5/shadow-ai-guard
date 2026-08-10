@@ -98,6 +98,8 @@ class SentinelOneScanner(BaseScanner):
         super().__init__(registry, config)
         self._auth: Optional[SentinelOneAuth] = None
         self._endpoint_users: dict[str, str] = {}
+        # computer name -> hardware serial. See _device_id below for why.
+        self._endpoint_serials: dict[str, str] = {}
 
     def check_prerequisites(self) -> tuple[bool, str]:
         try:
@@ -117,8 +119,10 @@ class SentinelOneScanner(BaseScanner):
                 self.config.options.get("lookback_days", 14), 14
             )
 
-            # Build endpoint -> user map from Agents API
-            self._endpoint_users = await self._build_endpoint_user_map(client)
+            # Build endpoint -> user and endpoint -> serial maps from the
+            # Agents API. Both come from the same call.
+            self._endpoint_users, self._endpoint_serials = (
+                await self._build_endpoint_user_map(client))
 
             # Shared seen set: tracks (endpoint, matched_domain) pairs
             # across both scans so we record at most one finding per
@@ -141,12 +145,20 @@ class SentinelOneScanner(BaseScanner):
         return result
 
     # ─────────────────────────────────────────────
-    # Agent inventory (endpoint -> user mapping)
+    # Agent inventory (endpoint -> user and serial mapping)
     # ─────────────────────────────────────────────
 
-    async def _build_endpoint_user_map(self, client) -> dict[str, str]:
-        """Build a map of endpoint name -> last logged in user via Agents API."""
+    async def _build_endpoint_user_map(
+        self, client
+    ) -> tuple[dict[str, str], dict[str, str]]:
+        """Endpoint name -> last logged in user, and -> hardware serial.
+
+        Both from the same Agents call, because the serial is what every
+        other source keys a device on and the DV events only carry the
+        computer name.
+        """
         endpoint_users = {}
+        endpoint_serials = {}
         cursor = None
         while True:
             params = {
@@ -164,13 +176,33 @@ class SentinelOneScanner(BaseScanner):
             for agent in data.get("data", []):
                 name = agent.get("computerName", "")
                 user = agent.get("lastLoggedInUserName", "")
+                serial = (agent.get("serialNumber") or "").strip()
                 if name and user:
                     endpoint_users[name] = user
+                if name and serial:
+                    endpoint_serials[name] = serial
 
             cursor = data.get("pagination", {}).get("nextCursor")
             if not cursor:
                 break
-        return endpoint_users
+        return endpoint_users, endpoint_serials
+
+    def _device_id(self, endpoint_name: str) -> str:
+        """The serial for an endpoint, or its computer name if unknown.
+
+        Device identity is the hardware serial, the same rule jamf.py
+        follows and for the same reason: the endpoint collectors and the
+        browser extension both report serials, so a machine reported here
+        by computer name appears twice on any view that joins on device.
+
+        The fallback is the computer name rather than nothing, because a
+        finding with no device at all is worse than one that joins
+        imperfectly. The agents call filters on isActive, so an endpoint
+        whose agent has gone quiet will not be in the map.
+        """
+        if not endpoint_name:
+            return endpoint_name
+        return self._endpoint_serials.get(endpoint_name, endpoint_name)
 
     # ─────────────────────────────────────────────
     # Scan 1: Shadow AI discovery
@@ -253,7 +285,7 @@ class SentinelOneScanner(BaseScanner):
                         source=DetectionSource.SENTINELONE_DNS,
                         risk_tier=service.risk_tier,
                         user_upn=self._normalize_user(user, endpoint_name),
-                        device_name=endpoint_name,
+                        device_name=self._device_id(endpoint_name),
                         detail=detail,
                         timestamp=_parse_ts(ts),
                         raw_evidence={
@@ -357,7 +389,7 @@ class SentinelOneScanner(BaseScanner):
                         source=DetectionSource.SENTINELONE_BRIDGE,
                         risk_tier="high",
                         user_upn=self._normalize_user(user, endpoint_name),
-                        device_name=endpoint_name,
+                        device_name=self._device_id(endpoint_name),
                         detail=f'Bridge: "{process_name}" resolving {dns_request}',
                         timestamp=_parse_ts(ts),
                         raw_evidence={
