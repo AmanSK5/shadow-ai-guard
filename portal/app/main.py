@@ -62,6 +62,7 @@ import logging
 import os
 import secrets
 import time
+import urllib.parse
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Query
@@ -198,6 +199,31 @@ _last_loki_ok: float = 0.0
 _last_loki_error: str = ""
 
 
+def _redact_url(url):
+    """A URL with any embedded credentials removed.
+
+    LOKI_URL is operator-supplied and http://user:pass@host is a legal way to
+    supply it. Naming which Loki failed is genuinely useful in an error, so the
+    host stays and only the userinfo goes. Returns a placeholder rather than
+    the raw string if it will not parse, because a URL that cannot be parsed
+    cannot be confirmed safe to echo.
+    """
+    if not url:
+        return ""
+    try:
+        parts = urllib.parse.urlsplit(url)
+    except ValueError:
+        return "<unparseable url>"
+    if not parts.hostname:
+        return "<redacted>"
+    netloc = parts.hostname
+    if parts.port:
+        netloc = "%s:%d" % (netloc, parts.port)
+    return urllib.parse.urlunsplit(
+        (parts.scheme, netloc, parts.path, "", "")
+    )
+
+
 def _cached(key, hours, builder):
     now = time.time()
     hit = _cache.get(key)
@@ -222,13 +248,24 @@ def _findings(hours):
         _last_loki_error = ""
         return out
     except Exception as e:
-        _last_loki_error = str(e)
+        # The detail goes to the log, not to the caller. An exception message
+        # is written for an operator reading a stack trace, not for an HTTP
+        # body, and LOKI_URL may carry credentials in its userinfo.
+        log.warning(
+            "Loki read failed for %s: %s", _redact_url(LOKI_URL), e,
+            exc_info=True,
+        )
+        _last_loki_error = type(e).__name__
         # Say which of the two this is. A portal that shows an empty graph
         # when it cannot reach Loki is indistinguishable from one reporting a
-        # clean estate, which is the failure this project keeps finding.
+        # clean estate, which is the failure this project keeps finding. The
+        # redacted host and the exception type carry that distinction; the
+        # message behind it is one kubectl logs away.
         raise HTTPException(
             status_code=502,
-            detail="Could not read findings from Loki at %s: %s" % (LOKI_URL, e),
+            detail="Could not read findings from Loki at %s (%s). "
+                   "See the portal logs for detail."
+                   % (_redact_url(LOKI_URL), type(e).__name__),
         )
 
 
@@ -332,7 +369,14 @@ def diagnostics(_=Depends(require_auth)):
         reg_ok = bool(dm)
         reg_tools = len(set(dm.values())) if dm else 0
     except Exception as e:  # pragma: no cover - defensive
-        reg_err = str(e)
+        # A parse failure names the file, the line and the column. That is the
+        # right thing in a log and the wrong thing in a response body: the path
+        # is operator-supplied through REGISTRY_PATH. registry_loaded already
+        # carries the signal, so the type is enough to act on.
+        log.warning(
+            "registry load failed from %s: %s", REGISTRY_PATH, e, exc_info=True
+        )
+        reg_err = type(e).__name__
 
     return {
         "runtime": {
