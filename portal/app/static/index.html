@@ -22,8 +22,15 @@ nav .count{float:right;font-family:ui-monospace,monospace;font-size:11px;opacity
 .foot{padding:14px 18px 2px;border-top:1px solid var(--bd);margin-top:14px;font-size:11px;line-height:1.7;color:var(--mut)}
 .foot a{color:var(--mut);text-decoration:none;border-bottom:1px solid transparent}
 .foot a:hover{color:var(--pri);border-bottom-color:color-mix(in oklch,var(--pri) 40%,transparent)}
-.topbar{display:flex;gap:14px;align-items:center;padding:12px 24px;border-bottom:1px solid var(--bd);position:sticky;top:0;background:var(--bg);z-index:5}
-main{padding:22px 24px;max-width:1180px}
+.topbar{display:flex;gap:14px;align-items:center;padding:12px 24px;border-bottom:1px solid var(--bd);position:sticky;top:0;background:var(--bg);z-index:5;max-width:1440px;margin:0 auto}
+/* Centred, and the topbar carries the same cap and margin. Left-aligned at
+   1180 the topbar border ran to the window edge while the content stopped
+   520px short of it on a 1920 screen, which read as a broken layout rather
+   than a margin. Removing the cap instead is worse: table{width:100%} then
+   spreads five columns over 2292px on a 2560 screen and puts last seen
+   1873px from the start of the row, for no gain, because the widest cell is
+   already capped at 52ch. */
+main{padding:22px 24px;max-width:1440px;margin:0 auto}
 /* Flex rather than a fixed 12 column grid. The widget list is a deployment
    choice, so most counts do not divide evenly into a rigid grid and the last
    row ends up with a hole in it. Growing the items instead means any number
@@ -58,7 +65,7 @@ td{padding:7px 10px 7px 0;border-bottom:1px solid color-mix(in oklch,var(--bd) 4
 .note{background:color-mix(in oklch,var(--warn) 10%,transparent);border:1px solid color-mix(in oklch,var(--warn) 40%,transparent);color:var(--warn);border-radius:8px;padding:12px 14px;margin-bottom:18px;font-size:13px}
 .back{background:none;border:1px solid var(--bd);color:var(--mut);border-radius:6px;padding:5px 10px;cursor:pointer;font:inherit;margin-bottom:14px}
 h2{font-size:19px;margin:0 0 4px}
-.lede{color:var(--mut);font-size:13px;margin:0 0 16px}
+.lede{color:var(--mut);font-size:13px;margin:0 0 16px;max-width:80ch}
 input{background:var(--sf2);border:1px solid var(--bd);color:var(--fg);border-radius:6px;padding:6px 10px;font:inherit;min-width:220px}
 </style>
 <div class="shell">
