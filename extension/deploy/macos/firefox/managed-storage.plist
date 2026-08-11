@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  INSTALL and CONFIG for Firefox on macOS, in one payload.
+
+  Preference domain: org.mozilla.firefox
+
+  Unlike the Chromium browsers, which need one payload to install and a second
+  under a per-extension domain to configure, Firefox reads both from here.
+
+  Replace:
+    the gecko id      - must match browser_specific_settings.gecko.id
+    install_url       - the public URL of the SIGNED .xpi
+    reportEndpoint    - your receiver's ingest URL
+    authToken         - matches the receiver's AUTH_TOKEN
+    deviceIdentifier  - on Jamf, $SERIALNUMBER is substituted per machine
+    allowedDomains    - your corporate email domains
+
+  Two differences from the Chromium payloads, both easy to get wrong:
+
+    install_url, not update_url. Firefox installs from the .xpi directly and
+    then polls the manifest's own update_url for new versions. There is no
+    override_update_url equivalent and none is needed.
+
+    Managed storage lives under 3rdparty > Extensions > the GECKO id, not the
+    Chrome 32-character id. The two ids are different strings for the same
+    extension.
+
+  deviceIdentifier should be the hardware serial, not the hostname. Every other
+  source keys a device on its serial, so one that sends a hostname splits that
+  machine into two on any view that groups by device.
+
+  Firefox refuses unsigned extensions on release builds. install_url must point
+  at an .xpi signed by Mozilla, obtained by submitting to addons.mozilla.org as
+  a self-distributed add-on. See extension/README.md.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>EnterprisePoliciesEnabled</key>
+    <true/>
+
+    <key>ExtensionSettings</key>
+    <dict>
+        <key>ai-guard@example.com</key>
+        <dict>
+            <key>installation_mode</key>
+            <string>force_installed</string>
+            <key>install_url</key>
+            <string>https://YOUR_HOST/ai-guard-1.0.0.xpi</string>
+            <key>updates_disabled</key>
+            <false/>
+        </dict>
+    </dict>
+
+    <key>3rdparty</key>
+    <dict>
+        <key>Extensions</key>
+        <dict>
+            <key>ai-guard@example.com</key>
+            <dict>
+                <key>reportEndpoint</key>
+                <string>https://ai-guard.example.com/report</string>
+                <key>authToken</key>
+                <string>REPLACE_WITH_TOKEN</string>
+                <key>deviceIdentifier</key>
+                <string>$SERIALNUMBER</string>
+                <key>pasteGuardMode</key>
+                <string>warn</string>
+                <key>allowedDomains</key>
+                <array>
+                    <string>example.com</string>
+                </array>
+                <key>classificationMarkings</key>
+                <array>
+                    <string>Client Confidential</string>
+                    <string>Internal Confidential</string>
+                    <string>Internal Use Only</string>
+                    <string>Strictly Confidential</string>
+                    <string>Commercial in Confidence</string>
+                </array>
+            </dict>
+        </dict>
+    </dict>
+</dict>
+</plist>
