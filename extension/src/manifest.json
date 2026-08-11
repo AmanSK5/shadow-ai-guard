@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AI Guard",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Flags AI tools signed in with a non-corporate account and stops secrets being pasted into them. Reports detector ids and account domains only, never content.",
   "permissions": [
     "storage",
@@ -20,7 +20,10 @@
     "https://ai-guard.example.com/*"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "scripts": [
+      "background.js"
+    ]
   },
   "content_scripts": [
     {
@@ -60,5 +63,18 @@
   ],
   "storage": {
     "managed_schema": "managed-schema.json"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "ai-guard@example.com",
+      "strict_min_version": "140.0",
+      "update_url": "https://YOUR_HOST/firefox-updates.json",
+      "data_collection_permissions": {
+        "required": [
+          "websiteActivity",
+          "personallyIdentifyingInfo"
+        ]
+      }
+    }
   }
 }

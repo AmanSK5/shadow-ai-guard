@@ -1,0 +1,35 @@
+{
+  "_comment": [
+    "Firefox update manifest. Host this file and the signed .xpi on public",
+    "HTTPS, the same place as updates.xml and the .crx. Firefox and Chromium",
+    "use different update formats and do not share one: this file is pointed",
+    "at by browser_specific_settings.gecko.update_url in src/manifest.json,",
+    "while updates.xml is pointed at by the forcelist entries in deploy/.",
+    "",
+    "Replace:",
+    "  the addon id     - must match browser_specific_settings.gecko.id",
+    "  update_link      - the public URL of the SIGNED .xpi from AMO",
+    "",
+    "On every release: bump the version in src/manifest.json, build the .xpi,",
+    "submit it to AMO for signing, upload the signed file, then update version",
+    "and update_link here. The version here MUST match the packed manifest's.",
+    "",
+    "Firefox refuses unsigned extensions on release builds, so the .xpi you",
+    "build is not the one you deploy. Submit it to addons.mozilla.org as a",
+    "self-distributed add-on, which signs it without listing it publicly, and",
+    "host the signed file that comes back. A signed .xpi contains META-INF/",
+    "mozilla.rsa; if yours does not, you are holding your own build.",
+    "",
+    "JSON has no comments, so this key is here instead. Firefox ignores it."
+  ],
+  "addons": {
+    "ai-guard@example.com": {
+      "updates": [
+        {
+          "version": "1.0.0",
+          "update_link": "https://YOUR_HOST/ai-guard-1.0.0.xpi"
+        }
+      ]
+    }
+  }
+}

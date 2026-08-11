@@ -2,6 +2,14 @@
 // Runs on each supported AI tool, resolves the signed-in account,
 // discards the local part immediately, and flags if the domain is not allowed.
 
+// Firefox exposes the extension APIs as browser.* returning promises, and also
+// as chrome.* returning callbacks. Chrome has no browser.* at all, and its
+// chrome.* returns promises under MV3. So chrome.* is the namespace that exists
+// in both and the one that behaves differently in each: every await in this
+// file would resolve to undefined in Firefox. Resolve the namespace once and
+// use that.
+const api = globalThis.browser ?? globalThis.chrome;
+
 const FALLBACK_ALLOWED = ["example.com"];
 
 // Per-tool resolvers. Each returns an email string or null.
@@ -109,7 +117,7 @@ function domainOf(email) {
 
 async function getAllowedDomains() {
   try {
-    const cfg = await chrome.storage.managed.get("allowedDomains");
+    const cfg = await api.storage.managed.get("allowedDomains");
     if (cfg && Array.isArray(cfg.allowedDomains) && cfg.allowedDomains.length) {
       return cfg.allowedDomains.map((d) => d.toLowerCase());
     }
@@ -132,12 +140,19 @@ async function check() {
   const allowed = await getAllowedDomains();
   if (allowed.includes(domain)) return;
 
-  chrome.runtime.sendMessage({
+  // Firefox returns a promise here and rejects it when the background page is
+  // not yet awake to receive. Chrome MV3 does the same. Nothing is waiting on
+  // the result, so an uncaught rejection would surface in the page console of
+  // a user's browser for no reason. The dedupe map has already recorded this
+  // one, so a dropped message is a lost finding rather than a repeated one,
+  // which is the right way round: the guard has already acted on screen and
+  // the report is the record of it.
+  api.runtime.sendMessage({
     type: "personal-account",
     tool: host,
     domain: domain,            // e.g. "gmail.com" for context, no name
     ts: new Date().toISOString(),
-  });
+  }).catch(() => {});
 }
 
 // SPAs swap accounts without a full reload, so check on load and on an interval.
