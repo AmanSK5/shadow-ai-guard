@@ -104,10 +104,18 @@ public read with a wildcard resource (`arn:aws:s3:::your-bucket/*`), not
 per-object, or every new release starts life private. Verify both URLs
 return 200 before deploying policy.
 
+For Firefox, the signed .xpi and `firefox-updates.json` (from
+`firefox-updates.json.template`) go in the same place. Firefox and Chromium
+use different update formats and do not share one, so a release that touches
+both browsers updates two manifests. Use the right content types:
+`application/x-chrome-extension` for the .crx and `application/x-xpinstall`
+for the .xpi.
+
 ### 4. Deploy on macOS (MDM)
 
-`deploy/macos/<browser>/` has two plists per browser. Both are needed; one
-without the other installs an unconfigured extension that reports nothing.
+`deploy/macos/<browser>/` has two plists per Chromium browser. Both are
+needed; one without the other installs an unconfigured extension that reports
+nothing. Firefox is one plist, covered separately below.
 
 - `install.plist` under the browser's preference domain (`com.google.Chrome`,
   `com.brave.Browser`, `com.microsoft.Edge`): the forcelist entry pointing
@@ -128,6 +136,46 @@ Verify delivery on a test machine before opening the browser:
 ```bash
 defaults read "/Library/Managed Preferences/com.google.Chrome.extensions.<id>"
 ```
+
+#### Firefox
+
+Firefox needs the extension signed by Mozilla and takes a different shape of
+policy, so it is a separate path rather than a fourth browser domain.
+
+**Signing.** Firefox refuses unsigned extensions on release builds, and there
+is no enterprise policy that changes that. Disabling `xpinstall.signatures.
+required` only works on ESR, Developer Edition and Nightly, and it turns off
+integrity checking for every extension a user installs, not just yours.
+Instead, submit to addons.mozilla.org as a **self-distributed** add-on: pick
+"On your own site" at submission. Mozilla signs it and it never appears in the
+public directory. Signing is automated and usually takes minutes.
+
+```bash
+cd extension/src
+zip -r -FS ../ai-guard-1.0.0.xpi \
+  manifest.json background.js content.js guard.js managed-schema.json
+```
+
+Name the files explicitly rather than using `*`: an .xpi is a zip of the files
+themselves, not of the `src` folder, and `README.md` should not ship in it.
+
+The file you deploy is the **signed** one AMO returns, not the one you built.
+A signed .xpi contains `META-INF/mozilla.rsa`:
+
+```bash
+unzip -l ai-guard-1.0.0.xpi | grep META-INF
+```
+
+**Policy.** `deploy/macos/firefox/managed-storage.plist` is one payload under
+`org.mozilla.firefox`, because Firefox reads the install policy and the managed
+config from the same domain. Two things differ from the Chromium payloads:
+it uses `install_url` rather than `update_url`, since Firefox installs from the
+.xpi and then polls the manifest's own `update_url`; and managed storage lives
+under `3rdparty` > `Extensions` > the **gecko id**, not the Chrome 32-character
+id.
+
+Verify with `about:policies` on the target machine, which shows the resolved
+values including whatever your MDM substituted for the device identifier.
 
 ### 5. Deploy on Windows
 
