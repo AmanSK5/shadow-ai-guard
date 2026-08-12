@@ -70,7 +70,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
-from app import derive, governance
+from app import derive, governance, paste_guard
 
 log = logging.getLogger("portal")
 
@@ -445,6 +445,36 @@ def status(hours: float = Query(default=None, gt=0, le=24 * 90),
         return derive.status_from(_findings(hours))
 
     value, at = _cached("status", hours, build)
+    return JSONResponse(dict(value, derived_at=at, hours=hours))
+
+
+@app.get("/api/paste-guard")
+def paste_guard_events(hours: float = Query(default=None, gt=0, le=24 * 90),
+                       refresh: bool = Query(default=False),
+                       _=Depends(require_auth)):
+    """Paste guard activity: what was stopped, on which tool, how often.
+
+    Metadata only, and deliberately so. The guard inspects clipboard content on
+    the device and reports detector identifiers; the matched text never reaches
+    the receiver and must never reach here. portal/app/paste_guard.py has a
+    test asserting that structurally rather than by review.
+
+    The heartbeat shares this source and is excluded. It is how a device proves
+    the guard works rather than merely being installed, and counting it as a
+    detection would report every device's daily heartbeat as a paste somebody
+    tried to make.
+    """
+    hours = hours or LOOKBACK_HOURS
+    if refresh:
+        _cache.pop("paste_guard", None)
+
+    def build():
+        findings = _findings(hours)
+        reg = derive.load_registry(REGISTRY_PATH)
+        return paste_guard.paste_guard_from(
+            findings, derive.load_domain_map_from(reg))
+
+    value, at = _cached("paste_guard", hours, build)
     return JSONResponse(dict(value, derived_at=at, hours=hours))
 
 
