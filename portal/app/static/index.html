@@ -63,6 +63,60 @@ main{padding:22px 24px;max-width:1440px;margin:0 auto}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th{text-align:left;font-weight:400;color:var(--mut);border-bottom:1px solid var(--bd);padding:6px 10px 6px 0;font-size:12px}
 td{padding:7px 10px 7px 0;border-bottom:1px solid color-mix(in oklch,var(--bd) 45%,transparent);font-family:ui-monospace,monospace;font-size:12px}
+/* The register, as cards.
+   -------------------------------------------------------------------------
+   Four table attempts failed, and the last measurement said why: the content
+   area is 1125px, not the ~1392px every one of those attempts was sized
+   against. Nine columns needed 1077px and fitted by 48px, which is not
+   fitting, it is scraping. Reducing to eight would have needed 1007px and
+   scraped by 118px instead.
+
+   A register is read one tool at a time as often as it is scanned, so the
+   table shape was never load-bearing. Cards drop the width problem entirely:
+   auto-fill gives two per row at 1125px, one on a narrow window and three on a
+   wide monitor, with no breakpoint to keep in step and no horizontal scrolling
+   at any width.
+
+   Fields that were columns are now labelled rows inside a card, which also
+   removes the thing no amount of width tuning fixed: a header three columns
+   away from the value it describes. */
+.cards{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(400px,1fr))}
+.card{border:1px solid var(--bd);border-radius:10px;padding:14px 16px;min-width:0}
+/* Name and decision on one line, because those are the two things someone
+   scanning is looking for. */
+.card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}
+.card-name{font-size:15px;font-weight:600}
+.card-meta{font-family:ui-monospace,monospace;font-size:11px;color:var(--mut);
+           margin-top:2px;overflow-wrap:anywhere}
+.card hr{border:0;border-top:1px solid color-mix(in oklch,var(--bd) 55%,transparent);margin:12px 0}
+/* A quiet label rather than another box. The lower block is organisational
+   record rather than observation, and the two were reading as one list. */
+.card-section{font-size:11px;color:var(--mut);text-transform:uppercase;
+              letter-spacing:.08em;margin:0 0 8px}
+/* Label and value, with the label beside its own value rather than three
+   columns away from it. */
+.card-kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:12px;
+         font-family:ui-monospace,monospace}
+.card-kv dt{color:var(--mut);white-space:nowrap}
+.card-kv dd{margin:0;overflow-wrap:anywhere}
+.card-kv dd .pill{margin:0 4px 0 0}
+
+.gov{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0}
+.gov .pill{margin:0}
+.gov-sub{font-size:11px;color:var(--mut);white-space:nowrap}
+.gov-sub.over{color:var(--dstr)}
+.gov-owner{white-space:nowrap}
+/* No border, no fill. Absence of governance, not a state with equal weight to
+   approved or reviewing. */
+.none{color:color-mix(in oklch,var(--mut) 70%,transparent);font-family:ui-monospace,monospace;
+      font-size:11px;white-space:nowrap}
+/* A zero is the absence of something and should not compete with a real
+   count. Without this a row of zeros is as loud as a row of findings. */
+td.n .z{color:color-mix(in oklch,var(--mut) 55%,transparent)}
+/* The counts split into two questions: how widely is this used, and what is
+   it signed into. A rule rather than a gap, because a gap in a dense table
+   reads as a missing column. */
+th.grp,td.grp{border-left:1px solid color-mix(in oklch,var(--bd) 60%,transparent);padding-left:14px}
 .note{background:color-mix(in oklch,var(--warn) 10%,transparent);border:1px solid color-mix(in oklch,var(--warn) 40%,transparent);color:var(--warn);border-radius:8px;padding:12px 14px;margin-bottom:18px;font-size:13px}
 .back{background:none;border:1px solid var(--bd);color:var(--mut);border-radius:6px;padding:5px 10px;cursor:pointer;font:inherit;margin-bottom:14px}
 h2{font-size:19px;margin:0 0 4px}
@@ -484,13 +538,77 @@ async function register() {
   const win = REG.hours >= 24 ? Math.round(REG.hours / 24) + ' days'
                               : REG.hours + ' hours';
   const dash = '<span class="pill p-mut">not set</span>';
+  // A zero is the absence of a thing. Rendering it at full weight makes a
+  // row of zeros as loud as a row of findings, and the eye has nothing to
+  // land on.
+  // Risk tier as a pill. It is a meaningful attribute and read as ordinary
+  // metadata beside everything else. Restrained on purpose: status and the
+  // personal-account count already carry colour, and a third loud thing in the
+  // same card would leave nothing standing out.
+  const RISK = {high:'p-warn', medium:'p-acc', low:'p-mut'};
+  const risk = t => t
+    ? `<span class="pill ${RISK[t]||'p-mut'}">${esc(t)}</span>` : '—';
+  const num = n => n ? String(n) : '<span class="z">0</span>';
   const when = t => t ? `<span class="nw">${esc(String(t).slice(0, 10))}</span>` : '—';
 
+  // Effective status, with the stored decision alongside when they differ.
+  // An approval past its review date reads as reviewing and says why: a green
+  // pill turning amber leaves someone wondering, and an approval nobody has
+  // revisited is not evidence a tool is safe, it is evidence nobody looked.
+  const PILL = {approved:'p-ok', not_approved:'p-warn', reviewing:'p-acc'};
+  const LABEL = {approved:'approved', not_approved:'not approved',
+                 reviewing:'reviewing'};
+  // Status says what was decided, and at most one line of context. The expiry
+  // used to live here too, which put four lines in one cell and made every
+  // other row look ragged beside it. Expiry is a fact about the review date,
+  // so it belongs in the review column.
   const status = r => {
-    if (!r.in_registry) return '<span class="pill p-warn">not in registry</span>';
-    if (r.approved === true) return '<span class="pill p-ok">approved</span>';
-    if (r.approved === false) return '<span class="pill p-warn">not approved</span>';
-    return dash;
+    const wrap = inner => `<div class="gov">${inner}</div>`;
+
+    // Not in the registry at all is the row worth acting on: something is in
+    // use that governance has never considered.
+    if (!r.in_registry) {
+      return wrap('<span class="pill p-warn">not in registry</span>');
+    }
+
+    if (r.status_source === 'governance') {
+      let out = `<span class="pill ${PILL[r.status]||'p-mut'}">${LABEL[r.status]||esc(r.status)}</span>`;
+      if (r.status_reason === 'approval_expired') {
+        out += `<span class="gov-sub">was ${LABEL[r.stored_status]||''}</span>`;
+      }
+      return wrap(out);
+    }
+
+    // No governance record, so this is the registry's own flag. approved: true
+    // can only have been set deliberately, because every tool ships false, so
+    // it is a decision and reads as one. approved: false is ambiguous: it is
+    // what an untouched registry says about everything, and rendering it as a
+    // refusal would put a shipped default and a considered "no" in the same
+    // red pill.
+    if (r.approved === true) {
+      return wrap('<span class="pill p-ok">approved</span>'
+        + '<span class="gov-sub">from the registry</span>');
+    }
+    // Quieter than the other three. When half an estate has no decision, an
+    // outlined pill on every card repeats until it reads as a status somebody
+    // chose. It is the absence of one, and should look like it.
+    return wrap('<span class="none">no decision</span>');
+  };
+
+  // Review: the date, and how it stands relative to today. Overdue in the
+  // warning colour, upcoming in muted text. Computed here rather than passed
+  // through: the API already carries days_overdue for the expired case, and
+  // the countdown is arithmetic on a date the row already has.
+  const review = r => {
+    if (!r.review_due) return `<div class="gov">${dash}</div>`;
+    const days = Math.round(
+      (Date.parse(r.review_due + 'T00:00:00Z') - Date.now()) / 86400000);
+    const sub = r.days_overdue
+      ? `<span class="gov-sub over">${r.days_overdue}d overdue</span>`
+      : (days >= 0 ? `<span class="gov-sub">in ${days}d</span>` : '');
+    return `<div class="gov">
+      <span class="nw"${r.days_overdue ? ' style="color:var(--dstr)"' : ''}>${esc(r.review_due)}</span>
+      ${sub}</div>`;
   };
 
   return `<h2>AI register</h2>
@@ -507,33 +625,57 @@ async function register() {
     <div><dt>${REG.known_not_observed}</dt><dd>watched for, not seen</dd></div>
   </dl>
 
-  <p class="lede">Owner, review date and risk decision are organisational
-  records. The portal holds no governance state, so they are shown as not set
-  rather than left blank: an empty column reads as "nothing to say", and the
-  honest reading is "nobody has decided yet".
+  ${!REG.governance_configured ? `<p class="lede">No governance file is
+  configured, so status falls back to the registry's own flag and every tool
+  reads as not approved. That is a shipped default rather than a decision
+  anyone made. Set <span class="mono">GOVERNANCE_PATH</span> to record
+  approvals, owners and review dates.</p>` : ''}
+
+  ${(REG.governance_unmatched || []).length ? `<div class="note">
+    <b>${REG.governance_unmatched.length === 1
+      ? '1 decision names a tool the registry does not know:'
+      : REG.governance_unmatched.length + ' decisions name tools the registry does not know:'}</b>
+    ${REG.governance_unmatched.map(t => `<span class="pill p-warn">${esc(t)}</span>`).join('')}
+    <div style="margin-top:6px">That is fine for a deliberate decision about
+    something not yet registered, and it is also what a typo looks like. Either
+    way the decision is not being applied to anything, so it is shown rather
+    than dropped.</div>
+  </div>` : ''}
+
+  <p class="lede">One card per tool: what it is, how it is used, and what was
+  decided about it. First seen is in the CSV rather than here, because inside a
+  lookback window it is usually the same as last seen and Overview already
+  answers what is new this week.
   <a href="/api/register?fmt=csv" style="color:var(--pri)">Download CSV</a></p>
 
-  ${rows.length ? `<table>
-  <tr><th>tool</th><th>vendor</th><th>status</th><th>risk</th>
-  <th>devices</th><th>users</th><th>corp</th><th>personal</th><th>surfaces</th>
-  <th>first seen</th><th>last seen</th><th>owner</th><th>review</th></tr>
-  ${rows.map(r => `<tr>
-    <td>${esc(r.name)}<br><span class="mono" style="font-size:11px;color:var(--mut)">${esc(r.id)}</span></td>
-    <td>${r.vendor ? esc(r.vendor) : '—'}</td>
-    <td>${status(r)}</td>
-    <td>${r.risk_tier ? esc(r.risk_tier) : '—'}</td>
-    <td>${r.devices}</td>
-    <td>${r.users}</td>
-    <td>${r.corporate_accounts}</td>
-    <td>${r.personal_accounts
-        ? `<span class="pill p-warn">${r.personal_accounts}</span>` : '0'}</td>
-    <td>${r.surfaces.length ? esc(r.surfaces.join(', ')) : '—'}</td>
-    <td>${when(r.first_seen)}</td>
-    <td>${when(r.last_seen)}</td>
-    <td>${dash}</td>
-    <td>${dash}</td>
-  </tr>`).join('')}
-  </table>` : `<p class="lede">No AI tools observed in the last ${esc(win)}.
+  ${rows.length ? `<div class="cards">
+  ${rows.map(r => `<div class="card">
+    <div class="card-top">
+      <div style="min-width:0">
+        <div class="card-name">${esc(r.name)}</div>
+        <div class="card-meta">${r.vendor ? esc(r.vendor) + ' · ' : ''}${esc(r.id)}</div>
+      </div>
+      ${status(r)}
+    </div>
+    <hr>
+    <dl class="card-kv">
+      <dt>usage</dt><dd>${r.devices} device${r.devices === 1 ? '' : 's'},
+        ${r.users} user${r.users === 1 ? '' : 's'}</dd>
+      <dt>accounts</dt><dd>corp ${num(r.corporate_accounts)} ·
+        personal ${r.personal_accounts
+          ? `<span class="pill p-warn">${r.personal_accounts}</span>` : num(0)}</dd>
+      <dt>surfaces</dt><dd>${r.surfaces.length ? esc(r.surfaces.join(', ')) : '—'}</dd>
+      <dt>risk</dt><dd>${risk(r.risk_tier)}</dd>
+      <dt>last seen</dt><dd>${when(r.last_seen)}</dd>
+    </dl>
+    <hr>
+    <div class="card-section">governance</div>
+    <dl class="card-kv">
+      <dt>owner</dt><dd>${r.owner ? esc(r.owner) : dash}</dd>
+      <dt>review</dt><dd>${review(r)}</dd>
+    </dl>
+  </div>`).join('')}
+  </div>` : `<p class="lede">No AI tools observed in the last ${esc(win)}.
   That is a real answer for a small estate, and it is also what a fleet with no
   collectors deployed looks like: check Setup before reading it as a clean
   one.</p>`}`;

@@ -357,3 +357,66 @@ def test_an_unobserved_tool_is_not_in_the_endpoints_rows():
     assert body["tools_known"] == 3
     assert body["known_not_observed"] == 2
     assert body["tools_observed"] == 1
+
+
+# ─────────────────────────────────────────────
+# Governance joined onto the register
+# ─────────────────────────────────────────────
+
+def _gov(**tools):
+    from app.governance import load_governance_from
+    return load_governance_from({"tools": tools})
+
+
+def test_a_decision_reaches_the_row():
+    gov = _gov(claude={"status": "approved", "owner": "Engineering",
+                       "review_due": "2027-01-01"})
+    row = _row(register_from([_f()], REGISTRY, DOMAIN_MAP, gov), "claude")
+
+    assert row["status"] == "approved"
+    assert row["owner"] == "Engineering"
+    assert row["review_due"] == "2027-01-01"
+    assert row["status_source"] == "governance"
+
+
+def test_an_expired_approval_reaches_the_row_as_reviewing():
+    """The compound case, end to end. A register that read stored_status here
+    would show a lapsed approval as current."""
+    gov = _gov(claude={"status": "approved", "review_due": "2020-01-01"})
+    row = _row(register_from([_f()], REGISTRY, DOMAIN_MAP, gov), "claude")
+
+    assert row["status"] == "reviewing"
+    assert row["stored_status"] == "approved"
+    assert row["status_reason"] == "approval_expired"
+    assert row["days_overdue"] > 0
+
+
+def test_no_governance_falls_back_to_the_registry_flag():
+    """A deployment that has not adopted governance must be unchanged."""
+    row = _row(register_from([_f()], REGISTRY, DOMAIN_MAP), "claude")
+
+    assert row["status"] == "not_approved"
+    assert row["status_source"] == "registry_default"
+    assert row["owner"] == ""
+
+
+def test_a_tool_outside_the_registry_is_undecided_not_refused():
+    row = _row(register_from([_f(tool="notion-ai")], REGISTRY, DOMAIN_MAP),
+               "notion-ai")
+
+    assert row["status"] == ""
+    assert row["status_source"] == "unknown"
+
+
+def test_the_csv_carries_the_decision():
+    """An export missing the decision is a list of tools, not a register."""
+    gov = _gov(claude={"status": "approved", "owner": "Engineering",
+                       "review_due": "2027-01-01"})
+    rows = [r for r in register_from([_f()], REGISTRY, DOMAIN_MAP, gov)
+            if r["observed"]]
+    out = register_csv(rows)
+
+    assert "status" in out.splitlines()[0]
+    assert "owner" in out.splitlines()[0]
+    assert "Engineering" in out
+    assert "2027-01-01" in out

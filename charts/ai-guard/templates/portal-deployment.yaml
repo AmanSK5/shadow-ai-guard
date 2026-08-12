@@ -91,6 +91,10 @@ spec:
             - name: IDENTITY_MAP
               value: /etc/ai-guard-identity/identity-map.csv
             {{- end }}
+            {{- with .Values.portal.governance.existingConfigMap }}
+            - name: GOVERNANCE_PATH
+              value: /etc/ai-guard-governance/governance.yaml
+            {{- end }}
             {{- with .Values.portal.grafana.url }}
             - name: GRAFANA_URL
               value: {{ . | quote }}
@@ -110,6 +114,11 @@ spec:
             {{- with .Values.portal.identityMap.existingConfigMap }}
             - name: identity-map
               mountPath: /etc/ai-guard-identity
+              readOnly: true
+            {{- end }}
+            {{- with .Values.portal.governance.existingConfigMap }}
+            - name: governance
+              mountPath: /etc/ai-guard-governance
               readOnly: true
             {{- end }}
             - name: tmp
@@ -132,6 +141,11 @@ spec:
         # Maps named people to the machines they use. Personal data: a Secret
         # is a defensible choice here too, and the portal only reads it.
         - name: identity-map
+          configMap:
+            name: {{ . }}
+        {{- end }}
+        {{- with .Values.portal.governance.existingConfigMap }}
+        - name: governance
           configMap:
             name: {{ . }}
         {{- end }}

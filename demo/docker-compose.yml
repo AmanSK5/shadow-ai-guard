@@ -151,6 +151,11 @@ services:
       # than shipping a credential someone might carry into production.
       PORTAL_AUTH: "none"
       REGISTRY_PATH: "/etc/ai-guard/registry.json"
+      # Governance decisions. Optional everywhere, including here: comment
+      # this out and the register falls back to the registry's own approved
+      # flag, which is what a deployment that has not adopted this looks
+      # like.
+      GOVERNANCE_PATH: "/etc/ai-guard-governance.yaml"
       # Short, because the demo is for clicking around. A real deployment
       # wants the default 300 so a seven-day query is not rerun per page load.
       CACHE_TTL_SECONDS: "10"
@@ -183,6 +188,10 @@ services:
         ai-guard:31:Pastes stopped (7d)
     volumes:
       - registry-dist:/etc/ai-guard:ro
+      # A distinct path rather than inside the registry volume: /etc/ai-guard
+      # is a named volume the builder writes, and a bind mount nested in it
+      # depends on mount ordering that is not worth relying on.
+      - ./governance.yaml:/etc/ai-guard-governance.yaml:ro
     depends_on:
       loki:
         condition: service_healthy
