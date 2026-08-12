@@ -66,6 +66,39 @@
           }
         ]
       }
+    },
+    "exceptions": {
+      "type": "object",
+      "description": "Temporary departures from the general decision, for a stated scope and period. Keyed on an exception id rather than on the tool, because a tool can have more than one and because an exception is a record with its own life: raised, applying, expired, and still visible afterwards. An exception does not replace the tool's status; the general position has not been withdrawn, and when the exception expires it simply stops applying.",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "tool",
+          "expires"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "tool": {
+            "type": "string",
+            "description": "The tool this applies to. An id the registry does not know validates and is reported by the portal, same as a decision: the tool most in need of an exception is often one nobody has registered yet, and that is also what a typo looks like."
+          },
+          "expires": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "Required, unlike review_due on a decision. A departure from the general position with no end is not an exception, it is an undocumented change of policy."
+          },
+          "scope": {
+            "type": "object",
+            "description": "Who or what this covers, as free-form keys such as team or project. Not resolved against anything: the portal displays it, and enforcing scope would require identity the platform does not have."
+          },
+          "reason": {
+            "type": "string"
+          },
+          "owner": {
+            "type": "string"
+          }
+        }
+      }
     }
   }
 }

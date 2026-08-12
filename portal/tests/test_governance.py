@@ -21,7 +21,6 @@ decision: the organisation believes it has decided something it has not.
 from datetime import date
 
 import pytest
-
 from app.governance import (
     APPROVED,
     EXPIRED,
@@ -269,3 +268,157 @@ def test_governance_carries_no_severity():
 
     assert "severity" not in d
     assert "severity" not in gov["claude"]
+
+
+# ─────────────────────────────────────────────
+# Exceptions
+# ─────────────────────────────────────────────
+
+from app.governance import (
+    EXCEPTED,
+    exceptions_for,
+    load_exceptions_from,
+    unmatched_exceptions,
+)
+
+
+def _ex(**exceptions):
+    return {"exceptions": exceptions}
+
+
+def test_an_exception_is_keyed_on_its_own_id_not_the_tool():
+    """A tool can have more than one, for different teams or reasons.
+
+    Keying on the tool would allow exactly one and would silently discard the
+    previous the moment a second was written.
+    """
+    ex = load_exceptions_from(_ex(
+        **{"EX-001": {"tool": "chatgpt", "expires": "2027-01-01",
+                      "scope": {"team": "Marketing"}},
+           "EX-002": {"tool": "chatgpt", "expires": "2027-06-01",
+                      "scope": {"team": "Sales"}}}))
+
+    assert set(ex) == {"EX-001", "EX-002"}
+    active, _ = exceptions_for("chatgpt", ex, TODAY)
+    assert len(active) == 2
+
+
+def test_an_exception_with_no_expiry_is_not_an_exception():
+    """A departure from the general position with no end is not an exception,
+    it is an undocumented change of policy."""
+    ex = load_exceptions_from(_ex(**{"EX-001": {"tool": "chatgpt"}}))
+
+    assert ex == {}
+
+
+def test_an_exception_naming_no_tool_is_ignored():
+    ex = load_exceptions_from(_ex(**{"EX-001": {"expires": "2027-01-01"}}))
+
+    assert ex == {}
+
+
+def test_an_active_exception_does_not_replace_the_decision():
+    """The regression, and the whole design of this.
+
+    An exception is a departure from the general position for a stated scope.
+    The general position has not been withdrawn, so replacing the status would
+    lose what the organisation actually decided and would make an exception for
+    one team read as a decision about everybody.
+    """
+    gov = load_governance_from(_doc(
+        chatgpt={"status": "not_approved", "owner": "Security"}))
+    ex = load_exceptions_from(_ex(
+        **{"EX-001": {"tool": "chatgpt", "expires": "2027-01-01",
+                      "scope": {"team": "Marketing"}}}))
+
+    d = decide("chatgpt", gov, None, TODAY, exceptions=ex)
+
+    assert d["status"] == NOT_APPROVED
+    assert len(d["exceptions"]) == 1
+    assert d["exceptions"][0]["scope"] == {"team": "Marketing"}
+
+
+def test_an_expired_exception_stops_applying():
+    gov = load_governance_from(_doc(chatgpt={"status": "not_approved"}))
+    ex = load_exceptions_from(_ex(
+        **{"EX-001": {"tool": "chatgpt", "expires": "2026-01-01"}}))
+
+    d = decide("chatgpt", gov, None, TODAY, exceptions=ex)
+
+    assert d["exceptions"] == []
+    assert len(d["expired_exceptions"]) == 1
+
+
+def test_an_expired_exception_does_not_make_a_tool_reviewing():
+    """Nothing about the decision changed. Only the departure from it ended.
+
+    Expiring into reviewing would be the expired-approval rule applied where it
+    does not belong, and would put a tool under review because a marketing
+    campaign finished.
+    """
+    gov = load_governance_from(_doc(
+        chatgpt={"status": "approved", "review_due": "2027-01-01"}))
+    ex = load_exceptions_from(_ex(
+        **{"EX-001": {"tool": "chatgpt", "expires": "2026-01-01"}}))
+
+    d = decide("chatgpt", gov, None, TODAY, exceptions=ex)
+
+    assert d["status"] == APPROVED
+    assert d["reason"] != EXCEPTED
+
+
+def test_an_expired_exception_stays_visible():
+    """It is a record of something an organisation decided and then let lapse,
+    and dropping it loses the history at the moment it is most worth seeing."""
+    ex = load_exceptions_from(_ex(
+        **{"EX-001": {"tool": "chatgpt", "expires": "2026-01-01",
+                      "reason": "Client campaign"}}))
+    active, expired = exceptions_for("chatgpt", ex, TODAY)
+
+    assert active == []
+    assert expired[0]["reason"] == "Client campaign"
+
+
+def test_an_exception_expiring_today_is_still_active():
+    ex = load_exceptions_from(_ex(
+        **{"EX-001": {"tool": "chatgpt", "expires": "2026-08-12"}}))
+    active, expired = exceptions_for("chatgpt", ex, TODAY)
+
+    assert len(active) == 1
+    assert expired == []
+
+
+def test_exceptions_reach_a_tool_with_no_decision_at_all():
+    """An exception can be the only record about a tool, and often is: the one
+    most in need of a note is the one nobody has decided about yet."""
+    ex = load_exceptions_from(_ex(
+        **{"EX-001": {"tool": "notion-ai", "expires": "2027-01-01"}}))
+
+    d = decide("notion-ai", {}, None, TODAY, exceptions=ex)
+
+    assert d["source"] == "unknown"
+    assert len(d["exceptions"]) == 1
+
+
+def test_an_exception_naming_an_unknown_tool_is_surfaced():
+    ex = load_exceptions_from(_ex(
+        **{"EX-001": {"tool": "github_copilot", "expires": "2027-01-01"}}))
+
+    assert unmatched_exceptions(ex, ["github-copilot"]) == ["github_copilot"]
+
+
+def test_no_exceptions_is_not_an_error():
+    assert load_exceptions_from({}) == {}
+    assert exceptions_for("claude", {}, TODAY) == ([], [])
+    assert unmatched_exceptions(None, None) == []
+
+
+def test_exceptions_carry_no_severity_either():
+    """Same boundary as decisions. An exception is a governance record and must
+    not become a way to quieten a finding."""
+    ex = load_exceptions_from(_ex(
+        **{"EX-001": {"tool": "chatgpt", "expires": "2027-01-01"}}))
+    d = decide("chatgpt", {}, False, TODAY, exceptions=ex)
+
+    assert "severity" not in d
+    assert all("severity" not in e for e in d["exceptions"])
