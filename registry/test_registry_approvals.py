@@ -1,13 +1,17 @@
 """The upstream registry carries no approval decisions.
 
 approved: true means "sanctioned here", and here is wherever the registry is
-deployed. Shipping it set upstream does two unhelpful things: it publishes
-the maintainer's own sanctioning position, and it silently downgrades a
-deployer's findings for those tools from warn to info before they have
-decided anything.
+deployed. Shipping it set upstream publishes the maintainer's own sanctioning
+position on tools they do not deploy, which is not theirs to have. Approval is
+organisation-specific.
 
-Approvals belong in a deployment's own copy of registry.yaml, not in the one
-everyone clones.
+It does not change what anyone is alerted about. Approval has no effect on
+finding severity: severity is decided by the reporter at the point of detection
+and depends on the account domain. This docstring used to claim otherwise, as
+did the registry header and the schema description, and the claim was wrong in
+all three places for long enough to mislead someone reading the code. Severity
+and governance are independent dimensions and should stay that way, because an
+approval that could lower severity would make "approved" mean "safe".
 """
 
 from pathlib import Path

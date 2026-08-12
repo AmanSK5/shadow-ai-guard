@@ -910,7 +910,7 @@
     {
       "type": "table",
       "title": "Claude (Anthropic, all surfaces)",
-      "description": "Every Anthropic surface in one place. The tool column shows why one product appears under several names: claude.ai is the browser extension reporting a domain, claude-code is the CLI and the IDE extension, claude is the desktop app, and anthropic.claude-code is the raw VS Code extension ID from before tool-name normalisation (those age out of the 7 day window on their own). Approved tool, so work accounts here are expected; personal accounts are the ones to act on.",
+      "description": "Every Anthropic surface in one place. The tool column shows why one product appears under several names: claude.ai is the browser extension reporting a domain, claude-code is the CLI and the IDE extension, claude is the desktop app, and anthropic.claude-code is the raw VS Code extension ID from before tool-name normalisation (those age out of the 7 day window on their own). Work accounts here are expected; personal accounts are the ones to act on. Approval status is a governance position recorded in the registry and does not change what alerts.",
       "datasource": {
         "type": "loki",
         "uid": "${DS_LOKI}"
@@ -1026,7 +1026,7 @@
     {
       "type": "table",
       "title": "ChatGPT (OpenAI, all surfaces)",
-      "description": "chatgpt.com is the browser extension reporting a domain; chatgpt is the desktop app or IDE extension. Approval status comes from the registry; tools default to approved: false until reviewed, so presence alerts are noise for tools you have not yet approved. Personal accounts are the real signal regardless of approval status.",
+      "description": "chatgpt.com is the browser extension reporting a domain; chatgpt is the desktop app or IDE extension. Approval status comes from the registry and records a governance position; it does not affect severity or alerting. Presence of a tool is info and never alerts, whether approved or not. Personal accounts are warn and are the real signal.",
       "datasource": {
         "type": "loki",
         "uid": "${DS_LOKI}"
