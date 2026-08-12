@@ -428,7 +428,7 @@ function personal() {
   <tr><th>who</th><th>account domain</th><th>tool</th><th>device</th>
   <th>surface</th><th>first seen</th><th>last seen</th><th>source</th></tr>
   ${rows.map(r => `<tr>
-    <td>${esc(r.user || '<span class="pill p-mut">no identity</span>')}</td>
+    <td>${r.user ? esc(r.user) : '<span class="pill p-mut">no identity</span>'}</td>
     <td><span class="pill p-warn">${esc(r.account_domain)}</span></td>
     <td>${esc(r.tool)}</td>
     <td>${esc(r.device_name || r.device || '—')}</td>
