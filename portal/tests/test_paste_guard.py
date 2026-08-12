@@ -272,3 +272,85 @@ def test_the_endpoint_returns_metadata_and_excludes_heartbeats():
     # Both findings resolve to one tool through the domain map.
     assert [r["tool"] for r in body["rows"]] == ["chatgpt"]
     assert body["devices"] == 2
+
+
+# ─────────────────────────────────────────────
+# The heartbeat as its own signal
+# ─────────────────────────────────────────────
+
+def test_devices_running_the_guard_are_counted_from_heartbeats():
+    """Zero events means nothing on its own.
+
+    An estate where nobody pasted a secret and an estate where the extension
+    was never deployed produce the same event count. The heartbeat is the only
+    thing that separates them, and the extension writes lastHeartbeat only on
+    confirmed delivery, so a device here has a working chain end to end rather
+    than merely the extension installed.
+    """
+    out = paste_guard_from([_heartbeat("D1"), _heartbeat("D2")])
+
+    assert out["events"] == 0
+    assert out["guard_devices"] == 2
+
+
+def test_heartbeats_still_do_not_count_as_events():
+    """Both facts at once: counted as devices, never as detections."""
+    out = paste_guard_from([_heartbeat("D1"), _heartbeat("D2"), _f(device="D1")])
+
+    assert out["events"] == 1
+    assert out["devices"] == 1
+    assert out["guard_devices"] == 2
+
+
+def test_versions_are_reported_per_device():
+    """A fleet split across versions is a rollout that stalled, which is worth
+    seeing before somebody wonders why a fix did not take."""
+    out = paste_guard_from([
+        _heartbeat("D1", "1.3.0"), _heartbeat("D2", "1.3.0"),
+        _heartbeat("D3", "1.2.1"),
+    ])
+
+    assert out["guard_versions"] == [
+        {"version": "1.3.0", "devices": 2},
+        {"version": "1.2.1", "devices": 1},
+    ]
+
+
+def test_modes_are_reported_per_device():
+    """A device in warn mode where policy says block is a policy not in
+    force, and it is invisible in any count of what was stopped."""
+    out = paste_guard_from([
+        _f(tool="paste-guard", severity="info", device="D1",
+           evidence="heartbeat version=1.3.0 mode=block reason=alarm"),
+        _f(tool="paste-guard", severity="info", device="D2",
+           evidence="heartbeat version=1.3.0 mode=warn reason=alarm"),
+    ])
+
+    assert out["guard_modes"] == [
+        {"mode": "block", "devices": 1},
+        {"mode": "warn", "devices": 1},
+    ]
+
+
+def test_a_device_reporting_several_heartbeats_is_counted_once():
+    """They fire on a schedule, so a window contains many per device."""
+    out = paste_guard_from([_heartbeat("D1") for _ in range(20)])
+
+    assert out["guard_devices"] == 1
+
+
+def test_a_malformed_heartbeat_still_counts_the_device():
+    """The device checked in, which is the fact that matters. An unparseable
+    version is a reason to report fewer details, not to lose the device."""
+    out = paste_guard_from([_f(tool="paste-guard", severity="info", device="D1",
+                               evidence="heartbeat")])
+
+    assert out["guard_devices"] == 1
+    assert out["guard_versions"] == []
+
+
+def test_no_heartbeats_reports_zero_devices_not_absence():
+    out = paste_guard_from([_f()])
+
+    assert out["guard_devices"] == 0
+    assert out["guard_versions"] == []
