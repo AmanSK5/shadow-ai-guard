@@ -168,7 +168,7 @@ services:
       # by panel id. Prefer the id where a title contains a comma, because this
       # list is comma separated and the title would split into two entries that
       # match nothing. GRAFANA_PANELS uses semicolons for that same reason.
-      OVERVIEW_WIDGETS: ${OVERVIEW_WIDGETS:-stat_row,top_tools,recent_personal_accounts,detection_coverage,source_health,grafana:31}
+      OVERVIEW_WIDGETS: ${OVERVIEW_WIDGETS:-stat_row,top_tools,recent_personal_accounts,detection_coverage,source_health,paste_guard}
       # The browser loads these frames, so this is the URL you reach Grafana
       # on, not the one the portal container would use.
       GRAFANA_URL: "http://localhost:3000"

@@ -208,7 +208,14 @@ OVERVIEW_WIDGETS=stat_row,top_tools,recent_personal_accounts,detection_coverage
 | `recent_personal_accounts` | most recently seen personal accounts |
 | `detection_coverage` | how much of each surface is reporting |
 | `source_health` | sources listed as silent |
+| `paste_guard` | pastes warned, overridden and blocked |
 | `grafana:<panel title>` | a panel named in `GRAFANA_PANELS` |
+
+Prefer a native widget to a `grafana:` one where both exist. An embedded panel
+renders cross-origin, so it arrives in Grafana's typography with a title the
+portal cannot restyle, and it sits visibly apart from the cards beside it.
+`paste_guard` used to be a panel for this reason and no longer needs to be: the
+portal derives those counts itself.
 
 Unset gives a sensible default rather than an empty page. An unknown name
 renders an error card naming what is valid, because a widget that silently does

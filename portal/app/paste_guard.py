@@ -50,6 +50,31 @@ _DETECTOR_ID = re.compile(r"^[a-z0-9_]{1,64}$")
 GUARD_TOOL = "paste-guard"
 
 
+def _parse_heartbeat(evidence):
+    """(version, mode) from a heartbeat, or (None, None).
+
+    The heartbeat is deliberately not a detection, and it is not noise either.
+    It is the only thing that distinguishes an estate where nobody pasted a
+    secret from one where the guard was never deployed, and those look
+    identical in an event count of zero. The extension writes lastHeartbeat
+    only on confirmed delivery, so a device appearing here has a working chain
+    end to end rather than merely having the extension installed.
+
+    version and mode come free in the same string, and both matter: a fleet
+    split across versions is a rollout that stalled, and a device in warn mode
+    where policy says block is a policy that is not in force.
+    """
+    ev = (evidence or "").strip()
+    if not ev.startswith("heartbeat"):
+        return None, None
+    fields = {}
+    for part in ev.split():
+        if "=" in part:
+            k, _, v = part.partition("=")
+            fields[k] = v
+    return fields.get("version") or "", fields.get("mode") or ""
+
+
 def _parse(evidence):
     """(action, [detector ids]) from an evidence string, or (None, []).
 
@@ -97,10 +122,28 @@ def paste_guard_from(findings, domain_map=None):
     detectors_total = defaultdict(int)
     devices = set()
     counts = {"warned": 0, "blocked": 0, "overridden": 0}
+    # Devices whose guard checked in, and what they are running. Kept apart
+    # from the event counts on purpose: a heartbeat is not something somebody
+    # tried to paste.
+    guard_devices = set()
+    guard_versions = defaultdict(set)
+    guard_modes = defaultdict(set)
 
     for f in findings:
         if (f.get("source") or "") != "paste_guard":
             continue
+        device = (f.get("device") or "").strip()
+
+        version, mode = _parse_heartbeat(f.get("evidence"))
+        if version is not None:
+            if device:
+                guard_devices.add(device)
+                if version:
+                    guard_versions[version].add(device)
+                if mode:
+                    guard_modes[mode].add(device)
+            continue
+
         action, detectors = _parse(f.get("evidence"))
         if not action:
             continue
@@ -117,7 +160,6 @@ def paste_guard_from(findings, domain_map=None):
         t[action] += 1
         counts[action] += 1
 
-        device = (f.get("device") or "").strip()
         if device:
             t["devices"].add(device)
             devices.add(device)
@@ -167,5 +209,18 @@ def paste_guard_from(findings, domain_map=None):
             {"detector": d, "count": c}
             for d, c in sorted(detectors_total.items(),
                                key=lambda kv: (-kv[1], kv[0]))
+        ],
+        # Devices whose guard checked in during the window. Without this,
+        # "0 pastes stopped" reads as an estate where nobody pasted a secret
+        # and an estate where the extension was never deployed, and those are
+        # the same number.
+        "guard_devices": len(guard_devices),
+        "guard_versions": [
+            {"version": v, "devices": len(d)}
+            for v, d in sorted(guard_versions.items(), reverse=True)
+        ],
+        "guard_modes": [
+            {"mode": m, "devices": len(d)}
+            for m, d in sorted(guard_modes.items())
         ],
     }

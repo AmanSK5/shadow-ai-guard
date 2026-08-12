@@ -189,6 +189,11 @@ def evidence_from(register_rows, status, personal, mcp, paste,
         "paste_overridden": (paste or {}).get("overridden", 0),
         "paste_detectors": [d["detector"] for d in (paste or {}).get("detectors", [])],
         "paste_content_retained": False,
+        # Without this, "paste_events: 0" in a snapshot reads as an estate
+        # where nobody pasted a secret and an estate where the guard was never
+        # deployed, and those are the same number. Same reason sources_known
+        # sits beside sources_reporting.
+        "paste_guard_devices": (paste or {}).get("guard_devices", 0),
 
         # Providers, from the registry's own vendor field.
         "providers": len({r.get("vendor") for r in observed if r.get("vendor")}),
