@@ -218,15 +218,19 @@ telemetry are one laptop. The portal derives those relationships on request
 and holds no database, so like the dashboard it is a view rather than a store,
 and losing it loses nothing.
 
-The AI register is that argument applied to governance. It lists every tool in
-the registry joined to what was observed, which means a tool nothing reported
-still gets a row: not seeing it means nothing reported it inside the lookback
-window, which is not the same as nobody using it. A tool observed and absent
-from the registry gets a row too, flagged, because something in use that
-governance has never considered is the more urgent direction of the same gap.
-Owner, review date and risk decision are organisational records rather than
-observations, so the register shows them as not set rather than leaving the
-columns blank. It holds no decisions of its own, and the `approved` flag it
+The AI register is that view pointed at governance: the AI tools actually in
+use, with what the registry knows about each. The registry itself is a
+watchlist rather than an inventory, so a tool it knows about and nothing has
+reported is reported as a count rather than a row. A register padded with
+tools nobody in the organisation uses is a worse record of what that
+organisation does, not a more complete one, and it puts vendor defaults in
+front of a management review as though someone had taken a position on them.
+Coverage is a different question with its own answer in Setup and Uncovered
+devices. A tool observed and absent from the registry does get a row, flagged,
+because something in use that governance has never considered is worth acting
+on. Owner, review date and risk decision are organisational records rather
+than observations, so the register shows them as not set rather than leaving
+the columns blank. It holds no decisions of its own, and the `approved` flag it
 displays is the registry's, reported as it stands.
 
 Its entry points differ because the sources do. Endpoint findings carry a
