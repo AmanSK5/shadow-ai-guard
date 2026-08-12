@@ -57,7 +57,8 @@ main{padding:22px 24px;max-width:1440px;margin:0 auto}
 .card:hover{border-color:color-mix(in oklch,var(--pri) 50%,transparent)}
 .card h3{margin:0 0 6px;font-size:15px;font-family:ui-monospace,monospace}
 .card .sub{color:var(--mut);font-size:12px}
-.pill{display:inline-block;border:1px solid currentColor;border-radius:999px;padding:1px 8px;font-size:11px;margin:2px 4px 2px 0;font-family:ui-monospace,monospace}
+.pill{display:inline-block;white-space:nowrap;border:1px solid currentColor;border-radius:999px;padding:1px 8px;font-size:11px;margin:2px 4px 2px 0;font-family:ui-monospace,monospace}
+.nw{white-space:nowrap}
 .p-warn{color:var(--dstr)} .p-ok{color:var(--pri)} .p-mut{color:var(--mut)} .p-acc{color:var(--acc)}
 table{width:100%;border-collapse:collapse;font-size:13px}
 th{text-align:left;font-weight:400;color:var(--mut);border-bottom:1px solid var(--bd);padding:6px 10px 6px 0;font-size:12px}
@@ -65,7 +66,10 @@ td{padding:7px 10px 7px 0;border-bottom:1px solid color-mix(in oklch,var(--bd) 4
 .note{background:color-mix(in oklch,var(--warn) 10%,transparent);border:1px solid color-mix(in oklch,var(--warn) 40%,transparent);color:var(--warn);border-radius:8px;padding:12px 14px;margin-bottom:18px;font-size:13px}
 .back{background:none;border:1px solid var(--bd);color:var(--mut);border-radius:6px;padding:5px 10px;cursor:pointer;font:inherit;margin-bottom:14px}
 h2{font-size:19px;margin:0 0 4px}
-.lede{color:var(--mut);font-size:13px;margin:0 0 16px;max-width:80ch}
+.lede{color:var(--mut);font-size:13px;margin:0 0 16px}
+/* No max-width here. main is already capped and centred, so a second
+   constraint on the prose only makes it stop short of the table it
+   introduces, which reads as a broken line rather than a measure. */
 input{background:var(--sf2);border:1px solid var(--bd);color:var(--fg);border-radius:6px;padding:6px 10px;font:inherit;min-width:220px}
 </style>
 <div class="shell">
@@ -89,11 +93,20 @@ input{background:var(--sf2);border:1px solid var(--bd);color:var(--fg);border-ra
 </div>
 <script>
 let G = {devices:{},identities:{},tools:{},bridges:{},unattributed:[],counts:{}};
+// Views that read a second endpoint, cached until refresh clears them.
+// Declared here rather than beside their views: load() clears them and let
+// is not hoisted, so declaring them lower down is a TDZ error on first
+// refresh.
+let DIAG = null;
+let REG = null;
 let S = null, CFG = {}, loadError = '';
 
 async function load(force) {
   app.innerHTML = '<p class="lede">Reading findings…</p>';
   const q = force ? '?refresh=true' : '';
+  // Refresh must clear the views that read a second endpoint too, or the
+  // button refreshes some of the page and silently not the rest.
+  if (force) { DIAG = null; REG = null; }
   try {
     CFG = await (await fetch('/api/config')).json();
     const gr = await fetch('/api/graph' + q);
@@ -442,7 +455,73 @@ function personal() {
   Setup page are reporting.</p>`}`;
 }
 
-let DIAG = null;
+
+async function register() {
+  if (!REG) {
+    try { REG = await (await fetch('/api/register')).json(); }
+    catch (e) { return `<h2>AI register</h2><div class="note">Could not build
+      the register: ${esc(String(e.message || e))}</div>`; }
+  }
+  const rows = (REG.rows || []).filter(r =>
+    match(r.name) || match(r.id) || match(r.vendor) || match(r.category));
+
+  const win = REG.hours >= 24 ? Math.round(REG.hours / 24) + ' days'
+                              : REG.hours + ' hours';
+  const dash = '<span class="pill p-mut">not set</span>';
+  const when = t => t ? `<span class="nw">${esc(String(t).slice(0, 10))}</span>` : '—';
+
+  const status = r => {
+    if (!r.in_registry) return '<span class="pill p-warn">not in registry</span>';
+    if (r.approved === true) return '<span class="pill p-ok">approved</span>';
+    if (r.approved === false) return '<span class="pill p-warn">not approved</span>';
+    return dash;
+  };
+
+  return `<h2>AI register</h2>
+  <p class="lede">Every tool the registry knows about, joined to what has
+  actually been observed. A tool with no observations is still listed: not
+  seeing it here means nothing reported it in the last ${esc(win)}, which is not
+  the same as nobody using it. A tool observed but absent from the registry is
+  the more urgent gap, and is flagged as such.</p>
+
+  <dl class="stats">
+    <div><dt>${REG.tools_observed}</dt><dd>observed</dd></div>
+    <div><dt>${REG.tools_known}</dt><dd>in registry</dd></div>
+    <div><dt style="color:var(--dstr)">${REG.observed_not_in_registry}</dt><dd>observed, not in registry</dd></div>
+    <div><dt>${REG.known_not_observed}</dt><dd>in registry, not observed</dd></div>
+  </dl>
+
+  <p class="lede">Owner, review date and risk decision are organisational
+  records. The portal holds no governance state, so they are shown as not set
+  rather than left blank: an empty column reads as "nothing to say", and the
+  honest reading is "nobody has decided yet".
+  <a href="/api/register?fmt=csv" style="color:var(--pri)">Download CSV</a></p>
+
+  ${rows.length ? `<table>
+  <tr><th>tool</th><th>vendor</th><th>status</th><th>risk</th>
+  <th>devices</th><th>users</th><th>corp</th><th>personal</th><th>surfaces</th>
+  <th>first seen</th><th>last seen</th><th>owner</th><th>review</th></tr>
+  ${rows.map(r => `<tr${r.observed ? '' : ' style="color:var(--mut)"'}>
+    <td>${esc(r.name)}<br><span class="mono" style="font-size:11px;color:var(--mut)">${esc(r.id)}</span></td>
+    <td>${r.vendor ? esc(r.vendor) : '—'}</td>
+    <td>${status(r)}</td>
+    <td>${r.risk_tier ? esc(r.risk_tier) : '—'}</td>
+    <td>${r.observed ? r.devices : '—'}</td>
+    <td>${r.observed ? r.users : '—'}</td>
+    <td>${r.observed ? r.corporate_accounts : '—'}</td>
+    <td>${!r.observed ? '—' : (r.personal_accounts
+        ? `<span class="pill p-warn">${r.personal_accounts}</span>` : '0')}</td>
+    <td>${r.surfaces.length ? esc(r.surfaces.join(', ')) : '—'}</td>
+    <td>${when(r.first_seen)}</td>
+    <td>${when(r.last_seen)}</td>
+    <td>${dash}</td>
+    <td>${dash}</td>
+  </tr>`).join('')}
+  </table>` : `<p class="lede">No tools in the register. Either the registry did
+  not load or nothing has reported: check Settings for the registry status
+  before reading this as an empty estate.</p>`}`;
+}
+
 async function settings() {
   if (!DIAG) {
     try { DIAG = await (await fetch('/api/diagnostics')).json(); }
@@ -642,6 +721,7 @@ const NAV = [
                            ['devices','Devices'],['personal','Personal accounts'],
                            ['mcp','MCP servers']]},
   {grp:'Coverage',  items:[['setup','Setup'],['coverage','Uncovered devices']]},
+  {grp:'Governance',items:[['register','AI register']]},
   {grp:'Analytics', items:[['dashboard','Dashboard']]},
   {grp:'System',    items:[['settings','Settings']]},
 ];
@@ -675,7 +755,9 @@ async function render() {
     return;
   }
   // settings reads a second endpoint, so it is the one async view.
+  // settings and register each read a second endpoint, so they are async.
   if (view === 'settings') { app.innerHTML = await settings(); return; }
+  if (view === 'register') { app.innerHTML = await register(); return; }
   app.innerHTML = ({setup, overview, devices, people, tools, coverage,
                     dashboard, personal, mcp})[view]();
 }
