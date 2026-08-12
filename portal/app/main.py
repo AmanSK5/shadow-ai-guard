@@ -444,6 +444,57 @@ def status(hours: float = Query(default=None, gt=0, le=24 * 90),
     return JSONResponse(dict(value, derived_at=at, hours=hours))
 
 
+@app.get("/api/register")
+def register(hours: float = Query(default=None, gt=0, le=24 * 90),
+             fmt: str = Query(default="json", pattern="^(json|csv)$"),
+             refresh: bool = Query(default=False),
+             _=Depends(require_auth)):
+    """The AI register: every tool the registry knows, joined to what was seen.
+
+    Read-only and derived. The portal holds no governance state, so owner,
+    review date and risk decision are absent rather than empty-but-editable.
+
+    csv is a convenience export, not an evidence artifact. The filename carries
+    when it was taken and over what window, because a register with no
+    provenance is a screenshot with extra steps, and a filename survives being
+    emailed around in a way a header comment does not.
+    """
+    hours = hours or LOOKBACK_HOURS
+    if refresh:
+        _cache.pop("register", None)
+
+    def build():
+        findings = _findings(hours)
+        reg = derive.load_registry(REGISTRY_PATH)
+        return derive.register_from(findings, reg,
+                                    derive.load_domain_map_from(reg))
+
+    rows, at = _cached("register", hours, build)
+
+    if fmt == "csv":
+        stamp = time.strftime("%Y-%m-%dT%H%MZ", time.gmtime())
+        window = ("%dh" % hours) if float(hours).is_integer() else ("%sh" % hours)
+        name = "ai-register-%s-%s.csv" % (stamp, window)
+        return PlainTextResponse(
+            derive.register_csv(rows),
+            headers={"Content-Disposition": 'attachment; filename="%s"' % name},
+        )
+
+    return JSONResponse({
+        "rows": rows,
+        "derived_at": at,
+        "hours": hours,
+        # Both counts, deliberately. A register that reported only what it
+        # found would let an estate with a silent source look complete.
+        "tools_observed": sum(1 for r in rows if r["observed"]),
+        "tools_known": sum(1 for r in rows if r["in_registry"]),
+        "observed_not_in_registry": sum(
+            1 for r in rows if r["observed"] and not r["in_registry"]),
+        "known_not_observed": sum(
+            1 for r in rows if r["in_registry"] and not r["observed"]),
+    })
+
+
 @app.get("/api/suggest-identities")
 def suggest_identities(hours: float = Query(default=None, gt=0, le=24 * 90),
                        fmt: str = Query(default="json", pattern="^(json|csv)$"),
