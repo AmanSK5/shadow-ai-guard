@@ -1,0 +1,53 @@
+# Governance decisions for the demo. Fake, like everything else here.
+#
+# Written to show the four states the register can display, because a demo
+# with no governance file shows only the fallback and the feature looks like
+# an empty column.
+#
+# In a real deployment this file is yours, lives wherever you put it, and is
+# pointed at by GOVERNANCE_PATH. It never ships with the project: an upstream
+# registry has no business implying that a particular tool is approved.
+
+version: 1
+
+tools:
+
+  # Current approval. Reads as approved, with an owner and a date.
+  claude:
+    status: approved
+    owner: Engineering
+    review_due: 2027-06-01
+    reason: Enterprise tenant, DPA in place
+
+  # EXPIRED approval. The stored decision is still "approved" and the register
+  # shows "reviewing", "approval expired N days ago", and "was approved". This
+  # is the case worth looking at: an approval nobody has revisited is not
+  # evidence a tool is safe, it is evidence nobody looked.
+  chatgpt:
+    status: approved
+    owner: Security
+    review_due: 2026-01-31
+    reason: Enterprise workspace, reviewed at onboarding
+
+  # Under review.
+  cursor:
+    status: reviewing
+    owner: Engineering
+    review_due: 2027-03-15
+    reason: Waiting on the vendor's sub-processor list
+
+  # A refusal. No review date needed.
+  ollama:
+    status: not_approved
+    owner: Security
+    reason: Local models, no visibility into what is loaded
+
+  # A decision naming a tool the registry does not know. The register reports
+  # it rather than dropping it, because that is also exactly what a typo looks
+  # like, and a decision that silently matches nothing is how an organisation
+  # believes it has decided something it has not.
+  some-unregistered-tool:
+    status: not_approved
+    owner: Security
+    review_due: 2027-09-30
+    reason: Seen on two machines, no vendor assessment yet

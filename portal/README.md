@@ -1,4 +1,4 @@
-# portal
+# Portal
 
 A governance view over the findings the receiver already collects. Devices,
 identities, tools, and the relationships between them.
@@ -72,6 +72,7 @@ about the estate.
 | `LOOKBACK_HOURS` | no | default window, default 168 |
 | `REGISTRY_PATH` | no | registry.yaml, for resolving domains to tool ids |
 | `IDENTITY_MAP` | no | CSV of `key,identity` attaching people to devices |
+| `GOVERNANCE_PATH` | no | YAML of approval decisions, owners and review dates. See [docs/governance.md](../docs/governance.md) |
 | `GRAFANA_URL` | no | a Grafana that permits embedding; unset shows a note |
 | `GRAFANA_PANELS` | no | `dashboardUid:panelId:Title`, semicolon separated |
 | `GRAFANA_DASHBOARD_UID` | no | embed a whole dashboard instead of panels |
@@ -161,10 +162,36 @@ effect within `CACHE_TTL_SECONDS` (default 30) without a restart.
 | Devices | one row per machine, with each tool paired to the account it uses |
 | Personal accounts | every personal account seen, with first and last seen |
 | MCP servers | which MCP servers are configured, on which machines, by which tool |
+| AI register | the tools actually in use, joined to what has been decided about each |
 | Setup | which detection sources are reporting and which are silent |
 | Uncovered devices | machines a scanner knows about that no collector reports from |
 | Dashboard | Grafana, embedded |
 | Settings | what the portal can say about itself, for a support conversation |
+
+## AI register
+
+The tools actually in use, from findings in the lookback window, joined to what
+the registry knows and what your organisation has decided.
+
+The registry is a watchlist rather than an inventory, so a tool it knows about
+and nothing has reported is a count rather than a row. A register padded with
+tools nobody here uses is a worse record of what an organisation does, not a
+more complete one. A tool observed and absent from the registry does get a row,
+flagged, because something in use that governance has never considered is the
+anomaly worth acting on.
+
+Status, owner and review date come from an optional governance file. Without
+one, everything reads as undecided, which is honest: every tool ships
+`approved: false` and presenting that as a refusal would assert a decision
+nobody made. See [docs/governance.md](../docs/governance.md).
+
+An approval past its review date reports as reviewing, says how long ago it
+expired, and shows the previous decision. The record is not rewritten: a clock
+ticking over is not a decision.
+
+`GET /api/register?fmt=csv` exports the same rows the page shows, with the
+timestamp and lookback window in the filename. It is a convenience export
+rather than an evidence artifact: no manifest, no checksum.
 
 ## Overview widgets
 
