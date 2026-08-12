@@ -69,8 +69,35 @@ def _parse_ts(value):
 
 
 # Version suffixes Intune appends to a display name: "LM Studio 0.3.20",
-# "LM Studio 0.4.20+1". Anything from the first digit-led token onwards.
-_VERSION_TAIL = re.compile(r"\s+v?\d[\d.+_-]*.*$", re.IGNORECASE)
+# "LM Studio 0.4.20+1", "LM Studio 0.3.20-beta", "Notion 3.0 (x64)",
+# "ChatGPT 1.2024.021 (Machine - MSI)". A version token, an optional alpha
+# build suffix, and an optional trailing parenthetical, anchored to the end.
+#
+# It used to be ".*$" after the version token, which swallowed the rest of the
+# name, so any display name shaped "<word> <digits> <words>" collapsed to its
+# first word. Measured against 985 detectedApps display names from a live
+# tenant, that folded 31 localisations of Microsoft 365 onto the single key
+# "microsoft", plus 12 Visual C++ redistributables, 6 .NET SDKs and 3 SQL
+# Server LocalDBs.
+#
+# Nothing was misattributed on that tenant, because no registry entry happened
+# to claim those keys. That is luck rather than design: "Microsoft 365 Copilot"
+# normalises to "microsoft" under the old pattern, so adding an exe_name for it
+# would have attributed every Office install on the estate to Copilot, and it
+# would have looked like a finding rather than a bug.
+#
+# Anchoring to the end rather than consuming to it also leaves an unrelated app
+# whose name merely begins with a tool name whole: "Cursor 2024 Backup Utility"
+# stays itself instead of becoming "cursor".
+_VERSION_TAIL = re.compile(
+    r"\s+v?\d[\d.+_-]*(?:-[a-z][a-z0-9.]*)?(?:\s*\([^)]*\))?$",
+    re.IGNORECASE,
+)
+
+# Stripping a version can leave a dangling separator: "Microsoft Windows
+# Desktop Runtime - 6.0.25 (x64)" would otherwise key on "...runtime -". A key
+# ending in punctuation matches nothing and reads as a bug wherever it appears.
+_TRAILING_SEP = re.compile(r"[\s,\-]+$")
 
 
 def _normalise_app_name(name: str) -> str:
@@ -94,7 +121,7 @@ def _normalise_app_name(name: str) -> str:
     for suffix in (".exe", ".app"):
         if n.lower().endswith(suffix):
             n = n[: -len(suffix)]
-    n = _VERSION_TAIL.sub("", n)
+    n = _TRAILING_SEP.sub("", _VERSION_TAIL.sub("", n))
     return n.strip().lower()
 
 
