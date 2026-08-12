@@ -51,3 +51,43 @@ tools:
     owner: Security
     review_due: 2027-09-30
     reason: Seen on two machines, no vendor assessment yet
+
+# ─────────────────────────────────────────────
+# Exceptions
+# ─────────────────────────────────────────────
+#
+# A temporary departure from the general decision, for a stated scope and
+# period. The card shows both: the decision stands, and the exception sits
+# under it. An exception shown instead of the status would make a note about
+# one team read as a decision about everybody.
+
+exceptions:
+
+  # Active. ollama is not approved, and Research has a time-boxed exception.
+  EX-001:
+    tool: ollama
+    scope:
+      team: Research
+    reason: Local model evaluation, no client data
+    owner: Security
+    expires: 2027-04-30
+
+  # Expired, and still shown. A record of something decided and then let lapse,
+  # which is worth seeing rather than losing. The tool does not become
+  # "reviewing" because this ended: nothing about the decision changed.
+  EX-002:
+    tool: chatgpt
+    scope:
+      project: Q1 campaign
+    reason: Client campaign copy, no personal data
+    owner: Marketing
+    expires: 2026-03-31
+
+  # Naming a tool the registry does not know, which the register flags.
+  EX-003:
+    tool: some-unregistered-tool
+    scope:
+      team: Engineering
+    reason: Trial period pending vendor assessment
+    owner: Security
+    expires: 2027-01-31

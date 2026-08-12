@@ -93,6 +93,19 @@ td{padding:7px 10px 7px 0;border-bottom:1px solid color-mix(in oklch,var(--bd) 4
    record rather than observation, and the two were reading as one list. */
 .card-section{font-size:11px;color:var(--mut);text-transform:uppercase;
               letter-spacing:.08em;margin:0 0 8px}
+/* An exception. Its own block rather than a row in the key/value list, because
+   it has an id, a scope, a date and a reason, and flattening that into one
+   line loses the scope, which is the part that says who it applies to. */
+.exc{font-family:ui-monospace,monospace;font-size:11px;margin-bottom:6px;
+     display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline}
+.exc-scope{color:var(--acc)}
+.exc-when{color:var(--mut)}
+.exc-why{flex-basis:100%;color:var(--mut);margin-top:1px}
+/* Expired, and still shown. Quieter, because it is history rather than
+   something currently applying, and struck through would be too loud for a
+   record somebody may still want to read. */
+.exc-old{opacity:.55}
+.exc-old .exc-when{color:var(--dstr)}
 /* Label and value, with the label beside its own value rather than three
    columns away from it. */
 .card-kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:12px;
@@ -562,6 +575,33 @@ async function register() {
   // used to live here too, which put four lines in one cell and made every
   // other row look ragged beside it. Expiry is a fact about the review date,
   // so it belongs in the review column.
+  // Exceptions, as their own block under the governance rule. Deliberately not
+  // folded into the status pill: an exception is a departure from the general
+  // decision for a stated scope, and showing it as the status would make a
+  // note about one team read as a decision about everybody.
+  //
+  // Expired ones are still listed, quietly. An exception that has run its
+  // course is a record of something an organisation decided and then let
+  // lapse, which is worth seeing rather than losing.
+  const scopeText = sc => Object.entries(sc || {})
+    .map(([k, v]) => `${esc(k)} ${esc(String(v))}`).join(', ');
+
+  const exceptionBlock = r => {
+    const active = r.exceptions || [], expired = r.expired_exceptions || [];
+    if (!active.length && !expired.length) return '';
+    const one = (e, isExpired) => `<div class="exc${isExpired ? ' exc-old' : ''}">
+      <span class="mono">${esc(e.id)}</span>
+      ${e.scope && Object.keys(e.scope).length
+        ? `<span class="exc-scope">${scopeText(e.scope)}</span>` : ''}
+      <span class="exc-when">${isExpired ? 'expired' : 'until'} ${esc(e.expires)}</span>
+      ${e.reason ? `<div class="exc-why">${esc(e.reason)}</div>` : ''}
+    </div>`;
+    return `<hr>
+      <div class="card-section">exception${active.length + expired.length === 1 ? '' : 's'}</div>
+      ${active.map(e => one(e, false)).join('')}
+      ${expired.map(e => one(e, true)).join('')}`;
+  };
+
   const status = r => {
     const wrap = inner => `<div class="gov">${inner}</div>`;
 
@@ -631,15 +671,21 @@ async function register() {
   anyone made. Set <span class="mono">GOVERNANCE_PATH</span> to record
   approvals, owners and review dates.</p>` : ''}
 
-  ${(REG.governance_unmatched || []).length ? `<div class="note">
-    <b>${REG.governance_unmatched.length === 1
-      ? '1 decision names a tool the registry does not know:'
-      : REG.governance_unmatched.length + ' decisions name tools the registry does not know:'}</b>
-    ${REG.governance_unmatched.map(t => `<span class="pill p-warn">${esc(t)}</span>`).join('')}
-    <div style="margin-top:6px">That is fine for a deliberate decision about
+  ${((REG.governance_unmatched || []).length
+     || (REG.exceptions_unmatched || []).length) ? `<div class="note">
+    ${(() => {
+      const d = REG.governance_unmatched || [], x = REG.exceptions_unmatched || [];
+      const names = [...new Set([...d, ...x])];
+      const what = d.length && x.length ? 'records' : (d.length ? 'decision' : 'exception');
+      const n = d.length + x.length;
+      return `<b>${n === 1 ? `1 ${what} names a tool` : `${n} ${what}${what === 'records' ? '' : 's'} name tools`}
+        the registry does not know:</b>
+        ${names.map(t => `<span class="pill p-warn">${esc(t)}</span>`).join('')}`;
+    })()}
+    <div style="margin-top:6px">That is fine for a deliberate record about
     something not yet registered, and it is also what a typo looks like. Either
-    way the decision is not being applied to anything, so it is shown rather
-    than dropped.</div>
+    way it is not being applied to anything, so it is shown rather than
+    dropped.</div>
   </div>` : ''}
 
   <p class="lede">One card per tool: what it is, how it is used, and what was
@@ -674,6 +720,7 @@ async function register() {
       <dt>owner</dt><dd>${r.owner ? esc(r.owner) : dash}</dd>
       <dt>review</dt><dd>${review(r)}</dd>
     </dl>
+    ${exceptionBlock(r)}
   </div>`).join('')}
   </div>` : `<p class="lede">No AI tools observed in the last ${esc(win)}.
   That is a real answer for a small estate, and it is also what a fleet with no
