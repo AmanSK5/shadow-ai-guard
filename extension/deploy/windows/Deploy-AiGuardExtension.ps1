@@ -105,7 +105,7 @@ function Get-DeviceIdentifier {
         $serial = (Get-CimInstance Win32_BIOS -ErrorAction Stop).SerialNumber
         if ($null -ne $serial) { $serial = $serial.Trim() }
     } catch {
-        Write-Output "ai-guard: serial lookup failed ($($_.Exception.Message))"
+        Write-Host "ai-guard: serial lookup failed ($($_.Exception.Message))"
     }
 
     if (-not $serial -or $BogusSerials -contains $serial.ToLower()) {
@@ -114,7 +114,7 @@ function Get-DeviceIdentifier {
         # report serials reads as a deliberate difference rather than a
         # placeholder BIOS, and it is worth someone seeing in the Intune
         # script output.
-        Write-Output "ai-guard: BIOS serial is '$serial', using COMPUTERNAME instead"
+        Write-Host "ai-guard: BIOS serial is '$serial', using COMPUTERNAME instead"
         return $env:COMPUTERNAME
     }
     return $serial
@@ -137,26 +137,144 @@ function Set-RegValue {
         -PropertyType String -Force | Out-Null
 }
 
+function ConvertTo-Hashtable {
+    <#
+        A hashtable from either a PSCustomObject or a hashtable.
+
+        ConvertFrom-Json returns a PSCustomObject, whose properties are the JSON
+        keys. A freshly created @{} is a hashtable, whose .PSObject.Properties
+        are the .NET collection's own members: IsFixedSize, Count, Keys,
+        SyncRoot and the rest. Enumerating the second as though it were the
+        first copies all of them into the policy.
+    #>
+    param($Object)
+    $out = @{}
+    if ($null -eq $Object) { return $out }
+    if ($Object -is [System.Collections.IDictionary]) {
+        foreach ($k in $Object.Keys) { $out[$k] = $Object[$k] }
+        return $out
+    }
+    foreach ($p in $Object.PSObject.Properties) { $out[$p.Name] = $p.Value }
+    return $out
+}
+
+
+function Get-ExtensionSettings {
+    <#
+        The existing ExtensionSettings for a browser, as a hashtable.
+
+        Read-modify-write, for the same reason the Firefox script does it: this
+        one value holds every extension's configuration, so writing ours
+        wholesale removes anything another policy put there. The Firefox script
+        had this from the start because a real machine turned out to have
+        SentinelOne's extension in that value; the Chromium script did not, and
+        overwrote it.
+
+        Unparseable existing content stops the script rather than being
+        replaced, because silently discarding a policy we cannot read is the
+        failure this is meant to prevent.
+    #>
+    param($Root)
+    if (-not (Test-Path $Root)) { return @{} }
+    $raw = (Get-ItemProperty -Path $Root -Name 'ExtensionSettings' -ErrorAction SilentlyContinue).ExtensionSettings
+    if (-not $raw) { return @{} }
+    try {
+        return ConvertTo-Hashtable ($raw | ConvertFrom-Json -ErrorAction Stop)
+    } catch {
+        Write-Host "ai-guard: existing ExtensionSettings at $Root is not valid JSON, refusing to overwrite it"
+        throw
+    }
+}
+
+
+function ConvertTo-JsonArray {
+    <#
+        A JSON array, even when there is one element.
+
+        `@('a') | ConvertTo-Json` returns the string "a", not ["a"], because the
+        pipeline unwraps a single-element array before ConvertTo-Json ever sees
+        it. The managed schema declares allowedDomains as an array and the
+        extension checks Array.isArray, so a scalar is discarded and the
+        built-in fallback list is used instead.
+
+        That failure is silent and looks like success: one corporate domain
+        configured, and the extension quietly running on its own defaults. It
+        was found by reading the registry after a deployment, not by anything
+        going wrong.
+
+        The unary comma wraps the value in an outer array so the pipeline has
+        something to unwrap, and PowerShell 5.1 is what Intune runs, so -AsArray
+        is not available.
+    #>
+    param([string[]]$Items)
+    if ($null -eq $Items -or $Items.Count -eq 0) { return '[]' }
+    if ($Items.Count -eq 1) { return ConvertTo-Json @(, $Items[0]) -Compress }
+    return ConvertTo-Json $Items -Compress
+}
+
+
+function Get-ForcelistIndex {
+    <#
+        The index to write this extension's forcelist entry at.
+
+        The forcelist is a set of numbered values, and the numbers are just
+        slots. Hardcoding "1" is how a script evicts whatever another policy
+        already force-installed there, which on a managed fleet is somebody
+        else's extension disappearing with no error and no obvious cause.
+
+        Returns the existing index if this extension is already listed, so
+        re-running updates in place rather than adding a duplicate. Otherwise
+        the lowest free number.
+
+        Write-Host rather than Write-Output for the progress line.
+        PowerShell collects everything a function writes to the output
+        stream as its return value, so a message here would come back
+        alongside the value. A -WhatIf run caught exactly that: the
+        forcelist value name came out as
+        "ai-guard: forcelist indexes 1 in use, taking 2 2".
+    #>
+    param($Path)
+    if (-not (Test-Path $Path)) { return '1' }
+
+    $existing = Get-ItemProperty -Path $Path -ErrorAction SilentlyContinue
+    $used = @()
+    foreach ($prop in $existing.PSObject.Properties) {
+        if ($prop.Name -notmatch '^\d+$') { continue }   # PSPath and friends
+        if ($prop.Value -like "$ExtensionId;*" -or $prop.Value -eq $ExtensionId) {
+            Write-Host "ai-guard: already at forcelist index $($prop.Name), updating in place"
+            return $prop.Name
+        }
+        $used += [int]$prop.Name
+    }
+
+    $i = 1
+    while ($used -contains $i) { $i++ }
+    if ($i -ne 1) { Write-Host "ai-guard: forcelist indexes $($used -join ', ') in use, taking $i" }
+    return "$i"
+}
+
+
 $DeviceId = Get-DeviceIdentifier
 Write-Output "ai-guard: device identifier = $DeviceId"
 
 # ExtensionSettings is what makes a browser poll a self-hosted updates.xml for
 # NEW versions. The forcelist alone installs the extension and then never
 # updates it, which is a fleet frozen on whatever version it first received.
-$ExtensionSettings = @{
-    $ExtensionId = @{
-        installation_mode   = 'force_installed'
-        update_url          = $UpdatesXml
-        override_update_url = $true
-    }
-} | ConvertTo-Json -Compress -Depth 5
 
 foreach ($name in $Browsers.Keys) {
     $root = $Browsers[$name]
 
     # Install
-    Set-RegValue "$root\ExtensionInstallForcelist" '1' "$ExtensionId;$UpdatesXml"
-    Set-RegValue $root 'ExtensionSettings' $ExtensionSettings
+    Set-RegValue "$root\ExtensionInstallForcelist" `
+        (Get-ForcelistIndex "$root\ExtensionInstallForcelist") `
+        "$ExtensionId;$UpdatesXml"
+    $settings = Get-ExtensionSettings $root
+    $settings[$ExtensionId] = @{
+        installation_mode   = 'force_installed'
+        update_url          = $UpdatesXml
+        override_update_url = $true
+    }
+    Set-RegValue $root 'ExtensionSettings' ($settings | ConvertTo-Json -Compress -Depth 10)
 
     # Config. Lists are JSON strings: the managed storage schema declares them
     # as arrays and the registry has no array type Chrome will read here.
@@ -165,18 +283,11 @@ foreach ($name in $Browsers.Keys) {
     Set-RegValue $policy 'authToken'        $AuthToken
     Set-RegValue $policy 'deviceIdentifier' $DeviceId
     Set-RegValue $policy 'pasteGuardMode'   $PasteGuardMode
-    Set-RegValue $policy 'allowedDomains' `
-        ($AllowedDomains | ConvertTo-Json -Compress)
-    Set-RegValue $policy 'classificationMarkings' `
-        ($ClassificationMarkings | ConvertTo-Json -Compress)
+    Set-RegValue $policy 'allowedDomains'         (ConvertTo-JsonArray $AllowedDomains)
+    Set-RegValue $policy 'classificationMarkings' (ConvertTo-JsonArray $ClassificationMarkings)
 
     Write-Output "ai-guard: configured $name"
 }
-
-# The forcelist index. "1" is used above; if a browser already has forcelist
-# entries from another policy, this overwrites entry 1. Check before rollout:
-#   Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Google\Chrome\ExtensionInstallForcelist'
-# and move to the next free index if 1 is taken.
 
 Write-Output "ai-guard: done. The extension appears after the browser restarts."
 exit 0
