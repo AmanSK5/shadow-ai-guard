@@ -449,15 +449,25 @@ def register(hours: float = Query(default=None, gt=0, le=24 * 90),
              fmt: str = Query(default="json", pattern="^(json|csv)$"),
              refresh: bool = Query(default=False),
              _=Depends(require_auth)):
-    """The AI register: every tool the registry knows, joined to what was seen.
+    """The AI register: the AI tools actually in use, and what is known of them.
+
+    Rows are the observed set. A register is a record of what an organisation
+    uses, and padding it with every entry of a shipped registry makes it a
+    worse record: it presents tools nobody there has heard of as things the
+    organisation has a position on. The registry is a watchlist, and its size
+    is returned as a count rather than as rows.
+
+    A tool observed and absent from the registry is included and flagged. That
+    is the anomaly worth acting on.
 
     Read-only and derived. The portal holds no governance state, so owner,
     review date and risk decision are absent rather than empty-but-editable.
 
-    csv is a convenience export, not an evidence artifact. The filename carries
-    when it was taken and over what window, because a register with no
-    provenance is a screenshot with extra steps, and a filename survives being
-    emailed around in a way a header comment does not.
+    csv is a convenience export, not an evidence artifact, and it carries the
+    same rows as the page. The filename carries when it was taken and over what
+    window, because a register with no provenance is a screenshot with extra
+    steps, and a filename survives being emailed around in a way a header
+    comment does not.
     """
     hours = hours or LOOKBACK_HOURS
     if refresh:
@@ -469,7 +479,10 @@ def register(hours: float = Query(default=None, gt=0, le=24 * 90),
         return derive.register_from(findings, reg,
                                     derive.load_domain_map_from(reg))
 
-    rows, at = _cached("register", hours, build)
+    all_rows, at = _cached("register", hours, build)
+    # The register is what is in use. The rest of the join is the watchlist,
+    # and it is reported as a count below rather than as rows.
+    rows = [r for r in all_rows if r["observed"]]
 
     if fmt == "csv":
         stamp = time.strftime("%Y-%m-%dT%H%MZ", time.gmtime())
@@ -486,12 +499,12 @@ def register(hours: float = Query(default=None, gt=0, le=24 * 90),
         "hours": hours,
         # Both counts, deliberately. A register that reported only what it
         # found would let an estate with a silent source look complete.
-        "tools_observed": sum(1 for r in rows if r["observed"]),
-        "tools_known": sum(1 for r in rows if r["in_registry"]),
+        "tools_observed": len(rows),
+        "tools_known": sum(1 for r in all_rows if r["in_registry"]),
         "observed_not_in_registry": sum(
-            1 for r in rows if r["observed"] and not r["in_registry"]),
+            1 for r in rows if not r["in_registry"]),
         "known_not_observed": sum(
-            1 for r in rows if r["in_registry"] and not r["observed"]),
+            1 for r in all_rows if r["in_registry"] and not r["observed"]),
     })
 
 

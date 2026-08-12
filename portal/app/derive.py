@@ -798,23 +798,34 @@ def _base_tool(tool):
 def register_from(findings, reg=None, domain_map=None):
     """One row per tool: what the registry knows, joined to what was observed.
 
-    Two things make this more than a list of observed tools.
+    Returns the full join, observed and not. Callers decide what to show: the
+    register itself is the observed set, and the rest is the count of what is
+    being watched for.
 
-    A tool in the registry that nothing reported still gets a row, with its
-    counts empty. "We know this exists and have not seen it here" is a real
-    register entry, and dropping it would let an estate look smaller than the
-    set of things it is watching for. It is also the honest form of the
-    project's own rule: absence of a finding is not evidence a tool is unused,
-    it may be used somewhere nothing is reporting from.
+    That distinction matters and it took a wrong turn to find. A register is a
+    record of what an organisation actually uses. Listing every entry in a
+    shipped registry makes it a worse record, not a more complete one: it puts
+    tools nobody there has heard of in front of a management review as though
+    the organisation has a position on them. The registry is a watchlist, and a
+    watchlist is context rather than inventory.
 
-    A tool that was observed and is NOT in the registry gets a row too, flagged
-    as unknown. That is the more urgent direction of the same gap: something is
-    in use that governance has never considered.
+    The project's rule that silence is not evidence of safety applies to
+    sources, not to this. A collector that stops reporting looks identical to a
+    clean machine, so silent sources must be listed. A registry entry is not a
+    source: a tool absent from findings is the registry correctly not matching
+    something that is not there, and coverage gaps are answered by Setup and
+    Uncovered devices.
+
+    A tool observed and NOT in the registry is the row that matters most.
+    Something is in use that governance has never considered, and it is flagged
+    rather than quietly folded in.
 
     Governance fields (owner, review date, risk decision) are not derivable and
     are absent here. The page shows them as not set rather than hiding them,
     because a register that looks complete while missing the decisions is worse
-    than one with visible gaps.
+    than one with visible gaps. When those decisions exist, an unobserved tool
+    carrying one becomes a register row again: at that point it is a record of
+    something the organisation decided, rather than a default nobody chose.
     """
     domain_map = domain_map or {}
     reg = reg or {}

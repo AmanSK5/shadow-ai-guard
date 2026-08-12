@@ -1,17 +1,21 @@
-"""The register lists what the registry knows, not only what was seen.
+"""The register is what is in use. The registry is a watchlist.
 
-A register built from observations alone is the same mistake as a dashboard
-that counts reporting sources and not silent ones: an estate looks complete
-because the thing you cannot see is also the thing you did not list.
+register_from returns the full join, observed and not, and the endpoint shows
+the observed set. That split is the point of these tests.
 
-Two directions of gap, and the register has to show both.
+A register is a record of what an organisation actually uses. Listing every
+entry of a shipped registry makes it a worse record: it puts tools nobody there
+has heard of in front of a management review as though the organisation has a
+position on them. The watchlist is context, and its size belongs in a count.
 
-A tool in the registry that nothing reported is not evidence it is unused. It
-may be in use somewhere nothing reports from, and it may simply not have been
-used in the lookback window. It gets a row with empty counts.
+The project's rule that silence is not evidence of safety applies to sources,
+not to this. A collector that stops reporting looks identical to a clean
+machine, so silent sources must be listed. A registry entry is not a source: a
+tool absent from findings is the registry correctly not matching something that
+is not there, and coverage is answered by Setup and Uncovered devices.
 
-A tool observed that is NOT in the registry is the more urgent one: something
-is in use that governance has never considered. It gets a row and a flag.
+A tool observed and NOT in the registry is the row that matters. Something is
+in use that governance has never considered.
 
 Governance fields are absent rather than empty. The portal holds no governance
 state in this release, and an empty owner column reads as "nothing to say" when
@@ -76,8 +80,15 @@ def _row(rows, tool_id):
 # The two gaps
 # ─────────────────────────────────────────────
 
-def test_a_registry_tool_with_no_findings_is_still_listed():
-    """The regression. Building from findings alone would drop this row."""
+def test_the_full_join_carries_unobserved_tools_for_counting():
+    """register_from returns everything so the watchlist can be counted.
+
+    The caller shows the observed set. Keeping the unobserved rows here rather
+    than dropping them early is what lets the page say "30 watched for, 29 not
+    seen" without a second pass over the registry, and it is where an
+    unobserved tool carrying a real decision will come back into the register
+    once decisions exist.
+    """
     rows = register_from([_f()], REGISTRY, DOMAIN_MAP)
 
     grok = _row(rows, "grok")
@@ -85,6 +96,17 @@ def test_a_registry_tool_with_no_findings_is_still_listed():
     assert grok["observed"] is False
     assert grok["devices"] == 0
     assert grok["first_seen"] == ""
+
+
+def test_the_observed_set_is_what_a_register_shows():
+    """The filter the endpoint applies, asserted on the shape it produces.
+
+    One tool in use on this fixture, not three, and not the whole registry.
+    """
+    rows = register_from([_f()], REGISTRY, DOMAIN_MAP)
+    in_use = [r for r in rows if r["observed"]]
+
+    assert [r["id"] for r in in_use] == ["claude"]
 
 
 def test_an_observed_tool_missing_from_the_registry_is_flagged():
@@ -234,13 +256,19 @@ def test_csv_has_a_header_and_a_row_per_tool():
     assert len(out) == len(rows) + 1
 
 
-def test_csv_includes_unobserved_tools():
-    """The export has to carry the same gaps as the page. A CSV of observed
-    tools only, handed to someone reviewing coverage, is the exact thing this
-    register exists to stop."""
-    rows = register_from([_f()], REGISTRY, DOMAIN_MAP)
+def test_csv_carries_the_same_rows_as_the_page():
+    """The export is the register, so it is the observed set.
+
+    A CSV that quietly contained more than the page it was downloaded from
+    would be worse than useless in a review: the two would disagree and nobody
+    would know which was the register.
+    """
+    rows = [r for r in register_from([_f()], REGISTRY, DOMAIN_MAP)
+            if r["observed"]]
     out = register_csv(rows)
-    assert "grok" in out
+
+    assert "claude," in out
+    assert "grok" not in out
 
 
 def test_csv_flattens_lists_without_breaking_columns():
@@ -301,3 +329,31 @@ def test_a_tool_named_only_mcp_is_left_alone():
     """Stripping the suffix must not produce an empty tool id."""
     rows = register_from([_f(tool="-mcp")], {}, {})
     assert [r["id"] for r in rows] == ["-mcp"]
+
+
+def test_an_unobserved_tool_is_not_in_the_endpoints_rows():
+    """The filter lives in the endpoint, not in register_from, so a unit test
+    of the derivation alone would miss it.
+
+    Calls the endpoint function rather than going over HTTP. TestClient would
+    read better, but it pulls in httpx, which is not in the portal's lockfile
+    and which starlette is currently migrating away from in favour of httpx2.
+    A test that needs a dependency the thing it tests does not is a test that
+    breaks for reasons unrelated to the code.
+    """
+    import json
+    from unittest.mock import patch
+
+    from app import derive
+    from app import main as pm
+
+    with patch.object(pm, "_findings", lambda h: [_f()]), \
+            patch.object(derive, "load_registry", lambda p: REGISTRY):
+        pm._cache.clear()
+        body = json.loads(bytes(pm.register(hours=168).body))
+
+    assert [r["id"] for r in body["rows"]] == ["claude"]
+    # The watchlist is still reported, as a count.
+    assert body["tools_known"] == 3
+    assert body["known_not_observed"] == 2
+    assert body["tools_observed"] == 1

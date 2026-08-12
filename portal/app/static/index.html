@@ -478,17 +478,17 @@ async function register() {
   };
 
   return `<h2>AI register</h2>
-  <p class="lede">Every tool the registry knows about, joined to what has
-  actually been observed. A tool with no observations is still listed: not
-  seeing it here means nothing reported it in the last ${esc(win)}, which is not
-  the same as nobody using it. A tool observed but absent from the registry is
-  the more urgent gap, and is flagged as such.</p>
+  <p class="lede">The AI tools actually in use, from findings in the last
+  ${esc(win)}. The registry is a watchlist rather than an inventory, so a tool
+  it knows about and nothing has reported is counted below rather than listed.
+  A tool observed and absent from the registry is the row worth acting on, and
+  is flagged as such.</p>
 
   <dl class="stats">
-    <div><dt>${REG.tools_observed}</dt><dd>observed</dd></div>
-    <div><dt>${REG.tools_known}</dt><dd>in registry</dd></div>
-    <div><dt style="color:var(--dstr)">${REG.observed_not_in_registry}</dt><dd>observed, not in registry</dd></div>
-    <div><dt>${REG.known_not_observed}</dt><dd>in registry, not observed</dd></div>
+    <div><dt>${REG.tools_observed}</dt><dd>in use</dd></div>
+    <div><dt style="color:var(--dstr)">${REG.observed_not_in_registry}</dt><dd>not in registry</dd></div>
+    <div><dt>${REG.tools_known}</dt><dd>watched for</dd></div>
+    <div><dt>${REG.known_not_observed}</dt><dd>watched for, not seen</dd></div>
   </dl>
 
   <p class="lede">Owner, review date and risk decision are organisational
@@ -501,25 +501,26 @@ async function register() {
   <tr><th>tool</th><th>vendor</th><th>status</th><th>risk</th>
   <th>devices</th><th>users</th><th>corp</th><th>personal</th><th>surfaces</th>
   <th>first seen</th><th>last seen</th><th>owner</th><th>review</th></tr>
-  ${rows.map(r => `<tr${r.observed ? '' : ' style="color:var(--mut)"'}>
+  ${rows.map(r => `<tr>
     <td>${esc(r.name)}<br><span class="mono" style="font-size:11px;color:var(--mut)">${esc(r.id)}</span></td>
     <td>${r.vendor ? esc(r.vendor) : '—'}</td>
     <td>${status(r)}</td>
     <td>${r.risk_tier ? esc(r.risk_tier) : '—'}</td>
-    <td>${r.observed ? r.devices : '—'}</td>
-    <td>${r.observed ? r.users : '—'}</td>
-    <td>${r.observed ? r.corporate_accounts : '—'}</td>
-    <td>${!r.observed ? '—' : (r.personal_accounts
-        ? `<span class="pill p-warn">${r.personal_accounts}</span>` : '0')}</td>
+    <td>${r.devices}</td>
+    <td>${r.users}</td>
+    <td>${r.corporate_accounts}</td>
+    <td>${r.personal_accounts
+        ? `<span class="pill p-warn">${r.personal_accounts}</span>` : '0'}</td>
     <td>${r.surfaces.length ? esc(r.surfaces.join(', ')) : '—'}</td>
     <td>${when(r.first_seen)}</td>
     <td>${when(r.last_seen)}</td>
     <td>${dash}</td>
     <td>${dash}</td>
   </tr>`).join('')}
-  </table>` : `<p class="lede">No tools in the register. Either the registry did
-  not load or nothing has reported: check Settings for the registry status
-  before reading this as an empty estate.</p>`}`;
+  </table>` : `<p class="lede">No AI tools observed in the last ${esc(win)}.
+  That is a real answer for a small estate, and it is also what a fleet with no
+  collectors deployed looks like: check Setup before reading it as a clean
+  one.</p>`}`;
 }
 
 async function settings() {
