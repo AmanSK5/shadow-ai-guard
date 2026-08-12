@@ -83,17 +83,46 @@ function Get-DeviceIdentifier {
         $serial = (Get-CimInstance Win32_BIOS -ErrorAction Stop).SerialNumber
         if ($null -ne $serial) { $serial = $serial.Trim() }
     } catch {
-        Write-Output "ai-guard: serial lookup failed ($($_.Exception.Message))"
+        Write-Host "ai-guard: serial lookup failed ($($_.Exception.Message))"
     }
 
     if (-not $serial -or $BogusSerials -contains $serial.ToLower()) {
-        Write-Output "ai-guard: BIOS serial is '$serial', using COMPUTERNAME instead"
+        Write-Host "ai-guard: BIOS serial is '$serial', using COMPUTERNAME instead"
         return $env:COMPUTERNAME
     }
     return $serial
 }
 
 # --------------------------------------------------------------- helpers --
+function ConvertTo-Hashtable {
+    <#
+        A hashtable from either a PSCustomObject or a hashtable.
+
+        This exists because the two arrive by different routes and only one of
+        them can be enumerated with .PSObject.Properties. ConvertFrom-Json
+        returns a PSCustomObject, whose properties are the JSON keys. A freshly
+        created @{} is a hashtable, whose .PSObject.Properties are the .NET
+        collection's own members: IsFixedSize, Count, IsSynchronized,
+        IsReadOnly, Keys, Values, SyncRoot.
+
+        Enumerating a hashtable that way copied all seven into the policy, so a
+        machine with no existing 3rdparty value ended up with an Extensions
+        object containing "Count": 0 alongside the real entry. It only happened
+        on first install, which is why a merge tested against existing JSON did
+        not show it.
+    #>
+    param($Object)
+    $out = @{}
+    if ($null -eq $Object) { return $out }
+    if ($Object -is [System.Collections.IDictionary]) {
+        foreach ($k in $Object.Keys) { $out[$k] = $Object[$k] }
+        return $out
+    }
+    foreach ($p in $Object.PSObject.Properties) { $out[$p.Name] = $p.Value }
+    return $out
+}
+
+
 function Get-JsonPolicy {
     <#
         The existing value of a JSON policy, as a hashtable, or an empty one.
@@ -103,6 +132,13 @@ function Get-JsonPolicy {
         ours wholesale would remove any other extension the organisation
         deploys. Unparseable existing content is left alone and reported:
         replacing something we cannot read is how a working policy disappears.
+
+        Write-Host rather than Write-Output for the progress line.
+        PowerShell collects everything a function writes to the output
+        stream as its return value, so a message here would come back
+        alongside the value. A -WhatIf run caught exactly that: the
+        forcelist value name came out as
+        "ai-guard: forcelist indexes 1 in use, taking 2 2".
     #>
     param($Path, $Name)
     if (-not (Test-Path $Path)) { return @{} }
@@ -111,12 +147,10 @@ function Get-JsonPolicy {
     try {
         $obj = $raw | ConvertFrom-Json -ErrorAction Stop
     } catch {
-        Write-Output "ai-guard: existing $Name is not valid JSON, refusing to overwrite it"
+        Write-Host "ai-guard: existing $Name is not valid JSON, refusing to overwrite it"
         throw
     }
-    $out = @{}
-    foreach ($p in $obj.PSObject.Properties) { $out[$p.Name] = $p.Value }
-    return $out
+    return ConvertTo-Hashtable $obj
 }
 
 function Set-JsonPolicy {
@@ -165,12 +199,7 @@ Set-JsonPolicy $FirefoxPolicies 'ExtensionSettings' $settings
 # 32 character id is a different string for the same extension and will not
 # work here.
 $thirdParty = Get-JsonPolicy $FirefoxPolicies '3rdparty'
-if (-not $thirdParty.ContainsKey('Extensions')) { $thirdParty['Extensions'] = @{} }
-
-$extensions = @{}
-foreach ($p in $thirdParty['Extensions'].PSObject.Properties) {
-    $extensions[$p.Name] = $p.Value
-}
+$extensions = ConvertTo-Hashtable $thirdParty['Extensions']
 $extensions[$GeckoId] = @{
     reportEndpoint         = $Endpoint
     authToken              = $AuthToken
