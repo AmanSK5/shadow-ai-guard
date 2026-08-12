@@ -132,6 +132,31 @@ portal:
   identityMap:
     existingConfigMap: ""
 
+  # Optional. Approval decisions, owners and review dates, as governance.yaml
+  # in a ConfigMap. Without it the register falls back to the registry's own
+  # approved flag, every tool reads as undecided, and the owner and review
+  # columns show as not set.
+  #
+  # Separate from the registry on purpose. The registry answers what a tool is
+  # and how to detect it, and it ships with the project. This answers what your
+  # organisation decided, which is nobody else's to ship. It also never reaches
+  # a detector: approval used to be compiled into the browser extension's own
+  # config, which had no use for it.
+  #
+  # Approval records a governance position and does NOT change finding
+  # severity. Severity depends on the account domain: a personal account is a
+  # warn whether or not the tool is approved. Approval must never come to mean
+  # safe.
+  #
+  # Create it from your own file:
+  #   kubectl create configmap ai-guard-governance --from-file=governance.yaml
+  #
+  # Validate it first, with governance/validate.py from the repo. An approval
+  # with no review date is a schema error, because an approval with no expiry
+  # is the one that outlives the person who made it.
+  governance:
+    existingConfigMap: ""
+
   # Optional. Embeds Grafana panels on the portal's dashboard tab.
   #
   # Grafana refuses to be framed by default, deliberately: framing a session

@@ -115,6 +115,28 @@ jobs:
           $r | Format-Table -AutoSize
           if ($r | Where-Object Severity -eq 'Error') { exit 1 }
 
+  governance-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with: { python-version: '3.12' }
+      - run: pip install --require-hashes -r .github/requirements-ci.txt
+      - name: validate the governance example and the demo file
+        # Both, because they are the two files in the repo anyone will copy.
+        # The example is what a deployer starts from and the demo file is what
+        # the register renders when someone tries the project, so a broken one
+        # is a broken first impression either way.
+        #
+        # The validator exits non-zero on a schema error and warns without
+        # failing on a tool id the registry does not know. That asymmetry is
+        # deliberate: a decision about a tool that is not registered yet is
+        # legitimate, and it is also what a typo looks like, so it is reported
+        # rather than either accepted silently or treated as an error.
+        run: |
+          python governance/validate.py governance/governance.yaml.example
+          python governance/validate.py demo/governance.yaml
+
   registry-validate:
     runs-on: ubuntu-latest
     steps:
@@ -668,7 +690,8 @@ jobs:
       contents: read
       packages: write
     needs: [placeholder-guard, shellcheck, collector-delivery-state,
-            registry-validate, receiver-test, scanner-test, portal-test,
+            registry-validate, governance-validate,
+            receiver-test, scanner-test, portal-test,
             helm, demo-smoke, compose-smoke,
             windows-path-containment]
     runs-on: ubuntu-latest

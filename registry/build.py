@@ -85,6 +85,12 @@ def _scanner_shape(registry) -> dict:
     never disagree.
     """
     tools = registry["tools"]
+    # No `approved` here, deliberately. It is a governance decision, and a
+    # scanner has no use for one: severity depends on the account domain and
+    # nothing else. It used to be emitted to this view and to extension.json,
+    # so an organisation's approval positions were compiled into a file shipped
+    # to a browser extension that never read them. Governance now lives in its
+    # own file and stays in the portal. See governance/.
     return {
     "services": [
         {
@@ -92,7 +98,6 @@ def _scanner_shape(registry) -> dict:
             "vendor": t["vendor"],
             "category": t["category"],
             "risk_tier": t.get("risk_tier", "medium"),
-            "approved": t["approved"],
             "domains": t.get("domains", []),
             "entra_app_ids": t.get("entra_app_ids", []),
             "email_domains": t.get("email_senders", []),
@@ -130,7 +135,6 @@ def emit(registry, write_fallback=True):
                 "tool": t["id"],
                 "domains": t.get("domains", []),
                 "login_selector": t.get("login_selector"),
-                "approved": t["approved"],
             }
             for t in tools
             if t.get("domains")

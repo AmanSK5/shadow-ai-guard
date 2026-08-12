@@ -36,6 +36,7 @@ encryption.
   LOOKBACK_HOURS    default window, default 168
   REGISTRY_PATH     registry.yaml, for resolving domains to tool ids
   IDENTITY_MAP      CSV of key,identity for attaching people to devices
+  GOVERNANCE_PATH   YAML of approval decisions, owners and review dates
   GRAFANA_URL       base URL of a Grafana that allows embedding; unset means
                     the dashboard shows a note instead of a broken frame
   GRAFANA_PANELS    what to embed, as "dashboardUid:panelId:Title" entries.
@@ -69,7 +70,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
-from app import derive
+from app import derive, governance
 
 log = logging.getLogger("portal")
 
@@ -157,6 +158,9 @@ LOKI_TOKEN = _secret("LOKI_TOKEN") or None
 LOOKBACK_HOURS = float(os.environ.get("LOOKBACK_HOURS", "168"))
 REGISTRY_PATH = os.environ.get("REGISTRY_PATH", "/srv/registry/registry.yaml")
 IDENTITY_MAP = os.environ.get("IDENTITY_MAP", "")
+# Governance decisions. Optional: without it the registry's own approved
+# flag stands as the default and owner and review date show as not set.
+GOVERNANCE_PATH = os.environ.get("GOVERNANCE_PATH", "")
 GRAFANA_URL = os.environ.get("GRAFANA_URL", "").rstrip("/")
 GRAFANA_PANELS = os.environ.get("GRAFANA_PANELS", "")
 GRAFANA_DASHBOARD_UID = os.environ.get("GRAFANA_DASHBOARD_UID", "")
@@ -476,8 +480,9 @@ def register(hours: float = Query(default=None, gt=0, le=24 * 90),
     def build():
         findings = _findings(hours)
         reg = derive.load_registry(REGISTRY_PATH)
+        gov = governance.load_governance(GOVERNANCE_PATH)
         return derive.register_from(findings, reg,
-                                    derive.load_domain_map_from(reg))
+                                    derive.load_domain_map_from(reg), gov)
 
     all_rows, at = _cached("register", hours, build)
     # The register is what is in use. The rest of the join is the watchlist,
@@ -493,10 +498,19 @@ def register(hours: float = Query(default=None, gt=0, le=24 * 90),
             headers={"Content-Disposition": 'attachment; filename="%s"' % name},
         )
 
+    gov = governance.load_governance(GOVERNANCE_PATH)
     return JSONResponse({
         "rows": rows,
         "derived_at": at,
         "hours": hours,
+        "governance_configured": bool(GOVERNANCE_PATH),
+        # Decisions naming a tool the registry does not know. Reported rather
+        # than dropped: the likely cause is a typo, and a decision that
+        # silently matches nothing is how an organisation believes it has
+        # decided something it has not.
+        "governance_unmatched": governance.unmatched(
+            gov, [t.get("id") for t in (
+                derive.load_registry(REGISTRY_PATH).get("tools") or [])]),
         # Both counts, deliberately. A register that reported only what it
         # found would let an estate with a silent source look complete.
         "tools_observed": len(rows),
