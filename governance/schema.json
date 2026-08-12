@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ai-guard governance decisions",
+  "description": "What an organisation has decided about the AI tools it uses. Deployment-specific: this file is never shipped with the project, because an upstream registry has no business implying that a particular tool is approved or that a particular team owns it. Optional; without it the registry's own approved flag stands as the default.",
+  "type": "object",
+  "required": [
+    "version",
+    "tools"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1
+    },
+    "tools": {
+      "type": "object",
+      "description": "Keyed on tool id. Keys are governance subjects rather than necessarily registered tools: the tool most urgently in need of a decision is often the one the register has just flagged as observed and not in the registry. An id the registry does not know validates, and the portal reports it rather than dropping it, because a decision that silently matches nothing is how an organisation believes it has decided something it has not.",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "enum": [
+              "approved",
+              "not_approved",
+              "reviewing"
+            ],
+            "description": "The decision as recorded. Deliberately three: Restricted, Deprecated and Exception approved are all defensible and none is needed to find out whether this model is useful. Records a governance position and has no effect on finding severity, which depends on the account domain."
+          },
+          "owner": {
+            "type": "string",
+            "description": "Who owns the decision. A team or a person; the portal does not resolve it against anything."
+          },
+          "review_due": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "description": "When this decision should be revisited, as YYYY-MM-DD. An approval past this date reports as reviewing, with the reason attached. The stored decision is never rewritten: a clock ticking over is not a decision, and the history has to keep saying what a human decided on a date. Write it unquoted if you like; YAML parses a bare 2026-11-01 as a date object and the validator normalises it back to a string before checking, so both forms work and neither is a trap."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why. Free text, shown alongside the decision."
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "approved"
+                }
+              },
+              "required": [
+                "status"
+              ]
+            },
+            "then": {
+              "required": [
+                "review_due"
+              ],
+              "$comment": "An approval with no expiry is the dangerous record: it is the one that outlives the person who made it and the reason it was made. The constraint sits here rather than on every status, because requiring a date on a refusal would be box-ticking."
+            }
+          }
+        ]
+      }
+    }
+  }
+}

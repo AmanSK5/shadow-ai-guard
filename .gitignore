@@ -11,6 +11,11 @@ registry/dist/
 .env
 .DS_Store
 
+# A real governance file is one organisation's approval decisions, and it is
+# not ours to hold. Only the example is tracked. Anchored to the root so
+# demo/governance.yaml, which is fake and deliberately committed, still is.
+/governance/governance.yaml
+
 # Secrets. The compose route reads these from files rather than the
 # environment, so the files exist on a deployer's disk and must never be here.
 deploy/compose/secrets/

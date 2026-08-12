@@ -230,8 +230,28 @@ devices. A tool observed and absent from the registry does get a row, flagged,
 because something in use that governance has never considered is worth acting
 on. Owner, review date and risk decision are organisational records rather
 than observations, so the register shows them as not set rather than leaving
-the columns blank. It holds no decisions of its own, and the `approved` flag it
-displays is the registry's, reported as it stands.
+the columns blank. Owner, review date and the decision itself come from an optional governance
+file, described in [governance.md](governance.md), and the portal holds no
+governance state of its own: it reads the file and joins it at request time,
+the same way it joins findings.
+
+That file is deliberately not the registry. The registry answers what a tool is
+and how to detect it, and it ships with the project; governance answers what an
+organisation decided, which is nobody else's to ship. The separation is also
+physical, because approval used to be compiled into the browser extension's and
+the scanner's own config, neither of which had any use for it.
+
+Approval records a position and does not change severity. Severity is decided
+at the point of detection and depends on the account domain, so an approved
+tool signed into a personal account is still a warn, and an unapproved tool on
+a corporate account is still info. Those are independent dimensions and the
+portal keeps them that way: approval must never come to mean safe.
+
+An approval past its review date reports as reviewing, with the previous
+decision alongside, and the stored record is never rewritten. That is the same
+rule the platform applies to a source that has stopped reporting, turned on the
+decision instead: an approval nobody has revisited is not evidence a tool is
+safe, it is evidence that nobody looked.
 
 Its entry points differ because the sources do. Endpoint findings carry a
 device and a local username, and the username is a hint rather than a key: it

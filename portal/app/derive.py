@@ -36,6 +36,8 @@ import urllib.parse
 import urllib.request
 from collections import defaultdict
 
+from app import governance
+
 # Surfaces that describe a machine. Anything else is identity-scoped and will
 # not carry a device.
 ENDPOINT_SURFACES = {"cli", "ide", "desktop", "mcp", "browser"}
@@ -795,7 +797,7 @@ def _base_tool(tool):
     return base or tool
 
 
-def register_from(findings, reg=None, domain_map=None):
+def register_from(findings, reg=None, domain_map=None, gov=None):
     """One row per tool: what the registry knows, joined to what was observed.
 
     Returns the full join, observed and not. Callers decide what to show: the
@@ -882,6 +884,12 @@ def register_from(findings, reg=None, domain_map=None):
     for tid in sorted(set(known) | set(observed)):
         meta = known.get(tid, {})
         o = observed.get(tid)
+        # The organisation's decision if one is recorded, otherwise the
+        # registry's own flag as a labelled default. governance.decide keeps
+        # the two distinguishable, because every tool ships not approved and a
+        # register that presented that as a position would be asserting a
+        # refusal nobody made.
+        g = governance.decide(tid, gov, meta.get("approved"))
         rows.append({
             "id": tid,
             "name": meta.get("name") or tid,
@@ -891,6 +899,13 @@ def register_from(findings, reg=None, domain_map=None):
             # The registry's own boolean, reported as it stands. The portal
             # does not decide approval and must not imply it has.
             "approved": meta.get("approved"),
+            "status": g["status"],
+            "stored_status": g["stored_status"],
+            "status_reason": g["reason"],
+            "status_source": g["source"],
+            "owner": g["owner"],
+            "review_due": g["review_due"],
+            "days_overdue": g["days_overdue"],
             "in_registry": tid in known,
             "observed": o is not None,
             "devices": len(o["devices"]) if o else 0,
@@ -912,7 +927,9 @@ def register_from(findings, reg=None, domain_map=None):
 
 
 REGISTER_COLUMNS = [
-    "id", "name", "vendor", "category", "risk_tier", "approved",
+    "id", "name", "vendor", "category", "risk_tier",
+    "status", "stored_status", "status_reason", "status_source",
+    "owner", "review_due", "days_overdue", "approved",
     "in_registry", "observed", "devices", "users", "corporate_accounts",
     "personal_accounts", "findings", "surfaces", "sources",
     "first_seen", "last_seen",

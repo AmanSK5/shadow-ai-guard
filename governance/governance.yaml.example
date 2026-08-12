@@ -1,0 +1,77 @@
+# Governance decisions: what THIS organisation has decided about the AI tools
+# it uses. Copy this to governance.yaml, edit it, and point GOVERNANCE_PATH at
+# it. Nothing here ships with the project, and nothing here is a default.
+#
+# Optional. Without it the portal behaves exactly as it did before this file
+# existed: the registry's own `approved` flag stands, and owner and review date
+# show as not set.
+#
+# Separate from registry.yaml on purpose. The registry answers "what is this
+# tool and how do I detect it" and it ships with the project. This answers
+# "what did we decide", and an upstream project has no business implying that
+# Claude is approved or that Engineering owns ChatGPT.
+#
+# Approval records a governance position and does NOT change finding severity.
+# Severity is decided at the point of detection and depends on the account
+# domain: a personal account is a warn on any surface whether or not the tool
+# is approved, and the presence of a tool is info whether or not it is. An
+# approved tool signed into a personal account is still the thing to act on,
+# because the risky part is the account. Approval must never come to mean safe.
+#
+# Edit it, raise a merge request, merge it. That is the audit trail, and it is
+# a better one than most portals build: signed, timestamped, reviewable, with a
+# diff of exactly what changed and who approved the change.
+
+version: 1
+
+tools:
+
+  # A current approval. review_due is REQUIRED on an approved tool: an approval
+  # with no expiry is the one that outlives the person who made it and the
+  # reason it was made.
+  claude:
+    status: approved
+    owner: Engineering
+    review_due: 2026-11-01
+    reason: Enterprise tenant, data processing agreement in place
+
+  # An expired approval. The stored decision stays exactly as written, and the
+  # portal reports it as REVIEWING with "approval expired N days ago" and the
+  # previous decision alongside. Nothing rewrites this record: a clock ticking
+  # over is not a decision, and the history has to keep saying what a human
+  # decided on a date.
+  chatgpt:
+    status: approved
+    owner: Security
+    review_due: 2026-07-31
+    reason: Enterprise workspace, reviewed at onboarding
+
+  # Under review. review_due is strongly expected here, because a review with
+  # no date is the state things get parked in.
+  cursor:
+    status: reviewing
+    owner: Engineering
+    review_due: 2026-09-15
+    reason: Waiting on the vendor's sub-processor list
+
+  # A refusal. review_due is optional: a decision not to use something does not
+  # rot in the same way, though a date is useful if the reason might change.
+  deepseek:
+    status: not_approved
+    owner: Security
+    reason: No data processing agreement, hosting outside the UK and EU
+
+  # A tool the registry does not know about, recorded deliberately. The
+  # register flags tools it observes that are not in the registry, and this is
+  # the same gap from the other side: something was found, someone looked at
+  # it, and the decision is written down before it is a registry entry.
+  #
+  # The portal shows this as a decision whose tool is not registered. That is
+  # also what a typo looks like, which is the point: write github_copilot for
+  # github-copilot and the mistake is visible rather than silently doing
+  # nothing.
+  some-internal-ai-tool:
+    status: not_approved
+    owner: Security
+    review_due: 2026-09-30
+    reason: Found on two machines, no vendor assessment yet

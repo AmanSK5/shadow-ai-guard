@@ -12,7 +12,6 @@ services:
   vendor: Anthropic
   category: assistant
   risk_tier: high
-  approved: false
   domains:
   - claude.ai
   - anthropic.com
@@ -39,7 +38,6 @@ services:
   vendor: Anthropic
   category: coding
   risk_tier: high
-  approved: false
   domains: []
   entra_app_ids: []
   email_domains:
@@ -54,7 +52,6 @@ services:
   vendor: OpenAI
   category: assistant
   risk_tier: high
-  approved: false
   domains:
   - chat.openai.com
   - chatgpt.com
@@ -81,7 +78,6 @@ services:
   vendor: OpenAI
   category: coding
   risk_tier: medium
-  approved: false
   domains: []
   entra_app_ids: []
   email_domains: []
@@ -95,7 +91,6 @@ services:
   vendor: Google
   category: assistant
   risk_tier: high
-  approved: false
   domains:
   - gemini.google.com
   - aistudio.google.com
@@ -113,7 +108,6 @@ services:
   vendor: Google
   category: coding
   risk_tier: medium
-  approved: false
   domains: []
   entra_app_ids: []
   email_domains: []
@@ -127,7 +121,6 @@ services:
   vendor: GitHub
   category: coding
   risk_tier: medium
-  approved: false
   domains:
   - copilot-proxy.githubusercontent.com
   - api.githubcopilot.com
@@ -145,7 +138,6 @@ services:
   vendor: Anysphere
   category: coding
   risk_tier: high
-  approved: false
   domains:
   - cursor.com
   - cursor.sh
@@ -168,7 +160,6 @@ services:
   vendor: Cline Bot Inc
   category: coding
   risk_tier: medium
-  approved: false
   domains:
   - api.cline.bot
   entra_app_ids: []
@@ -183,7 +174,6 @@ services:
   vendor: Roo Veterinary Inc
   category: coding
   risk_tier: medium
-  approved: false
   domains: []
   entra_app_ids: []
   email_domains: []
@@ -197,7 +187,6 @@ services:
   vendor: Continue Dev
   category: coding
   risk_tier: medium
-  approved: false
   domains:
   - continue.dev
   entra_app_ids: []
@@ -212,7 +201,6 @@ services:
   vendor: Codeium
   category: coding
   risk_tier: high
-  approved: false
   domains:
   - codeium.com
   - windsurf.com
@@ -236,7 +224,6 @@ services:
   vendor: Tabnine
   category: coding
   risk_tier: medium
-  approved: false
   domains:
   - tabnine.com
   - api.tabnine.com
@@ -252,7 +239,6 @@ services:
   vendor: Otter.ai
   category: transcription
   risk_tier: high
-  approved: false
   domains:
   - otter.ai
   - api.otter.ai
@@ -275,7 +261,6 @@ services:
   vendor: Grammarly
   category: writing
   risk_tier: medium
-  approved: false
   domains:
   - grammarly.com
   - in.grammarly.com
@@ -302,7 +287,6 @@ services:
   vendor: Wispr
   category: voice
   risk_tier: high
-  approved: false
   domains:
   - wisprflow.ai
   - wisprflow.com
@@ -322,7 +306,6 @@ services:
   vendor: Perplexity AI
   category: search
   risk_tier: medium
-  approved: false
   domains:
   - perplexity.ai
   - api.perplexity.ai
@@ -345,7 +328,6 @@ services:
   vendor: Ollama
   category: local-model
   risk_tier: high
-  approved: false
   domains:
   - ollama.com
   - registry.ollama.ai
@@ -368,7 +350,6 @@ services:
   vendor: Element Labs
   category: local-model
   risk_tier: medium
-  approved: false
   domains:
   - lmstudio.ai
   entra_app_ids: []
@@ -385,7 +366,6 @@ services:
   vendor: DeepSeek
   category: assistant
   risk_tier: high
-  approved: false
   domains:
   - chat.deepseek.com
   - deepseek.com
@@ -403,7 +383,6 @@ services:
   vendor: Mistral AI
   category: assistant
   risk_tier: medium
-  approved: false
   domains:
   - chat.mistral.ai
   - mistral.ai
@@ -421,7 +400,6 @@ services:
   vendor: xAI
   category: assistant
   risk_tier: medium
-  approved: false
   domains:
   - grok.com
   entra_app_ids: []
@@ -437,7 +415,6 @@ services:
   vendor: Microsoft
   category: coding
   risk_tier: medium
-  approved: false
   domains:
   - copilot.microsoft.com
   - copilot.cloud.microsoft
@@ -457,7 +434,6 @@ services:
   vendor: Microsoft
   category: coding
   risk_tier: high
-  approved: false
   domains:
   - substrate.office.com
   entra_app_ids:
@@ -473,7 +449,6 @@ services:
   vendor: Atlassian
   category: productivity
   risk_tier: high
-  approved: false
   domains:
   - rovo.atlassian.com
   - api.atlassian.com
@@ -490,7 +465,6 @@ services:
   vendor: Notion Labs
   category: productivity
   risk_tier: medium
-  approved: false
   domains:
   - notion.so
   - api.notion.com
@@ -512,7 +486,6 @@ services:
   vendor: Fireflies
   category: productivity
   risk_tier: high
-  approved: false
   domains:
   - fireflies.ai
   - app.fireflies.ai
@@ -529,7 +502,6 @@ services:
   vendor: Midjourney
   category: assistant
   risk_tier: low
-  approved: false
   domains:
   - midjourney.com
   - www.midjourney.com
@@ -546,7 +518,6 @@ services:
   vendor: OpenAI
   category: platform
   risk_tier: high
-  approved: false
   domains:
   - platform.openai.com
   entra_app_ids: []
@@ -562,7 +533,6 @@ services:
   vendor: Hugging Face
   category: platform
   risk_tier: medium
-  approved: false
   domains:
   - huggingface.co
   - api-inference.huggingface.co
