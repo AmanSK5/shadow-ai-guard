@@ -144,8 +144,24 @@ const app = document.getElementById('app'), q = document.getElementById('q');
 // where you were, and storing it would need somewhere to store it; the
 // fragment is free, survives a reload, and makes a view linkable to a
 // colleague. An unknown fragment falls back rather than rendering nothing.
-const VIEWS = ['overview','tools','people','devices','personal','mcp',
-               'setup','coverage','dashboard','settings'];
+// Grouped rather than flat, so a section can be added without reshuffling
+// everything else, and so the shape of the tool is legible before you click.
+const NAV = [
+  {grp:null,        items:[['overview','Overview']]},
+  {grp:'Inventory', items:[['tools','Tools'],['people','People'],
+                           ['devices','Devices'],['personal','Personal accounts'],
+                           ['mcp','MCP servers']]},
+  {grp:'Coverage',  items:[['setup','Setup'],['coverage','Uncovered devices']]},
+  {grp:'Governance',items:[['register','AI register']]},
+  {grp:'Analytics', items:[['dashboard','Dashboard']]},
+  {grp:'System',    items:[['settings','Settings']]},
+];
+
+// Derived from NAV rather than written out beside it. Kept as a second list,
+// #register was missing from it: the nav entry worked, the view rendered, and
+// reloading the page silently sent you back to setup because the fragment was
+// not recognised. Two lists that must agree, with nothing enforcing it.
+const VIEWS = NAV.flatMap(sec => sec.items.map(([id]) => id));
 const fromHash = () => {
   const h = (location.hash || '').replace(/^#/, '');
   return VIEWS.includes(h) ? h : 'setup';
@@ -713,19 +729,6 @@ function dashboard() {
       title="${esc(p.title || 'Grafana panel')}"></iframe>`).join('')}
   </div>`;
 }
-
-// Grouped rather than flat, so a section can be added without reshuffling
-// everything else, and so the shape of the tool is legible before you click.
-const NAV = [
-  {grp:null,        items:[['overview','Overview']]},
-  {grp:'Inventory', items:[['tools','Tools'],['people','People'],
-                           ['devices','Devices'],['personal','Personal accounts'],
-                           ['mcp','MCP servers']]},
-  {grp:'Coverage',  items:[['setup','Setup'],['coverage','Uncovered devices']]},
-  {grp:'Governance',items:[['register','AI register']]},
-  {grp:'Analytics', items:[['dashboard','Dashboard']]},
-  {grp:'System',    items:[['settings','Settings']]},
-];
 
 function drawNav() {
   const n = document.getElementById('nav');
