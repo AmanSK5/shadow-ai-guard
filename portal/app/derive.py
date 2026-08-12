@@ -797,7 +797,8 @@ def _base_tool(tool):
     return base or tool
 
 
-def register_from(findings, reg=None, domain_map=None, gov=None):
+def register_from(findings, reg=None, domain_map=None, gov=None,
+                  exceptions=None):
     """One row per tool: what the registry knows, joined to what was observed.
 
     Returns the full join, observed and not. Callers decide what to show: the
@@ -889,7 +890,8 @@ def register_from(findings, reg=None, domain_map=None, gov=None):
         # the two distinguishable, because every tool ships not approved and a
         # register that presented that as a position would be asserting a
         # refusal nobody made.
-        g = governance.decide(tid, gov, meta.get("approved"))
+        g = governance.decide(tid, gov, meta.get("approved"),
+                              exceptions=exceptions)
         rows.append({
             "id": tid,
             "name": meta.get("name") or tid,
@@ -906,6 +908,8 @@ def register_from(findings, reg=None, domain_map=None, gov=None):
             "owner": g["owner"],
             "review_due": g["review_due"],
             "days_overdue": g["days_overdue"],
+            "exceptions": g["exceptions"],
+            "expired_exceptions": g["expired_exceptions"],
             "in_registry": tid in known,
             "observed": o is not None,
             "devices": len(o["devices"]) if o else 0,

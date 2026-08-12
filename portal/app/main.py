@@ -510,9 +510,10 @@ def register(hours: float = Query(default=None, gt=0, le=24 * 90),
     def build():
         findings = _findings(hours)
         reg = derive.load_registry(REGISTRY_PATH)
-        gov = governance.load_governance(GOVERNANCE_PATH)
+        gov, exceptions = governance.load_governance(GOVERNANCE_PATH)
         return derive.register_from(findings, reg,
-                                    derive.load_domain_map_from(reg), gov)
+                                    derive.load_domain_map_from(reg), gov,
+                                    exceptions)
 
     all_rows, at = _cached("register", hours, build)
     # The register is what is in use. The rest of the join is the watchlist,
@@ -528,7 +529,9 @@ def register(hours: float = Query(default=None, gt=0, le=24 * 90),
             headers={"Content-Disposition": 'attachment; filename="%s"' % name},
         )
 
-    gov = governance.load_governance(GOVERNANCE_PATH)
+    gov, exceptions = governance.load_governance(GOVERNANCE_PATH)
+    known = [t.get("id") for t in (
+        derive.load_registry(REGISTRY_PATH).get("tools") or [])]
     return JSONResponse({
         "rows": rows,
         "derived_at": at,
@@ -538,9 +541,16 @@ def register(hours: float = Query(default=None, gt=0, le=24 * 90),
         # than dropped: the likely cause is a typo, and a decision that
         # silently matches nothing is how an organisation believes it has
         # decided something it has not.
-        "governance_unmatched": governance.unmatched(
-            gov, [t.get("id") for t in (
-                derive.load_registry(REGISTRY_PATH).get("tools") or [])]),
+        "governance_unmatched": governance.unmatched(gov, known),
+        # Exceptions naming a tool the registry does not know, same treatment
+        # and for the same reason: usually a typo, and either way the exception
+        # is applying to nothing.
+        "exceptions_unmatched": governance.unmatched_exceptions(
+            exceptions, known),
+        "exceptions_active": sum(
+            len(r.get("exceptions") or []) for r in rows),
+        "exceptions_expired": sum(
+            len(r.get("expired_exceptions") or []) for r in rows),
         # Both counts, deliberately. A register that reported only what it
         # found would let an estate with a silent source look complete.
         "tools_observed": len(rows),
