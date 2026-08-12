@@ -26,6 +26,8 @@ first-class state and not an error - a small team with no MDM still gets
 useful without a name on it.
 """
 
+import csv
+import io
 import json
 import os
 import sys
@@ -747,3 +749,180 @@ def status_from(findings):
         "reporting": sum(1 for r in rows if r["reporting"]),
         "total": len(rows),
     }
+
+def load_registry(path):
+    """The whole registry, not just the domain map.
+
+    load_domain_map reduces the file to domain -> id, which is all tool
+    normalisation needs. The register needs the rest of it: vendor, category,
+    risk tier, and above all the full list of tools, because a tool the
+    registry knows about and nothing has ever reported is a register row in its
+    own right.
+
+    Returns {} rather than raising. A register built from observations alone is
+    a worse register, not a broken portal.
+    """
+    if not path or not os.path.exists(path):
+        return {}
+    try:
+        with open(path) as fh:
+            if path.endswith(".json"):
+                return json.load(fh) or {}
+            import yaml
+            return yaml.safe_load(fh) or {}
+    except Exception as e:
+        print("could not read registry (%s): the register will be built from "
+              "observations only" % e, file=sys.stderr)
+        return {}
+
+
+def _base_tool(tool):
+    """The tool itself, with any MCP suffix removed.
+
+    MCP findings name the tool as <tool>-mcp, and collectors older than the
+    current ones folded the server list in as <tool>-mcp:<servers>. Both are
+    correct for the MCP view, where a row is a server and the suffix says which
+    tool configured it.
+
+    They are wrong for a tool inventory. claude-code-mcp is not a different
+    tool from claude-code, it is evidence claude-code is on that machine. Left
+    alone it becomes a permanent "not in registry" row that can never be
+    resolved, because nobody would add claude-code-mcp to a registry of tools.
+    """
+    base = tool.split("-mcp:", 1)[0] if "-mcp:" in tool else tool
+    if base.endswith("-mcp"):
+        base = base[:-4]
+    return base or tool
+
+
+def register_from(findings, reg=None, domain_map=None):
+    """One row per tool: what the registry knows, joined to what was observed.
+
+    Two things make this more than a list of observed tools.
+
+    A tool in the registry that nothing reported still gets a row, with its
+    counts empty. "We know this exists and have not seen it here" is a real
+    register entry, and dropping it would let an estate look smaller than the
+    set of things it is watching for. It is also the honest form of the
+    project's own rule: absence of a finding is not evidence a tool is unused,
+    it may be used somewhere nothing is reporting from.
+
+    A tool that was observed and is NOT in the registry gets a row too, flagged
+    as unknown. That is the more urgent direction of the same gap: something is
+    in use that governance has never considered.
+
+    Governance fields (owner, review date, risk decision) are not derivable and
+    are absent here. The page shows them as not set rather than hiding them,
+    because a register that looks complete while missing the decisions is worse
+    than one with visible gaps.
+    """
+    domain_map = domain_map or {}
+    reg = reg or {}
+
+    observed = defaultdict(lambda: {
+        "devices": set(), "users": set(), "surfaces": set(), "sources": set(),
+        "corporate_accounts": set(), "personal_accounts": set(),
+        "findings": 0, "first_seen": "", "last_seen": "",
+    })
+
+    for f in findings:
+        tool = f.get("tool") or ""
+        if not tool or tool in NOT_A_TOOL:
+            continue
+        if (f.get("source") or "") in BRIDGE_SOURCES:
+            continue
+        tool = normalise_tool(_base_tool(tool), domain_map)
+
+        o = observed[tool]
+        o["findings"] += 1
+        for key, val in (("devices", (f.get("device") or "").strip()),
+                         ("users", (f.get("user") or "").strip()),
+                         ("surfaces", f.get("surface") or ""),
+                         ("sources", f.get("source") or "")):
+            if val:
+                o[key].add(val)
+
+        acct = (f.get("account_domain") or "").strip().lower()
+        if acct:
+            # Same rule personal_accounts_from uses: the reporter decided, at
+            # the point of detection, with the corporate domain list it was
+            # given. The portal does not re-derive it, because it may not hold
+            # the same list and two definitions that disagree is worse than one
+            # that is occasionally coarse.
+            if (f.get("severity") or "") == "warn":
+                o["personal_accounts"].add(acct)
+            else:
+                o["corporate_accounts"].add(acct)
+
+        ts = f.get("reported_at") or ""
+        if ts:
+            if not o["first_seen"] or ts < o["first_seen"]:
+                o["first_seen"] = ts
+            if ts > o["last_seen"]:
+                o["last_seen"] = ts
+
+    known = {}
+    for t in reg.get("tools", []) or []:
+        tid = t.get("id")
+        if tid:
+            known[tid] = t
+
+    rows = []
+    for tid in sorted(set(known) | set(observed)):
+        meta = known.get(tid, {})
+        o = observed.get(tid)
+        rows.append({
+            "id": tid,
+            "name": meta.get("name") or tid,
+            "vendor": meta.get("vendor") or "",
+            "category": meta.get("category") or "",
+            "risk_tier": meta.get("risk_tier") or "",
+            # The registry's own boolean, reported as it stands. The portal
+            # does not decide approval and must not imply it has.
+            "approved": meta.get("approved"),
+            "in_registry": tid in known,
+            "observed": o is not None,
+            "devices": len(o["devices"]) if o else 0,
+            "users": len(o["users"]) if o else 0,
+            "surfaces": sorted(o["surfaces"]) if o else [],
+            "sources": sorted(o["sources"]) if o else [],
+            "corporate_accounts": len(o["corporate_accounts"]) if o else 0,
+            "personal_accounts": len(o["personal_accounts"]) if o else 0,
+            "findings": o["findings"] if o else 0,
+            "first_seen": o["first_seen"] if o else "",
+            "last_seen": o["last_seen"] if o else "",
+        })
+
+    # Observed first, then by exposure. An unobserved tool is a real row but it
+    # is not what someone opening this page needs to look at first.
+    rows.sort(key=lambda r: (not r["observed"], -r["devices"],
+                             -r["personal_accounts"], r["name"].lower()))
+    return rows
+
+
+REGISTER_COLUMNS = [
+    "id", "name", "vendor", "category", "risk_tier", "approved",
+    "in_registry", "observed", "devices", "users", "corporate_accounts",
+    "personal_accounts", "findings", "surfaces", "sources",
+    "first_seen", "last_seen",
+]
+
+
+def register_csv(rows):
+    """CSV of the register, for spreadsheets and ad-hoc review.
+
+    Deliberately not an evidence artifact: no manifest, no checksum, no
+    reproducibility guarantee. The provenance that matters, when it was taken
+    and over what window, is carried in the filename by the endpoint, because a
+    filename survives being emailed around and a header comment does not.
+    """
+    out = io.StringIO()
+    w = csv.writer(out)
+    w.writerow(REGISTER_COLUMNS)
+    for r in rows:
+        w.writerow([
+            ";".join(r[c]) if isinstance(r.get(c), list)
+            else ("" if r.get(c) is None else r.get(c))
+            for c in REGISTER_COLUMNS
+        ])
+    return out.getvalue()

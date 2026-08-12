@@ -218,6 +218,17 @@ telemetry are one laptop. The portal derives those relationships on request
 and holds no database, so like the dashboard it is a view rather than a store,
 and losing it loses nothing.
 
+The AI register is that argument applied to governance. It lists every tool in
+the registry joined to what was observed, which means a tool nothing reported
+still gets a row: not seeing it means nothing reported it inside the lookback
+window, which is not the same as nobody using it. A tool observed and absent
+from the registry gets a row too, flagged, because something in use that
+governance has never considered is the more urgent direction of the same gap.
+Owner, review date and risk decision are organisational records rather than
+observations, so the register shows them as not set rather than leaving the
+columns blank. It holds no decisions of its own, and the `approved` flag it
+displays is the registry's, reported as it stands.
+
 Its entry points differ because the sources do. Endpoint findings carry a
 device and a local username, and the username is a hint rather than a key: it
 is firstname.lastname on one enrolment, a local account on another, whatever
