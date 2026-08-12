@@ -2,8 +2,13 @@
 # Every consumer (browser extension, endpoint collector, CLI scanner,
 # discovery job) is generated from this file by build.py. Edit here only.
 #
-# approved: true  -> sanctioned in your organisation; presence is info, personal account is warn
-# approved: false -> unsanctioned; presence alone is warn
+# approved: true or false records whether a tool is sanctioned in your
+# organisation. It does NOT affect finding severity, and never has. Severity is
+# decided by the reporter at the point of detection and depends on the account
+# domain: a personal account is warn on any surface, the presence of a tool is
+# info whether or not it is approved. That is deliberate, because a daily
+# fleet-wide scan would otherwise alert per device per unapproved tool every
+# morning, and every tool here ships unapproved. See receiver_reporter.py.
 #
 # Discovery-job candidates are appended with category: unreviewed and
 # added_by: discovery, then triaged in the MR.

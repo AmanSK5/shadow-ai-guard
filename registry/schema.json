@@ -55,7 +55,7 @@
           },
           "approved": {
             "type": "boolean",
-            "description": "true = sanctioned in your organisation. Findings for unapproved tools escalate severity."
+            "description": "true = sanctioned in your organisation. Records a governance position and does not affect finding severity: severity depends on the account domain, not on approval."
           },
           "notes": {
             "type": "string"
