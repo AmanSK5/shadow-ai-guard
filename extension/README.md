@@ -179,6 +179,41 @@ values including whatever your MDM substituted for the device identifier.
 
 ### 5. Deploy on Windows
 
+Two Intune platform scripts, for the same reason macOS needs two shapes of
+payload. `deploy/windows/Deploy-AiGuardExtension.ps1` covers Chrome, Edge and
+Brave: forcelist, `ExtensionSettings` with `override_update_url`, and the
+managed config. `Deploy-AiGuardExtensionFirefox.ps1` covers Firefox, which
+shares almost nothing with them: it installs the Mozilla-signed `.xpi` from
+`install_url` rather than polling an update manifest, keys managed storage on
+the gecko id rather than the 32 character Chrome id, and stores its whole
+policy as JSON in single registry values rather than as individual ones. The
+Firefox script reads those values before writing, because one value holds every
+extension's configuration and overwriting it would silently remove somebody
+else's.
+
+The `.reg` files alongside are the Chromium policy in registry form, for GPO or
+an RMM.
+
+A script rather than an Intune ADMX policy, for two reasons. The managed
+config lives under `3rdparty\extensions\<id>\policy`, which is arbitrary
+registry defined by the extension's own managed schema rather than a Chrome
+policy, so no ADMX setting covers it. And the device identifier has to be read
+from the machine: `%COMPUTERNAME%` in a `.reg` file is a literal string to
+Chrome, and even expanded it would be the hostname, where every other source
+keys a device on its hardware serial.
+
+The script reads the BIOS serial and rejects the placeholder values OEMs ship
+in that field. That matters more than it sounds: a hostname splits one machine
+into two on a view that groups by device, but fifty machines all reporting
+`To Be Filled By O.E.M.` collapse into one and the other forty nine vanish
+from every count.
+
+In Intune, set **Run this script using the logged on credentials** to No,
+because every key is under HKLM, and **Run script in 64 bit PowerShell Host**
+to Yes.
+
+
+
 `deploy/windows/<browser>/` has the equivalent registry blueprints:
 `install.reg` (forcelist) and `managed-storage.reg` (the
 `3rdparty\extensions\<id>\policy` key; list values are JSON strings).

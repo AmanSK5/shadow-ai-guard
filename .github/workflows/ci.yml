@@ -107,7 +107,11 @@ jobs:
             if (-not $ok) { Write-Host "::error::could not install PSScriptAnalyzer $version"; exit 1 }
           }
           Import-Module PSScriptAnalyzer -RequiredVersion $version
-          $r = Invoke-ScriptAnalyzer -Path endpoint/windows/ -Recurse -Severity Warning,Error
+          # Both paths. The collector lives in endpoint/windows and the
+          # extension's Intune deployment script in extension/deploy/windows,
+          # and a linter pointed at one of them lets the other ship unchecked.
+          $r = @('endpoint/windows/', 'extension/deploy/windows/') |
+               ForEach-Object { Invoke-ScriptAnalyzer -Path $_ -Recurse -Severity Warning,Error }
           $r | Format-Table -AutoSize
           if ($r | Where-Object Severity -eq 'Error') { exit 1 }
 
