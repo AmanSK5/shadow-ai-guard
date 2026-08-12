@@ -48,10 +48,11 @@ VALID_STATUSES = {APPROVED, NOT_APPROVED, REVIEWING}
 
 # Why an effective status differs from the stored one. Empty when it does not.
 EXPIRED = "approval_expired"
+EXCEPTED = "exception"
 
 
 def load_governance(path):
-    """Governance decisions keyed on tool id, or {} when none are configured.
+    """(decisions, exceptions) from one file, or ({}, {}) when none configured.
 
     Returns {} rather than raising on a missing file, because governance is
     optional and its absence is a valid state. A file that exists and cannot be
@@ -59,11 +60,11 @@ def load_governance(path):
     is not, so it complains to stderr rather than passing silently.
     """
     if not path:
-        return {}
+        return {}, {}
     if not os.path.exists(path):
         print("governance file not found at %s: decisions will fall back to "
               "the registry's approved flag" % path, file=sys.stderr)
-        return {}
+        return {}, {}
 
     try:
         with open(path) as fh:
@@ -72,13 +73,13 @@ def load_governance(path):
     except ImportError:
         print("pyyaml not installed: governance decisions will not be loaded",
               file=sys.stderr)
-        return {}
+        return {}, {}
     except Exception as e:
         print("could not read governance file (%s): decisions will fall back "
               "to the registry's approved flag" % e, file=sys.stderr)
-        return {}
+        return {}, {}
 
-    return load_governance_from(doc)
+    return load_governance_from(doc), load_exceptions_from(doc)
 
 
 def load_governance_from(doc):
@@ -102,6 +103,65 @@ def load_governance_from(doc):
             "reason": str(rec.get("reason") or "").strip(),
         }
     return out
+
+
+def load_exceptions_from(doc):
+    """Exceptions, keyed on their own id rather than on the tool.
+
+    Keyed on an id because a tool can have more than one, for different teams
+    or different reasons, and because an exception is a record with its own
+    life: it is raised, it applies, it expires, and it stays visible
+    afterwards. Keying on the tool would allow exactly one and would lose the
+    previous one the moment a second was written.
+
+    Expiry is mandatory here in a way it is not for a decision. An exception is
+    a deliberate departure from the general position for a stated scope and
+    period, and one without an end is not an exception, it is an undocumented
+    change of policy.
+    """
+    out = {}
+    for ex_id, rec in ((doc or {}).get("exceptions") or {}).items():
+        if not isinstance(rec, dict):
+            continue
+        tool = str(rec.get("tool") or "").strip()
+        expires = _parse_date(rec.get("expires"))
+        if not tool:
+            print("governance: exception %s names no tool, ignoring it" % ex_id,
+                  file=sys.stderr)
+            continue
+        if not expires:
+            # Caught by the schema, so reaching here means a file that got in
+            # another way. An exception with no end applying forever is the
+            # thing this must not do.
+            print("governance: exception %s has no usable expiry, ignoring it"
+                  % ex_id, file=sys.stderr)
+            continue
+        out[str(ex_id)] = {
+            "id": str(ex_id),
+            "tool": tool,
+            "scope": rec.get("scope") or {},
+            "reason": str(rec.get("reason") or "").strip(),
+            "owner": str(rec.get("owner") or "").strip(),
+            "expires": expires,
+        }
+    return out
+
+
+def exceptions_for(tool_id, exceptions, today=None):
+    """(active, expired) exceptions for one tool.
+
+    Expired ones are returned rather than filtered out. An exception that has
+    run its course is a record of something an organisation decided and then
+    let lapse, and dropping it from the view loses the history at the moment it
+    becomes most worth seeing.
+    """
+    today = today or date.today()
+    mine = [e for e in (exceptions or {}).values() if e["tool"] == tool_id]
+    active = sorted((e for e in mine if e["expires"] >= today),
+                    key=lambda e: e["expires"])
+    expired = sorted((e for e in mine if e["expires"] < today),
+                     key=lambda e: e["expires"], reverse=True)
+    return active, expired
 
 
 def _parse_date(value):
@@ -156,7 +216,7 @@ def days_overdue(record, today=None):
     return max(0, (today - due).days)
 
 
-def decide(tool_id, governance, registry_approved, today=None):
+def decide(tool_id, governance, registry_approved, today=None, exceptions=None):
     """The whole governance position for one tool, ready to render.
 
     Falls back to the registry's own flag when no decision has been recorded,
@@ -165,11 +225,26 @@ def decide(tool_id, governance, registry_approved, today=None):
     decision: `source` says whether a human recorded this or whether it is the
     shipped default, and nobody should read "not approved by default" as
     "somebody decided against it".
+
+    An active exception is reported alongside the decision, not in place of it.
+    An exception is a departure from the general position for a stated scope,
+    and the general position has not been withdrawn: replacing the status would
+    lose what the organisation actually decided, and would make an exception
+    for one team read as a decision about everybody. When it expires it simply
+    stops applying, and the underlying status is already what it was. An
+    expired exception does not make a tool reviewing: nothing about the
+    decision changed, only the departure from it ended.
     """
+    active, expired = exceptions_for(tool_id, exceptions, today)
+    ex = {
+        "exceptions": [_jsonable_exception(e) for e in active],
+        "expired_exceptions": [_jsonable_exception(e) for e in expired],
+    }
+
     rec = (governance or {}).get(tool_id)
     if rec:
         status, reason = effective(rec, today)
-        return {
+        return dict(ex, **{
             "status": status,
             "stored_status": rec["status"],
             "reason": reason,
@@ -177,18 +252,37 @@ def decide(tool_id, governance, registry_approved, today=None):
             "review_due": rec["review_due"].isoformat() if rec.get("review_due") else "",
             "days_overdue": days_overdue(rec, today),
             "source": "governance",
-        }
+        })
 
     if registry_approved is None:
         # Not in the registry either. Unknown, which is not the same as
         # not approved: nobody has decided anything about this tool.
-        return {"status": "", "stored_status": "", "reason": "", "owner": "",
-                "review_due": "", "days_overdue": 0, "source": "unknown"}
+        return dict(ex, **{"status": "", "stored_status": "", "reason": "",
+                           "owner": "", "review_due": "", "days_overdue": 0,
+                           "source": "unknown"})
 
     status = APPROVED if registry_approved else NOT_APPROVED
-    return {"status": status, "stored_status": status, "reason": "",
-            "owner": "", "review_due": "", "days_overdue": 0,
-            "source": "registry_default"}
+    return dict(ex, **{"status": status, "stored_status": status, "reason": "",
+                       "owner": "", "review_due": "", "days_overdue": 0,
+                       "source": "registry_default"})
+
+
+def _jsonable_exception(e):
+    """An exception as plain data, with the date as a string."""
+    return {"id": e["id"], "tool": e["tool"], "scope": e["scope"],
+            "reason": e["reason"], "owner": e["owner"],
+            "expires": e["expires"].isoformat()}
+
+
+def unmatched_exceptions(exceptions, known_ids):
+    """Exceptions naming a tool the registry does not know.
+
+    Same treatment as an unmatched decision and for the same reason: usually a
+    typo, occasionally a rename, and either way the exception is not applying
+    to anything. Reported rather than dropped.
+    """
+    return sorted({e["tool"] for e in (exceptions or {}).values()
+                   if e["tool"] not in set(known_ids or ())})
 
 
 def unmatched(governance, known_ids):

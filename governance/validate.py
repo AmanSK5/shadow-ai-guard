@@ -35,6 +35,9 @@ def normalise(doc):
     for rec in (doc.get("tools") or {}).values():
         if isinstance(rec, dict) and isinstance(rec.get("review_due"), date):
             rec["review_due"] = rec["review_due"].isoformat()
+    for rec in (doc.get("exceptions") or {}).values():
+        if isinstance(rec, dict) and isinstance(rec.get("expires"), date):
+            rec["expires"] = rec["expires"].isoformat()
     return doc
 
 
@@ -62,10 +65,17 @@ def main(path):
         return 1
 
     tools = doc.get("tools") or {}
-    print("%s valid: %d decision%s" % (path, len(tools), "" if len(tools) == 1 else "s"))
+    exceptions = doc.get("exceptions") or {}
+    print("%s valid: %d decision%s, %d exception%s"
+          % (path, len(tools), "" if len(tools) == 1 else "s",
+             len(exceptions), "" if len(exceptions) == 1 else "s"))
 
     known = known_tool_ids()
     if known is not None:
+        for ex_id, rec in sorted(exceptions.items()):
+            if rec.get("tool") not in known:
+                print("warning: exception %s names tool %s, which is not in the "
+                      "registry" % (ex_id, rec.get("tool")), file=sys.stderr)
         unknown = sorted(set(tools) - known)
         for tid in unknown:
             print("warning: %s is not a tool id in the registry. That is fine "

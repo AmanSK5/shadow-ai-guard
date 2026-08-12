@@ -75,3 +75,42 @@ tools:
     owner: Security
     review_due: 2026-09-30
     reason: Found on two machines, no vendor assessment yet
+
+# ─────────────────────────────────────────────
+# Exceptions
+# ─────────────────────────────────────────────
+#
+# A temporary departure from the general decision, for a stated scope and a
+# stated period. Keyed on its own id rather than on the tool, because a tool
+# can have more than one and because an exception is a record with its own
+# life: raised, applying, expired, and still visible afterwards.
+#
+# An exception does NOT replace the tool's status. The general position has not
+# been withdrawn, and showing the exception instead would make a note about one
+# team read as a decision about everybody. The register shows both.
+#
+# expires is required, unlike review_due on a decision. A departure from the
+# general position with no end is not an exception, it is an undocumented
+# change of policy. When it expires it simply stops applying: the underlying
+# status is already what it was, and nothing becomes "reviewing" because a
+# campaign finished.
+
+exceptions:
+
+  EX-001:
+    tool: chatgpt
+    scope:
+      team: Marketing
+    reason: Client campaign work, no personal data, agreed with the client
+    owner: Security
+    expires: 2026-12-01
+
+  # Expired, and kept. It is a record of something the organisation decided and
+  # then let lapse, which is worth seeing rather than losing.
+  EX-002:
+    tool: deepseek
+    scope:
+      project: Vendor evaluation
+    reason: Time-boxed evaluation against a public dataset only
+    owner: Engineering
+    expires: 2026-03-31
