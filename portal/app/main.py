@@ -59,6 +59,7 @@ encryption.
                     ran, with nothing on screen saying the view was stale.
 """
 
+import json
 import logging
 import os
 import secrets
@@ -70,7 +71,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
-from app import derive, governance, paste_guard
+from app import derive, evidence, governance, paste_guard
 
 log = logging.getLogger("portal")
 
@@ -446,6 +447,50 @@ def status(hours: float = Query(default=None, gt=0, le=24 * 90),
 
     value, at = _cached("status", hours, build)
     return JSONResponse(dict(value, derived_at=at, hours=hours))
+
+
+@app.get("/api/evidence")
+def evidence_snapshot(hours: float = Query(default=None, gt=0, le=24 * 90),
+                      download: bool = Query(default=False),
+                      _=Depends(require_auth)):
+    """A checksummed statement of what the platform observed, for export.
+
+    Generated on demand and not stored. Built from the same derivations the
+    pages use, so a snapshot and the page it summarises cannot disagree: the
+    same numbers from the same read, arranged for export.
+
+    Not cached. A snapshot records a moment, and returning a cached one under a
+    fresh generated_at would be a timestamp that lies about when the numbers
+    were taken.
+    """
+    hours = hours or LOOKBACK_HOURS
+    findings = _findings(hours)
+    reg = derive.load_registry(REGISTRY_PATH)
+    domain_map = derive.load_domain_map_from(reg)
+    gov, exceptions = governance.load_governance(GOVERNANCE_PATH)
+
+    doc = evidence.evidence_from(
+        derive.register_from(findings, reg, domain_map, gov, exceptions),
+        derive.status_from(findings),
+        derive.personal_accounts_from(findings, domain_map),
+        derive.mcp_from(findings),
+        paste_guard.paste_guard_from(findings, domain_map),
+        registry_path=REGISTRY_PATH,
+        governance_path=GOVERNANCE_PATH,
+        app_version=APP_VERSION,
+        hours=hours,
+    )
+
+    if download:
+        stamp = time.strftime("%Y-%m-%dT%H%MZ", time.gmtime())
+        window = ("%dh" % hours) if float(hours).is_integer() else ("%sh" % hours)
+        name = "ai-guard-evidence-%s-%s.json" % (stamp, window)
+        return PlainTextResponse(
+            json.dumps(doc, indent=2),
+            media_type="application/json",
+            headers={"Content-Disposition": 'attachment; filename="%s"' % name},
+        )
+    return JSONResponse(doc)
 
 
 @app.get("/api/paste-guard")
