@@ -32,8 +32,11 @@
             "description": "The decision as recorded. Deliberately three: Restricted, Deprecated and Exception approved are all defensible and none is needed to find out whether this model is useful. Records a governance position and has no effect on finding severity, which depends on the account domain."
           },
           "owner": {
-            "type": "string",
-            "description": "Who owns the decision. A team or a person; the portal does not resolve it against anything."
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Who owns the decision. A team or a person; the portal does not resolve it against anything. null is accepted as well as a string, because `owner:` with nothing after it is null in YAML rather than an empty string, and a key left blank in a template is the commonest way this file gets written. Both mean unset."
           },
           "review_due": {
             "type": "string",
@@ -41,8 +44,11 @@
             "description": "When this decision should be revisited, as YYYY-MM-DD. An approval past this date reports as reviewing, with the reason attached. The stored decision is never rewritten: a clock ticking over is not a decision, and the history has to keep saying what a human decided on a date. Write it unquoted if you like; YAML parses a bare 2026-11-01 as a date object and the validator normalises it back to a string before checking, so both forms work and neither is a trap."
           },
           "reason": {
-            "type": "string",
-            "description": "Why. Free text, shown alongside the decision."
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Why. Free text, shown alongside the decision. null is accepted as well as a string, because `owner:` with nothing after it is null in YAML rather than an empty string, and a key left blank in a template is the commonest way this file gets written. Both mean unset."
           }
         },
         "allOf": [
