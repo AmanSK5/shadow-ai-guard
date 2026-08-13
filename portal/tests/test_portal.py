@@ -485,3 +485,36 @@ def test_mcp_finding_with_no_server_list_is_still_counted():
     ])["mcp_servers"]
     assert len(rows) == 1
     assert rows[0]["server"] == "(unnamed)"
+
+
+def test_the_widget_lists_in_python_and_javascript_agree():
+    """KNOWN_WIDGETS and the browser's WIDGETS object must name the same set.
+
+    They are two lists that have to agree with nothing enforcing it, and the
+    failure is asymmetric and confusing in both directions. A widget in the
+    browser but not in KNOWN_WIDGETS renders an error card telling the operator
+    their config is wrong when it is not. One in KNOWN_WIDGETS but not in the
+    browser passes validation and then draws nothing, which looks like a data
+    problem rather than a missing renderer.
+
+    This happened: paste_guard was added to the browser and not to the server,
+    and the error card blamed the deployment for naming a widget that existed.
+    """
+    import re
+    from pathlib import Path
+
+    from app.main import KNOWN_WIDGETS
+
+    src = (Path(__file__).parent.parent / "app" / "static" / "index.html").read_text()
+    block = re.search(r"const WIDGETS = \{(.*?)\n\};", src, re.S).group(1)
+    # Top-level keys only: two-space indent, then a name and a colon.
+    in_browser = set(re.findall(r"^  ([a-z_]+): ", block, re.M))
+
+    # grafana and error are dispatch targets rather than things an operator
+    # names in OVERVIEW_WIDGETS, so they are not expected in KNOWN_WIDGETS.
+    in_browser -= {"grafana", "error"}
+
+    assert in_browser == set(KNOWN_WIDGETS), (
+        "only in the browser: %s | only in KNOWN_WIDGETS: %s"
+        % (sorted(in_browser - set(KNOWN_WIDGETS)),
+           sorted(set(KNOWN_WIDGETS) - in_browser)))

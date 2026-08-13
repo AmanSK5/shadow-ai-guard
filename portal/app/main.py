@@ -326,6 +326,7 @@ KNOWN_WIDGETS = {
     "recent_personal_accounts": "Most recently seen personal accounts",
     "detection_coverage": "How much of each surface is reporting",
     "source_health": "Sources reporting versus silent",
+    "paste_guard": "Pastes warned, overridden and blocked",
 }
 
 DEFAULT_WIDGETS = ["stat_row", "top_tools", "recent_personal_accounts",
