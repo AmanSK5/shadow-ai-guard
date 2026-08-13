@@ -347,3 +347,12 @@ def test_the_download_carries_provenance_in_the_filename():
     disposition = resp.headers["content-disposition"]
     assert "ai-guard-evidence-" in disposition
     assert "-168h.json" in disposition
+
+
+def test_the_snapshot_says_how_many_devices_ran_the_guard():
+    """paste_events: 0 with no denominator is the same failure as reporting
+    sources without knowing how many were expected."""
+    doc = _snap([_row()], paste={"events": 0, "guard_devices": 12})
+
+    assert doc["paste_events"] == 0
+    assert doc["paste_guard_devices"] == 12

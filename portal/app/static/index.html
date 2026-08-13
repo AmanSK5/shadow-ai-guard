@@ -121,6 +121,8 @@ td{padding:7px 10px 7px 0;border-bottom:1px solid color-mix(in oklch,var(--bd) 4
 .gov-owner{white-space:nowrap}
 /* No border, no fill. Absence of governance, not a state with equal weight to
    approved or reviewing. */
+.inputs{margin:0 0 18px;padding-left:20px;font-size:13px;line-height:1.9}
+.inputs a{color:var(--warn)}
 .none{color:color-mix(in oklch,var(--mut) 70%,transparent);font-family:ui-monospace,monospace;
       font-size:11px;white-space:nowrap}
 /* A zero is the absence of something and should not compete with a real
@@ -166,6 +168,8 @@ let G = {devices:{},identities:{},tools:{},bridges:{},unattributed:[],counts:{}}
 // refresh.
 let DIAG = null;
 let REG = null;
+let EV = null;
+let PG = null;
 let S = null, CFG = {}, loadError = '';
 
 async function load(force) {
@@ -173,7 +177,7 @@ async function load(force) {
   const q = force ? '?refresh=true' : '';
   // Refresh must clear the views that read a second endpoint too, or the
   // button refreshes some of the page and silently not the rest.
-  if (force) { DIAG = null; REG = null; }
+  if (force) { DIAG = null; REG = null; EV = null; PG = null; }
   try {
     CFG = await (await fetch('/api/config')).json();
     const gr = await fetch('/api/graph' + q);
@@ -181,6 +185,10 @@ async function load(force) {
     G = await gr.json();
     const sr = await fetch('/api/status' + q);
     if (sr.ok) S = await sr.json();
+    // Fetched here rather than lazily, because the overview may draw a paste
+    // guard widget and a widget that fetches on render would flash empty.
+    const pr = await fetch('/api/paste-guard' + q);
+    if (pr.ok) PG = await pr.json();
     loadError = '';
   } catch (e) {
     loadError = String(e.message || e);
@@ -219,8 +227,9 @@ const NAV = [
                            ['devices','Devices'],['personal','Personal accounts'],
                            ['mcp','MCP servers']]},
   {grp:'Coverage',  items:[['setup','Setup'],['coverage','Uncovered devices']]},
-  {grp:'Governance',items:[['register','AI register']]},
-  {grp:'Analytics', items:[['dashboard','Dashboard']]},
+  {grp:'Governance',items:[['register','AI register'],['paste','Paste guard'],
+                           ['iso','ISO 42001 evidence']]},
+  {grp:'Analytics', items:[['dashboard','Grafana']]},
   {grp:'System',    items:[['settings','Settings']]},
 ];
 
@@ -239,6 +248,12 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;
 const ents = o => Object.entries(o || {});
 const label = (k, d) => d.device_name || k;
 const match = s => !filter || String(s).toLowerCase().includes(filter);
+// Shared by any view rendering counts or dates. Declared here rather than
+// inside a view: they began as locals of register(), which made them invisible
+// to every other function, and the second view to use them rendered nothing at
+// all because the ReferenceError fired while building the HTML.
+const num = n => n ? String(n) : '<span class="z">0</span>';
+const when = t => t ? `<span class="nw">${esc(String(t).slice(0, 10))}</span>` : '—';
 
 const WIDGETS = {
 
@@ -302,6 +317,34 @@ const WIDGETS = {
     ${silent.length ? silent.slice(0,8).map(r=>
       `<div style="font-size:12px;margin:4px 0"><span class="pill p-mut">${esc(r.source)}</span></div>`
     ).join('') : '<p class="lede">Every listed source is reporting.</p>'}</div>`;
+  },
+
+  paste_guard: () => {
+    // Native rather than an embedded Grafana panel. This number is derived by
+    // the portal now, so embedding an iframe to show it meant a card in
+    // Grafana's typography sitting beside cards in the portal's, with a title
+    // we could not restyle because it renders cross-origin.
+    //
+    // Two numbers, not four. The overview is a glance: is the guard running,
+    // and did somebody ignore it. Warned and blocked are the detail behind
+    // that, and they have a page. Four stat cells also clipped in a
+    // third-width card on a narrower content area, which is the same lesson
+    // the register learned the long way.
+    if (!PG) return '<div class="wcard w4"><h3>Paste guard</h3>'
+      + '<p class="lede">No paste guard data.</p></div>';
+    const over = PG.overridden || 0, live = PG.guard_devices || 0;
+    const versions = (PG.guard_versions || []).length;
+    return `<div class="wcard w4"><h3>Paste guard</h3>
+      <dl class="stats" style="margin:0;grid-template-columns:repeat(2,1fr)">
+        <div><dt${live ? '' : ' style="color:var(--dstr)"'}>${live}</dt><dd>devices</dd></div>
+        <div><dt${over ? ' style="color:var(--dstr)"' : ''}>${over}</dt><dd>overridden</dd></div>
+      </dl>
+      <p class="src-note">${live
+        ? `Checked in from ${live} device${live === 1 ? '' : 's'}${
+             versions > 1 ? ` across ${versions} versions` : ''}, so a low
+           count of stopped pastes means what it says.`
+        : `No device checked in, so nothing here can be read as an estate that
+           pasted nothing.`}</p></div>`;
   },
 
   grafana: (w) => {
@@ -561,8 +604,6 @@ async function register() {
   const RISK = {high:'p-warn', medium:'p-acc', low:'p-mut'};
   const risk = t => t
     ? `<span class="pill ${RISK[t]||'p-mut'}">${esc(t)}</span>` : '—';
-  const num = n => n ? String(n) : '<span class="z">0</span>';
-  const when = t => t ? `<span class="nw">${esc(String(t).slice(0, 10))}</span>` : '—';
 
   // Effective status, with the stored decision alongside when they differ.
   // An approval past its review date reads as reviewing and says why: a green
@@ -728,6 +769,172 @@ async function register() {
   one.</p>`}`;
 }
 
+async function paste() {
+  if (!PG) {
+    try { PG = await (await fetch('/api/paste-guard')).json(); }
+    catch (e) { return `<h2>Paste guard</h2><div class="note">Could not read
+      paste guard activity: ${esc(String(e.message || e))}</div>`; }
+  }
+  const rows = (PG.rows || []).filter(r => match(r.tool));
+
+  return `<h2>Paste guard</h2>
+  <p class="lede">What the paste guard stopped, on which tool, and how often.
+  Metadata only: the guard inspects clipboard content on the device and reports
+  detector identifiers, so what was nearly pasted is not here and is not stored
+  anywhere. A warning heeded is the guard working; an override is somebody who
+  was shown the detector by name and pasted anyway, which is the row worth
+  following up.</p>
+
+  <dl class="stats">
+    <div><dt${(PG.guard_devices || 0) ? '' : ' style="color:var(--dstr)"'}>${PG.guard_devices || 0}</dt>
+      <dd>devices running the guard</dd></div>
+    <div><dt>${PG.warned || 0}</dt><dd>warned</dd></div>
+    <div><dt style="color:var(--dstr)">${PG.overridden || 0}</dt><dd>overridden</dd></div>
+    <div><dt>${PG.blocked || 0}</dt><dd>blocked</dd></div>
+    <div><dt>${PG.devices || 0}</dt><dd>devices with an event</dd></div>
+  </dl>
+
+  ${(PG.guard_versions || []).length ? `<p class="lede">Running
+    ${PG.guard_versions.map(v => `<span class="pill p-mut">${esc(v.version)} on ${v.devices}</span>`).join('')}
+    in ${PG.guard_modes.map(m => `<span class="pill ${m.mode === 'block' ? 'p-ok' : 'p-acc'}">${esc(m.mode)} on ${m.devices}</span>`).join('')}.
+    A fleet split across versions is a rollout that stalled, and a device in
+    warn mode where policy says block is a policy that is not in force. Neither
+    is visible in a count of what was stopped.</p>` : ''}
+
+  ${rows.length ? `<table>
+  <tr><th>tool</th><th class="n">warned</th><th class="n">overridden</th>
+  <th class="n">blocked</th><th class="n">devices</th><th>detectors</th>
+  <th>last seen</th></tr>
+  ${rows.map(r => `<tr>
+    <td>${esc(r.tool)}</td>
+    <td class="n">${num(r.warned)}</td>
+    <td class="n">${r.overridden
+      ? `<span class="pill p-warn">${r.overridden}</span>` : num(0)}</td>
+    <td class="n">${num(r.blocked)}</td>
+    <td class="n">${num(r.devices)}</td>
+    <td>${r.detectors.map(d => `<span class="pill p-mut">${esc(d)}</span>`).join('')}</td>
+    <td class="nowrap">${when(r.last_seen)}</td>
+  </tr>`).join('')}
+  </table>` : `<p class="lede">No paste events in this window. That is a real
+  answer, and it is also what an estate with the extension not deployed looks
+  like: check Setup before reading it as nobody having tried.</p>`}`;
+}
+
+async function iso() {
+  if (!EV) {
+    try { EV = await (await fetch('/api/evidence')).json(); }
+    catch (e) { return `<h2>ISO/IEC 42001 evidence</h2><div class="note">Could
+      not build the evidence index: ${esc(String(e.message || e))}</div>`; }
+  }
+  const e = EV;
+  const n = v => `<b>${v}</b>`;
+
+  // An index, not a report. Each row says what area of an AI management system
+  // this supports, what the platform can currently say about it, and where the
+  // underlying evidence lives. Deliberately not a card per theme: that would
+  // re-render every source view and turn this into a second Overview, when the
+  // value here is knowing where to look.
+  //
+  // No clause numbers. A mapping asserted without validation implies an
+  // authority this project does not have, and reproducing the standard's own
+  // wording is not ours to do.
+  const rows = [
+    ['Inventory and usage',
+     `${n(e.tools_observed)} tools in use, ${n(e.tools_watched_for)} watched for`
+     + (e.tools_not_in_registry
+        ? `, ${n(e.tools_not_in_registry)} not in the registry` : ''),
+     'register', 'AI register'],
+
+    ['Governance',
+     `${n(e.decisions_recorded)} decisions recorded, `
+     + `${n(e.tools_without_decision)} tools without one`
+     + (e.approvals_expired ? `, ${n(e.approvals_expired)} approval expired` : '')
+     + (e.active_exceptions ? `, ${n(e.active_exceptions)} active exception` : ''),
+     'register', 'AI register'],
+
+    ['Monitoring coverage',
+     `${n(e.sources_reporting)} of ${n(e.sources_known)} expected sources reporting`,
+     'setup', 'Setup'],
+
+    ['Account governance',
+     `${n(e.personal_accounts)} personal accounts across `
+     + `${n(e.personal_account_tools)} tools`,
+     'personal', 'Personal accounts'],
+
+    ['Data protection',
+     `${n(e.paste_events)} paste events, ${n(e.paste_overridden)} overridden. `
+     + `Inspected content is not retained`,
+     'paste', 'Paste guard'],
+
+    ['Integrations',
+     `${n(e.mcp_servers)} MCP servers observed`,
+     'mcp', 'MCP servers'],
+
+    ['Third parties',
+     `${n(e.providers)} providers observed across the tools in use`,
+     'register', 'AI register'],
+
+    ['Evidence',
+     `Snapshot for the window ${esc((e.window||{}).from||'').slice(0,10)} to `
+     + `${esc((e.window||{}).to||'').slice(0,10)}, checksummed`,
+     null, 'This page'],
+  ];
+
+  // Review inputs are the only separate block, because they are things
+  // somebody may need to act on rather than a category of evidence. Framed as
+  // inputs to a human review, not as conclusions: the platform can say a tool
+  // has no decision, and cannot say whether that matters.
+  const inputs = [
+    [e.approvals_expired, `${e.approvals_expired} approval${e.approvals_expired === 1 ? '' : 's'} expired`, 'register'],
+    [e.tools_without_decision, `${e.tools_without_decision} observed tool${e.tools_without_decision === 1 ? '' : 's'} with no governance decision`, 'register'],
+    [e.tools_not_in_registry, `${e.tools_not_in_registry} tool${e.tools_not_in_registry === 1 ? '' : 's'} in use and not in the registry`, 'register'],
+    [e.tools_without_owner, `${e.tools_without_owner} decision${e.tools_without_owner === 1 ? '' : 's'} with no owner`, 'register'],
+    [e.reviews_due_soon, `${e.reviews_due_soon} review${e.reviews_due_soon === 1 ? '' : 's'} due within ${e.reviews_due_soon_days} days`, 'register'],
+    [e.personal_accounts, `${e.personal_accounts} personal account${e.personal_accounts === 1 ? '' : 's'} observed`, 'personal'],
+    [Math.max(0, (e.sources_known||0) - (e.sources_reporting||0)),
+     `${Math.max(0, (e.sources_known||0) - (e.sources_reporting||0))} expected source${(e.sources_known - e.sources_reporting) === 1 ? '' : 's'} not reporting`, 'setup'],
+    [e.paste_overridden, `${e.paste_overridden} paste warning${e.paste_overridden === 1 ? '' : 's'} overridden`, 'paste'],
+    [e.mcp_findings, `${e.mcp_findings} MCP finding${e.mcp_findings === 1 ? '' : 's'}`, 'mcp'],
+  ].filter(([count]) => count > 0);
+
+  return `<h2>ISO/IEC 42001 evidence</h2>
+  <p class="lede">Evidence Shadow AI Guard can provide to support an AI
+  management system. An index of what the platform can currently say and where
+  each record lives, not an assessment: nothing here is a compliance score, a
+  clause mapping, or a claim that a control is satisfied. The gaps are shown
+  beside the totals because a gap is the more useful finding.</p>
+
+  <table>
+  <tr><th>Theme</th><th>What Shadow AI Guard can say</th><th>Evidence source</th></tr>
+  ${rows.map(([theme, says, target, label]) => `<tr>
+    <td>${esc(theme)}</td>
+    <td style="font-family:inherit">${says}</td>
+    <td>${target ? `<a href="#${target}" style="color:var(--pri)">${esc(label)}</a>`
+                 : esc(label)}</td>
+  </tr>`).join('')}
+  </table>
+
+  <h3 style="margin-top:26px;font-size:14px">Review inputs</h3>
+  <p class="lede">Things a person may need to look at. These are inputs to a
+  review rather than conclusions: the platform can say a tool has no recorded
+  decision, and cannot say whether that is a problem.</p>
+  ${inputs.length ? `<ul class="inputs">
+    ${inputs.map(([, text, target]) =>
+      `<li><a href="#${target}">${esc(text)}</a></li>`).join('')}
+  </ul>` : `<p class="lede">Nothing outstanding in this window. That is a real
+  answer for a small estate, and it is also what an estate with no collectors
+  reporting looks like: ${e.sources_reporting} of ${e.sources_known} expected
+  sources are reporting.</p>`}
+
+  <h3 style="margin-top:26px;font-size:14px">Evidence snapshot</h3>
+  <p class="lede">A checksummed statement of the counts above, for the stated
+  window, with the registry and governance files identified by hash. Generated
+  on demand and not stored. Not reproducible, because log retention may mean
+  the same window returns less later; tamper-evident, because the manifest
+  carries a digest of itself with that field omitted.
+  <a href="/api/evidence?download=true" style="color:var(--pri)">Download JSON</a></p>`;
+}
+
 async function settings() {
   if (!DIAG) {
     try { DIAG = await (await fetch('/api/diagnostics')).json(); }
@@ -871,8 +1078,17 @@ function setup() {
     `<tr><td>${esc(u)}</td></tr>`).join('')}</table>` : ''}`;
 }
 
+// A way out to the real Grafana. The embedded frames are kiosk mode with a
+// fixed window, which is right for a glance and wrong the moment somebody
+// wants to change the range or drill into a series. The URL has to be
+// configured for the embed to work at all, so linking to it costs nothing.
+const openIn = base => `<p class="lede">Embedded below in kiosk mode with a
+  fixed window. To change the range, drill in, or edit anything, open
+  <a href="${esc(base)}" target="_blank" rel="noopener noreferrer"
+     style="color:var(--pri)">${esc(base)}</a> directly.</p>`;
+
 function dashboard() {
-  if (!CFG.grafana_url) return `<h2>Dashboard</h2>
+  if (!CFG.grafana_url) return `<h2>Grafana</h2>
     <div class="note">No Grafana configured. Set <code>GRAFANA_URL</code> to a
     Grafana that permits embedding, then either <code>GRAFANA_PANELS</code> as
     <code>dashboardUid:panelId:Title</code> entries separated by commas, or
@@ -892,7 +1108,8 @@ function dashboard() {
   const q = 'orgId=1&theme=dark&from=now-7d&to=now&kiosk';
 
   if (!panels.length && CFG.grafana_dashboard_uid) {
-    return `<h2>Dashboard</h2>
+    return `<h2>Grafana</h2>
+      ${openIn(base)}
       <p class="lede">Embedded from ${esc(base)}. Set
       <code>GRAFANA_PANELS</code> to pick individual panels instead of the
       whole dashboard.</p>
@@ -906,7 +1123,8 @@ function dashboard() {
     Set <code>GRAFANA_PANELS</code> or <code>GRAFANA_DASHBOARD_UID</code>.</div>`;
 
   const bad = panels.filter(p => p.error);
-  return `<h2>Dashboard</h2>
+  return `<h2>Grafana</h2>
+  ${openIn(base)}
   <p class="lede">Panels embedded from ${esc(base)}. If a frame stays blank,
   Grafana is refusing to be framed rather than the panel being wrong — check
   <code>allow_embedding</code> and the cookie <code>SameSite</code> setting.</p>
@@ -951,6 +1169,8 @@ async function render() {
   // settings and register each read a second endpoint, so they are async.
   if (view === 'settings') { app.innerHTML = await settings(); return; }
   if (view === 'register') { app.innerHTML = await register(); return; }
+  if (view === 'paste') { app.innerHTML = await paste(); return; }
+  if (view === 'iso') { app.innerHTML = await iso(); return; }
   app.innerHTML = ({setup, overview, devices, people, tools, coverage,
                     dashboard, personal, mcp})[view]();
 }
