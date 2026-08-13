@@ -71,12 +71,31 @@ SOURCE_MAP: dict[DetectionSource, tuple[str, str]] = {
 
 # Some fleets name devices <PREFIX>-<serial> while the endpoint collectors
 # report the bare serial, which would make one machine count twice. Set
-# AIGUARD_DEVICE_PREFIX (e.g. "ACME") to strip that prefix here. Unset means
-# no normalisation.
-_DEVICE_PREFIX = os.environ.get("AIGUARD_DEVICE_PREFIX", "")
+# AIGUARD_DEVICE_PREFIX to strip that prefix here. Unset means no
+# normalisation.
+#
+# Comma separated, because a fleet can have more than one: Windows and macOS
+# are often enrolled by different tools under different conventions, and a
+# single prefix silently normalises half an estate. AIGUARD_DEVICE_PREFIX=
+# "ACME,ACM" handles both.
+#
+# The serial must be at least six characters and must contain a digit. Length
+# alone was the original rule at eight, and it was wrong twice over: Dell
+# service tags are seven, so most of a Windows fleet went unnormalised, and a
+# hostname like <PREFIX>-SERVER would have been stripped to SERVER on the way
+# down. A serial essentially always contains a digit and a word essentially
+# never does, which separates them better than counting characters.
+_DEVICE_PREFIXES = [
+    p.strip() for p in os.environ.get("AIGUARD_DEVICE_PREFIX", "").split(",")
+    if p.strip()
+]
 _PREFIX_HOSTNAME = (
-    re.compile(rf"^{re.escape(_DEVICE_PREFIX)}[-_]([A-Z0-9]{{8,}})$", re.IGNORECASE)
-    if _DEVICE_PREFIX
+    re.compile(
+        r"^(?:%s)[-_](?=[A-Z0-9]*\d)([A-Z0-9]{6,})$"
+        % "|".join(re.escape(p) for p in _DEVICE_PREFIXES),
+        re.IGNORECASE,
+    )
+    if _DEVICE_PREFIXES
     else None
 )
 
