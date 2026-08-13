@@ -96,3 +96,90 @@ class TestWithPrefix:
         normalise_device = _fresh_import()
         result = normalise_device(None)
         assert result == ("", "")
+
+
+class TestPrefixLengthAndDigits:
+    """The rule that decides whether something is a serial or a hostname.
+
+    It was originally eight characters or more, and that was wrong in both
+    directions. Dell service tags are seven, so most of a Windows fleet went
+    unnormalised and every one of those machines counted twice: once as
+    ACME-XYZ4A21 from the scanner and once as XYZ4A21 from the collector. And
+    length alone would happily strip ACME-SERVER down to SERVER, turning a
+    domain controller's hostname into something that looks like a serial.
+
+    Six or more characters, and at least one digit. A serial essentially
+    always contains a digit; a word essentially never does.
+    """
+
+    def test_a_seven_character_service_tag_is_stripped(self, monkeypatch):
+        """The regression. Dell service tags are seven characters, and the
+        eight-character minimum silently skipped all of them."""
+        monkeypatch.setenv("AIGUARD_DEVICE_PREFIX", "ACME")
+        normalise_device = _fresh_import()
+
+        assert normalise_device("ACME-XYZ4A21") == ("XYZ4A21", "ACME-XYZ4A21")
+
+    def test_a_serial_starting_with_a_digit_is_stripped(self, monkeypatch):
+        monkeypatch.setenv("AIGUARD_DEVICE_PREFIX", "ACME")
+        normalise_device = _fresh_import()
+
+        assert normalise_device("ACME-1ABC234") == ("1ABC234", "ACME-1ABC234")
+
+    def test_a_word_is_not_a_serial(self, monkeypatch):
+        """ACME-SERVER stripped to SERVER would put a hostname in the field
+        every other source fills with a hardware serial, and two machines
+        called SERVER on different fleets would merge into one."""
+        monkeypatch.setenv("AIGUARD_DEVICE_PREFIX", "ACME")
+        normalise_device = _fresh_import()
+
+        assert normalise_device("ACME-SERVER") == ("ACME-SERVER", "ACME-SERVER")
+
+    def test_a_short_asset_number_is_not_a_serial(self, monkeypatch):
+        monkeypatch.setenv("AIGUARD_DEVICE_PREFIX", "ACME")
+        normalise_device = _fresh_import()
+
+        assert normalise_device("ACME-DC01") == ("ACME-DC01", "ACME-DC01")
+
+    def test_the_prefix_without_a_separator_is_left_alone(self, monkeypatch):
+        """ACME015 is a machine named after the fleet, not a prefixed serial."""
+        monkeypatch.setenv("AIGUARD_DEVICE_PREFIX", "ACME")
+        normalise_device = _fresh_import()
+
+        assert normalise_device("ACME015") == ("ACME015", "ACME015")
+
+
+class TestSeveralPrefixes:
+    """A fleet can have more than one convention.
+
+    Windows and macOS are often enrolled by different tools, and a single
+    prefix normalises half an estate while leaving the other half duplicated,
+    which reads as a partial fix and is harder to spot than no fix at all.
+    """
+
+    def test_either_prefix_is_stripped(self, monkeypatch):
+        monkeypatch.setenv("AIGUARD_DEVICE_PREFIX", "ACME,ACM")
+        normalise_device = _fresh_import()
+
+        assert normalise_device("ACME-XYZ4A21") == ("XYZ4A21", "ACME-XYZ4A21")
+        assert normalise_device("ACM-YJXCWNR42G") == ("YJXCWNR42G", "ACM-YJXCWNR42G")
+
+    def test_whitespace_around_a_prefix_is_ignored(self, monkeypatch):
+        monkeypatch.setenv("AIGUARD_DEVICE_PREFIX", "ACME, ACM ")
+        normalise_device = _fresh_import()
+
+        assert normalise_device("ACM-YJXCWNR42G") == ("YJXCWNR42G", "ACM-YJXCWNR42G")
+
+    def test_an_unlisted_prefix_is_left_alone(self, monkeypatch):
+        monkeypatch.setenv("AIGUARD_DEVICE_PREFIX", "ACME")
+        normalise_device = _fresh_import()
+
+        assert normalise_device("OTHER-XYZ4A21") == ("OTHER-XYZ4A21", "OTHER-XYZ4A21")
+
+    def test_an_empty_entry_does_not_match_everything(self, monkeypatch):
+        """"ACME," has a trailing empty element. An empty alternation branch
+        would match any string and strip every hostname in the estate."""
+        monkeypatch.setenv("AIGUARD_DEVICE_PREFIX", "ACME,")
+        normalise_device = _fresh_import()
+
+        assert normalise_device("random-host-99") == ("random-host-99", "random-host-99")
