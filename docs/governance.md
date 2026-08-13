@@ -125,6 +125,64 @@ organisation believes it has decided something it has not.
 Treat tool ids as stable keys for this reason. Display names and metadata can
 change; an id is what a decision is attached to.
 
+## Exceptions
+
+A temporary departure from the general decision, for a stated scope and period.
+
+```yaml
+exceptions:
+  EX-001:
+    tool: chatgpt
+    scope:
+      team: Marketing
+    reason: Client campaign work, no personal data
+    owner: Security
+    expires: 2026-12-01
+```
+
+Keyed on its own id, not on the tool. A tool can have more than one, for
+different teams or different reasons, and keying on the tool would allow exactly
+one and would discard the previous the moment a second was written. An exception
+is also a record with its own life: raised, applying, expired, and still visible
+afterwards.
+
+### It sits beside the decision, not in place of it
+
+The register shows both. `ollama` reads as **not approved** with the Research
+exception underneath, because the general position has not been withdrawn.
+Showing the exception as the status would make a note about one team read as a
+decision about everybody.
+
+### expires is required
+
+Unlike `review_due` on a decision, which is required only on an approval. A
+departure from the general position with no end is not an exception, it is an
+undocumented change of policy.
+
+When it expires it simply stops applying. The underlying status is already what
+it was, so **nothing becomes `reviewing`**: that is the expired-approval rule,
+and applying it here would put a tool under review because a campaign finished.
+
+Expired exceptions stay visible, quieter. One that has run its course is a
+record of something an organisation decided and then let lapse, which is worth
+seeing rather than losing.
+
+### scope
+
+Free-form keys such as `team` or `project`. The portal displays it and does not
+resolve it against anything: enforcing scope would need identity the platform
+does not have. It is a note for the reader about who the exception covers.
+
+### Fields
+
+| field | required | notes |
+|---|---|---|
+| `tool` | yes | An id the registry does not know validates and is reported, same as a decision |
+| `expires` | yes | `YYYY-MM-DD` |
+| `scope` | no | Free-form keys, displayed not enforced |
+| `reason` | no | Free text |
+| `owner` | no | A team or a person |
+
 ## Validating
 
 ```bash

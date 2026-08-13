@@ -236,6 +236,8 @@ lives under `docs/` and the component folders.
 | Understand the architecture | [Architecture](docs/architecture.md) |
 | Configure the receiver | [Receiver](receiver/README.md) |
 | Configure the portal | [Portal](portal/README.md) |
+| Record approvals, owners and review dates | [Governance decisions](docs/governance.md) |
+| Produce evidence for an AI management system | [Evidence](docs/evidence.md) |
 | Deploy macOS collection | [macOS collector](endpoint/macos/README.md) |
 | Deploy Windows collection | [Windows collector](endpoint/windows/README.md) |
 | Deploy Linux collection | [Linux collector](endpoint/linux/README.md) |
