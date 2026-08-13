@@ -253,6 +253,16 @@ rule the platform applies to a source that has stopped reporting, turned on the
 decision instead: an approval nobody has revisited is not evidence a tool is
 safe, it is evidence that nobody looked.
 
+Evidence is that same idea pointed outwards. A snapshot states what was observed
+for a stated window, identifies the registry and governance files by hash rather
+than by version, and carries a digest of itself with that field omitted so it
+can be checked against itself later. It is tamper-evident rather than
+reproducible: log retention means the same window may return less next year, and
+claiming otherwise would be the more useful statement and the false one. Every
+count that could flatter has its denominator beside it, because a snapshot
+reporting sources_reporting without sources_known would let a half-blind estate
+look complete on paper. See [evidence.md](evidence.md).
+
 Its entry points differ because the sources do. Endpoint findings carry a
 device and a local username, and the username is a hint rather than a key: it
 is firstname.lastname on one enrolment, a local account on another, whatever

@@ -163,9 +163,11 @@ effect within `CACHE_TTL_SECONDS` (default 30) without a restart.
 | Personal accounts | every personal account seen, with first and last seen |
 | MCP servers | which MCP servers are configured, on which machines, by which tool |
 | AI register | the tools actually in use, joined to what has been decided about each |
+| Paste guard | what the guard stopped, on which tool, and how often |
+| ISO 42001 evidence | an index of what the platform can say and where each record lives |
 | Setup | which detection sources are reporting and which are silent |
 | Uncovered devices | machines a scanner knows about that no collector reports from |
-| Dashboard | Grafana, embedded |
+| Grafana | Grafana, embedded, with a link to the real thing |
 | Settings | what the portal can say about itself, for a support conversation |
 
 ## AI register
@@ -192,6 +194,35 @@ ticking over is not a decision.
 `GET /api/register?fmt=csv` exports the same rows the page shows, with the
 timestamp and lookback window in the filename. It is a convenience export
 rather than an evidence artifact: no manifest, no checksum.
+
+## Paste guard
+
+What the guard stopped, on which tool, and how often. Metadata only: it inspects
+clipboard content on the device and reports detector identifiers, so what was
+nearly pasted is not here and is not stored anywhere.
+
+Overrides sort first. Somebody shown the detector by name who pasted anyway is
+the row to follow up, and sorting by event count would bury one override under
+twenty warnings that worked.
+
+The page also reports how many devices the guard checked in from, and which
+versions and modes they are running. Without that, "0 pastes stopped" means both
+an estate where nobody pasted a secret and one where the extension was never
+deployed. More than one version is a rollout that stalled; a device in warn mode
+where policy says block is a policy not in force.
+
+Heartbeats are excluded from the event counts. They share the same source, and
+counting them would report every device's daily check-in as a paste somebody
+tried to make.
+
+## ISO 42001 evidence
+
+An index of what the platform can currently say and where each record lives, with
+review inputs below it. No compliance score, no clause numbers, no assessment.
+See [docs/evidence.md](../docs/evidence.md).
+
+The evidence snapshot is generated from the same derivations these pages use, so
+a snapshot and the page it summarises cannot disagree.
 
 ## Overview widgets
 
