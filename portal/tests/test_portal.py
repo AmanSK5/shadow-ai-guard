@@ -578,3 +578,143 @@ class TestLokiReadAuth:
         h = self._header(username="u", password="p", token="t")
 
         assert h.startswith("Basic ")
+
+
+class TestNoUntrustedValueReachesExecutableContext:
+    """Findings are attacker-influenced, and the portal renders them.
+
+    Anyone holding the reporting token can put arbitrary text in a device name,
+    a username or a tool id, and that token is distributed to every collector
+    and to the browser extension. So a finding is untrusted input that an
+    authenticated operator later views, and the portal's origin has the session
+    that can read the whole estate.
+
+    This started as a stored XSS. esc() escaped & < > and " but not ', and
+    values were interpolated into onclick="open_('device','...')", a
+    single-quoted JS string inside a double-quoted attribute. A device named
+
+        x'),alert(1),open_('a
+
+    closed the string and ran what followed. The inline handlers are gone, but
+    the tests below hold both halves: nothing may put a value in an executable
+    context, and the escape must cover the quote either way.
+
+    Asserted against the file rather than a rendered page, because there is no
+    DOM here. That is a real limit: it catches the shape of the bug and not
+    every instance of it.
+    """
+
+    def _src(self):
+        from pathlib import Path
+        return (Path(__file__).parent.parent / "app" / "static" / "index.html").read_text()
+
+    def test_the_escape_covers_the_single_quote(self):
+        """The specific gap. Everything else was already escaped.
+
+        Asserts on the replacement each character maps to rather than on the
+        character appearing in the source, because quoting a quote inside a
+        regex inside a JS string inside a Python literal is four layers of
+        escaping and the test starts failing for reasons of its own.
+        """
+        import re
+
+        line = re.search(r"const esc = s =>.*", self._src()).group(0)
+
+        for entity in ("&amp;", "&lt;", "&gt;", "&quot;", "&#39;"):
+            assert entity in line, "esc() does not produce %s" % entity
+
+    def test_no_inline_event_handlers(self):
+        """A value in an attribute is data. A value in onclick is code, and the
+        only thing between them is an escape function remembering a character.
+
+        Delegation removes the category rather than escaping around it, so a
+        new row added later cannot reintroduce this by copying a pattern.
+        """
+        import re
+
+        # Comments explaining why they are gone are allowed to name them.
+        code = re.sub(r"^\s*//.*$", "", self._src(), flags=re.M)
+
+        for attr in ("onclick=", "onerror=", "onload=", "onmouseover="):
+            assert attr not in code, "an inline %s handler is back" % attr
+
+    def test_arrays_from_findings_are_joined_through_the_escape(self):
+        """local_users, sources, accounts and tools were joined straight into
+        HTML with no escaping at all. local_users is the sharpest: it is a
+        username read off the device by the collector.
+
+        Checks `.join(` specifically, which is the shape that was broken and
+        the shape a new field would most likely copy. An earlier version tried
+        to match any interpolation mentioning these fields and produced a false
+        positive on a nested template, because a regex cannot find the end of a
+        JavaScript expression. A narrow check that holds is worth more than a
+        broad one that has to be argued with.
+        """
+        import re
+
+        for line in self._src().split("\n"):
+            if line.lstrip().startswith("//"):
+                continue
+            for m in re.finditer(
+                    r"\$\{\(?[a-z]\.(\w+)\s*\|\|\s*\[\]\)[\w.()]*?\.join\(", line):
+                assert "esc(" in m.group(0), (
+                    "%s is joined into HTML unescaped: %s" % (m.group(1), line.strip()))
+
+
+class TestSecurityHeaders:
+    """Headers that limit what a rendering bug can do.
+
+    A second line rather than the fix. The fix is that findings are escaped
+    and nothing reaches an executable context; these limit the damage when
+    that is next got wrong, which on a page rendering attacker-influenced text
+    is a question of when.
+    """
+
+    def _headers(self, path="/healthz"):
+        import asyncio
+
+        from app import main as pm
+
+        async def _call():
+            captured = {}
+
+            class _Req:
+                url = type("U", (), {"path": path})()
+
+            class _Resp:
+                headers = {}
+                def __init__(self): self.headers = {}
+
+            async def _next(req):
+                return _Resp()
+
+            r = await pm.security_headers(_Req(), _next)
+            captured.update(r.headers)
+            return captured
+
+        return asyncio.run(_call())
+
+    def test_connect_src_is_self(self):
+        """The one that matters most here. The estate data this page reads is
+        the thing worth stealing, and an injection that runs but cannot reach
+        another origin is a far smaller problem than one that can."""
+        assert "connect-src 'self'" in self._headers()["Content-Security-Policy"]
+
+    def test_the_page_cannot_be_framed(self):
+        """It names who runs what on which machine."""
+        h = self._headers()
+
+        assert "frame-ancestors 'none'" in h["Content-Security-Policy"]
+        assert h["X-Frame-Options"] == "DENY"
+
+    def test_responses_are_not_cached(self):
+        """They name people, devices and accounts, and a shared machine's disk
+        cache is not where that belongs."""
+        assert self._headers()["Cache-Control"] == "no-store"
+
+    def test_content_type_is_not_sniffed(self):
+        assert self._headers()["X-Content-Type-Options"] == "nosniff"
+
+    def test_no_referrer_is_sent(self):
+        """A portal URL can carry a device or a tool id in its fragment."""
+        assert self._headers()["Referrer-Policy"] == "no-referrer"

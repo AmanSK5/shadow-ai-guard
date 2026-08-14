@@ -244,7 +244,17 @@ const fromHash = () => {
 };
 let view = fromHash(), detail = null, filter = '';
 
-const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+// Escapes the five characters that matter in HTML text and in a quoted
+// attribute. The apostrophe was missing, and it mattered: values were
+// interpolated into onclick="open_('device','...')", a single-quoted JS string
+// inside a double-quoted attribute, so a device name containing ' closed the
+// string and ran whatever followed. The inline handlers are gone now and this
+// is still the right set: an attribute quoted either way is covered, and
+// nothing downstream has to remember which.
+//
+// This is not sufficient on its own for a JS or URL context. Nothing should be
+// interpolated into either. Use a data attribute and read it back.
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const ents = o => Object.entries(o || {});
 const label = (k, d) => d.device_name || k;
 const match = s => !filter || String(s).toLowerCase().includes(filter);
@@ -390,7 +400,7 @@ function overview() {
 }
 
 function card(k, d) {
-  return `<div class="card" onclick="open_('device','${esc(k)}')">
+  return `<div class="card" data-open="device" data-key="${esc(k)}">
     <h3>${esc(label(k,d))}</h3>
     <div class="sub">${(d.tools||[]).map(t=>`<span class="pill p-mut">${esc(t)}</span>`).join('')}</div>
     <div class="sub" style="margin-top:6px">
@@ -429,7 +439,7 @@ function tools() {
   return `<h2>Tools</h2><p class="lede">Surfaces are kept apart on purpose: the same
   tool in a browser, a desktop app and a CLI are different exposures.</p>
   <table><tr><th>tool</th><th>devices</th><th>identities</th><th>by surface</th></tr>
-  ${rows.map(([k,t]) => `<tr onclick="open_('tool','${esc(k)}')" style="cursor:pointer">
+  ${rows.map(([k,t]) => `<tr data-open="tool" data-key="${esc(k)}" style="cursor:pointer">
     <td>${esc(k)}</td><td>${(t.devices||[]).length}</td><td>${(t.identities||[]).length}</td>
     <td>${ents(t.devices_by_surface||{}).sort((a,b)=>b[1].length-a[1].length)
       .map(([s,v])=>`<span class="pill p-acc">${esc(s||'none')} ${v.length}</span>`).join('')}</td>
@@ -459,14 +469,14 @@ function coverage() {
 function deviceDetail(k) {
   const d = G.devices[k]; if (!d) return '<p>not found</p>';
   const bridges = ents(G.bridges||{}).filter(([,b]) => (b.devices||[]).includes(k)).map(([n])=>n);
-  return `<button class="back" onclick="open_(null)">back</button>
+  return `<button class="back" data-open="">back</button>
   <h2>${esc(label(k,d))}</h2>
-  <p class="lede">${esc(k)} · ${(d.os||[]).join(', ') || 'os unknown'} · ${d.findings} findings</p>
+  <p class="lede">${esc(k)} · ${esc((d.os||[]).join(', ')) || 'os unknown'} · ${d.findings} findings</p>
   <table>
     <tr><th>person</th><td>${d.person ? esc(d.person) : '<span class="pill p-mut">unattributed</span>'}</td></tr>
-    <tr><th>local users</th><td>${(d.local_users||[]).join(', ') || '—'}</td></tr>
-    <tr><th>surfaces</th><td>${(d.surfaces||[]).filter(Boolean).join(', ')}</td></tr>
-    <tr><th>sources</th><td>${(d.sources||[]).join(', ') || '—'}</td></tr>
+    <tr><th>local users</th><td>${esc((d.local_users||[]).join(', ')) || '—'}</td></tr>
+    <tr><th>surfaces</th><td>${esc((d.surfaces||[]).filter(Boolean).join(', '))}</td></tr>
+    <tr><th>sources</th><td>${esc((d.sources||[]).join(', ')) || '—'}</td></tr>
     <tr><th>accounts</th><td>${(d.accounts||[]).map(a =>
       `<span class="pill ${(d.personal_accounts||[]).includes(a)?'p-warn':'p-ok'}">${esc(a)}</span>`).join('') || '—'}</td></tr>
     <tr><th>tools and accounts</th><td>${ents(d.tool_accounts||{}).length
@@ -482,13 +492,13 @@ function deviceDetail(k) {
 
 function toolDetail(k) {
   const t = G.tools[k]; if (!t) return '<p>not found</p>';
-  return `<button class="back" onclick="open_(null)">back</button>
+  return `<button class="back" data-open="">back</button>
   <h2>${esc(k)}</h2>
   <p class="lede">${(t.devices||[]).length} devices · ${(t.identities||[]).length} identities · ${t.findings} findings</p>
   <table><tr><th>by surface</th><td>${ents(t.devices_by_surface||{})
     .sort((a,b)=>b[1].length-a[1].length)
     .map(([s,v])=>`<span class="pill p-acc">${esc(s||'none')} ${v.length}</span>`).join('')}</td></tr>
-  <tr><th>accounts</th><td>${(t.accounts||[]).join(', ') || '—'}</td></tr></table>
+  <tr><th>accounts</th><td>${esc((t.accounts||[]).join(', ')) || '—'}</td></tr></table>
   <h2 style="margin-top:22px;font-size:16px">Devices</h2>
   ${(t.devices||[]).map(dk => G.devices[dk] ? card(dk, G.devices[dk]) : '').join('')}`;
 }
@@ -514,7 +524,7 @@ function mcp() {
   ${rows.length ? `<table>
   <tr><th>server</th><th>devices</th><th>configured by</th>
   <th>first seen</th><th>last seen</th></tr>
-  ${rows.map(r => `<tr onclick="open_('mcp','${esc(r.server)}')" style="cursor:pointer">
+  ${rows.map(r => `<tr data-open="mcp" data-key="${esc(r.server)}" style="cursor:pointer">
     <td>${esc(r.server)}</td>
     <td>${(r.devices||[]).length}</td>
     <td>${(r.tools||[]).map(t=>`<span class="pill p-mut">${esc(t)}</span>`).join('')}</td>
@@ -536,10 +546,10 @@ function mcpDetail(k) {
   const r = (G.mcp_servers || []).find(x => x.server === k);
   if (!r) return '<p>not found</p>';
   const devs = (r.devices || []);
-  return `<button class="back" onclick="open_(null)">back</button>
+  return `<button class="back" data-open="">back</button>
   <h2>${esc(r.server)}</h2>
   <p class="lede">${devs.length} device${devs.length === 1 ? '' : 's'} ·
-  configured by ${(r.tools||[]).join(', ')} ·
+  configured by ${esc((r.tools||[]).join(', '))} ·
   first seen ${esc((r.first_seen||'').slice(0,10) || 'unknown')} ·
   last seen ${esc((r.last_seen||'').slice(0,10) || 'unknown')}</p>
   <p class="lede">Whatever this server was pointed at is reachable from these
@@ -574,7 +584,7 @@ function personal() {
     <td>${(r.surfaces||[]).map(x=>`<span class="pill p-mut">${esc(x)}</span>`).join('')}</td>
     <td style="color:var(--mut)">${esc((r.first_seen||'').slice(0,10) || '—')}</td>
     <td style="color:var(--mut)">${esc((r.last_seen||'').slice(0,10) || '—')}</td>
-    <td style="color:var(--mut)">${(r.sources||[]).join(', ') || '—'}</td>
+    <td style="color:var(--mut)">${esc((r.sources||[]).join(', ')) || '—'}</td>
   </tr>`).join('')}</table>`
   : `<p class="lede">None seen in the last ${CFG.lookback_hours || '?'} hours.
   That is a result rather than an absence of one, provided the sources on the
@@ -1175,6 +1185,23 @@ async function render() {
                     dashboard, personal, mcp})[view]();
 }
 function open_(kind, key) { detail = kind ? [kind, key] : null; render(); window.scrollTo(0,0); }
+
+// One delegated listener rather than an onclick per row. The handlers used to
+// be inline, which put a finding's own text inside executable script: a device
+// name containing an apostrophe closed the JS string and ran what followed,
+// and the only thing standing between a poisoned finding and code in the
+// portal's origin was an escape function that did not cover the apostrophe.
+//
+// A data attribute cannot become code however it is escaped, which is the
+// point: the value is read back as a string rather than parsed as part of a
+// program. Delegation also means rows rendered after this runs are covered,
+// with no listener to attach per render.
+app.addEventListener('click', e => {
+  const el = e.target.closest('[data-open]');
+  if (!el) return;
+  const kind = el.getAttribute('data-open');
+  open_(kind || null, el.getAttribute('data-key'));
+});
 // Someone editing the fragment, or arriving on a link to a view.
 window.addEventListener('hashchange', () => {
   const h = fromHash();
