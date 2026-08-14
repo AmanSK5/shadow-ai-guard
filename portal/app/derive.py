@@ -67,8 +67,26 @@ COLLECTOR_SOURCES = {"collector-macos", "collector-linux", "collector-windows"}
 COLLECTOR_SURFACES = {"cli", "ide", "mcp", "endpoint"}
 
 
-def fetch_from_loki(base, hours, token=None, limit=5000):
-    """Pull findings from Loki. Returns a list of parsed finding dicts."""
+def fetch_from_loki(base, hours, token=None, limit=5000, username=None,
+                    password=None):
+    """Pull findings from Loki. Returns a list of parsed finding dicts.
+
+    Two authentication shapes, because log stores disagree about which they
+    want. A bearer token covers self-hosted Loki behind a gateway; basic auth
+    is what Grafana Cloud and most hosted offerings use, where the username is
+    a numeric instance id.
+
+    Basic auth was missing here while the receiver already had it, and the
+    asymmetry was invisible until both ran against the same hosted Loki: the
+    receiver wrote successfully and the portal got a 401 reading back the
+    findings it had just stored. A deployment where writes work and reads do
+    not is not a working deployment, and nothing in the config named the gap.
+
+    Both may be set. They are not alternatives to each other in any protocol
+    sense, and a gateway that wants a bearer token in front of a Loki that
+    wants basic auth is a real arrangement.
+    """
+    import base64
     import time
 
     end = int(time.time() * 1e9)
@@ -81,7 +99,15 @@ def fetch_from_loki(base, hours, token=None, limit=5000):
         "direction": "backward",
     })
     req = urllib.request.Request(base.rstrip("/") + "/loki/api/v1/query_range?" + params)
-    if token:
+    if username:
+        # Built by hand rather than with HTTPBasicAuthHandler, which only
+        # sends credentials after a 401 and a realm it recognises. Grafana
+        # Cloud answers 401 without a realm the handler will act on, so the
+        # retry never carries the header and the request fails a second time.
+        creds = base64.b64encode(
+            ("%s:%s" % (username, password or "")).encode()).decode()
+        req.add_header("Authorization", "Basic " + creds)
+    elif token:
         req.add_header("Authorization", "Bearer " + token)
 
     with urllib.request.urlopen(req, timeout=30) as resp:

@@ -22,7 +22,7 @@ Configuration, all optional except LOKI_URL and the auth pair:
   PORTAL_USER       basic auth username
   PORTAL_PASSWORD   basic auth password
 
-Any of PORTAL_USER, PORTAL_PASSWORD and LOKI_TOKEN can be given as
+Any of PORTAL_USER, PORTAL_PASSWORD, LOKI_TOKEN and LOKI_PASSWORD can be given as
 NAME_FILE pointing at a file instead. Compose has no real secret story: an
 environment variable is visible in docker inspect and in every child process's
 environment, while a file is at least confined to the filesystem. It is not
@@ -33,6 +33,8 @@ encryption.
                     be something nobody noticed
   LOKI_URL          Loki base URL, e.g. http://loki:3100
   LOKI_TOKEN        bearer token, if your Loki needs one
+  LOKI_USERNAME     basic auth user, for Grafana Cloud and most hosted Loki
+  LOKI_PASSWORD     basic auth password, _FILE supported
   LOOKBACK_HOURS    default window, default 168
   REGISTRY_PATH     registry.yaml, for resolving domains to tool ids
   IDENTITY_MAP      CSV of key,identity for attaching people to devices
@@ -156,6 +158,11 @@ def require_auth(creds: HTTPBasicCredentials = Depends(_basic)):
 
 LOKI_URL = os.environ.get("LOKI_URL", "")
 LOKI_TOKEN = _secret("LOKI_TOKEN") or None
+# Basic auth for reads. The receiver has had LOKI_USERNAME/LOKI_PASSWORD for
+# its writes; the portal only had a bearer token, so against Grafana Cloud the
+# receiver stored findings the portal then got a 401 trying to read back.
+LOKI_USERNAME = os.environ.get("LOKI_USERNAME", "") or None
+LOKI_PASSWORD = _secret("LOKI_PASSWORD") or None
 LOOKBACK_HOURS = float(os.environ.get("LOOKBACK_HOURS", "168"))
 REGISTRY_PATH = os.environ.get("REGISTRY_PATH", "/srv/registry/registry.yaml")
 IDENTITY_MAP = os.environ.get("IDENTITY_MAP", "")
@@ -248,7 +255,9 @@ def _findings(hours):
         )
     global _last_loki_ok, _last_loki_error
     try:
-        out = derive.fetch_from_loki(LOKI_URL, hours, LOKI_TOKEN)
+        out = derive.fetch_from_loki(
+            LOKI_URL, hours, LOKI_TOKEN,
+            username=LOKI_USERNAME, password=LOKI_PASSWORD)
         _last_loki_ok = time.time()
         _last_loki_error = ""
         return out
