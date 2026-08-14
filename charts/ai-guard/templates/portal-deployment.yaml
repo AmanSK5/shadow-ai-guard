@@ -52,6 +52,23 @@ spec:
             # version of the same message, delivered before anyone can see it.
             - name: LOKI_URL
               value: {{ .Values.portal.lokiUrl | quote }}
+            {{- with .Values.loki.username }}
+            # The same credentials the receiver writes with. The portal had no
+            # Loki auth of any kind, so a chart install pointed at an
+            # authenticated log store stored findings the portal then got a 401
+            # reading back: the receiver healthy, the counters climbing, and
+            # the portal reporting an error a deployer would read as their own
+            # misconfiguration.
+            - name: LOKI_USERNAME
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.loki.existingSecret }}
+            - name: LOKI_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ . }}
+                  key: lokiPassword
+            {{- end }}
             {{- if eq .Values.portal.auth.mode "none" }}
             # Deliberate, and it logs a warning on every start. Correct behind
             # something that authenticates for it; wrong on anything reachable.

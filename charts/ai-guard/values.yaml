@@ -29,6 +29,20 @@ auth:
 loki:
   pushUrl: ""        # e.g. http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push
 
+  # Basic auth, used by BOTH containers: the receiver to write and the portal
+  # to read. Grafana Cloud and most hosted Loki need these; a Loki inside the
+  # cluster usually does not.
+  #
+  # On Grafana Cloud the username is a numeric instance id, not an email, and
+  # the access policy needs logs:write AND logs:read. A read-only token
+  # produces a 401 the receiver counts while still returning 200 to the
+  # collector, so findings look accepted and are not stored.
+  #
+  # The password comes from a Secret rather than a value, because a value here
+  # ends up in `helm get values` and in whatever holds this file.
+  username: ""
+  existingSecret: ""       # a Secret with a `lokiPassword` key
+
 # Optional. Unset means findings are logged and dashboarded but nothing pages.
 alertmanager:
   url: ""
