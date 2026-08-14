@@ -518,3 +518,63 @@ def test_the_widget_lists_in_python_and_javascript_agree():
         "only in the browser: %s | only in KNOWN_WIDGETS: %s"
         % (sorted(in_browser - set(KNOWN_WIDGETS)),
            sorted(set(KNOWN_WIDGETS) - in_browser)))
+
+
+class TestLokiReadAuth:
+    """The portal has to authenticate to the log store the receiver writes to.
+
+    The receiver had LOKI_USERNAME/LOKI_PASSWORD for its writes and the portal
+    only had a bearer token. Against Grafana Cloud, which wants basic auth,
+    that meant the receiver stored findings successfully and the portal got a
+    401 reading back the ones it had just stored. Writes working and reads not
+    is not a working deployment, and no piece of configuration named the gap:
+    both variables were present in the environment, and only one container
+    used them.
+    """
+
+    def _header(self, **kw):
+        """The Authorization header fetch_from_loki would send."""
+        from unittest.mock import patch
+
+        from app import derive
+
+        captured = {}
+
+        class _Resp:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def read(self): return b'{"data":{"result":[]}}'
+
+        def _urlopen(req, timeout=None):
+            captured["auth"] = req.get_header("Authorization")
+            return _Resp()
+
+        with patch.object(derive.urllib.request, "urlopen", _urlopen), \
+                patch.object(derive.json, "load", lambda f: {"data": {"result": []}}):
+            derive.fetch_from_loki("http://loki:3100", 1, **kw)
+        return captured.get("auth")
+
+    def test_basic_auth_is_sent_when_a_username_is_set(self):
+        """The literal header, not a re-derivation of the code under test.
+
+        Grafana Cloud's username is a numeric instance id, which is worth
+        having in the fixture: it looks like a mistake to anyone who has not
+        seen one, and a reader who assumes it should be an email is the reader
+        this test is for.
+        """
+        assert self._header(username="1739257", password="secret") == \
+            "Basic MTczOTI1NzpzZWNyZXQ="
+
+    def test_a_bearer_token_still_works(self):
+        assert self._header(token="abc123") == "Bearer abc123"
+
+    def test_no_credentials_sends_no_header(self):
+        assert self._header() is None
+
+    def test_basic_auth_wins_when_both_are_set(self):
+        """A gateway wanting a bearer token in front of a Loki wanting basic
+        auth is a real arrangement, but only one Authorization header can be
+        sent. Basic is the one the log store itself needs."""
+        h = self._header(username="u", password="p", token="t")
+
+        assert h.startswith("Basic ")
