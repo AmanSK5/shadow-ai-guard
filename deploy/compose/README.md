@@ -54,6 +54,32 @@ Edit `.env`. At minimum, set `LOKI_URL` if you are running the portal, and pin
 
 The receiver is on `127.0.0.1:8080` and the portal on `127.0.0.1:8091`.
 
+### A hosted log store
+
+`LOKI_USERNAME` and `LOKI_PASSWORD` are used by BOTH containers: the receiver to
+write and the portal to read. Setting them for one and not the other produces a
+deployment where findings are stored and cannot be read back, and neither
+container reports an error you would attribute to the right cause.
+
+Three things about Grafana Cloud specifically, because each of them fails in a
+way that points somewhere else:
+
+The username is a numeric instance id, not an email. It is on the Loki details
+page for your stack.
+
+`LOKI_PUSH_URL` is the full endpoint ending `/loki/api/v1/push`, while `LOKI_URL`
+is the base URL without it, because the portal appends its own query path. Same
+host, two different values.
+
+The access policy needs both `logs:write` and `logs:read`. A read-only token
+produces a 401 on every push that the receiver counts and logs, while still
+answering 200 to the collector, so findings look accepted and are not stored.
+Check before you assume it worked:
+
+    curl -s localhost:8080/metrics | grep -E 'loki_push_total|failures_total'
+
+A `push_total` that stays at zero while findings arrive is that failure.
+
 ## Secrets
 
 Secrets are read from files, not from the environment. An environment variable
@@ -143,6 +169,36 @@ With Caddy, a `Caddyfile` alongside this directory:
 Caddy obtains and renews the certificate itself. nginx, Traefik and a cloud load
 balancer all work equally well; the only requirement is TLS in front, because
 the bearer token and the portal password are both sent in plaintext without it.
+
+### One hostname
+
+Two names assumes public DNS you control, which a VM on an internal network
+often is not. With one name, split by port rather than by path: both containers
+answer `/healthz`, and a path split would make the collector's base URL a
+subpath rather than a host.
+
+    host.example.com:8443 {
+        tls /path/cert.crt /path/cert.key
+        reverse_proxy 127.0.0.1:8080
+    }
+
+    host.example.com:443 {
+        tls /path/cert.crt /path/cert.key
+        reverse_proxy 127.0.0.1:8091
+    }
+
+Collectors then take `https://host.example.com:8443` as their receiver base.
+
+A private network needs a certificate from somewhere, and a self-signed one
+means every collector has to be told to trust it, which is a worse thing to
+document than to avoid. A mesh network that issues real certificates for its own
+names solves it in one command and needs nothing exposed publicly:
+`tailscale cert <name>` writes a `.crt` and `.key` that Caddy reads directly.
+Whatever issues them, the proxy config above is the same.
+
+Whichever you use, the certificate has to be readable by the proxy: Caddy runs
+as its own user, and a key left at `0600 root:root` produces a proxy that starts
+and then fails every connection.
 
 Rate limiting belongs here too. The receiver refuses oversized bodies and checks
 the token before reading a request body, so it defends itself, but stopping
