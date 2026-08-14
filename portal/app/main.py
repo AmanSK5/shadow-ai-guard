@@ -197,6 +197,61 @@ APP_VERSION = os.environ.get("APP_VERSION", "dev")
 app = FastAPI(title="ai-guard portal", version=APP_VERSION,
               docs_url=None, redoc_url=None)
 
+
+@app.middleware("http")
+async def security_headers(request, call_next):
+    """Headers that limit what a rendering bug can do.
+
+    The portal renders findings, and a finding is attacker-influenced: anyone
+    holding the reporting token can put arbitrary text in a device name, and
+    that token is on every collector. Escaping is the fix for that and these
+    headers are what stops the next escaping mistake being exploitable.
+
+    Be clear about what this does not do. script-src carries 'unsafe-inline',
+    because the page's whole script is inline in index.html, which is served as
+    a static file. So this policy does NOT stop an injected <script> tag from
+    running. Making it do so means a nonce, which means templating the HTML per
+    request, and that is a real change rather than a header.
+
+    What it does stop is worth having anyway, and connect-src is most of it:
+    the estate data this page can read is
+    the thing worth exfiltrating, and without it a successful injection could
+    read every API and post the result elsewhere. An injection that runs but
+    cannot phone home is a much smaller problem than one that can.
+    frame-ancestors 'none' because nothing should frame a page that names who
+    runs what on which machine, and form-action 'none' because it has no forms.
+
+    So this is a second line rather than the fix. The fix is that findings are
+    escaped and nothing is interpolated into an executable context, which is
+    what the tests in portal/tests hold.
+
+    no-store on everything: the responses name people, devices and accounts,
+    and a shared machine's disk cache is not where that belongs.
+    """
+    response = await call_next(request)
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; "
+        # 'unsafe-inline' because index.html's script is inline and served
+        # static. This is the weak part of the policy and it is deliberate
+        # rather than overlooked: removing it needs a nonce and a templated
+        # page, not a header change.
+        "script-src 'self' 'unsafe-inline'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:; "
+        "connect-src 'self'; "
+        "frame-src " + (GRAFANA_URL or "'none'") + "; "
+        "frame-ancestors 'none'; "
+        "form-action 'none'; "
+        "base-uri 'none'; "
+        "object-src 'none'",
+    )
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Cache-Control", "no-store")
+    return response
+
 # A derived graph, kept briefly. Not state in any meaningful sense: it rebuilds
 # from Loki on the next miss and on every restart. Without it, a 7 day query
 # runs on every page load, which is slow for the reader and unkind to Loki.
