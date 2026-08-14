@@ -40,6 +40,17 @@ spec:
             - name: LOKI_PUSH_URL
               value: {{ . | quote }}
             {{- end }}
+            {{- with .Values.loki.username }}
+            - name: LOKI_USERNAME
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.loki.existingSecret }}
+            - name: LOKI_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ . }}
+                  key: lokiPassword
+            {{- end }}
             {{- with .Values.alertmanager.url }}
             - name: ALERTMANAGER_URL
               value: {{ . | quote }}
