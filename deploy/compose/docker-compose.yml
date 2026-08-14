@@ -86,6 +86,12 @@ services:
     environment:
       LOKI_URL: ${LOKI_URL:?set LOKI_URL in .env - the portal reads findings from your log store}
       LOKI_TOKEN_FILE: ${LOKI_TOKEN_FILE:-}
+      # The same credentials the receiver writes with. Grafana Cloud wants
+      # basic auth in both directions, and the portal having only a bearer
+      # token meant the receiver stored findings the portal then got a 401
+      # reading back.
+      LOKI_USERNAME: ${LOKI_USERNAME:-}
+      LOKI_PASSWORD: ${LOKI_PASSWORD:-}
       PORTAL_USER: ${PORTAL_USER:-admin}
       PORTAL_PASSWORD_FILE: /run/secrets/portal_password
       REGISTRY_PATH: /etc/ai-guard/registry.json
@@ -147,7 +153,15 @@ services:
     image: grafana/grafana:11.1.0
     restart: unless-stopped
     environment:
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
+      # No :? here, deliberately. Compose interpolates the whole file before
+      # it decides which profiles are active, so a required variable on a
+      # service behind with-logs blocked `docker compose up` for anyone NOT
+      # running the bundled Grafana: the production route could not start
+      # without setting a password for a container it was never going to run.
+      #
+      # Grafana refuses to start with an empty admin password, so an unset
+      # value still fails, and it fails in the one place it means something.
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-}
       GF_USERS_DEFAULT_THEME: "dark"
       # Off by default in Grafana, deliberately: framing a session someone is
       # logged into is how clickjacking works. Both are needed for the portal's
