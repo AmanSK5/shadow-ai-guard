@@ -209,6 +209,19 @@ jobs:
       - run: pip install --require-hashes -r receiver/requirements.lock -r .github/requirements-ci.txt
       - run: pytest receiver/ -q
 
+  discovery-test:
+    # Discovery had no tests at all, which is the wrong component to leave
+    # uncovered: it is the one that takes a model's reply and opens a merge
+    # request editing registry.yaml with it. Everything else in this pipeline
+    # guards code a human wrote.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with: { python-version: '3.12' }
+      - run: pip install --require-hashes -r discovery/requirements.lock -r .github/requirements-ci.txt
+      - run: pytest discovery/ -q
+
   portal-test:
     runs-on: ubuntu-latest
     steps:
@@ -691,7 +704,7 @@ jobs:
       packages: write
     needs: [placeholder-guard, shellcheck, collector-delivery-state,
             registry-validate, governance-validate,
-            receiver-test, scanner-test, portal-test,
+            receiver-test, scanner-test, portal-test, discovery-test,
             helm, demo-smoke, compose-smoke,
             windows-path-containment]
     runs-on: ubuntu-latest
