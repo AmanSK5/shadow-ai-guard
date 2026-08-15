@@ -30,6 +30,7 @@ import csv
 import io
 import json
 import os
+import re
 import sys
 import time
 import urllib.parse
@@ -87,7 +88,6 @@ def fetch_from_loki(base, hours, token=None, limit=5000, username=None,
     wants basic auth is a real arrangement.
     """
     import base64
-    import time
 
     end = int(time.time() * 1e9)
     start = end - int(hours * 3600 * 1e9)
@@ -196,10 +196,19 @@ def load_identity_map(path):
             # of the identity: feeding the tool's own suggested file straight
             # back in, which is what the docs tell you to do, put
             # "jo.bloggs  # via local user Jo.Bloggs" on every report.
+            #
+            # A hash cannot appear in a generated key or identity, so this
+            # cannot truncate one. A hand-written file that puts a hash inside
+            # a value loses the rest of it, which is the trade for a format
+            # where a comment can follow a row.
             line = line.split("#", 1)[0].strip()
             if not line:
                 continue
-            parts = [c.strip() for c in line.split(",", 1)]
+            # csv.reader rather than split(","). The exporter quotes with
+            # csv.writer, and a parser that splits on the first comma reads a
+            # quoted value as two fields and gets both wrong.
+            row = next(csv.reader([line]), [])
+            parts = [c.strip() for c in row[:2]]
             if len(parts) == 2 and parts[0] and parts[1]:
                 if parts[0].lower() in ("key", "device", "local_user"):
                     continue  # header
@@ -275,24 +284,81 @@ def csv_safe(value):
                        or s.lstrip("\t\r\n ").startswith(_FORMULA_LEAD)) else s
 
 
+# Characters that cannot appear in a key or an identity in this file.
+#
+# A newline is the one that matters: this file is line oriented, so a device
+# key containing one plants a second row. Someone able to report a finding
+# could propose an identity mapping nobody wrote, and if a deployer accepted
+# the file, later reports would name the wrong person. That is a quiet failure
+# in the only direction this platform must not fail quietly.
+#
+# A comma or a quote is handled by csv.writer, but a key containing either is
+# not a device serial and a file that needs quoting is harder to hand-edit,
+# which is what this format is for. A hash would collide with the inline
+# comments below.
+#
+# Rejected rather than escaped, because every one of these means the value is
+# already wrong. A rejected row is visible in the output; a quoted one looks
+# deliberate.
+_UNSAFE_IN_KEY = re.compile(r"[\x00-\x1f\x7f,\"'#]")
+
+
 def suggest_identity_csv(matched, unmatched):
-    """The same proposals as a CSV a deployer can save, edit and feed back."""
+    """The same proposals as a CSV a deployer can save, edit and feed back.
+
+    Rows are written with csv.writer and read back with csv.reader. The first
+    version built and parsed both ends by hand, and a device key containing a
+    newline therefore wrote an extra row: the guard added for spreadsheet
+    formulas did nothing about it, because a formula and an injected record are
+    different problems that happen to share a file.
+    """
+    buf = io.StringIO()
+    w = csv.writer(buf, lineterminator="\n")
+
     out = [
         "# key,identity",
         "# Proposed from local usernames. REVIEW BEFORE USE: these are string",
         "# matches, not authoritative. Anything wrong here puts the wrong name",
         "# on a report.",
     ]
+    skipped = []
     for m in matched:
-        out.append("%s,%s  # via local user %s"
-                   % (csv_safe(m["key"]), csv_safe(m["identity"]), m["via"]))
+        key, identity = str(m["key"]), str(m["identity"])
+        if _UNSAFE_IN_KEY.search(key) or _UNSAFE_IN_KEY.search(identity):
+            skipped.append(key)
+            continue
+        buf.seek(0), buf.truncate(0)
+        w.writerow([csv_safe(key), csv_safe(identity)])
+        out.append("%s  # via local user %s"
+                   % (buf.getvalue().rstrip("\n"), _comment_safe(m["via"])))
+
+    if skipped:
+        out.append("#")
+        out.append("# %d device%s left out: the key or the proposed identity "
+                   % (len(skipped), "" if len(skipped) == 1 else "s")
+                   + "contained a character that cannot appear in this file.")
+        out.append("# Said out loud rather than dropped: a row missing without "
+                   "explanation")
+        out.append("# looks the same as a device nobody could name.")
+
     if unmatched:
         out.append("#")
         out.append("# No candidate identity. Fill these in from your MDM, RMM or CMDB:")
         for u in unmatched:
             out.append("# %s,   # local users: %s"
-                       % (u["key"], ", ".join(u["local_users"]) or "(none)"))
+                       % (_comment_safe(u["key"]),
+                          _comment_safe(", ".join(u["local_users"])) or "(none)"))
     return "\n".join(out) + "\n"
+
+
+def _comment_safe(value):
+    """A value safe to put in a comment: no newline, so it stays a comment.
+
+    A commented-out row is still a row if the value inside it can end the line.
+    The unmatched block had no guard at all, which the formula fix missed
+    because it was only looking at the rows that were not commented.
+    """
+    return re.sub(r"[\x00-\x1f\x7f]", " ", str(value or ""))
 
 
 def suggest_identities(devices, identities, path):
@@ -557,8 +623,7 @@ def personal_accounts_from(findings, domain_map=None):
         if ts:
             if not r["first_seen"] or ts < r["first_seen"]:
                 r["first_seen"] = ts
-            if ts > r["last_seen"]:
-                r["last_seen"] = ts
+            r["last_seen"] = max(r["last_seen"], ts)
 
     out = [dict(r, surfaces=sorted(r["surfaces"]), sources=sorted(r["sources"]))
            for r in rows.values()]
@@ -630,8 +695,7 @@ def mcp_from(findings):
             if ts:
                 if not r["first_seen"] or ts < r["first_seen"]:
                     r["first_seen"] = ts
-                if ts > r["last_seen"]:
-                    r["last_seen"] = ts
+                r["last_seen"] = max(r["last_seen"], ts)
 
     out = [dict(r, tools=sorted(r["tools"]), devices=sorted(r["devices"]),
                 device_names=sorted(r["device_names"]))
@@ -694,8 +758,7 @@ def status_from(findings):
         e = by_source[src]
         e["findings"] += 1
         ts = f.get("reported_at") or ""
-        if ts > e["last_seen"]:
-            e["last_seen"] = ts
+        e["last_seen"] = max(e["last_seen"], ts)
         dev = (f.get("device") or "").strip()
         if dev:
             e["devices"].add(dev)
@@ -858,8 +921,7 @@ def _base_tool(tool):
     resolved, because nobody would add claude-code-mcp to a registry of tools.
     """
     base = tool.split("-mcp:", 1)[0] if "-mcp:" in tool else tool
-    if base.endswith("-mcp"):
-        base = base[:-4]
+    base = base.removesuffix("-mcp")
     return base or tool
 
 
@@ -938,8 +1000,7 @@ def register_from(findings, reg=None, domain_map=None, gov=None,
         if ts:
             if not o["first_seen"] or ts < o["first_seen"]:
                 o["first_seen"] = ts
-            if ts > o["last_seen"]:
-                o["last_seen"] = ts
+            o["last_seen"] = max(o["last_seen"], ts)
 
     known = {}
     for t in reg.get("tools", []) or []:

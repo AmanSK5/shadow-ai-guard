@@ -156,7 +156,27 @@ def require_auth(creds: HTTPBasicCredentials = Depends(_basic)):
         )
 
 
-LOKI_URL = os.environ.get("LOKI_URL", "")
+def require_http_url(name, url):
+    """The URL back, or exit if it is not http or https.
+
+    derive.fetch_from_loki reaches this through urllib.request.urlopen, which
+    honours file:, ftp: and anything else with a handler registered, so a
+    mistyped LOKI_URL of file:///etc/passwd would be read and parsed as a Loki
+    response rather than refused. Operator-supplied rather than
+    attacker-supplied, so less an attack path than a way for a typo to do
+    something surprising quietly.
+
+    Refuses at startup rather than warning. A portal that starts against a log
+    store it cannot query shows an empty estate, and an empty estate is the
+    answer this platform exists to distinguish from a quiet one.
+    """
+    if url and not url.startswith(("http://", "https://")):
+        raise SystemExit("%s must be http:// or https://, got %r"
+                         % (name, url[:40]))
+    return url
+
+
+LOKI_URL = require_http_url("LOKI_URL", os.environ.get("LOKI_URL", ""))
 LOKI_TOKEN = _secret("LOKI_TOKEN") or None
 # Basic auth for reads. The receiver has had LOKI_USERNAME/LOKI_PASSWORD for
 # its writes; the portal only had a bearer token, so against Grafana Cloud the

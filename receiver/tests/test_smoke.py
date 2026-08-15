@@ -6,10 +6,8 @@ import os
 # main.py reads it at module level.
 os.environ.setdefault("AUTH_TOKEN", "test-token-for-ci")
 
+from app.main import app
 from fastapi.testclient import TestClient
-
-from app.main import app  # noqa: E402
-
 
 client = TestClient(app)
 
@@ -167,10 +165,10 @@ def test_a_rejected_push_is_counted_and_says_why():
     collector saw a 200.
     """
     import asyncio
-    import httpx
-    from prometheus_client import generate_latest
 
+    import httpx
     from app import main
+    from prometheus_client import generate_latest
 
     class FakeResponse:
         status_code = 404
@@ -283,10 +281,52 @@ def test_the_standalone_manifest_matches_the_released_version():
     chart = (root / "charts" / "ai-guard" / "Chart.yaml").read_text()
     manifest = (root / "receiver" / "deploy" / "receiver.yaml").read_text()
 
-    app_version = re.search(r'^appVersion:\s*"?([^"\s]+)"?', chart, re.M).group(1)
+    app_version = re.search(r'^appVersion:\s*"?([^"\s]+)"?', chart, re.MULTILINE).group(1)
     pinned = re.search(r"receiver:([^\s]+)", manifest).group(1)
 
     assert pinned == app_version, (
         "receiver/deploy/receiver.yaml pins %s while the chart ships %s. "
         "Bump the manifest with the release." % (pinned, app_version)
     )
+
+
+class TestAlertmanagerErrorsAreRedacted:
+    """Same treatment as the Loki push URL, and for the same reason.
+
+    ALERTMANAGER_URL is operator-supplied and can carry userinfo or a
+    query-string token. str(e) on an httpx error includes the request URL, so
+    logging the exception put the whole thing in stdout. This was fixed for
+    Loki and not for Alertmanager, which is what happens when a fix is applied
+    to the line that was reported rather than to the pattern.
+    """
+
+    def test_the_url_is_redacted_the_same_way(self):
+        from app.main import _redact_url
+
+        assert _redact_url("https://u:p@alerts.example.com/api/v2/alerts") == \
+            "https://alerts.example.com/api/v2/alerts"
+
+    def test_the_error_line_carries_the_type_not_the_message(self):
+        """httpx puts the request URL in the message, which would carry
+        userinfo straight past the redaction beside it."""
+        import inspect
+
+        from app import main as pm
+
+        src = inspect.getsource(pm)
+
+        assert '"error": "alertmanager: %s" % type(e).__name__' in src
+        assert 'f"alertmanager: {e}"' not in src
+
+
+def test_a_non_http_loki_push_url_is_refused():
+    """A log store URL that is not http is a typo or the wrong value pasted,
+    and carrying on means findings accepted and never stored."""
+    import pytest
+    from app.main import require_http_url
+
+    with pytest.raises(SystemExit, match="must be http"):
+        require_http_url("LOKI_PUSH_URL", "file:///tmp/x")
+
+    assert require_http_url("LOKI_PUSH_URL", "http://loki:3100/push")
+    assert require_http_url("LOKI_PUSH_URL", "") == ""
