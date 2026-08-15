@@ -10,15 +10,13 @@ Every case here corresponds to something that was actually wrong at some point
 during the build, or to a property the design depends on.
 """
 
-import json
 import os
 
 # PORTAL_AUTH must be set before the app module is imported: main.py refuses to
 # start without authentication, and that refusal happens at module level.
 os.environ.setdefault("PORTAL_AUTH", "none")
 
-from app import derive  # noqa: E402
-
+from app import derive
 
 # Sources set by something other than a scanner: the three endpoint collectors,
 # and the browser extension's two. Kept beside the test that uses it so adding
@@ -276,6 +274,7 @@ def test_the_expected_sources_match_what_the_scanners_emit():
     """
     import ast
     import pathlib
+
     import pytest
 
     base = (pathlib.Path(__file__).resolve().parents[2]
@@ -413,7 +412,7 @@ def _widgets_for(spec):
     import os
     os.environ["PORTAL_AUTH"] = "none"
     os.environ["OVERVIEW_WIDGETS"] = spec
-    import app.main as main
+    from app import main
     importlib.reload(main)
     return main._widgets()
 
@@ -506,9 +505,9 @@ def test_the_widget_lists_in_python_and_javascript_agree():
     from app.main import KNOWN_WIDGETS
 
     src = (Path(__file__).parent.parent / "app" / "static" / "index.html").read_text()
-    block = re.search(r"const WIDGETS = \{(.*?)\n\};", src, re.S).group(1)
+    block = re.search(r"const WIDGETS = \{(.*?)\n\};", src, re.DOTALL).group(1)
     # Top-level keys only: two-space indent, then a name and a colon.
-    in_browser = set(re.findall(r"^  ([a-z_]+): ", block, re.M))
+    in_browser = set(re.findall(r"^  ([a-z_]+): ", block, re.MULTILINE))
 
     # grafana and error are dispatch targets rather than things an operator
     # names in OVERVIEW_WIDGETS, so they are not expected in KNOWN_WIDGETS.
@@ -560,10 +559,10 @@ class TestLokiReadAuth:
         Grafana Cloud's username is a numeric instance id, which is worth
         having in the fixture: it looks like a mistake to anyone who has not
         seen one, and a reader who assumes it should be an email is the reader
-        this test is for.
+        this test is for. Invented, not a real one.
         """
-        assert self._header(username="1739257", password="secret") == \
-            "Basic MTczOTI1NzpzZWNyZXQ="
+        assert self._header(username="1234567", password="secret") == \
+            "Basic MTIzNDU2NzpzZWNyZXQ="
 
     def test_a_bearer_token_still_works(self):
         assert self._header(token="abc123") == "Bearer abc123"
@@ -633,7 +632,7 @@ class TestNoUntrustedValueReachesExecutableContext:
         import re
 
         # Comments explaining why they are gone are allowed to name them.
-        code = re.sub(r"^\s*//.*$", "", self._src(), flags=re.M)
+        code = re.sub(r"^\s*//.*$", "", self._src(), flags=re.MULTILINE)
 
         for attr in ("onclick=", "onerror=", "onload=", "onmouseover="):
             assert attr not in code, "an inline %s handler is back" % attr
@@ -770,3 +769,136 @@ class TestIdentityMapRoundTrip:
             [{"key": "=cmd", "identity": "=calc", "via": "x"}], [])
 
         assert "'=cmd,'=calc" in text
+
+    def test_a_newline_in_a_key_cannot_plant_a_row(self):
+        """The injection this format invited.
+
+        The file is line oriented and was built by joining strings, so a device
+        key containing a newline wrote a second record. Anyone able to report a
+        finding could propose an identity mapping nobody wrote, and a deployer
+        who accepted the file would then see later findings attributed to
+        whoever the attacker named. Wrong attribution is the one failure this
+        platform must not have: the whole point of an identity map is putting a
+        person's name on a report.
+
+        The formula guard added earlier did nothing about it. A spreadsheet
+        formula and an injected record are different problems that happen to
+        share a file, and fixing the one that was reported is not the same as
+        fixing the file.
+        """
+        out = self._round_trip([{
+            "key": "device-a\nVICTIM,attacker",
+            "identity": "x", "via": "alice",
+        }])
+
+        assert "VICTIM" not in out
+        assert out == {}
+
+    def test_a_rejected_row_says_so(self):
+        """A row missing without explanation looks the same as a device nobody
+        could name, and the operator reviewing this file is the control the
+        whole format relies on."""
+        from app.derive import suggest_identity_csv
+
+        text = suggest_identity_csv(
+            [{"key": "a\nb", "identity": "x", "via": "v"}], [])
+
+        assert "1 device left out" in text
+
+    def test_a_newline_in_an_unmatched_key_stays_in_its_comment(self):
+        """The unmatched block is commented out, which made it look safe. A
+        comment is only a comment until a value inside it ends the line."""
+        out = self._round_trip(
+            [], [{"key": "d\nEVIL,attacker", "local_users": ["x"]}])
+
+        assert out == {}
+
+    def test_a_comma_in_an_identity_does_not_split_the_row(self):
+        """csv.writer would quote it and csv.reader would read it back, but a
+        key with a comma is not a device serial, and a file needing quotes is
+        harder to hand-edit, which is what this format is for."""
+        from app.derive import suggest_identity_csv
+
+        text = suggest_identity_csv(
+            [{"key": "a,b", "identity": "x", "via": "v"}], [])
+
+        assert "left out" in text
+
+    def test_a_file_written_by_hand_still_loads(self):
+        """The parser moved from splitting on the first comma to csv.reader,
+        and deployments already have files written the old way. A format change
+        that silently drops half an identity map would attribute reports to
+        nobody and look like a data problem.
+        """
+        import os
+        import tempfile
+
+        from app.derive import load_identity_map
+
+        with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False) as fh:
+            fh.write("# key,identity\n"
+                     "ABC123,jo.bloggs\n"
+                     "DEF456,  ann.smith\n"
+                     "  GHI789,bob.jones\n"
+                     "# a comment line\n"
+                     "JKL012,carol.white  # a hand-written note\n"
+                     "\n"
+                     "MNO345,dave.brown\n")
+            path = fh.name
+        try:
+            out = load_identity_map(path)
+        finally:
+            os.unlink(path)
+
+        assert out == {
+            "ABC123": "jo.bloggs", "DEF456": "ann.smith",
+            "GHI789": "bob.jones", "JKL012": "carol.white",
+            "MNO345": "dave.brown",
+        }
+
+
+class TestLokiUrlScheme:
+    """urlopen honours more schemes than anyone configuring a log store means.
+
+    file:, ftp: and anything else with a handler registered are all accepted,
+    so a mistyped LOKI_URL could read a local file and have it parsed as a Loki
+    response. Operator-supplied rather than attacker-supplied, so this is less
+    an attack path than a way for a typo to do something surprising quietly.
+    """
+
+    def test_a_file_url_is_refused(self):
+        import pytest
+        from app.main import require_http_url
+
+        with pytest.raises(SystemExit, match="must be http"):
+            require_http_url("LOKI_URL", "file:///etc/passwd")
+
+    def test_an_ftp_url_is_refused(self):
+        import pytest
+        from app.main import require_http_url
+
+        with pytest.raises(SystemExit):
+            require_http_url("LOKI_URL", "ftp://example.com/x")
+
+    def test_http_and_https_pass_through(self):
+        """The check has to let through what it exists to carry."""
+        from app.main import require_http_url
+
+        assert require_http_url("LOKI_URL", "http://loki:3100") == "http://loki:3100"
+        assert require_http_url("LOKI_URL", "https://x.example") == "https://x.example"
+
+    def test_unset_is_allowed(self):
+        """Loki is optional: the portal starts and says it has no data rather
+        than refusing to run."""
+        from app.main import require_http_url
+
+        assert require_http_url("LOKI_URL", "") == ""
+
+    def test_the_message_names_the_variable(self):
+        """Somebody reading a crashed container's last line needs to know which
+        of several URLs was wrong."""
+        import pytest
+        from app.main import require_http_url
+
+        with pytest.raises(SystemExit, match="LOKI_URL"):
+            require_http_url("LOKI_URL", "file:///x")

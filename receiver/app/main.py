@@ -23,14 +23,14 @@ New in v0.1.3:
   - GET /metrics: Prometheus metrics (scraped via ServiceMonitor)
 """
 
+import hmac
 import json
 import logging
-import hmac
 import os
-import urllib.parse
 import sys
 import threading
 import time
+import urllib.parse
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -95,7 +95,24 @@ MAX_BODY_BYTES = int(os.environ.get("MAX_BODY_BYTES", "65536"))
 ALERTMANAGER_URL = os.environ.get("ALERTMANAGER_URL", "")
 # If set, findings are POSTed straight to Loki (matches receiver v0.1.1
 # behaviour); stdout JSON logging happens regardless.
-LOKI_PUSH_URL = os.environ.get("LOKI_PUSH_URL", "")
+def require_http_url(name, url):
+    """The URL back, or exit if it is not http or https.
+
+    Refuses rather than warns. A log store URL that is not http is a typo or
+    the wrong value pasted, and carrying on means findings accepted and never
+    stored, which is the failure this project exists to notice.
+
+    A separate function rather than an inline check so it can be tested without
+    re-importing the module, which re-registers every Prometheus metric.
+    """
+    if url and not url.startswith(("http://", "https://")):
+        raise SystemExit("%s must be http:// or https://, got %r"
+                         % (name, url[:40]))
+    return url
+
+
+LOKI_PUSH_URL = require_http_url("LOKI_PUSH_URL",
+                                 os.environ.get("LOKI_PUSH_URL", ""))
 
 
 def _redact_url(url):
@@ -607,7 +624,10 @@ async def report(f: Finding, request: Request, authorization: str = Header(defau
                 await _fire_alert(f)
                 alert_fired = True
         except httpx.HTTPError as e:
-            log.info(json.dumps({"app": "ai-guard-receiver", "kind": "error",
-                                 "error": f"alertmanager: {e}"}))
+            log.error(json.dumps({
+                "app": "ai-guard-receiver", "kind": "error",
+                "error": "alertmanager: %s" % type(e).__name__,
+                "url": _redact_url(ALERTMANAGER_URL),
+            }))
 
     return {"ok": True, "severity": f.severity, "alerted": alert_fired}
