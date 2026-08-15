@@ -26,9 +26,21 @@ is a rule nobody can apply to a file they were emailed.
 WHAT THIS IS NOT
 
 Reproducible. Loki has retention, so regenerating the same window next year may
-legitimately return less. The snapshot is tamper-evident, meaning it can be
-checked against itself, not reproducible, meaning it can be recreated from the
-source. Saying otherwise would be the more useful claim and the false one.
+legitimately return less. A snapshot records what a query returned at a moment,
+and it cannot be recreated from the source later.
+
+Tamper-evident. This was described that way and the description was wrong. The
+digest is unkeyed and the rule for computing it is published in the document
+itself, so anyone editing a count recomputes the hash, replaces the field, and
+the file verifies. What the checksum detects is corruption in transit, a
+truncated file, and an edit made without recomputing. Those are worth
+detecting, and they are not the same as detecting an intent to deceive.
+
+Making it tamper-evident means a signature over the digest, using a key the
+reader can verify with and the person editing the file cannot sign with: an
+organisational certificate, a KMS key, or a transparency log. That is a
+deliberate piece of work rather than a stronger adjective, and until it exists
+this says checksummed.
 """
 
 import hashlib
@@ -81,6 +93,9 @@ def checksum(doc):
     A field cannot cover itself. Verifying means removing that key, hashing
     what remains, and comparing, which is what checksum_scope names in the
     document so the rule travels with the file.
+
+    Unkeyed, and the rule is public, so this detects corruption rather than
+    alteration. See the module docstring.
     """
     return "sha256:" + hashlib.sha256(
         canonical({k: v for k, v in doc.items() if k != "snapshot_sha256"})
@@ -204,11 +219,19 @@ def evidence_from(register_rows, status, personal, mcp, paste,
         # carries a per-tool device count, so summing them counts a machine
         # once per tool it runs. The pair count is a real number; a distinct
         # device total is not recoverable from this input and is not guessed.
+        # The reader of this file may have nothing else to go on, so it has to
+        # say what its own checksum is worth. An unkeyed digest whose rule is
+        # published alongside it detects corruption, not alteration: anyone
+        # changing a count recomputes it. Calling that tamper-evident in a
+        # document offered as evidence would be the worst place to overstate.
         "notes": (
             "Counts are for the stated window. Not reproducible: log retention "
-            "may mean the same window returns less later. Tamper-evident: "
-            "remove snapshot_sha256, hash the remaining document with sorted "
-            "keys and no whitespace, and compare."
+            "may mean the same window returns less later. Checksummed, not "
+            "signed: remove snapshot_sha256, hash the remaining document with "
+            "sorted keys and no whitespace, and compare. That detects "
+            "corruption and an edit made without recomputing, and does not "
+            "detect deliberate alteration, because the digest is unkeyed and "
+            "this rule is public."
         ),
     }
     doc["snapshot_sha256"] = checksum(doc)
@@ -221,6 +244,11 @@ def verify(doc):
     Here so the rule is executable rather than only described. A verification
     procedure that exists in prose is one every reader implements slightly
     differently.
+
+    True means the file has not been corrupted or carelessly edited. It does
+    not mean the file is what the platform produced: the digest is unkeyed and
+    anyone altering a count can recompute it. Do not present a True from this
+    as proof of integrity.
     """
     claimed = (doc or {}).get("snapshot_sha256")
     return bool(claimed) and claimed == checksum(doc)

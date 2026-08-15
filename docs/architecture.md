@@ -256,9 +256,14 @@ safe, it is evidence that nobody looked.
 Evidence is that same idea pointed outwards. A snapshot states what was observed
 for a stated window, identifies the registry and governance files by hash rather
 than by version, and carries a digest of itself with that field omitted so it
-can be checked against itself later. It is tamper-evident rather than
-reproducible: log retention means the same window may return less next year, and
-claiming otherwise would be the more useful statement and the false one. Every
+can be checked against itself later. It is neither reproducible nor
+tamper-evident, and both limits are worth stating plainly because the document
+is offered as evidence. Log retention means the same window may return less
+next year, so it cannot be recreated. And the digest is unkeyed with its rule
+published in the document, so it detects corruption and a careless edit rather
+than deliberate alteration: anyone changing a count recomputes the hash. Making
+it tamper-evident means signing the digest with a key the reader can verify and
+the editor cannot use, which is a piece of work rather than a stronger word. Every
 count that could flatter has its denominator beside it, because a snapshot
 reporting sources_reporting without sources_known would let a half-blind estate
 look complete on paper. See [evidence.md](evidence.md).
