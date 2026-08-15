@@ -202,3 +202,84 @@ def test_loki_basic_auth_is_only_sent_when_configured():
     # The push builds auth from the username, so unset means no auth tuple.
     auth = (main.LOKI_USERNAME, main.LOKI_PASSWORD) if main.LOKI_USERNAME else None
     assert auth is None
+
+class TestUrlRedaction:
+    """A configured URL can carry credentials, and it was logged verbatim.
+
+    http://user:pass@host is a legal way to supply LOKI_PUSH_URL, and a
+    deployer who does that rather than using LOKI_USERNAME and LOKI_PASSWORD
+    had the credentials copied into stdout on every failed push. Logs are the
+    least expected place for a secret and often the most widely readable.
+    """
+
+    def test_userinfo_is_removed(self):
+        from app.main import _redact_url
+
+        out = _redact_url("https://user:hunter2@loki.example.com/loki/api/v1/push")
+
+        assert "hunter2" not in out
+        assert "user" not in out
+        assert out == "https://loki.example.com/loki/api/v1/push"
+
+    def test_the_host_survives(self):
+        """Naming which log store failed is the point of the message. A
+        redaction that removed the host would make the error useless and push
+        somebody towards logging the raw URL again."""
+        from app.main import _redact_url
+
+        assert "loki.example.com" in _redact_url("https://loki.example.com/push")
+
+    def test_the_port_survives(self):
+        from app.main import _redact_url
+
+        assert _redact_url("http://loki:3100/push") == "http://loki:3100/push"
+
+    def test_query_and_fragment_go(self):
+        """Neither is meaningful on a push endpoint and both are places a
+        token gets put."""
+        from app.main import _redact_url
+
+        out = _redact_url("https://loki.example.com/push?token=abc#frag")
+
+        assert "abc" not in out and "frag" not in out
+
+    def test_an_unparseable_url_is_not_echoed(self):
+        """A URL that cannot be parsed cannot be confirmed safe to print."""
+        from app.main import _redact_url
+
+        assert _redact_url("http://[") == "<unparseable url>"
+
+    def test_empty_stays_empty(self):
+        from app.main import _redact_url
+
+        assert _redact_url("") == ""
+
+
+def test_the_standalone_manifest_matches_the_released_version():
+    """receiver/deploy/receiver.yaml is offered as the simpler alternative to
+    the chart, and it pins an image tag by hand.
+
+    It sat at 0.2.0 while the chart shipped 0.9.x. That is not a cosmetically
+    stale example: 0.2.0 predates authentication being checked before the
+    request body is parsed, the body size cap, and the field bounds. Anyone
+    following the simpler path got materially weaker ingestion than anyone
+    following the harder one, and nothing said so.
+
+    A number maintained by remembering will drift again, so this is the thing
+    that remembers. It ties the manifest to the chart's appVersion, which the
+    release process already bumps.
+    """
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).parent.parent.parent
+    chart = (root / "charts" / "ai-guard" / "Chart.yaml").read_text()
+    manifest = (root / "receiver" / "deploy" / "receiver.yaml").read_text()
+
+    app_version = re.search(r'^appVersion:\s*"?([^"\s]+)"?', chart, re.M).group(1)
+    pinned = re.search(r"receiver:([^\s]+)", manifest).group(1)
+
+    assert pinned == app_version, (
+        "receiver/deploy/receiver.yaml pins %s while the chart ships %s. "
+        "Bump the manifest with the release." % (pinned, app_version)
+    )

