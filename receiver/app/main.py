@@ -27,6 +27,7 @@ import json
 import logging
 import hmac
 import os
+import urllib.parse
 import sys
 import threading
 import time
@@ -95,6 +96,39 @@ ALERTMANAGER_URL = os.environ.get("ALERTMANAGER_URL", "")
 # If set, findings are POSTed straight to Loki (matches receiver v0.1.1
 # behaviour); stdout JSON logging happens regardless.
 LOKI_PUSH_URL = os.environ.get("LOKI_PUSH_URL", "")
+
+
+def _redact_url(url):
+    """A URL with any embedded credentials removed, for logging.
+
+    http://user:pass@host is a legal way to supply a URL, and this one is
+    operator-supplied. It was written into the error log verbatim, so a
+    deployer who put credentials in LOKI_PUSH_URL rather than in
+    LOKI_USERNAME/LOKI_PASSWORD had them copied into stdout on every failed
+    push, which is where the logs go and where they are least expected.
+
+    The host stays, because naming which log store failed is the point of the
+    message. Query and fragment go too: neither is meaningful for a push
+    endpoint and both are places a credential gets put.
+
+    Returns a placeholder rather than the raw string when it will not parse. A
+    URL that cannot be parsed cannot be confirmed safe to echo.
+
+    Copied from portal/app/main.py rather than shared, because the receiver and
+    the portal are separate installables with nothing between them.
+    """
+    if not url:
+        return ""
+    try:
+        parts = urllib.parse.urlsplit(url)
+    except ValueError:
+        return "<unparseable url>"
+    if not parts.hostname:
+        return "<redacted>"
+    netloc = parts.hostname
+    if parts.port:
+        netloc = "%s:%d" % (netloc, parts.port)
+    return urllib.parse.urlunsplit((parts.scheme, netloc, parts.path, "", ""))
 # Hosted Loki (Grafana Cloud and most managed offerings) wants basic auth.
 # Without these the only way to authenticate was to embed credentials in the
 # URL, where they end up in `docker inspect` and in every log line that
@@ -444,7 +478,7 @@ async def _push_loki(f: Finding, line: str):
         entry = {
             "app": "ai-guard-receiver", "kind": "error",
             "error": f"loki push rejected with HTTP {code}",
-            "url": LOKI_PUSH_URL,
+            "url": _redact_url(LOKI_PUSH_URL),
         }
         if code in hints:
             entry["hint"] = hints[code]
@@ -453,8 +487,11 @@ async def _push_loki(f: Finding, line: str):
         LOKI_PUSH_FAILURES.labels(reason=type(e).__name__).inc()
         log.error(json.dumps({
             "app": "ai-guard-receiver", "kind": "error",
-            "error": f"loki push failed: {e}",
-            "url": LOKI_PUSH_URL,
+            # The exception type, not str(e). httpx puts the request URL in
+            # the message, which would carry userinfo straight past the
+            # redaction above.
+            "error": "loki push failed: %s" % type(e).__name__,
+            "url": _redact_url(LOKI_PUSH_URL),
         }))
     else:
         LOKI_PUSH_OK.inc()

@@ -48,7 +48,8 @@ exists to catch, committed to a file and handed to an auditor. Likewise
 `snapshot_sha256` is computed over the manifest with that key removed, and
 `checksum_scope` names the rule inside the document. A verification procedure
 that lives only in documentation is one nobody can apply to a file they were
-emailed.
+emailed. What that checksum does and does not prove is below, and it is less
+than the word checksum suggests.
 
 ### Verifying one
 
@@ -62,13 +63,29 @@ verify(json.load(open("ai-guard-evidence-2026-08-12T1908Z-168h.json")))
 Or by hand: remove `snapshot_sha256`, serialise the rest with sorted keys and no
 whitespace, take the sha256, compare.
 
-### Tamper-evident, not reproducible
+### What the checksum is worth
 
-`reproducible` is `false` and the manifest says why. Log retention means the
-same window may legitimately return less next year, so a snapshot cannot be
-recreated from the source. It can be checked against itself, which is a
-different and smaller claim. Reproducible would be the more useful one and the
-false one.
+**Checksummed, not signed.** The digest is unkeyed and the rule for computing
+it is printed inside the document, so anyone altering a count recomputes the
+hash, replaces the field, and the file verifies. `verify()` returning true means
+the file has not been corrupted or carelessly edited. It does not mean the file
+is what the platform produced.
+
+That is worth being blunt about, because a snapshot is offered as evidence and
+the person reading it may have nothing else to go on. Detecting corruption in
+transit, a truncated file, and a number changed in a text editor is genuinely
+useful. Detecting somebody who wants the numbers to be different is a separate
+property and this does not have it.
+
+Getting it means signing the digest with a key the reader can verify and the
+person editing the file cannot use: an organisational certificate, a KMS key, or
+a transparency log. Until that exists, treat a snapshot the way you would treat
+a printed report: its integrity comes from where you got it and who gave it to
+you, not from the file.
+
+**Not reproducible either.** Log retention means the same window may legitimately
+return less next year, so a snapshot records what a query returned at a moment
+and cannot be recreated from the source.
 
 ### Not stored
 

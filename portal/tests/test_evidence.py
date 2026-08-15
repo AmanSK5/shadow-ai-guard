@@ -63,11 +63,33 @@ def test_a_snapshot_verifies_against_itself():
     assert verify(_snap([_row()])) is True
 
 
-def test_tampering_with_any_count_breaks_the_checksum():
+def test_an_edit_without_recomputing_breaks_the_checksum():
+    """What the digest actually catches.
+
+    Not tampering. The hash is unkeyed and the rule for computing it is
+    published inside the document, so anyone deliberately altering a count
+    recomputes it and the file verifies. This catches corruption in transit, a
+    truncated file, and somebody editing a number in a text editor.
+    """
     doc = _snap([_row()])
     doc["tools_observed"] = 99
 
     assert verify(doc) is False
+
+
+def test_a_recomputed_checksum_verifies_and_that_is_the_limit():
+    """Stated as a test so nobody has to take the docstring's word for it.
+
+    An unkeyed digest cannot distinguish the platform from anyone else who can
+    run sha256. Presenting a True from verify() as proof of integrity would be
+    reading more into it than it says, and this is the assertion that makes the
+    limit impossible to miss.
+    """
+    doc = _snap([_row()])
+    doc["tools_observed"] = 99
+    doc["snapshot_sha256"] = checksum(doc)
+
+    assert verify(doc) is True
 
 
 def test_the_checksum_omits_the_field_that_carries_it():
@@ -137,13 +159,27 @@ def test_a_missing_input_hashes_to_empty_rather_than_failing():
 
 
 def test_the_snapshot_does_not_claim_to_be_reproducible():
-    """Log retention means the same window may legitimately return less later.
-    Tamper-evident is the true claim; reproducible is the more useful one and
-    the false one."""
+    """Log retention means the same window may legitimately return less later,
+    so a snapshot records what a query returned and cannot be recreated."""
     doc = _snap([_row()])
 
     assert doc["reproducible"] is False
     assert "retention" in doc["notes"]
+
+
+def test_the_snapshot_does_not_claim_to_be_tamper_evident():
+    """It said tamper-evident and it was not.
+
+    A document offered as evidence is the worst place to overstate what its own
+    integrity check is worth, and the reader may have nothing but the file. The
+    notes have to say the digest is unkeyed and the rule public, so a verified
+    file means uncorrupted rather than unaltered.
+    """
+    notes = _snap([_row()])["notes"].lower()
+
+    assert "tamper" not in notes
+    assert "not signed" in notes
+    assert "does not detect deliberate alteration" in notes
 
 
 # ─────────────────────────────────────────────

