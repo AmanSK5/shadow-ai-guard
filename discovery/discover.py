@@ -32,6 +32,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
+import yaml
 
 S1_BASE = os.environ.get("S1_BASE_URL", "").rstrip("/")
 S1_TOKEN = os.environ.get("S1_API_TOKEN", "")
@@ -153,7 +154,7 @@ def s1_dns_domains(days: int = 7) -> dict[str, set[str]]:
         ).json()
         for ev in page.get("data", []):
             host = ev.get("dnsRequest") or ""
-            if host and re.match(r"^[a-z0-9.-]+$", host, re.I):
+            if host and re.match(r"^[a-z0-9.-]+$", host, re.IGNORECASE):
                 domains[etld1(host)].add(ev.get("agentName", "unknown"))
         cursor = page.get("pagination", {}).get("nextCursor")
         if not cursor:
@@ -176,6 +177,62 @@ Respond with ONLY a JSON array, no markdown fences, one object per domain:
 
 Domains:
 """
+
+
+# What a classification may contain. The model's reply is JSON the model wrote,
+# and it lands in a merge request that edits the registry, so it is untrusted
+# input arriving from a trusted-looking place. A human reviews that MR, which is
+# the same reasoning that would excuse most injection: reviewers approve things
+# that look plausible, and plausible is exactly what a manipulated reply is.
+_CATEGORIES = {"assistant", "coding", "transcription", "writing", "image",
+               "search", "local-model", "voice", "other"}
+_CONFIDENCES = {"high", "medium", "low"}
+
+# Deliberately narrow. A registry id is derived from the name, and a name is
+# rendered into YAML and into an MR description, so anything that is not a
+# product name is more likely a mistake or an injection than a product nobody
+# thought of.
+_SAFE_TEXT = re.compile(r"^[\w .,'&()/+-]{1,80}$")
+
+
+def valid_classification(c, submitted: set[str]) -> str:
+    """"" if the verdict is usable, otherwise why it is not.
+
+    Returns a reason rather than a bool because a rejected verdict should say
+    what was wrong with it on stderr. A classifier silently dropping a third of
+    its answers looks identical to a quiet week.
+    """
+    if not isinstance(c, dict):
+        return "not an object"
+
+    domain = c.get("domain")
+    if not isinstance(domain, str) or not domain:
+        return "no domain"
+    # Must be one we asked about. Without this the model can introduce a domain
+    # nobody observed, and it arrives in the registry as though a device had
+    # been seen using it.
+    if domain not in submitted:
+        return "domain %r was not in the batch" % domain[:60]
+
+    if not isinstance(c.get("is_ai"), bool):
+        return "is_ai is not a boolean"
+
+    for field in ("name", "vendor"):
+        v = c.get(field)
+        if v is None:
+            continue
+        if not isinstance(v, str) or not _SAFE_TEXT.match(v):
+            return "%s %r is not a plain product name" % (field, str(v)[:60])
+
+    cat = c.get("category")
+    if cat is not None and cat not in _CATEGORIES:
+        return "category %r is not one of the ones asked for" % str(cat)[:40]
+
+    conf = c.get("confidence")
+    if conf is not None and conf not in _CONFIDENCES:
+        return "confidence %r is not high, medium or low" % str(conf)[:40]
+
+    return ""
 
 
 def classify(domains: list[str]) -> list[dict]:
@@ -205,11 +262,24 @@ def classify(domains: list[str]) -> list[dict]:
         text = "".join(
             b.get("text", "") for b in r.json()["content"] if b.get("type") == "text"
         )
-        text = re.sub(r"^```(json)?|```$", "", text.strip(), flags=re.M).strip()
+        text = re.sub(r"^```(json)?|```$", "", text.strip(), flags=re.MULTILINE).strip()
         try:
-            results.extend(json.loads(text))
+            parsed = json.loads(text)
         except json.JSONDecodeError:
             print(f"unparseable classification batch at offset {i}", file=sys.stderr)
+            continue
+        if not isinstance(parsed, list):
+            print(f"classification batch at offset {i} was not a list",
+                  file=sys.stderr)
+            continue
+
+        submitted = set(batch)
+        for c in parsed:
+            why = valid_classification(c, submitted)
+            if why:
+                print(f"discarding a classification: {why}", file=sys.stderr)
+                continue
+            results.append(c)
     return results
 
 
@@ -274,16 +344,37 @@ def candidate_yaml(g: dict, taken: set[str]) -> str:
     taken.add(slug)
 
     devices = len(g["devices"])
-    return f"""
-  - id: {slug}
-    name: {g['name']}
-    vendor: {g['vendor']}
-    category: unreviewed
-    approved: false
-    added_by: discovery
-    notes: "confidence {g['confidence']}; seen on {devices} device(s) in last 7d"
-    domains: [{', '.join(g['domains'])}]
-"""
+    entry = {
+        "id": slug,
+        "name": g["name"],
+        "vendor": g["vendor"],
+        "category": "unreviewed",
+        "approved": False,
+        "added_by": "discovery",
+        "notes": "confidence %s; seen on %d device(s) in last 7d"
+                 % (g["confidence"], devices),
+        "domains": g["domains"],
+    }
+
+    # safe_dump rather than an f-string. Every value here originates in a model
+    # response, and interpolating one into YAML lets a name containing a
+    # newline and two spaces write its own keys: approved: true is one line
+    # away. Validation upstream should stop that reaching here, and a format
+    # that cannot be escaped out of is the part that does not depend on the
+    # validation being complete.
+    #
+    # default_flow_style=False for block style, then indented to sit under
+    # `tools:` and prefixed with the list dash, so the appended entry matches
+    # the hand-written ones around it.
+    # domains inline, everything else block, matching the hand-written entries
+    # this is appended to. Dumped separately rather than by hand: the domain
+    # list comes from the same response as the rest and gets the same escaping.
+    domains = yaml.safe_dump(entry.pop("domains"), default_flow_style=True,
+                             width=10000).strip()
+    body = yaml.safe_dump(entry, sort_keys=False, default_flow_style=False,
+                          allow_unicode=True, width=10000)
+    lines = body.rstrip("\n").split("\n") + ["domains: " + domains]
+    return "\n  - " + "\n    ".join(lines) + "\n"
 
 
 def open_mr(groups: list[dict], registry: dict):
