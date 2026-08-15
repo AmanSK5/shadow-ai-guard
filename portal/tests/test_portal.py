@@ -740,9 +740,10 @@ class TestIdentityMapRoundTrip:
 
         from app.derive import load_identity_map, suggest_identity_csv
 
-        path = tempfile.mktemp(suffix=".csv")
-        with open(path, "w") as fh:
+        with tempfile.NamedTemporaryFile(
+                "w", suffix=".csv", delete=False) as fh:
             fh.write(suggest_identity_csv(list(matched), list(unmatched)))
+            path = fh.name
         try:
             return load_identity_map(path)
         finally:

@@ -213,21 +213,28 @@ class TestUrlRedaction:
     """
 
     def test_userinfo_is_removed(self):
+        """The whole point. http://user:pass@host is legal, operator-supplied,
+        and was written to the log verbatim on every failed push."""
         from app.main import _redact_url
 
         out = _redact_url("https://user:hunter2@loki.example.com/loki/api/v1/push")
 
-        assert "hunter2" not in out
-        assert "user" not in out
         assert out == "https://loki.example.com/loki/api/v1/push"
 
     def test_the_host_survives(self):
         """Naming which log store failed is the point of the message. A
         redaction that removed the host would make the error useless and push
-        somebody towards logging the raw URL again."""
+        somebody towards logging the raw URL again.
+
+        Asserts on the whole string rather than `host in output`. A substring
+        check passes wherever the host appears, including somewhere it should
+        not be, so it would accept a redaction that had moved the host into the
+        path and still call it a pass.
+        """
         from app.main import _redact_url
 
-        assert "loki.example.com" in _redact_url("https://loki.example.com/push")
+        assert _redact_url("https://loki.example.com/push") == \
+            "https://loki.example.com/push"
 
     def test_the_port_survives(self):
         from app.main import _redact_url
@@ -241,7 +248,7 @@ class TestUrlRedaction:
 
         out = _redact_url("https://loki.example.com/push?token=abc#frag")
 
-        assert "abc" not in out and "frag" not in out
+        assert out == "https://loki.example.com/push"
 
     def test_an_unparseable_url_is_not_echoed(self):
         """A URL that cannot be parsed cannot be confirmed safe to print."""
