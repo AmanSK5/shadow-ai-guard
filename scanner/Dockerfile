@@ -7,7 +7,17 @@
 FROM python:3.12-slim
 
 # tzdata so TZ works if a deployer sets it; default is UTC.
+#
+# upgrade in the same layer for Debian security updates. The base image
+# rebuilds on its own schedule and so lags patched packages: CVE-2026-53615 in
+# util-linux was fixed in Debian as 2.41.5-0+deb13u1 while python:3.12-slim
+# still carried 2.41-5, and the Trivy gate failed on it in all four images.
+#
+# upgrade rather than pinning the one package, because the next lag will be a
+# different package and a hand-maintained CVE list goes stale between the
+# release that adds it and the one that needed it.
 RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
  && apt-get install -y --no-install-recommends tzdata \
  && rm -rf /var/lib/apt/lists/*
 ENV TZ=UTC
