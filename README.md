@@ -2,7 +2,7 @@
 
 <p align="center">
   <img
-    src="assets/shadow-at-guard-title.png"
+    src="assets/shadow-ai-guard-title.png"
     alt="Shadow AI Guard"
     width="650"
   />
