@@ -69,6 +69,8 @@ about the estate.
 | `PORTAL_AUTH` | yes* | `none` to run without auth, deliberately |
 | `LOKI_URL` | yes | Loki base URL, the same one the receiver writes to |
 | `LOKI_TOKEN` | no | bearer token, if your Loki needs one |
+| `LOKI_USERNAME` | no | basic auth user. Grafana Cloud and most hosted Loki want this rather than a token, and the receiver needs the same pair to write |
+| `LOKI_PASSWORD` | no | basic auth password, `_FILE` supported |
 | `LOOKBACK_HOURS` | no | default window, default 168 |
 | `REGISTRY_PATH` | no | registry.yaml, for resolving domains to tool ids |
 | `IDENTITY_MAP` | no | CSV of `key,identity` attaching people to devices |
@@ -81,6 +83,25 @@ about the estate.
 | `DEPLOY_CHART_VERSION` | no | shown on the settings page, clearly unverified |
 | `DEPLOY_RELEASE` | no | as above |
 | `DEPLOY_NAMESPACE` | no | as above |
+
+### Reading from a hosted log store
+
+`LOKI_USERNAME` and `LOKI_PASSWORD` are the same credentials the receiver
+writes with, and both containers need them. Setting them on one and not the
+other produces a deployment where findings are stored and cannot be read back,
+and nothing reports an error you would attribute to the right cause: the
+receiver is healthy, its push counter climbs, and this portal returns something
+a deployer reads as their own misconfiguration.
+
+Basic auth takes precedence over `LOKI_TOKEN` when both are set, because only
+one `Authorization` header can be sent and the log store is the thing that has
+to accept it.
+
+On Grafana Cloud the username is a numeric instance id rather than an email,
+and `LOKI_URL` is the base URL without the query path, while the receiver's
+`LOKI_PUSH_URL` ends `/loki/api/v1/push`. Same host, two values, and crossing
+them is the commonest way to get a receiver that stores findings and a portal
+that finds none.
 
 ## Identity
 
@@ -317,7 +338,7 @@ reported". It stays useful afterwards as an is-it-still-working view.
 
 ## Embedding Grafana
 
-The Dashboard tab embeds Grafana panels, so the portal can be the one place
+The Grafana tab embeds Grafana panels, so the portal can be the one place
 someone looks. It is optional, and everything else works without it.
 
 Grafana refuses to be framed by default, deliberately: framing a session
