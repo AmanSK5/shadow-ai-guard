@@ -18,6 +18,7 @@ interface:
   "os": "unknown",
   "account_domain": "gmail.com",
   "device": "",
+  "device_name": "",
   "user": "",
   "evidence": "entra-signin",
   "severity": "warn",
@@ -31,11 +32,22 @@ Field rules:
 - **tool** should match a registry entry where possible, so it lines up with
   other sources on the dashboard. If your source discovers something not yet
   in the registry, add it to the registry too.
-- **surface** is one of browser, cli, ide, desktop, network, cloud. Pick the
-  one that describes how you observed it.
+- **surface** is one of browser, cli, ide, desktop, mcp, network, cloud. Pick
+  the one that describes how you observed it. `mcp` is for a Model Context
+  Protocol server wired into a tool: the tool is the finding's `tool`, and the
+  server names go in `evidence` rather than into the tool id, because folding
+  them in made every distinct combination look like a separate tool.
 - **os** is the device OS if you know it, else `unknown`. Cloud and network
   findings usually have no single device, so `unknown` and an empty
   `device` is correct.
+- **device** is a stable machine identifier, and a hardware serial where you
+  have one. It is what other sources key on, so a scanner sending a hostname
+  where the rest send serials splits that machine into two on every view.
+- **device_name** is what a human recognises: the hostname, or the name your
+  platform shows. The portal prefers it and falls back to `device`, so a
+  scanner that sends only the serial shows a serial where the others show a
+  name. Send both when you have both, and leave both empty for cloud findings
+  that belong to a person rather than a machine.
 - **account_domain** is the domain only. If your source gives you a full
   address, strip the local part before putting it here. The `account_domain`
   field must never contain a local part or full email.

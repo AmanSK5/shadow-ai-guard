@@ -13,7 +13,7 @@ demand from Loki, the registry and the governance file.
 {
   "generated_at": "2026-08-12T19:08:55Z",
   "window": { "from": "2026-08-05T19:08:55Z", "to": "2026-08-12T19:08:55Z", "hours": 168 },
-  "app_version": "0.9.0",
+  "app_version": "0.9.4",
   "registry_sha256": "sha256:e982bf...",
   "governance_sha256": "sha256:21a696...",
 

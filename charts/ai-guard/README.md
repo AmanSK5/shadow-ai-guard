@@ -114,6 +114,8 @@ the portal.
 | `auth.value` | `""` | set the token explicitly; ends up in your helm values |
 | `auth.existingSecret` | `""` | use a Secret you created yourself, key `authToken` |
 | `loki.pushUrl` | `""` | unset means stdout only, for pipelines that scrape logs |
+| `loki.username` | `""` | basic auth, used by BOTH containers: the receiver writes, the portal reads |
+| `loki.existingSecret` | `""` | a Secret with a `lokiPassword` key. Not a value: `helm get values` would show it |
 | `alertmanager.url` | `""` | unset means findings are logged and dashboarded but nothing pages |
 | `alertmanager.ttlMinutes` | `120` | how long a warn finding counts as already alerted |
 | `displayTz` | `UTC` | timezone for the readable timestamp on alerts only |
@@ -173,6 +175,33 @@ helm upgrade ai-guard charts/ai-guard --set registry.existingConfigMap=ai-guard-
 
 The receiver reads the registry per request and the kubelet syncs ConfigMap
 changes into the mount, so later updates need no restart.
+
+## A log store that needs credentials
+
+Grafana Cloud and most hosted Loki want basic auth, and both containers need
+it: the receiver to write and the portal to read.
+
+```bash
+kubectl create secret generic my-loki-creds \
+  --from-literal=lokiPassword='<token>'
+
+helm upgrade --install ai-guard charts/ai-guard \
+  --set loki.username=123456 \
+  --set loki.existingSecret=my-loki-creds
+```
+
+Setting them for one and not the other gives you a deployment where findings
+are stored and cannot be read back, and neither container reports an error you
+would attribute to the right cause: the receiver is healthy, its push counter
+climbs, and the portal returns something a deployer reads as their own
+misconfiguration.
+
+On Grafana Cloud the username is a numeric instance id rather than an email,
+and the access policy needs `logs:write` AND `logs:read`. A read-only token
+produces a 401 on every push that the receiver counts and logs while still
+answering 200 to the collector, so findings look accepted and are not stored.
+`aiguard_loki_push_total` staying at zero while findings arrive is that
+failure.
 
 ## Not in the chart
 
