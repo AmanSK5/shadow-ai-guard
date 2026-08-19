@@ -149,7 +149,7 @@ made-up devices.
 Use the portal to explore people, devices, tools, source health and the
 relationships between them.
 
-https://github.com/user-attachments/assets/3a35e2a6-2aeb-4d78-b3d1-796cc37e4695
+https://github.com/user-attachments/assets/a50191d2-c6c3-48d4-a383-59ab22d39afa
 
 ### Grafana
 
