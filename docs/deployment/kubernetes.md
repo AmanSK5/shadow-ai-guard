@@ -1,8 +1,8 @@
 # Deploying on Kubernetes
 
-Deploys the receiver: the one service every source reports to. The portal is
-not in the chart yet and is available on the [Docker Compose
-route](../../deploy/compose/README.md).
+Deploys the receiver, which every source reports to, and the portal, which
+reads the findings back. Both are in the chart and the portal is enabled by
+default; set `portal.enabled=false` if you want the receiver alone.
 
 If you have no cluster, you do not need one: see [the routes](README.md).
 
@@ -52,14 +52,14 @@ The same thing without Helm, if you would rather see the pieces.
 Published to GHCR by CI, so nothing needs building:
 
 ```
-ghcr.io/amansk5/shadow-ai-guard/receiver:0.9.2
+ghcr.io/amansk5/shadow-ai-guard/receiver:0.9.4
 ```
 
 Built for `linux/amd64` and `linux/arm64` under one tag, so it resolves on
 Graviton, Apple Silicon and a Pi without anything extra:
 
 ```bash
-docker buildx imagetools inspect ghcr.io/amansk5/shadow-ai-guard/receiver:0.9.2
+docker buildx imagetools inspect ghcr.io/amansk5/shadow-ai-guard/receiver:0.9.4
 ```
 
 Pin a version. `latest` moves when a release is tagged, which means a pod
@@ -139,6 +139,67 @@ And that it serves the registry:
 curl -s -H "Authorization: Bearer $TOKEN" \
   https://your-receiver-host/registry/collector | head
 ```
+
+## The portal
+
+Enabled by default and deployed alongside the receiver. It reads findings back
+out of the log store, so it needs to be told where that is:
+
+    --set portal.lokiUrl=http://loki.monitoring.svc.cluster.local:3100
+
+That is the BASE url, not the push endpoint: the portal appends its own query
+path, while `loki.pushUrl` is POSTed to verbatim by the receiver. Two values,
+same host, and getting them crossed produces a receiver that stores findings
+and a portal that finds none.
+
+### A log store that needs credentials
+
+Grafana Cloud and most hosted Loki want basic auth, and **both containers need
+it**: the receiver to write, the portal to read.
+
+    kubectl create secret generic my-loki-creds \
+      --from-literal=lokiPassword='<token>'
+
+    --set loki.username=123456 \
+    --set loki.existingSecret=my-loki-creds
+
+The username is a value; the password comes from a Secret, because a password
+passed as a value ends up in `helm get values` and in whatever holds your
+values file.
+
+Setting them for one container and not the other produces a deployment where
+findings are stored and cannot be read back, and neither container reports an
+error you would attribute to the right cause. On Grafana Cloud the username is
+a numeric instance id rather than an email, and the access policy needs both
+`logs:write` and `logs:read`: a read-only token produces a 401 the receiver
+counts while still answering 200 to the collector, so findings look accepted
+and are not stored. `aiguard_loki_push_total` staying at zero while findings
+arrive is that failure.
+
+### Authentication
+
+The portal names who runs what on which machine, so it refuses to start without
+credentials. The chart generates a password on first install and keeps it
+across upgrades:
+
+    kubectl -n "$NS" get secret ai-guard-portal \
+      -o jsonpath='{.data.password}' | base64 -d; echo
+
+If your ingress can do OIDC or mTLS, do it there and set
+`portal.auth.mode=none` behind it. That is the better arrangement: basic auth
+is one shared credential with no per-user trail.
+
+### Governance and identity
+
+Both optional, both ConfigMaps:
+
+    --set portal.governance.existingConfigMap=ai-guard-governance
+    --set portal.identityMap.existingConfigMap=ai-guard-identity
+
+The first records approvals, owners and review dates
+([governance](../governance.md)). The second maps device keys to people, so
+reports carry a name rather than a serial. Without either, the register falls
+back to the registry's own `approved` flag and devices show as serials.
 
 ## When findings stop arriving
 

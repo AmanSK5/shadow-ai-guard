@@ -330,3 +330,37 @@ def test_a_non_http_loki_push_url_is_refused():
 
     assert require_http_url("LOKI_PUSH_URL", "http://loki:3100/push")
     assert require_http_url("LOKI_PUSH_URL", "") == ""
+
+
+def test_the_docs_do_not_pin_a_stale_image():
+    """Documentation carries copy-paste commands with image tags in them.
+
+    getting-started.md had portal:0.4.0 in a docker run, five releases behind,
+    on the page somebody follows first. kubernetes.md named a receiver two
+    releases back. Every one of these goes stale on every release, and the
+    person who notices is a new user pulling an image with bugs that were
+    fixed months ago.
+
+    Same reasoning as the manifest test above: a number maintained by
+    remembering drifts, so this is the thing that remembers.
+    """
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).parent.parent.parent
+    chart = (root / "charts" / "ai-guard" / "Chart.yaml").read_text()
+    app_version = re.search(r'^appVersion:\s*"?([^"\s]+)"?', chart, re.MULTILINE).group(1)
+
+    stale = []
+    for doc in sorted(root.glob("docs/**/*.md")) + sorted(root.glob("*.md")):
+        for i, line in enumerate(doc.read_text().split("\n"), start=1):
+            for m in re.finditer(
+                    r"shadow-ai-guard/(receiver|portal|scanner|discovery):"
+                    r"(\d+\.\d+\.\d+)", line):
+                if m.group(2) != app_version:
+                    stale.append("%s:%d pins %s" % (doc.name, i, m.group(0)))
+
+    assert not stale, (
+        "these pin an image that is not the released version (%s):\n  %s"
+        % (app_version, "\n  ".join(stale))
+    )

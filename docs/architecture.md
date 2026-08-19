@@ -151,7 +151,7 @@ enforcement, and it rides the same pipeline.
 ```
 
 - **tool**, which AI tool, from the registry.
-- **surface**, one of browser, cli, ide, desktop, network, cloud.
+- **surface**, one of browser, cli, ide, desktop, mcp, network, cloud.
 - **os**, macos, windows, linux, or unknown (cloud and network findings
   have no single device OS).
 - **account_domain**, the domain of the signed-in account, never the
