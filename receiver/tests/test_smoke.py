@@ -87,6 +87,49 @@ def test_report_without_auth_is_rejected_before_the_body_is_validated():
     assert resp.status_code == 401
 
 
+def test_non_ascii_authorization_header_is_a_401_not_a_500():
+    """A header byte above 0x7f reached hmac.compare_digest as a non-ASCII
+    str, which raises TypeError rather than returning False. That was an
+    unauthenticated 500 and a traceback per request on the internet-facing
+    component. Sent at the ASGI layer because httpx refuses to build the
+    header in the first place.
+
+    Covers both the middleware and the defence-in-depth _auth() on the
+    endpoint: /registry has no body, so a 401 there proves the second check
+    survives the same input too."""
+    import asyncio
+
+    async def status(method, path, auth):
+        headers = [(b"authorization", auth)]
+        body = b""
+        if method == "POST":
+            body = b'{"tool":"x"}'
+            headers += [(b"content-type", b"application/json"),
+                        (b"content-length", str(len(body)).encode())]
+        scope = {
+            "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
+            "method": method, "scheme": "http", "path": path,
+            "raw_path": path.encode(), "query_string": b"",
+            "headers": headers, "client": ("127.0.0.1", 1), "server": ("t", 80),
+        }
+        sent = []
+
+        async def receive():
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        async def send(msg):
+            sent.append(msg)
+
+        await app(scope, receive, send)
+        return next(m["status"] for m in sent
+                    if m["type"] == "http.response.start")
+
+    for path, method in (("/report", "POST"), ("/registry", "GET")):
+        assert asyncio.run(status(method, path, b"Bearer caf\xe9")) == 401
+        # And the token itself still works through the same path.
+        assert asyncio.run(status(method, path, b"Bearer test-token-for-ci")) != 401
+
+
 def test_oversized_body_is_rejected():
     big = {"tool": "claude-code", "evidence": "x" * 200_000}
     resp = client.post("/report", json=big, headers=AUTH)
