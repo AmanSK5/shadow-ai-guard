@@ -61,6 +61,7 @@ services:
       REGISTRY_PATH: /etc/ai-guard/registry.json
       COLLECTOR_REGISTRY_PATH: /etc/ai-guard/collector.json
       DISPLAY_TZ: ${DISPLAY_TZ:-UTC}
+      CORP_DOMAINS: ${CORP_DOMAINS:-}
     volumes:
       - registry-dist:/etc/ai-guard:ro
       - ./secrets/auth_token:/run/secrets/auth_token:ro

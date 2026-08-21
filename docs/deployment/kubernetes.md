@@ -126,6 +126,10 @@ Optional, all off by default:
 - `ALERTMANAGER_URL` - unset means findings are logged and dashboarded but
   nothing pages.
 - `DISPLAY_TZ` - timezone for the human-readable timestamp on alerts.
+- `CORP_DOMAINS` (chart value `corpDomains`) - corporate domains, served to
+  the endpoint collectors inside `/registry/collector`. Collectors prefer
+  this list to their locally configured one, so a change here reaches the
+  fleet on its next check-in with no MDM re-push per platform.
 
 Confirm it is up:
 

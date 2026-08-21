@@ -42,7 +42,9 @@ param([switch]$FunctionsOnly)
 # ------------------------------------------------------------------ config --
 $ReceiverBase    = 'https://ai-guard.example.com'   # your receiver's public ingest URL
 $Token           = '__RECEIVER_TOKEN__'   # replace before upload, or wire to a secure retrieval
-$CorporateDomains = @('example.com')   # accounts on these domains are 'work'; all others warn as personal
+$CorporateDomains = @('example.com')   # accounts on these domains are 'work'; all others warn as personal.
+                                       # A receiver that serves config.corp_domains in /registry/collector
+                                       # overrides this at runtime; the constant is the fallback.
 
 $StateDir  = 'C:\ProgramData\ai-guard'
 $StateFile = Join-Path $StateDir 'reported.state.json'
@@ -272,6 +274,18 @@ if (-not $FunctionsOnly) {
         # An empty scan looks exactly like a clean machine. Refuse instead.
         Write-Output 'ai-guard: refusing to scan without an identifier list'
         exit 1
+    }
+
+    # Corporate domains can arrive with the registry: the receiver serves
+    # config.corp_domains in the payload just fetched when it has CORP_DOMAINS
+    # set. The served list wins over the constant above, because a list
+    # changed once on the receiver reaches the fleet on its next run rather
+    # than waiting on an Intune re-paste; the constant stays as the fallback,
+    # so a receiver serving nothing changes nothing. Lowercased to match the
+    # severity check, which lowercases the account side.
+    if ($Registry.PSObject.Properties['config'] -and $Registry.config.corp_domains) {
+        $CorporateDomains = @($Registry.config.corp_domains | ForEach-Object { "$_".ToLower() })
+        Write-Output "ai-guard: corporate domains from receiver: $($CorporateDomains -join ',')"
     }
 }
 

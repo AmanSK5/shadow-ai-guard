@@ -73,14 +73,19 @@ setup_home() {
 # Fake receiver. Serves the collector registry on GET and returns a chosen
 # status on POST, logging each one so a test can assert a request was or was
 # not attempted.
+# start_receiver <status> [served_corp_domains]
+# The optional second argument makes the served registry carry
+# config.corp_domains, the way a receiver with CORP_DOMAINS set does.
 start_receiver() {
   local status="$1"
   : > "$RECEIVER_LOG"
-  python3 - "$PORT" "$status" "$RECEIVER_LOG" <<'PY' &
+  python3 - "$PORT" "$status" "$RECEIVER_LOG" "${2-}" <<'PY' &
+import json
 import sys
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 port, status, logpath = int(sys.argv[1]), int(sys.argv[2]), sys.argv[3]
+served_domains = sys.argv[4] if len(sys.argv) > 4 else ""
 REGISTRY = (
     b'{"version":1,"cli":[{"tool":"claude-code",'
     b'"config_paths":[".claude-aiguard-test.json"],'
@@ -88,6 +93,10 @@ REGISTRY = (
     b'"account_json_keys":["oauthAccount"],"binaries":["claude"]}],'
     b'"ide":[],"desktop":[],"mcp":[]}'
 )
+if served_domains:
+    reg = json.loads(REGISTRY)
+    reg["config"] = {"corp_domains": served_domains.split(",")}
+    REGISTRY = json.dumps(reg).encode()
 
 class H(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -99,9 +108,11 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):
         n = int(self.headers.get("Content-Length") or 0)
-        self.rfile.read(n)
+        # The body rides on the POST line (findings are single-line JSON), so
+        # a test can assert on what was reported, not just that something was.
+        body = self.rfile.read(n).decode("utf-8", "replace").replace("\n", " ")
         with open(logpath, "a") as f:
-            f.write("POST\n")
+            f.write("POST " + body + "\n")
         self.send_response(status)
         self.end_headers()
 
@@ -297,6 +308,24 @@ test_info_still_throttled_beyond_the_warn_window() {
   if [ "$n" -eq 0 ]; then pass "$name"; else fail "$name (made $n request(s))"; fi
 }
 
+test_served_corp_domains_override_the_local_list() {
+  # Central config: a receiver with CORP_DOMAINS set serves the list inside
+  # /registry/collector, and the served list wins over AIGUARD_CORP_DOMAINS.
+  # Here the local list calls example.com personal while the receiver says it
+  # is corporate, so the fixture account must land as info; a warn means the
+  # override was lost and the fleet is still following per-machine config.
+  local name="receiver-served corp domains override the local list"
+  reset_state; start_receiver 200 example.com
+  run_collector other-company.example
+  stop_receiver
+  if grep -q '"severity":"info"' "$RECEIVER_LOG" \
+      && ! grep -q '"severity":"warn"' "$RECEIVER_LOG"; then
+    pass "$name"
+  else
+    fail "$name (severities: $(grep -o '"severity":"[a-z]*"' "$RECEIVER_LOG" | sort -u | tr '\n' ' '))"
+  fi
+}
+
 # ------------------------------------------------------------------- main --
 
 require_root
@@ -348,6 +377,7 @@ test_warn_inside_window_suppresses
 test_warn_outside_window_posts_again
 test_warn_with_no_prior_state_posts_immediately
 test_info_still_throttled_beyond_the_warn_window
+test_served_corp_domains_override_the_local_list
 
 echo
 echo "passed: $PASS  failed: $FAIL"
