@@ -143,10 +143,10 @@ async function check() {
   // Firefox returns a promise here and rejects it when the background page is
   // not yet awake to receive. Chrome MV3 does the same. Nothing is waiting on
   // the result, so an uncaught rejection would surface in the page console of
-  // a user's browser for no reason. The dedupe map has already recorded this
-  // one, so a dropped message is a lost finding rather than a repeated one,
-  // which is the right way round: the guard has already acted on screen and
-  // the report is the record of it.
+  // a user's browser for no reason. Dedupe lives in background.js, keyed on
+  // tool+domain in storage.session, so a message dropped here is retried at
+  // the next check rather than lost: this check runs every five minutes and
+  // the window is six hours.
   api.runtime.sendMessage({
     type: "personal-account",
     tool: host,

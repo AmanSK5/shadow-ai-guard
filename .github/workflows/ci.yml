@@ -52,6 +52,23 @@ jobs:
       - name: shellcheck macOS collector
         run: shellcheck -S warning endpoint/macos/*.sh endpoint/linux/*.sh
 
+  extension-tests:
+    # The extension has no build step and no package.json, and its tests are
+    # plain node scripts that exit non-zero on failure. They existed without a
+    # job for a while, which meant the paste guard's card detector and the
+    # account dedupe were tested once by hand and then never again. No
+    # setup-node: the runner's preinstalled node is enough for scripts with no
+    # dependencies, and one fewer action is one fewer thing to pin.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: extension tests
+        run: |
+          for t in extension/tests/test_*.js; do
+            echo "== $t"
+            node "$t" || exit 1
+          done
+
   collector-delivery-state:
     # The throttle timestamp must advance only after confirmed delivery. If it
     # advances on failure, a finding that never reached the receiver is never
