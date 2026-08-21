@@ -86,8 +86,26 @@ def _secret(name: str, default: str | None = None) -> str:
 
 
 AUTH_TOKEN = _secret("AUTH_TOKEN")
-# Built once so the comparison below is against a fixed string.
-_EXPECTED_AUTH = f"Bearer {AUTH_TOKEN}"
+# Built once, as bytes, so the comparison below is against a fixed value.
+_EXPECTED_AUTH = b"Bearer " + AUTH_TOKEN.encode()
+
+
+def _token_ok(header: str) -> bool:
+    """Constant-time check of an Authorization header against the token.
+
+    Compared as bytes, not str. hmac.compare_digest raises TypeError when
+    either str argument contains a non-ASCII character, and Starlette decodes
+    headers as latin-1, so any byte above 0x7f in the header reached the
+    comparison as a non-ASCII str and threw instead of returning False. That
+    was a 500 and a traceback on stdout per request, with no token required,
+    on the one component meant to face the internet and whose stdout is the
+    Loki stream.
+
+    Encoding back to latin-1 cannot fail: that is the encoding the str came
+    from. A plain != would leak match length through timing, so compare_digest
+    stays.
+    """
+    return hmac.compare_digest(header.encode("latin-1"), _EXPECTED_AUTH)
 # Findings are small: a large one is a few hundred bytes. The cap exists so an
 # unauthenticated client cannot make the receiver do work by sending something
 # enormous. Raise it if a source legitimately sends more.
@@ -345,9 +363,7 @@ async def authenticate_before_reading(request: Request, call_next):
     correct if this middleware is ever removed or reordered.
     """
     if request.url.path.startswith(_PROTECTED):
-        if not hmac.compare_digest(
-            request.headers.get("authorization", ""), _EXPECTED_AUTH
-        ):
+        if not _token_ok(request.headers.get("authorization", "")):
             return JSONResponse({"detail": "bad token"}, status_code=401)
 
         if request.method == "POST":
@@ -441,9 +457,9 @@ def registry_collector(authorization: str = Header(default="")):
 
 
 def _auth(authorization: str):
-    # Constant-time comparison: a plain != leaks match length timing.
-    # The middleware above is the real gate; this is defence in depth.
-    if not hmac.compare_digest(authorization, _EXPECTED_AUTH):
+    # The middleware above is the real gate; this is defence in depth. Same
+    # bytes comparison for the same reason: see _token_ok.
+    if not _token_ok(authorization):
         raise HTTPException(401, "bad token")
 
 
