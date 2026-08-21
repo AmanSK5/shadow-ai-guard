@@ -64,16 +64,18 @@ encryption.
 import json
 import logging
 import os
+import re
 import secrets
 import time
 import urllib.parse
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from pydantic import BaseModel, Field
 
-from app import derive, evidence, governance, paste_guard
+from app import derive, evidence, governance, managed, paste_guard
 
 log = logging.getLogger("portal")
 
@@ -207,6 +209,24 @@ OVERVIEW_WIDGETS = os.environ.get("OVERVIEW_WIDGETS", "")
 DEPLOY_CHART = os.environ.get("DEPLOY_CHART_VERSION", "")
 DEPLOY_RELEASE = os.environ.get("DEPLOY_RELEASE", "")
 DEPLOY_NAMESPACE = os.environ.get("DEPLOY_NAMESPACE", "")
+
+# Managed mode. RECEIVER_URL is where admin actions are proxied - the
+# receiver's internal address, because the browser's CSP keeps it on 'self'
+# and something has to make the call. Unset means the managed views say so
+# and everything else is exactly the classic portal. RECEIVER_PUBLIC_URL is
+# different on purpose: it is the ingest URL agents can actually reach, and
+# it is what gets baked into downloaded deployment artifacts - a
+# cluster-internal service name baked into a Jamf script would enroll
+# nothing. The portal holds no admin credential for any of this: the
+# operator's token arrives per request and is forwarded, never stored.
+RECEIVER_URL = require_http_url("RECEIVER_URL", os.environ.get("RECEIVER_URL", ""))
+RECEIVER_PUBLIC_URL = require_http_url(
+    "RECEIVER_PUBLIC_URL", os.environ.get("RECEIVER_PUBLIC_URL", ""))
+# Verified copies of the endpoint collector scripts, shipped in the image
+# because the build cannot see the endpoint/ tree (same pattern as the
+# chart's bundled registry; a test asserts byte equality with the sources).
+COLLECTOR_SCRIPTS_DIR = os.environ.get(
+    "COLLECTOR_SCRIPTS_DIR", str(Path(__file__).parent.parent / "collector-scripts"))
 
 STATIC = Path(__file__).parent / "static"
 
@@ -396,6 +416,14 @@ def config(_=Depends(require_auth)):
         "cache_ttl_seconds": CACHE_TTL,
         "version": APP_VERSION,
         "overview_widgets": _widgets(),
+        # enabled says the portal can reach an admin API; artifacts_ready
+        # says downloads can bake a URL agents can reach. Separate flags,
+        # because a deployment can sensibly have the first without the
+        # second and the UI should name which one is missing.
+        "managed": {
+            "enabled": bool(RECEIVER_URL),
+            "artifacts_ready": bool(RECEIVER_URL and RECEIVER_PUBLIC_URL),
+        },
     }
 
 
@@ -719,6 +747,123 @@ def suggest_identities(hours: float = Query(default=None, gt=0, le=24 * 90),
         "matched": matched,
         "unmatched": unmatched,
         "identity_map_path": IDENTITY_MAP or None,
+    })
+
+
+# ----------------------------------------------------------- managed mode --
+# The portal's first write path, and it is deliberately a thin one: every
+# route below forwards the operator's admin token to the receiver, which is
+# the component that actually authorizes and records. The portal checks
+# nothing but shape, stores nothing, and a portal database still does not
+# exist. Governance decisions remain in the file (docs/governance.md); these
+# routes manage operational credentials, which is a different kind of thing.
+
+# Receiver-assigned ids are hex, but the exact alphabet is the receiver's
+# business; this guard only ensures a path segment cannot smuggle separators
+# or dots into the URL built below.
+_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def _admin_forward(x_admin_token: str = Header(default="")) -> str:
+    """The operator's admin token, from the header, or the refusal that
+    explains the model: forwarded per request, never stored here."""
+    if not RECEIVER_URL:
+        raise HTTPException(
+            503, "RECEIVER_URL is not set. Managed mode needs the portal to "
+                 "reach the receiver's admin API; see the portal README.")
+    if not x_admin_token:
+        raise HTTPException(
+            401, "X-Admin-Token required: the receiver's admin token. The "
+                 "portal forwards it per request and never stores it.")
+    return x_admin_token
+
+
+def _receiver(method: str, path: str, token: str, body: dict | None = None):
+    try:
+        return managed.receiver_request(RECEIVER_URL, method, path, token, body)
+    except managed.ReceiverError as e:
+        if e.status == 502:
+            log.warning("receiver call failed for %s: %s",
+                        _redact_url(RECEIVER_URL), e.detail)
+        raise HTTPException(e.status, e.detail)
+
+
+@app.get("/api/fleet")
+def fleet(_=Depends(require_auth), token: str = Depends(_admin_forward)):
+    """The enrolled devices, from the receiver's registry - who exists,
+    rather than who has spoken lately, which is what /api/graph derives."""
+    return _receiver("GET", "/admin/devices", token)
+
+
+@app.get("/api/enrollment-tokens")
+def enrollment_tokens(_=Depends(require_auth), token: str = Depends(_admin_forward)):
+    return _receiver("GET", "/admin/enrollment-tokens", token)
+
+
+class MintRequest(BaseModel):
+    note: str = Field(default="", max_length=200)
+    ttl_days: int = Field(default=180, ge=1, le=3650)
+
+
+@app.post("/api/enrollment-tokens")
+def mint_enrollment_token(req: MintRequest, _=Depends(require_auth),
+                          token: str = Depends(_admin_forward)):
+    """Mint via the receiver. The response carries the plaintext exactly
+    once, which is the receiver's contract; the UI shows it once and the
+    portal remembers nothing."""
+    return _receiver("POST", "/admin/enrollment-tokens", token,
+                     {"note": req.note, "ttl_days": req.ttl_days})
+
+
+@app.post("/api/enrollment-tokens/{tid}/revoke")
+def revoke_enrollment_token(tid: str, _=Depends(require_auth),
+                            token: str = Depends(_admin_forward)):
+    if not _ID_RE.match(tid):
+        raise HTTPException(422, "malformed token id")
+    return _receiver("POST", "/admin/enrollment-tokens/%s/revoke" % tid, token)
+
+
+@app.post("/api/devices/{did}/revoke")
+def revoke_device(did: str, _=Depends(require_auth),
+                  token: str = Depends(_admin_forward)):
+    if not _ID_RE.match(did):
+        raise HTTPException(422, "malformed device id")
+    return _receiver("POST", "/admin/devices/%s/revoke" % did, token)
+
+
+@app.post("/api/artifacts/{kind}")
+def artifact(kind: str, _=Depends(require_auth),
+             token: str = Depends(_admin_forward)):
+    """A pre-configured collector script, with a fresh enrollment token.
+
+    POST, not GET, because generating one mints: each download gets its own
+    token, noted with the artifact kind, so the tokens list shows where
+    every credential went and any single artifact can be revoked without
+    touching the others. Values are baked as the scripts' own fallback
+    defaults, so MDM-supplied parameters still win; corporate domains are
+    not baked at all - the receiver serves those at runtime.
+    """
+    if kind not in managed.ARTIFACTS:
+        raise HTTPException(404, "no such artifact")
+    if not RECEIVER_PUBLIC_URL:
+        raise HTTPException(
+            503, "RECEIVER_PUBLIC_URL is not set. Artifacts bake the ingest "
+                 "URL agents reach from outside, which is not the portal's "
+                 "internal RECEIVER_URL; see the portal README.")
+    minted = _receiver("POST", "/admin/enrollment-tokens", token,
+                       {"note": "portal artifact: %s" % kind})
+    try:
+        filename, content = managed.generate(
+            kind, COLLECTOR_SCRIPTS_DIR, RECEIVER_PUBLIC_URL, minted["token"])
+    except managed.ArtifactError as e:
+        # The token is already minted; say which one so it can be revoked
+        # rather than left dangling behind a failed download.
+        raise HTTPException(500, "%s (enrollment token %s was minted for "
+                                 "this artifact and can be revoked)"
+                                 % (e, minted.get("id", "?")))
+    return PlainTextResponse(content, headers={
+        "Content-Disposition": 'attachment; filename="%s"' % filename,
+        "X-Enrollment-Token-Id": minted.get("id", ""),
     })
 
 

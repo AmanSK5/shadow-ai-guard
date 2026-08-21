@@ -21,6 +21,11 @@ WORKDIR /srv
 COPY requirements.lock .
 RUN pip install --no-cache-dir --require-hashes -r requirements.lock
 COPY app/ app/
+# Verified copies of the endpoint collector scripts, for artifact downloads.
+# The build context is portal/, so the endpoint/ tree is out of reach; a test
+# asserts these are byte-identical to the sources, the same pattern as the
+# chart's bundled registry.
+COPY collector-scripts/ collector-scripts/
 
 # Passed by CI from the release tag, or the commit for a build off main. A
 # local build leaves it as "dev", which is honest: a hardcoded version drifts,

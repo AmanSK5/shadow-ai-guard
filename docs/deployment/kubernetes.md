@@ -133,10 +133,12 @@ Optional, all off by default:
 - `managed.enabled` - device enrollment, per-device credentials and
   revocation, backed by SQLite on a PVC. The chart generates an admin token
   into `<release>-ai-guard-admin` on first install; read it back the same way
-  as the auth token. Mint an enrollment token with
-  `POST /admin/enrollment-tokens` and put it in the MDM in place of the
-  shared token, one platform at a time. See the receiver README for the
-  endpoint reference.
+  as the auth token. The portal gains a Managed section for this: enter that
+  admin token there to see the fleet, mint and revoke enrollment tokens, and
+  download pre-configured collector scripts from the Setup view - or drive
+  the same `/admin` API with curl. Enrollment tokens go in the MDM in place
+  of the shared token, one platform at a time. See the receiver and portal
+  READMEs for the details.
 
 Confirm it is up:
 
