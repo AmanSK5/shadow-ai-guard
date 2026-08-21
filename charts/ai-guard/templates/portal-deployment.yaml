@@ -83,6 +83,20 @@ spec:
                   name: {{ include "ai-guard.portal.secretName" . }}
                   key: password
             {{- end }}
+            {{- if .Values.managed.enabled }}
+            # Managed mode: where admin actions proxy to (the receiver's
+            # in-cluster service) and, separately, the ingest URL agents can
+            # actually reach - that one gets baked into downloaded artifacts,
+            # and a cluster-internal name baked into a Jamf script would
+            # enroll nothing. Defaults: the chart's own service, and the
+            # receiver ingress host when one is enabled.
+            - name: RECEIVER_URL
+              value: {{ .Values.portal.receiverUrl | default (printf "http://%s:%v" (include "ai-guard.fullname" .) .Values.service.port) | quote }}
+            {{- with .Values.portal.receiverPublicUrl | default (ternary (printf "https://%s" .Values.ingress.host) "" .Values.ingress.enabled) }}
+            - name: RECEIVER_PUBLIC_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- end }}
             - name: REGISTRY_PATH
               value: /etc/ai-guard/registry.json
             - name: LOOKBACK_HOURS

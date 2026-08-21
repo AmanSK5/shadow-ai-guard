@@ -6,7 +6,7 @@ type: application
 # independently of appVersion: a repo index uses this to decide whether an
 # upgrade exists, so a chart change that leaves it alone is a change nobody
 # is offered.
-version: 0.8.6
+version: 0.8.7
 # The application version this chart installs by default. values.yaml derives
 # image.tag from it, so this IS what gets pulled unless someone overrides it.
 #

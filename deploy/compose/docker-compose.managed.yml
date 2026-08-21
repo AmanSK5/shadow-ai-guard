@@ -31,5 +31,14 @@ services:
       - managed-state:/var/lib/ai-guard
       - ./secrets/admin_token:/run/secrets/admin_token:ro
 
+  portal:
+    environment:
+      # Where admin actions proxy to (the compose-internal service), and the
+      # ingest URL agents can actually reach - the second is what gets baked
+      # into downloaded deployment artifacts, so it is your public receiver
+      # URL, not a compose service name. Set it in .env.
+      RECEIVER_URL: http://receiver:8080
+      RECEIVER_PUBLIC_URL: ${RECEIVER_PUBLIC_URL:-}
+
 volumes:
   managed-state:

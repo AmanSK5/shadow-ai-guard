@@ -83,6 +83,29 @@ about the estate.
 | `DEPLOY_CHART_VERSION` | no | shown on the settings page, clearly unverified |
 | `DEPLOY_RELEASE` | no | as above |
 | `DEPLOY_NAMESPACE` | no | as above |
+| `RECEIVER_URL` | no | the receiver's admin API, reachable from the portal. Unset means the Managed views say so and nothing else changes |
+| `RECEIVER_PUBLIC_URL` | no | the ingest URL agents can reach, baked into downloaded deployment artifacts. Different from `RECEIVER_URL` on purpose: a cluster-internal service name baked into a Jamf script would enroll nothing |
+| `COLLECTOR_SCRIPTS_DIR` | no | verified copies of the endpoint collector scripts, shipped in the image; override for development |
+
+## Managed mode: the one write path
+
+With `RECEIVER_URL` set (and `MANAGED_MODE=true` on the receiver), the
+portal gains a Managed section: a fleet view of enrolled devices, an
+enrollment-token view that mints and revokes, and per-source Download
+buttons on the Setup view that generate a pre-configured collector script
+with a fresh enrollment token baked in as the script's own fallback default
+(MDM-supplied values still win; corporate domains are never baked - the
+receiver serves those at runtime).
+
+Every one of those actions is authorized by the **receiver**, not the
+portal: the operator enters the receiver's admin token in the UI, it is
+held in the tab's memory only, forwarded per request in an `X-Admin-Token`
+header, and never stored anywhere in the portal. The portal still holds no
+database and no credentials - a compromised portal yields readable
+findings, which it always did, and nothing that can mint or revoke.
+Governance decisions remain in the file ([docs/governance.md](../docs/governance.md));
+these routes manage operational credentials, which is a different kind of
+thing.
 
 ### Reading from a hosted log store
 
