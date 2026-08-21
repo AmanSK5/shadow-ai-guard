@@ -36,6 +36,11 @@ AIGUARD_TOKEN           receiver bearer token
 AIGUARD_CORP_DOMAINS    comma-separated corporate domains, e.g. example.com,example.co.uk
 ```
 
+`AIGUARD_TOKEN` can also be an enrollment token (`aige_...`) from a
+managed-mode receiver: the machine then enrolls itself on first run, stores
+its own device credential in `/var/lib/ai-guard`, and can be revoked
+individually from then on. Swapping the RMM variable is the whole migration.
+
 Set `AIGUARD_CORP_DOMAINS` correctly: an empty value means no domain counts
 as corporate, so every account reports as a personal-account warning. If the
 receiver has `CORP_DOMAINS` set, its list overrides this variable at runtime,

@@ -41,7 +41,12 @@ param([switch]$FunctionsOnly)
 
 # ------------------------------------------------------------------ config --
 $ReceiverBase    = 'https://ai-guard.example.com'   # your receiver's public ingest URL
-$Token           = '__RECEIVER_TOKEN__'   # replace before upload, or wire to a secure retrieval
+$Token           = '__RECEIVER_TOKEN__'   # replace before upload, or wire to a secure retrieval.
+                                          # Either the shared token, or an enrollment token (aige_...)
+                                          # from a managed-mode receiver: on first run the machine
+                                          # enrolls, stores its own device credential in ProgramData,
+                                          # and uses that from then on. Swapping the shared token for
+                                          # an enrollment token here is the whole migration.
 $CorporateDomains = @('example.com')   # accounts on these domains are 'work'; all others warn as personal.
                                        # A receiver that serves config.corp_domains in /registry/collector
                                        # overrides this at runtime; the constant is the fallback.
@@ -49,6 +54,12 @@ $CorporateDomains = @('example.com')   # accounts on these domains are 'work'; a
 $StateDir  = 'C:\ProgramData\ai-guard'
 $StateFile = Join-Path $StateDir 'reported.state.json'
 $Breadcrumb = Join-Path $StateDir 'last_scan.txt'
+# This machine's own credential, once enrolled with a managed-mode receiver.
+# ACL-restricted to SYSTEM and Administrators: it is this device's identity.
+$CredFile = Join-Path $StateDir 'device.cred'
+# Reported at enrollment and on every report, so the receiver's inventory can
+# answer "which script version does the fleet actually run".
+$CollectorVersion = '2.0.0'
 $InfoReportIntervalHours = 24
 $WarnReportIntervalHours = 1
 
@@ -232,7 +243,8 @@ function Send-Finding {
     }
     try {
         Invoke-RestMethod -Uri $Endpoint -Method Post -TimeoutSec 10 `
-            -Headers @{ Authorization = "Bearer $Token" } `
+            -Headers @{ Authorization = "Bearer $Token"
+                        'X-AiGuard-Agent-Version' = $CollectorVersion } `
             -ContentType 'application/json' -Body $payload -ErrorAction Stop | Out-Null
         $script:Posted++
         $StateNew[$key] = $NowEpoch
@@ -265,6 +277,52 @@ function Get-CollectorRegistry {
 # Skipped under -FunctionsOnly: fetching a registry is work, and the refusal
 # below would exit the caller's session before the functions further down
 # were ever defined.
+# ------------------------------------------------------------ enrollment --
+# Managed mode. A stored device credential wins; an enrollment token
+# (aige_...) is exchanged for one on first run; anything else is today's
+# behaviour exactly. The prefix is the whole switch: the operator changes the
+# $Token constant from the shared token to an enrollment token when ready.
+if (-not $FunctionsOnly) {
+    if (Test-Path $CredFile) {
+        $stored = (Get-Content $CredFile -Raw -ErrorAction SilentlyContinue)
+        if ($stored) { $stored = $stored.Trim() }
+        if ($stored -and $stored.StartsWith('aigd_')) { $Token = $stored }
+    }
+    if ($Token.StartsWith('aige_') -and $ReceiverBase) {
+        if (-not (Test-Path $StateDir)) {
+            New-Item -ItemType Directory -Path $StateDir -Force | Out-Null
+        }
+        $enrollBody = @{
+            platform = 'windows'; serial = $Serial
+            hostname = $DeviceName; agent_version = $CollectorVersion
+        } | ConvertTo-Json -Compress
+        try {
+            $r = Invoke-RestMethod -Uri (($ReceiverBase.TrimEnd('/')) + '/enroll') `
+                -Method Post -TimeoutSec 15 `
+                -Headers @{ Authorization = "Bearer $Token" } `
+                -ContentType 'application/json' -Body $enrollBody -ErrorAction Stop
+            Set-Content -Path $CredFile -Value $r.device_token -NoNewline
+            # The state dir inherits ProgramData's ACL, which lets ordinary
+            # users read. A device credential must not be readable by the
+            # people whose AI accounts it reports on.
+            icacls $CredFile /inheritance:r /grant 'SYSTEM:(F)' 'Administrators:(F)' | Out-Null
+            $Token = $r.device_token
+            Write-Output "ai-guard: enrolled, device credential stored in $CredFile"
+        } catch {
+            # Loud and fatal: an enrollment token cannot report findings, so
+            # carrying on would 401 every POST and look like a clean machine.
+            # A 409 means a device with this serial is actively reporting -
+            # revoke it on the receiver first. A 401 usually means the token
+            # expired: mint a fresh one and update this script in Intune.
+            $code = 'ERR'
+            if ($_.Exception.Response) { $code = [int]$_.Exception.Response.StatusCode }
+            Write-Output "ai-guard: enrollment failed (HTTP $code)"
+            Write-Output 'ai-guard: refusing to scan - an enrollment token cannot report findings'
+            exit 1
+        }
+    }
+}
+
 $Registry = $null
 if (-not $FunctionsOnly) {
     try { $Registry = Get-CollectorRegistry } catch {
@@ -273,6 +331,10 @@ if (-not $FunctionsOnly) {
     if (-not $Registry) {
         # An empty scan looks exactly like a clean machine. Refuse instead.
         Write-Output 'ai-guard: refusing to scan without an identifier list'
+        if ($Token.StartsWith('aigd_')) {
+            Write-Output "ai-guard: this machine's device credential may have been revoked;"
+            Write-Output "ai-guard: delete $CredFile and supply a valid enrollment token to re-enroll"
+        }
         exit 1
     }
 

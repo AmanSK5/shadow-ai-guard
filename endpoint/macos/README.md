@@ -49,7 +49,12 @@ reports as `warn`; everything else is `info`.
 
 2. **Policy**: create a policy running the script with:
    - Parameter 4: receiver base URL, e.g. `https://ai-guard.example.com`
-   - Parameter 5: the receiver bearer token
+   - Parameter 5: the receiver bearer token - either the shared token, or an
+     enrollment token (`aige_...`) from a managed-mode receiver. With an
+     enrollment token, each Mac enrolls itself on first run, stores its own
+     device credential under `/Library/Application Support/ai-guard`, and can
+     be revoked individually from then on. Swapping this parameter is the
+     whole migration.
    - Parameter 6: corporate domains, comma-separated, e.g.
      `example.com,example.co.uk`. Leave this correct: an empty value means no
      domain counts as corporate and every account warns. If the receiver has

@@ -59,6 +59,31 @@ displayTz: UTC
 # served and collectors keep using their local configuration.
 corpDomains: []
 
+# Managed mode: device enrollment, per-device credentials, revocation and a
+# real fleet inventory, backed by one SQLite file on a PersistentVolumeClaim.
+# Off means byte-for-byte the classic receiver: no volume, no admin routes,
+# no state. The shared token keeps working for ingest either way - a fleet
+# migrates by swapping the token in each MDM for an enrollment token, one
+# platform at a time.
+#
+# SQLite has one writer, so managed mode requires replicaCount: 1 (the chart
+# refuses to render otherwise) and uses a Recreate strategy so two pods never
+# hold the volume at once.
+managed:
+  enabled: false
+  # The credential that mints and revokes enrollment tokens and devices.
+  # Deliberately a separate secret from the shared token, which sits on every
+  # machine in the fleet. Leave both unset and the chart generates one on
+  # first install and keeps it across upgrades. Read it back with:
+  #   kubectl get secret <release>-ai-guard-admin -o jsonpath='{.data.adminToken}' | base64 -d
+  adminToken:
+    value: ""
+    existingSecret: ""   # a Secret with an `adminToken` key
+  persistence:
+    size: 1Gi
+    storageClass: ""     # empty means the cluster default
+    existingClaim: ""    # use a PVC you created yourself
+
 # The compiled registry ships with the chart, so the receiver has an
 # identifier list on first install with nothing to build. Set create: false to
 # manage the ConfigMap yourself (for example from a CI job that compiles

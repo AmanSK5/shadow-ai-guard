@@ -1,0 +1,22 @@
+{{- if and .Values.managed.enabled (not .Values.managed.persistence.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "ai-guard.fullname" . }}-state
+  labels:
+    {{- include "ai-guard.labels" . | nindent 4 }}
+  annotations:
+    # The one thing in the deployment that is not disposable: the device
+    # registry and its credentials. Kept on uninstall so a helm uninstall /
+    # reinstall cycle does not silently unenroll the entire fleet; delete the
+    # PVC yourself when you mean it.
+    helm.sh/resource-policy: keep
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: {{ .Values.managed.persistence.size }}
+  {{- with .Values.managed.persistence.storageClass }}
+  storageClassName: {{ . }}
+  {{- end }}
+{{- end }}
