@@ -73,19 +73,23 @@ setup_home() {
 # Fake receiver. Serves the collector registry on GET and returns a chosen
 # status on POST, logging each one so a test can assert a request was or was
 # not attempted.
-# start_receiver <status> [served_corp_domains]
+# start_receiver <status> [served_corp_domains] [enroll_status]
 # The optional second argument makes the served registry carry
-# config.corp_domains, the way a receiver with CORP_DOMAINS set does.
+# config.corp_domains, the way a receiver with CORP_DOMAINS set does. The
+# third sets what POST /enroll answers (default 200 with a fixed credential),
+# so a refused enrollment can be exercised.
 start_receiver() {
   local status="$1"
   : > "$RECEIVER_LOG"
-  python3 - "$PORT" "$status" "$RECEIVER_LOG" "${2-}" <<'PY' &
+  python3 - "$PORT" "$status" "$RECEIVER_LOG" "${2-}" "${3-200}" <<'PY' &
 import json
 import sys
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
 port, status, logpath = int(sys.argv[1]), int(sys.argv[2]), sys.argv[3]
 served_domains = sys.argv[4] if len(sys.argv) > 4 else ""
+enroll_status = int(sys.argv[5]) if len(sys.argv) > 5 else 200
+ENROLL_RESP = b'{"device_id":"d1","device_token":"aigd_testcred"}'
 REGISTRY = (
     b'{"version":1,"cli":[{"tool":"claude-code",'
     b'"config_paths":[".claude-aiguard-test.json"],'
@@ -108,9 +112,21 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):
         n = int(self.headers.get("Content-Length") or 0)
-        # The body rides on the POST line (findings are single-line JSON), so
-        # a test can assert on what was reported, not just that something was.
+        # The body rides on the log line (single-line JSON), so a test can
+        # assert on what was reported, not just that something was.
         body = self.rfile.read(n).decode("utf-8", "replace").replace("\n", " ")
+        if self.path == "/enroll":
+            with open(logpath, "a") as f:
+                f.write("ENROLL " + body + "\n")
+            self.send_response(enroll_status)
+            if enroll_status == 200:
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(ENROLL_RESP)))
+                self.end_headers()
+                self.wfile.write(ENROLL_RESP)
+            else:
+                self.end_headers()
+            return
         with open(logpath, "a") as f:
             f.write("POST " + body + "\n")
         self.send_response(status)
@@ -137,12 +153,13 @@ stop_receiver() {
 
 reset_state() { rm -rf /var/lib/ai-guard; }
 
-# run_collector [corp_domains] [receiver_base]
-# An empty receiver_base exercises print-only mode.
+# run_collector [corp_domains] [receiver_base] [token]
+# An empty receiver_base exercises print-only mode; an aige_-prefixed token
+# exercises enrollment.
 run_collector() {
-  local corp="${1-example.com}" base="${2-$BASE}"
+  local corp="${1-example.com}" base="${2-$BASE}" token="${3-test}"
   AIGUARD_RECEIVER_BASE="$base" \
-  AIGUARD_TOKEN=test \
+  AIGUARD_TOKEN="$token" \
   AIGUARD_CORP_DOMAINS="$corp" \
   AIGUARD_REGISTRY_FILE="${AIGUARD_REGISTRY_FILE:-}" \
     bash "$COLLECTOR" >/dev/null 2>&1
@@ -151,8 +168,9 @@ run_collector() {
 
 state_ts() { grep -F "$1 " "$STATE_FILE" 2>/dev/null | tail -1 | awk '{print $2}'; }
 # awk rather than grep -c: grep exits 1 on no matches, which turns a
-# legitimate zero into a shell error under the || fallback.
-posts_made() { awk 'END{print NR+0}' "$RECEIVER_LOG" 2>/dev/null; }
+# legitimate zero into a shell error under the || fallback. Counts report
+# POSTs only: enrollment requests log as ENROLL lines.
+posts_made() { awk '/^POST /{n++} END{print n+0}' "$RECEIVER_LOG" 2>/dev/null; }
 
 KEY="cli|claude-code|example.com"
 
@@ -326,6 +344,56 @@ test_served_corp_domains_override_the_local_list() {
   fi
 }
 
+CRED_FILE="/var/lib/ai-guard/device.cred"
+
+test_enrollment_exchanges_the_token_and_reports() {
+  # Managed mode, first run: an aige_ token is exchanged at /enroll, the
+  # device credential lands root-only in the state dir, and the scan then
+  # reports with the new credential rather than the enrollment token.
+  local name="an enrollment token enrolls, stores a credential, and reports"
+  reset_state; start_receiver 200
+  run_collector example.com "$BASE" "aige_test-enroll-token"
+  stop_receiver
+  if ! grep -q '^ENROLL .*"platform":"linux"' "$RECEIVER_LOG"; then
+    fail "$name (no enrollment request made)"; return
+  fi
+  if [ "$(cat "$CRED_FILE" 2>/dev/null)" != "aigd_testcred" ]; then
+    fail "$name (credential not stored)"; return
+  fi
+  local perms; perms=$(stat -c '%a' "$CRED_FILE" 2>/dev/null)
+  if [ "$perms" != "600" ]; then fail "$name (credential mode $perms, not 600)"; return; fi
+  if [ "$(posts_made)" -ge 1 ]; then pass "$name"; else fail "$name (enrolled but posted nothing)"; fi
+}
+
+test_a_stored_credential_is_reused() {
+  # Second run: the credential file wins and no second enrollment happens -
+  # the receiver would 409 a same-serial re-enroll of a live device, so a
+  # collector that re-enrolled every run would take the fleet down.
+  local name="a stored credential is reused, not re-exchanged"
+  reset_state; start_receiver 200
+  run_collector example.com "$BASE" "aige_test-enroll-token"
+  stop_receiver
+  start_receiver 200                   # clears the log
+  run_collector example.com "$BASE" "aige_test-enroll-token"
+  stop_receiver
+  if grep -q '^ENROLL ' "$RECEIVER_LOG"; then
+    fail "$name (enrolled again)"
+  else
+    pass "$name"
+  fi
+}
+
+test_a_refused_enrollment_refuses_to_scan() {
+  # An expired or revoked enrollment token is loud and fatal: carrying on
+  # would 401 every POST, which across a fleet reads as a clean estate.
+  local name="a refused enrollment stores nothing and scans nothing"
+  reset_state; start_receiver 200 "" 401
+  run_collector example.com "$BASE" "aige_expired-token"
+  stop_receiver
+  if [ -f "$CRED_FILE" ]; then fail "$name (stored a credential anyway)"; return; fi
+  if [ "$(posts_made)" -eq 0 ]; then pass "$name"; else fail "$name (posted findings)"; fi
+}
+
 # ------------------------------------------------------------------- main --
 
 require_root
@@ -378,6 +446,9 @@ test_warn_outside_window_posts_again
 test_warn_with_no_prior_state_posts_immediately
 test_info_still_throttled_beyond_the_warn_window
 test_served_corp_domains_override_the_local_list
+test_enrollment_exchanges_the_token_and_reports
+test_a_stored_credential_is_reused
+test_a_refused_enrollment_refuses_to_scan
 
 echo
 echo "passed: $PASS  failed: $FAIL"

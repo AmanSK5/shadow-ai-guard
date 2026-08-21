@@ -130,6 +130,13 @@ Optional, all off by default:
   the endpoint collectors inside `/registry/collector`. Collectors prefer
   this list to their locally configured one, so a change here reaches the
   fleet on its next check-in with no MDM re-push per platform.
+- `managed.enabled` - device enrollment, per-device credentials and
+  revocation, backed by SQLite on a PVC. The chart generates an admin token
+  into `<release>-ai-guard-admin` on first install; read it back the same way
+  as the auth token. Mint an enrollment token with
+  `POST /admin/enrollment-tokens` and put it in the MDM in place of the
+  shared token, one platform at a time. See the receiver README for the
+  endpoint reference.
 
 Confirm it is up:
 
