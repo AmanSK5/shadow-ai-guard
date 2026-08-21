@@ -42,8 +42,15 @@ should accept before deploying:
   detect.
 - Compromise of one endpoint reveals the same token every endpoint uses.
 
-If that is unacceptable in your threat model, front the receiver with your
-own per-source authentication.
+If that is unacceptable in your threat model, enable managed mode: the
+endpoint collectors then enroll for per-device credentials, one machine can
+be revoked without touching any other, and an enrollment token in an MDM
+artifact can create auditable device records but never submit findings. The
+shared token remains valid alongside (the browser extension and scanners
+still use it), so the consequences above shrink to those surfaces rather
+than disappearing. See the receiver README for the mechanics, including the
+separate `ADMIN_TOKEN` that mints credentials - separate precisely because
+the shared token is on every machine in the fleet.
 
 ### The portal
 

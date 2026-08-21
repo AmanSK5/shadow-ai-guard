@@ -45,6 +45,10 @@ from prometheus_client import (
 )
 from pydantic import BaseModel, Field
 
+# Importing the module costs nothing stateful: the SQLite file only exists
+# once State() is instantiated, which only happens under MANAGED_MODE below.
+from . import state as _state
+
 # ------------------------------------------------------------------ config --
 
 # Secrets can come from a file instead of the environment. Docker Compose has
@@ -106,6 +110,27 @@ def _token_ok(header: str) -> bool:
     stays.
     """
     return hmac.compare_digest(header.encode("latin-1"), _EXPECTED_AUTH)
+
+
+def _ingest_token_ok(header: str) -> tuple[bool, dict | None]:
+    """Is this bearer allowed to report and read the registry, and as whom?
+
+    The shared token answers (True, None): the estate's anonymous credential,
+    same as ever. In managed mode a device credential answers with its device
+    row, so /report can stamp last_seen and agent_version - the difference
+    between an inventory inferred from silence and one that knows who exists.
+    A revoked device gets (False, None), which is the property this whole
+    mechanism exists for. Lookup is by SHA-256 hash: without the plaintext an
+    attacker cannot construct the hash, so an indexed equality match needs no
+    constant-time scan.
+    """
+    if _token_ok(header):
+        return True, None
+    if STATE is not None and header.startswith("Bearer " + _state.DEVICE_PREFIX):
+        dev = STATE.device_for(header[len("Bearer "):])
+        if dev is not None:
+            return True, dev
+    return False, None
 # Findings are small: a large one is a few hundred bytes. The cap exists so an
 # unauthenticated client cannot make the receiver do work by sending something
 # enormous. Raise it if a source legitimately sends more.
@@ -203,6 +228,24 @@ def _parse_corp_domains(raw: str) -> list[str]:
 # re-push per platform. Unset means collectors keep their local configuration,
 # which is also what any collector talking to an older receiver does.
 CORP_DOMAINS = _parse_corp_domains(os.environ.get("CORP_DOMAINS", ""))
+
+# Managed mode: per-device credentials, enrollment, and a device inventory,
+# backed by the first stateful thing in the project (one SQLite file). Off by
+# default, and off means byte-for-byte today's receiver: no DB file created,
+# /enroll and /admin/* answer 404. The shared AUTH_TOKEN keeps working for
+# ingest either way - that is the migration path, an estate enrolls device by
+# device while unenrolled machines keep reporting.
+MANAGED_MODE = os.environ.get("MANAGED_MODE", "").lower() in ("1", "true", "yes")
+STATE = None
+_EXPECTED_ADMIN = b""
+if MANAGED_MODE:
+    # Required, not defaulted: managed mode without an admin credential is a
+    # deployment that can never mint an enrollment token, which nobody means.
+    # Deliberately a separate secret from AUTH_TOKEN - the shared token is on
+    # every machine in the fleet, which is exactly why it must not be able to
+    # mint credentials.
+    _EXPECTED_ADMIN = b"Bearer " + _secret("ADMIN_TOKEN").encode()
+    STATE = _state.State(os.environ.get("STATE_DB_PATH", "/var/lib/ai-guard/state.db"))
 
 # "network" is a DNS/flow observation from SentinelOne: a device resolved a
 # domain, but the resolving process may be a browser, a desktop app, a CLI or
@@ -367,9 +410,33 @@ APP_VERSION = os.environ.get("APP_VERSION", "dev")
 app = FastAPI(title="ai-guard-receiver", version=APP_VERSION)
 
 
-# Paths that require the bearer token. /healthz and /metrics stay open:
+# Paths that require a bearer token. /healthz and /metrics stay open:
 # healthz is a probe target and metrics carries only bounded label values.
+# _PROTECTED takes the shared token or, in managed mode, a device credential;
+# _MANAGED exists only in managed mode, with its own credentials.
 _PROTECTED = ("/report", "/flag", "/registry")
+_MANAGED = ("/enroll", "/admin")
+
+
+def _body_size_response(request: Request):
+    """The 4xx a too-large or unsized POST body earns, or None if fine."""
+    if request.method != "POST":
+        return None
+    declared = request.headers.get("content-length")
+    if declared is None:
+        # No content-length and no transfer-encoding is no body at all -
+        # which is what an admin revoke POST legitimately sends. A chunked
+        # body, though, would slip past the size check, so it is refused:
+        # every real client that sends a body sends a content-length.
+        if request.headers.get("transfer-encoding") is None:
+            return None
+        return JSONResponse({"detail": "content-length required"}, status_code=411)
+    try:
+        if int(declared) > MAX_BODY_BYTES:
+            return JSONResponse({"detail": "body too large"}, status_code=413)
+    except ValueError:
+        return JSONResponse({"detail": "bad content-length"}, status_code=400)
+    return None
 
 
 @app.middleware("http")
@@ -382,26 +449,44 @@ async def authenticate_before_reading(request: Request, call_next):
     internet-facing, so anyone could make it do that work. Here nothing is
     read until the caller has proved who they are.
 
-    The endpoints still call _auth(). That is deliberate: it keeps them
-    correct if this middleware is ever removed or reordered.
+    The endpoints still call their _auth counterparts. That is deliberate: it
+    keeps them correct if this middleware is ever removed or reordered.
     """
-    if request.url.path.startswith(_PROTECTED):
-        if not _token_ok(request.headers.get("authorization", "")):
+    path = request.url.path
+    if path.startswith(_PROTECTED):
+        ok, device = _ingest_token_ok(request.headers.get("authorization", ""))
+        if not ok:
             return JSONResponse({"detail": "bad token"}, status_code=401)
+        # Which device authenticated, for /report to stamp last_seen. None
+        # when the shared token did, which is not an identity.
+        request.state.device = device
+        resp = _body_size_response(request)
+        if resp is not None:
+            return resp
 
-        if request.method == "POST":
-            declared = request.headers.get("content-length")
-            if declared is None:
-                # Every real client sends one. Refusing chunked bodies keeps
-                # the size check meaningful rather than advisory.
-                return JSONResponse(
-                    {"detail": "content-length required"}, status_code=411
-                )
-            try:
-                if int(declared) > MAX_BODY_BYTES:
-                    return JSONResponse({"detail": "body too large"}, status_code=413)
-            except ValueError:
-                return JSONResponse({"detail": "bad content-length"}, status_code=400)
+    elif path.startswith(_MANAGED):
+        if STATE is None:
+            # Managed mode off: these routes do not exist, and 404 rather
+            # than 401 so a classic deployment does not advertise them.
+            return JSONResponse({"detail": "Not Found"}, status_code=404)
+        auth = request.headers.get("authorization", "")
+        if path.startswith("/admin"):
+            # The emptiness guard is not redundant: compare_digest holds two
+            # empty strings equal, so without it a deployment that somehow
+            # had state but no admin credential would let an empty header in.
+            if not _EXPECTED_ADMIN or not hmac.compare_digest(
+                auth.encode("latin-1"), _EXPECTED_ADMIN
+            ):
+                return JSONResponse({"detail": "bad token"}, status_code=401)
+        else:
+            # /enroll authenticates against the DB inside the handler; here
+            # only the credential shape is checked, so an arbitrary bearer
+            # still cannot make the receiver read a body.
+            if not auth.startswith("Bearer " + _state.ENROLL_PREFIX):
+                return JSONResponse({"detail": "bad token"}, status_code=401)
+        resp = _body_size_response(request)
+        if resp is not None:
+            return resp
 
     return await call_next(request)
 
@@ -488,10 +573,97 @@ def registry_collector(authorization: str = Header(default="")):
 
 
 def _auth(authorization: str):
-    # The middleware above is the real gate; this is defence in depth. Same
-    # bytes comparison for the same reason: see _token_ok.
-    if not _token_ok(authorization):
+    # The middleware above is the real gate; this is defence in depth. Shared
+    # token or device credential, same as the middleware accepts.
+    ok, _ = _ingest_token_ok(authorization)
+    if not ok:
         raise HTTPException(401, "bad token")
+
+
+def _admin_auth(authorization: str):
+    # Defence in depth for /admin/*, like _auth for ingest. 404 when managed
+    # mode is off: routes that do not exist should not confirm they exist.
+    if STATE is None:
+        raise HTTPException(404, "Not Found")
+    if not _EXPECTED_ADMIN or not hmac.compare_digest(
+        authorization.encode("latin-1"), _EXPECTED_ADMIN
+    ):
+        raise HTTPException(401, "bad token")
+
+
+class EnrollRequest(BaseModel):
+    platform: str = Field(min_length=1, max_length=32)
+    serial: str = Field(min_length=1, max_length=256)
+    hostname: str = Field(default="", max_length=256)
+    agent_version: str = Field(default="", max_length=32)
+
+
+class MintRequest(BaseModel):
+    # note is the operator's label ("macOS Jamf rollout"), shown wherever the
+    # token id appears, because a list of anonymous credentials with expiry
+    # dates is unmanageable the day there are three of them.
+    note: str = Field(default="", max_length=200)
+    ttl_days: int = Field(default=180, ge=1, le=3650)
+
+
+@app.post("/enroll")
+def enroll(req: EnrollRequest, authorization: str = Header(default="")):
+    """Exchange an enrollment token for this machine's own credential.
+
+    The one moment a device credential exists in plaintext. Collectors store
+    it root-only in their state dir and present it from then on; the
+    enrollment token itself can do nothing but this exchange.
+    """
+    if STATE is None:
+        raise HTTPException(404, "Not Found")
+    if req.platform not in ("macos", "linux", "windows"):
+        raise HTTPException(422, "platform must be macos, linux or windows")
+    token = authorization[len("Bearer "):] if authorization.startswith("Bearer ") else ""
+    try:
+        result = STATE.enroll(token, req.platform, req.serial, req.hostname,
+                              req.agent_version)
+    except _state.EnrollError as e:
+        raise HTTPException(e.status, e.detail)
+    log.info(json.dumps({"app": "ai-guard-receiver", "kind": "enrolled",
+                         "device_id": result["device_id"],
+                         "platform": req.platform, "serial": req.serial}))
+    return result
+
+
+@app.post("/admin/enrollment-tokens")
+def mint_enrollment_token(req: MintRequest, authorization: str = Header(default="")):
+    _admin_auth(authorization)
+    return STATE.mint_token(req.note, req.ttl_days)
+
+
+@app.get("/admin/enrollment-tokens")
+def list_enrollment_tokens(authorization: str = Header(default="")):
+    # No hashes and no plaintext: a listing is for judging expiry and
+    # provenance, not for recovering credentials.
+    _admin_auth(authorization)
+    return {"tokens": STATE.list_tokens()}
+
+
+@app.post("/admin/enrollment-tokens/{tid}/revoke")
+def revoke_enrollment_token(tid: str, authorization: str = Header(default="")):
+    _admin_auth(authorization)
+    if not STATE.revoke_token(tid):
+        raise HTTPException(404, "no such active token")
+    return {"ok": True}
+
+
+@app.get("/admin/devices")
+def list_devices(authorization: str = Header(default="")):
+    _admin_auth(authorization)
+    return {"devices": STATE.list_devices()}
+
+
+@app.post("/admin/devices/{did}/revoke")
+def revoke_device(did: str, authorization: str = Header(default="")):
+    _admin_auth(authorization)
+    if not STATE.revoke_device(did):
+        raise HTTPException(404, "no such active device")
+    return {"ok": True}
 
 
 # The Loki stream labels derived from each finding. Anything not in this
@@ -613,6 +785,17 @@ async def _fire_alert(f: Finding):
 @app.post("/flag")  # legacy path, kept for older browser extension versions
 async def report(f: Finding, request: Request, authorization: str = Header(default="")):
     _auth(authorization)
+
+    # A device credential is an identity; the shared token is not. Stamping
+    # last_seen (and the script version, sent as a header so the finding
+    # schema stays untouched) on every authenticated report is what turns
+    # the inventory from inferred-from-silence into one that knows who
+    # exists and what they run.
+    device = getattr(request.state, "device", None)
+    if device is not None and STATE is not None:
+        STATE.touch_device(
+            device["id"], request.headers.get("x-aiguard-agent-version", "")[:32]
+        )
 
     if f.surface not in VALID_SURFACES:
         f.surface = "browser"

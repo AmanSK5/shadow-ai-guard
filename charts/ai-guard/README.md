@@ -120,6 +120,11 @@ the portal.
 | `alertmanager.ttlMinutes` | `120` | how long a warn finding counts as already alerted |
 | `displayTz` | `UTC` | timezone for the readable timestamp on alerts only |
 | `corpDomains` | `[]` | corporate domains served to the collectors via `/registry/collector`; collectors prefer this to their local list, so a change here reaches the fleet on its next check-in with no MDM re-push |
+| `managed.enabled` | `false` | device enrollment, per-device credentials, revocation and a fleet inventory, backed by SQLite on a PVC. Requires `replicaCount: 1` (the chart refuses otherwise) and switches the Deployment to `Recreate` |
+| `managed.adminToken.value` | `""` | the credential that mints/revokes enrollment tokens and devices; leave unset to auto-generate into `<release>-ai-guard-admin` and keep across upgrades |
+| `managed.adminToken.existingSecret` | `""` | a Secret you created yourself, key `adminToken` |
+| `managed.persistence.size` | `1Gi` | the state PVC. Annotated `helm.sh/resource-policy: keep`: uninstalling the chart does not unenroll the fleet |
+| `managed.persistence.existingClaim` | `""` | use a PVC you created yourself |
 | `registry.create` | `true` | ship the compiled registry as a ConfigMap |
 | `registry.existingConfigMap` | `""` | use your own, for example built by CI on every merge |
 | `service.type` | `ClusterIP` | |
