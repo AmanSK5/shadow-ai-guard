@@ -16,29 +16,74 @@ const FALLBACK_ENDPOINT = ""; // leave blank; set via managed config in producti
 const FALLBACK_DEVICE = "";   // optional: set a label for LOCAL testing only
 const FALLBACK_AUTH_TOKEN = ""; // optional: set for LOCAL testing only
 const DEDUPE_WINDOW_MS = 6 * 60 * 60 * 1000; // one flag per tool+domain per 6h
-const seen = new Map();
+
+// Dedupe state for personal-account flags. This was a module-level Map, which
+// lives exactly as long as the service worker does: Chrome stops an MV3
+// worker after roughly thirty seconds idle and content.js checks every five
+// minutes, so the six-hour window was in practice one flag per check. The
+// receiver's alert TTL hid it from Slack, which is why nobody noticed, but
+// every repeat was a Loki line, a skewed occurrence count and a slice of the
+// portal's read budget.
+//
+// storage.session survives worker restarts, is cleared when the browser
+// exits and is never written to disk, which is the right lifetime for "we
+// already said this today". storage.local is the fallback for a browser
+// without it: the same fix the heartbeat already uses for lastHeartbeat.
+const SEEN_KEY = "personalAccountSeen";
+
+function seenStore() {
+  return api.storage.session || api.storage.local;
+}
+
+// True if this tool+domain was reported inside the window. Otherwise records
+// it and returns false. Entries past the window are dropped on the way
+// through so the object cannot grow without bound.
+async function alreadyReported(key, now) {
+  const store = seenStore();
+  let seen = {};
+  try {
+    const state = await store.get(SEEN_KEY);
+    seen = (state && state[SEEN_KEY]) || {};
+  } catch (e) { /* unreadable state is an empty state: report rather than lose */ }
+
+  if (seen[key] && now - seen[key] < DEDUPE_WINDOW_MS) return true;
+
+  for (const k of Object.keys(seen)) {
+    if (now - seen[k] >= DEDUPE_WINDOW_MS) delete seen[k];
+  }
+  seen[key] = now;
+  try {
+    await store.set({ [SEEN_KEY]: seen });
+  } catch (e) { /* a write that fails costs one duplicate, not a finding */ }
+  return false;
+}
+
+async function onPersonalAccount(msg) {
+  const key = msg.tool + ":" + msg.domain;
+  if (await alreadyReported(key, Date.now())) return;
+  await report({
+    tool: msg.tool,
+    // Absent until 1.2.0. The receiver defaults surface to "browser" and
+    // severity to "warn", so these findings looked right while carrying no
+    // source at all: on one fleet that was thousands a week that could not
+    // be traced to a detector. Defaults that happen to be correct are not
+    // the same as fields that are set.
+    surface: "browser",
+    source: "browser_extension",
+    severity: "warn",
+    account_domain: msg.domain,
+    reported_at: msg.ts,
+  });
+}
 
 api.runtime.onMessage.addListener((msg) => {
   if (!msg) return;
 
   if (msg.type === "personal-account") {
-    const key = msg.tool + ":" + msg.domain;
-    const now = Date.now();
-    if (seen.has(key) && now - seen.get(key) < DEDUPE_WINDOW_MS) return;
-    seen.set(key, now);
-    report({
-      tool: msg.tool,
-      // Absent until 1.2.0. The receiver defaults surface to "browser" and
-      // severity to "warn", so these findings looked right while carrying no
-      // source at all: on one fleet that was thousands a week that could not
-      // be traced to a detector. Defaults that happen to be correct are not
-      // the same as fields that are set.
-      surface: "browser",
-      source: "browser_extension",
-      severity: "warn",
-      account_domain: msg.domain,
-      reported_at: msg.ts,
-    }).catch((e) => console.warn("[ai-account-guard] report failed", e));
+    // Not returned. A listener that returns a promise tells Firefox a reply is
+    // coming, and content.js is not waiting for one.
+    onPersonalAccount(msg)
+      .catch((e) => console.warn("[ai-account-guard] report failed", e));
     return;
   }
 
