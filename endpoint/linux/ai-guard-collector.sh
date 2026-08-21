@@ -20,7 +20,13 @@
 # Config arrives as environment variables (set them in your RMM's script
 # variables, or export them from a wrapper):
 #   AIGUARD_RECEIVER_BASE   receiver base URL, e.g. https://ai-guard.example.com
-#   AIGUARD_TOKEN           receiver bearer token
+#   AIGUARD_TOKEN           receiver bearer token. Either the shared token, or
+#                           an enrollment token (aige_...) from a managed-mode
+#                           receiver: on first run the machine enrolls, stores
+#                           its own device credential in /var/lib/ai-guard,
+#                           and uses that from then on. Swapping the shared
+#                           token for an enrollment token in the RMM is the
+#                           whole migration.
 #   AIGUARD_CORP_DOMAINS    comma-separated corporate domains, e.g. example.com.
 #                           A receiver that serves config.corp_domains in
 #                           /registry/collector overrides this at runtime; the
@@ -52,6 +58,12 @@ ENDPOINT=""
 
 STATE_DIR="/var/lib/ai-guard"
 STATE_FILE="$STATE_DIR/reported.state"
+# This machine's own credential, once enrolled with a managed-mode receiver.
+# Root-only: it is this device's identity.
+CRED_FILE="$STATE_DIR/device.cred"
+# Reported at enrollment and on every report, so the receiver's inventory can
+# answer "which script version does the fleet actually run".
+COLLECTOR_VERSION="2.0.0"
 SUMMARY_DIR="$STATE_DIR"
 SUMMARY_FILE="$SUMMARY_DIR/last_scan.txt"
 INFO_INTERVAL=$((24 * 3600))
@@ -286,6 +298,7 @@ report() {
   local code
   code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' \
     -X POST -H "Authorization: Bearer $TOKEN" \
+    -H "X-AiGuard-Agent-Version: $COLLECTOR_VERSION" \
     -H 'Content-Type: application/json' \
     --data "$payload" "$ENDPOINT" 2>/dev/null || echo 000)
   if [ "$code" = "200" ] || [ "$code" = "204" ]; then
@@ -378,9 +391,63 @@ registry_tsv_fallback() {
   return 1
 }
 
+# ------------------------------------------------------------- enrollment --
+# Managed mode. A stored device credential wins; an enrollment token
+# (aige_...) is exchanged for one on first run; anything else is today's
+# behaviour exactly. The prefix is the whole switch: the operator changes one
+# RMM variable from the shared token to an enrollment token when ready.
+if [ -f "$CRED_FILE" ]; then
+  STORED_CRED=$(cat "$CRED_FILE" 2>/dev/null)
+  case "$STORED_CRED" in aigd_*) TOKEN="$STORED_CRED" ;; esac
+fi
+case "$TOKEN" in
+  aige_*)
+    if [ -n "$RECEIVER_BASE" ]; then
+      mkdir -p "$STATE_DIR"
+      ENROLL_BODY=$(printf '{"platform":"linux","serial":"%s","hostname":"%s","agent_version":"%s"}' \
+        "$(json_escape "$DEVICE")" "$(json_escape "$DEVICE_NAME")" "$COLLECTOR_VERSION")
+      ENROLL_RESP=$(mktemp /tmp/ai-guard-enroll.XXXXXX)
+      ENROLL_CODE=$(curl -s -m 15 -o "$ENROLL_RESP" -w '%{http_code}' \
+        -X POST -H "Authorization: Bearer $TOKEN" \
+        -H 'Content-Type: application/json' \
+        --data "$ENROLL_BODY" "${RECEIVER_BASE%/}/enroll" 2>/dev/null || echo 000)
+      if [ "$ENROLL_CODE" = "200" ]; then
+        if [ -n "$PY" ]; then
+          CRED=$("$PY" -c 'import json,sys; print(json.load(open(sys.argv[1])).get("device_token",""))' "$ENROLL_RESP" 2>/dev/null)
+        else
+          # Our own compact JSON, and the credential is URL-safe base64:
+          # sed is sufficient where a general parser is not available.
+          CRED=$(sed -n 's/.*"device_token":"\([^"]*\)".*/\1/p' "$ENROLL_RESP")
+        fi
+        if [ -n "$CRED" ]; then
+          ( umask 077; printf '%s' "$CRED" > "$CRED_FILE" )
+          chmod 600 "$CRED_FILE" 2>/dev/null
+          TOKEN="$CRED"
+          echo "[ai-guard] enrolled: device credential stored in $CRED_FILE"
+        fi
+      else
+        # Loud and fatal: an enrollment token cannot report findings, so
+        # carrying on would 401 every POST and look like a clean machine.
+        # A 409 here means a device with this serial is actively reporting -
+        # revoke it on the receiver first. A 401 usually means the token
+        # expired: mint a fresh one and update the RMM variable.
+        echo "[ai-guard] enrollment failed: HTTP $ENROLL_CODE from ${RECEIVER_BASE%/}/enroll"
+        echo "[ai-guard] refusing to scan: an enrollment token cannot report findings"
+        rm -f "$ENROLL_RESP"
+        exit 1
+      fi
+      rm -f "$ENROLL_RESP"
+    fi
+    ;;
+esac
+
 if ! fetch_registry; then
   echo "[ai-guard] registry fetch failed: ${RECEIVER_BASE%/}/registry/collector"
   echo "[ai-guard] refusing to scan without an identifier list - an empty scan looks like a clean machine"
+  case "$TOKEN" in aigd_*)
+    echo "[ai-guard] this machine's device credential may have been revoked;"
+    echo "[ai-guard] delete $CRED_FILE and supply a valid enrollment token to re-enroll"
+  ;; esac
   exit 1
 fi
 REG_TSV=$(registry_tsv "$REG_FILE")

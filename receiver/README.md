@@ -19,8 +19,35 @@ lists at runtime instead of carrying hardcoded copies.
 | POST | `/report` | bearer | submit a finding |
 | POST | `/flag` | bearer | same as `/report`, kept for older browser extension versions |
 
-Auth is a single bearer token. It is a write-mostly credential: it can
-submit findings and read the registry, nothing else.
+Auth is a bearer token. It is a write-mostly credential: it can submit
+findings and read the registry, nothing else. Classically that is one shared
+token for the whole estate; in managed mode a per-device credential works in
+the same places (and the shared token keeps working alongside, which is the
+migration path).
+
+### Managed mode
+
+`MANAGED_MODE=true` adds device enrollment on top: an operator mints an
+enrollment token (`aige_...`), puts it in the MDM where the shared token
+goes, and each machine exchanges it once at `/enroll` for its own credential
+(`aigd_...`). One machine can then be revoked without touching any other,
+and the inventory knows who exists rather than inferring it from silence.
+
+| method | path | auth | what |
+|--------|------|------|------|
+| POST | `/enroll` | enrollment token | exchange for this machine's device credential; same-serial re-enroll supersedes a silent device, 409s an active one |
+| POST | `/admin/enrollment-tokens` | admin | mint (`note`, `ttl_days`, default 180) |
+| GET  | `/admin/enrollment-tokens` | admin | list - ids, notes and expiry, never token material |
+| POST | `/admin/enrollment-tokens/{id}/revoke` | admin | |
+| GET  | `/admin/devices` | admin | the fleet: platform, serial, hostname, last seen, agent version |
+| POST | `/admin/devices/{id}/revoke` | admin | that machine's credential stops working on its next request |
+
+Only SHA-256 hashes of credentials are stored: a copied database file is a
+list of devices, not a bag of credentials. Enrollment tokens default to a
+180-day life because they sit inside MDM artifacts, where a short TTL means
+the deployment silently breaks for new machines - their safety comes from
+what they cannot do (only create auditable device records) and from instant
+revocation, not from a short life.
 
 ## Configuration
 
@@ -38,6 +65,9 @@ Everything is environment variables. Only the token is required.
 | `COLLECTOR_REGISTRY_PATH` | `/etc/ai-guard/collector.json` | where the collector view is mounted |
 | `DISPLAY_TZ` | `UTC` | timezone for the human-readable timestamp on alerts only; machine timestamps are always UTC |
 | `CORP_DOMAINS` | unset | corporate domains, comma-separated. When set, served to the endpoint collectors inside `/registry/collector` as `config.corp_domains`; collectors prefer that list to their locally configured one, so a change here reaches the fleet on its next check-in with no MDM re-push. Unset means collectors keep using their local configuration |
+| `MANAGED_MODE` | unset | `true` enables device enrollment, per-device credentials, revocation and a fleet inventory (see below). Unset means byte-for-byte the classic receiver: no state file, `/enroll` and `/admin/*` answer 404 |
+| `ADMIN_TOKEN` | required in managed mode | the credential that mints and revokes enrollment tokens and devices. Deliberately a separate secret from `AUTH_TOKEN`, which sits on every machine in the fleet - which is exactly why it must not be able to mint credentials |
+| `STATE_DB_PATH` | `/var/lib/ai-guard/state.db` | where the managed-mode SQLite file lives. The one non-disposable thing: it holds the device registry and its credential hashes |
 
 Any of these can be given as `NAME_FILE` pointing at a file instead:
 `AUTH_TOKEN_FILE=/run/secrets/auth_token` rather than `AUTH_TOKEN`. That

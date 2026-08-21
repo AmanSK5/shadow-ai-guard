@@ -1,3 +1,6 @@
+{{- if and .Values.managed.enabled (gt (int .Values.replicaCount) 1) }}
+{{- fail "managed mode is backed by SQLite, which has one writer: set replicaCount to 1 (a Postgres option is future work)" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -6,6 +9,12 @@ metadata:
     {{- include "ai-guard.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
+  {{- if .Values.managed.enabled }}
+  # The state volume is ReadWriteOnce, so a rolling update's new pod would
+  # wedge waiting for a mount the old pod still holds.
+  strategy:
+    type: Recreate
+  {{- end }}
   selector:
     matchLabels:
       {{- include "ai-guard.selectorLabels" . | nindent 6 }}
@@ -63,6 +72,17 @@ spec:
             - name: CORP_DOMAINS
               value: {{ join "," . | quote }}
             {{- end }}
+            {{- if .Values.managed.enabled }}
+            - name: MANAGED_MODE
+              value: "true"
+            - name: STATE_DB_PATH
+              value: /var/lib/ai-guard/state.db
+            - name: ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.managed.adminToken.existingSecret | default (printf "%s-admin" (include "ai-guard.fullname" .)) }}
+                  key: adminToken
+            {{- end }}
           volumeMounts:
             - name: registry
               mountPath: /etc/ai-guard
@@ -71,6 +91,10 @@ spec:
             # somewhere to write. /tmp is the only one the receiver uses.
             - name: tmp
               mountPath: /tmp
+            {{- if .Values.managed.enabled }}
+            - name: state
+              mountPath: /var/lib/ai-guard
+            {{- end }}
           readinessProbe:
             httpGet: { path: /healthz, port: http }
             initialDelaySeconds: 3
@@ -85,6 +109,11 @@ spec:
             name: {{ include "ai-guard.registryConfigMap" . }}
         - name: tmp
           emptyDir: {}
+        {{- if .Values.managed.enabled }}
+        - name: state
+          persistentVolumeClaim:
+            claimName: {{ .Values.managed.persistence.existingClaim | default (printf "%s-state" (include "ai-guard.fullname" .)) }}
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

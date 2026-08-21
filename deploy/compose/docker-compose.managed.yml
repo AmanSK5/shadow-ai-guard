@@ -1,0 +1,35 @@
+# Managed mode overlay: device enrollment, per-device credentials, revocation
+# and a real fleet inventory, backed by one SQLite file on a named volume.
+#
+# Classic deployments never touch this file. To enable managed mode:
+#
+#   1. Create the admin credential (mints and revokes enrollment tokens and
+#      devices - deliberately a separate secret from the shared token, which
+#      sits on every machine in the fleet):
+#        umask 077; openssl rand -base64 36 > secrets/admin_token
+#   2. Start with both files:
+#        docker compose -f docker-compose.yml -f docker-compose.managed.yml up -d
+#
+# Then mint an enrollment token and put it in your MDM in place of the shared
+# token, one platform at a time:
+#   curl -s -X POST -H "Authorization: Bearer $(cat secrets/admin_token)" \
+#     -H 'Content-Type: application/json' -d '{"note":"macos rollout"}' \
+#     http://127.0.0.1:8080/admin/enrollment-tokens
+#
+# The state volume is the one thing in this deployment that is not
+# disposable: it holds the device registry and its credential hashes.
+# `docker compose down` leaves named volumes in place; only `down -v`
+# destroys it, which unenrolls the entire fleet.
+
+services:
+  receiver:
+    environment:
+      MANAGED_MODE: "true"
+      ADMIN_TOKEN_FILE: /run/secrets/admin_token
+      STATE_DB_PATH: /var/lib/ai-guard/state.db
+    volumes:
+      - managed-state:/var/lib/ai-guard
+      - ./secrets/admin_token:/run/secrets/admin_token:ro
+
+volumes:
+  managed-state:

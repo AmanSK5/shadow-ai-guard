@@ -37,6 +37,12 @@ If the receiver has `CORP_DOMAINS` set, its list overrides `$CorporateDomains`
 at runtime, so the fleet follows a receiver-side change without an Intune
 re-paste.
 
+`$Token` can also be an enrollment token (`aige_...`) from a managed-mode
+receiver: the machine then enrolls itself on first run, stores its own device
+credential in `C:\ProgramData\ai-guard` (ACL-restricted to SYSTEM and
+Administrators), and can be revoked individually from then on. Swapping the
+constant is the whole migration.
+
 ## Trying it against a local receiver
 
 No Intune needed. Edit the three variables at the top of the script, then run

@@ -18,7 +18,12 @@
 #
 # Deployment: Jamf policy script, recurring check-in (daily).
 #   Parameter 4: receiver base URL (e.g. https://ai-guard.example.com)
-#   Parameter 5: bearer token
+#   Parameter 5: bearer token. Either the shared token, or an enrollment
+#                token (aige_...) from a managed-mode receiver: on first run
+#                the machine enrolls, stores its own device credential under
+#                /Library/Application Support/ai-guard, and uses that from
+#                then on. Swapping the shared token for an enrollment token
+#                in the Jamf parameter is the whole migration.
 #   Parameter 6: corporate domains, comma-separated (e.g. example.com,example.co.uk).
 #                 Accounts on these domains report as work; anything else is a
 #                 personal account and escalates severity. A receiver that
@@ -44,6 +49,12 @@ CORP_DOMAINS="${6:-}"
 
 SUMMARY_DIR="/Library/Application Support/ai-guard"
 SUMMARY_FILE="$SUMMARY_DIR/last_scan.txt"
+# This machine's own credential, once enrolled with a managed-mode receiver.
+# Root-only: it is this device's identity.
+CRED_FILE="$SUMMARY_DIR/device.cred"
+# Reported at enrollment and on every report, so the receiver's inventory can
+# answer "which script version does the fleet actually run".
+COLLECTOR_VERSION="2.0.0"
 
 # Report throttling. The policy runs at every recurring check-in (~20 min).
 # Unchanged inventory (info) findings only need reporting once a day; warn
@@ -208,6 +219,7 @@ report() {
     local http_code
     http_code=$(/usr/bin/curl -s -m 10 -o /dev/null -w '%{http_code}' -X POST "$ENDPOINT" \
       -H "Authorization: Bearer $TOKEN" \
+      -H "X-AiGuard-Agent-Version: $COLLECTOR_VERSION" \
       -H "Content-Type: application/json" \
       -d "$payload" || echo "000")
     if [ "$http_code" != "200" ]; then
@@ -318,6 +330,50 @@ registry_tsv() {
     }' "$1" 2>/dev/null
 }
 
+# ------------------------------------------------------------- enrollment --
+# Managed mode. A stored device credential wins; an enrollment token
+# (aige_...) is exchanged for one on first run; anything else is today's
+# behaviour exactly. The prefix is the whole switch: the operator changes
+# parameter 5 from the shared token to an enrollment token when ready.
+if [ -f "$CRED_FILE" ]; then
+  STORED_CRED=$(/bin/cat "$CRED_FILE" 2>/dev/null)
+  case "$STORED_CRED" in aigd_*) TOKEN="$STORED_CRED" ;; esac
+fi
+case "$TOKEN" in
+  aige_*)
+    if [ -n "$RECEIVER_BASE" ]; then
+      /bin/mkdir -p "$SUMMARY_DIR"
+      ENROLL_BODY=$(/usr/bin/printf '{"platform":"macos","serial":"%s","hostname":"%s","agent_version":"%s"}' \
+        "$(json_escape "$SERIAL")" "$(json_escape "$DEVICE_NAME")" "$COLLECTOR_VERSION")
+      ENROLL_RESP=$(/usr/bin/mktemp /tmp/ai-guard-enroll.XXXXXX)
+      ENROLL_CODE=$(/usr/bin/curl -s -m 15 -o "$ENROLL_RESP" -w '%{http_code}' \
+        -X POST -H "Authorization: Bearer $TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "$ENROLL_BODY" "${RECEIVER_BASE%/}/enroll" 2>/dev/null || echo "000")
+      if [ "$ENROLL_CODE" = "200" ]; then
+        CRED=$(json_get "$ENROLL_RESP" device_token)
+        if [ -n "$CRED" ]; then
+          ( umask 077; /usr/bin/printf '%s' "$CRED" > "$CRED_FILE" )
+          /bin/chmod 600 "$CRED_FILE" 2>/dev/null
+          TOKEN="$CRED"
+          echo "[ai-guard] enrolled: device credential stored in $CRED_FILE"
+        fi
+      else
+        # Loud and fatal: an enrollment token cannot report findings, so
+        # carrying on would 401 every POST and look like a clean machine.
+        # A 409 here means a device with this serial is actively reporting -
+        # revoke it on the receiver first. A 401 usually means the token
+        # expired: mint a fresh one and update the Jamf parameter.
+        echo "[ai-guard] enrollment failed: HTTP $ENROLL_CODE from ${RECEIVER_BASE%/}/enroll"
+        echo "[ai-guard] refusing to scan: an enrollment token cannot report findings"
+        /bin/rm -f "$ENROLL_RESP"
+        exit 1
+      fi
+      /bin/rm -f "$ENROLL_RESP"
+    fi
+    ;;
+esac
+
 if ! fetch_registry; then
   # Distinguish "no receiver configured" from "the receiver did not answer".
   # Both used to print the same line, which reads as a network problem when it
@@ -342,6 +398,10 @@ if ! fetch_registry; then
   fi
   echo "[ai-guard] registry fetch failed: ${RECEIVER_BASE%/}/registry/collector"
   echo "[ai-guard] refusing to scan without an identifier list - an empty scan looks like a clean machine"
+  case "$TOKEN" in aigd_*)
+    echo "[ai-guard] this machine's device credential may have been revoked;"
+    echo "[ai-guard] delete '$CRED_FILE' and supply a valid enrollment token to re-enroll"
+  ;; esac
   exit 1
 fi
 REG_TSV=$(registry_tsv "$REG_FILE")
