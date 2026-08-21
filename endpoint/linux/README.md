@@ -37,7 +37,9 @@ AIGUARD_CORP_DOMAINS    comma-separated corporate domains, e.g. example.com,exam
 ```
 
 Set `AIGUARD_CORP_DOMAINS` correctly: an empty value means no domain counts
-as corporate, so every account reports as a personal-account warning.
+as corporate, so every account reports as a personal-account warning. If the
+receiver has `CORP_DOMAINS` set, its list overrides this variable at runtime,
+so the fleet follows a receiver-side change without an RMM re-edit.
 
 If `AIGUARD_RECEIVER_BASE` is unset the script prints findings to stdout
 instead of POSTing, which is the local-test mode.

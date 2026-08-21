@@ -181,6 +181,29 @@ COLLECTOR_REGISTRY_PATH = os.environ.get(
 # alerts. Machine timestamps are always UTC.
 DISPLAY_TZ = ZoneInfo(os.environ.get("DISPLAY_TZ", "UTC"))
 
+
+def _parse_corp_domains(raw: str) -> list[str]:
+    """The comma-separated list as collectors need it: trimmed, lowercased,
+    empties dropped, duplicates removed, order preserved. The macOS collector
+    matches with a comma-anchored case pattern, so a stray space or an upper
+    case letter served here would silently turn a work account into a warn.
+    """
+    out: list[str] = []
+    for part in raw.split(","):
+        d = part.strip().lower()
+        if d and d not in out:
+            out.append(d)
+    return out
+
+
+# Corporate domains, comma-separated (example.com,example.co.uk). When set,
+# they ride inside /registry/collector as config.corp_domains and the
+# collectors use them in place of their locally configured list, so one value
+# changed here reaches the whole fleet on its next check-in instead of an MDM
+# re-push per platform. Unset means collectors keep their local configuration,
+# which is also what any collector talking to an older receiver does.
+CORP_DOMAINS = _parse_corp_domains(os.environ.get("CORP_DOMAINS", ""))
+
 # "network" is a DNS/flow observation from SentinelOne: a device resolved a
 # domain, but the resolving process may be a browser, a desktop app, a CLI or
 # a system daemon. It is deliberately distinct from "browser", which means the
@@ -447,13 +470,21 @@ def registry_collector(authorization: str = Header(default="")):
 
     Served so a new AI tool is a registry merge request rather than an edit
     to every collector script plus an MDM re-paste on each platform.
+
+    Deployment config rides in the same response under "config" when the
+    receiver has any to serve. The collectors already fetch this payload on
+    every run, so central config costs no extra request, and a collector that
+    pre-dates the key ignores it.
     """
     _auth(authorization)
     try:
         with open(COLLECTOR_REGISTRY_PATH) as f:
-            return json.load(f)
+            reg = json.load(f)
     except (OSError, json.JSONDecodeError):
         raise HTTPException(503, "collector registry not available")
+    if CORP_DOMAINS and isinstance(reg, dict):
+        reg.setdefault("config", {})["corp_domains"] = CORP_DOMAINS
+    return reg
 
 
 def _auth(authorization: str):

@@ -21,7 +21,9 @@
 #   Parameter 5: bearer token
 #   Parameter 6: corporate domains, comma-separated (e.g. example.com,example.co.uk).
 #                 Accounts on these domains report as work; anything else is a
-#                 personal account and escalates severity.
+#                 personal account and escalates severity. A receiver that
+#                 serves config.corp_domains in /registry/collector overrides
+#                 this at runtime; the parameter is the fallback.
 #
 # Local test: AIGUARD_REGISTRY_FILE=registry/dist/collector.json ./ai-guard-collector.sh
 # with no args - findings are printed instead of POSTed.
@@ -346,6 +348,21 @@ REG_TSV=$(registry_tsv "$REG_FILE")
 if [ -z "$REG_TSV" ]; then
   echo "[ai-guard] registry parse failed: $REG_FILE"
   exit 1
+fi
+
+# Corporate domains can arrive with the registry: the receiver serves
+# config.corp_domains in the payload just fetched when it has CORP_DOMAINS
+# set. The served list wins over parameter 6, because a list changed once on
+# the receiver reaches the fleet on its next check-in rather than waiting on
+# an MDM re-paste per platform; the parameter stays as the fallback, so a
+# receiver serving nothing changes nothing. json_get stringifies the array
+# comma-joined, which is the exact shape the severity check in report()
+# matches against - the receiver serves it trimmed and lowercased for the
+# same reason.
+CENTRAL_DOMAINS=$(json_get "$REG_FILE" config corp_domains)
+if [ -n "$CENTRAL_DOMAINS" ]; then
+  echo "[ai-guard] corporate domains from receiver: $CENTRAL_DOMAINS"
+  CORP_DOMAINS="$CENTRAL_DOMAINS"
 fi
 
 # report_once <surface> <tool> <account> <evidence>
