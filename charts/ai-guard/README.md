@@ -125,6 +125,8 @@ the portal.
 | `managed.adminToken.existingSecret` | `""` | a Secret you created yourself, key `adminToken` |
 | `managed.persistence.size` | `1Gi` | the state PVC. Annotated `helm.sh/resource-policy: keep`: uninstalling the chart does not unenroll the fleet |
 | `managed.persistence.existingClaim` | `""` | use a PVC you created yourself |
+| `portal.receiverUrl` | receiver service | managed mode: where the portal proxies admin actions; defaults to the chart's own receiver service |
+| `portal.receiverPublicUrl` | ingress host | managed mode: the ingest URL baked into downloaded deployment artifacts; defaults to the receiver ingress host when one is enabled |
 | `registry.create` | `true` | ship the compiled registry as a ConfigMap |
 | `registry.existingConfigMap` | `""` | use your own, for example built by CI on every merge |
 | `service.type` | `ClusterIP` | |

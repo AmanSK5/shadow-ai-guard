@@ -140,6 +140,14 @@ h2{font-size:19px;margin:0 0 4px}
    constraint on the prose only makes it stop short of the table it
    introduces, which reads as a broken line rather than a measure. */
 input{background:var(--sf2);border:1px solid var(--bd);color:var(--fg);border-radius:6px;padding:6px 10px;font:inherit;min-width:220px}
+/* Managed views: small action buttons, the admin-token field, and the
+   one-time pane a minted token appears in. */
+button.mini{font:inherit;font-size:12px;padding:3px 10px;border:1px solid var(--line,#8884);border-radius:6px;background:transparent;color:var(--pri);cursor:pointer}
+button.mini:hover{border-color:var(--pri)}
+.mfield{font:inherit;font-size:13px;padding:5px 8px;border:1px solid var(--line,#8884);border-radius:6px;background:transparent;color:inherit;min-width:260px}
+.tokpane{border:1px solid var(--pri);border-radius:8px;padding:12px 14px;margin:14px 0}
+.tokpane code{word-break:break-all}
+.adminbar{margin:10px 0 14px;font-size:12px;color:var(--mut)}
 </style>
 <div class="shell">
   <aside>
@@ -170,14 +178,25 @@ let DIAG = null;
 let REG = null;
 let EV = null;
 let PG = null;
+let FLEET = null;
+let TOKENS = null;
 let S = null, CFG = {}, loadError = '';
+// The receiver admin token, held in this tab's memory for the session and
+// sent per request as a header. Never written to storage of any kind: the
+// portal's whole security story for the write path is that it stores no
+// credential, and localStorage would quietly undo that.
+let ADMIN = '';
+// The one moment a minted token is visible. Kept until dismissed or the
+// admin token is forgotten, because a pane that vanishes on the next click
+// loses a credential that cannot be recovered.
+let MINTED = null;
 
 async function load(force) {
   app.innerHTML = '<p class="lede">Reading findings…</p>';
   const q = force ? '?refresh=true' : '';
   // Refresh must clear the views that read a second endpoint too, or the
   // button refreshes some of the page and silently not the rest.
-  if (force) { DIAG = null; REG = null; EV = null; PG = null; }
+  if (force) { DIAG = null; REG = null; EV = null; PG = null; FLEET = null; TOKENS = null; }
   try {
     CFG = await (await fetch('/api/config')).json();
     const gr = await fetch('/api/graph' + q);
@@ -230,6 +249,7 @@ const NAV = [
   {grp:'Governance',items:[['register','AI register'],['paste','Paste guard'],
                            ['iso','ISO 42001 evidence']]},
   {grp:'Analytics', items:[['dashboard','Grafana']]},
+  {grp:'Managed',   items:[['fleet','Fleet'],['tokens','Enrollment tokens']]},
   {grp:'System',    items:[['settings','Settings']]},
 ];
 
@@ -1043,7 +1063,9 @@ function setup() {
       <td>${esc(r.label)}<br><span class="mono" style="font-size:11px;color:var(--mut)">${esc(r.source)}</span>
         ${r.reporting ? '' : `<div style="margin-top:6px;font-family:inherit;font-size:12px;color:var(--mut);max-width:52ch;line-height:1.5">
           ${esc(r.needs || '')}
-          <br><span class="mono" style="font-size:11px">${esc(r.doc)}</span></div>`}</td>
+          <br><span class="mono" style="font-size:11px">${esc(r.doc)}</span></div>`}
+        ${r.artifact && CFG.managed && CFG.managed.artifacts_ready ? `<div style="margin-top:6px">
+          <button class="mini" data-act="artifact" data-key="${esc(r.artifact)}">Download pre-configured script</button></div>` : ''}</td>
       <td>${r.reporting ? '<span class="pill p-ok">reporting</span>'
                         : '<span class="pill p-mut">not reporting</span>'}</td>
       <td>${r.findings || '—'}</td><td>${r.devices || '—'}</td>
@@ -1147,6 +1169,187 @@ function dashboard() {
   </div>`;
 }
 
+// ------------------------------------------------------------- managed --
+// These two views call the receiver's admin API through the portal. The
+// admin token is entered once per session, held in the ADMIN variable, and
+// forwarded per request; forgetting it (or a 401) drops back to the gate.
+
+function managedGate(title) {
+  if (!CFG.managed || !CFG.managed.enabled) return `<h2>${esc(title)}</h2>
+  <p class="lede">Managed mode is not configured. Set <code>RECEIVER_URL</code>
+  on the portal (and <code>MANAGED_MODE=true</code> on the receiver) to manage
+  enrollment tokens and devices from here. The classic file-and-token flow
+  keeps working without it.</p>`;
+  if (!ADMIN) return `<h2>${esc(title)}</h2>
+  <p class="lede">This view calls the receiver's admin API. Enter the
+  receiver's admin token: it is held in this tab's memory only, sent with
+  each request, and never stored — the portal keeps holding no credentials.</p>
+  <input type="password" id="admin-token-input" class="mfield"
+    placeholder="receiver admin token">
+  <button class="mini" data-act="admin-save">Unlock</button>`;
+  return '';
+}
+
+const adminBar = () => `<div class="adminbar">admin token held in memory —
+  <button class="mini" data-act="admin-forget">forget it</button></div>`;
+
+async function mfetch(path, opts) {
+  return fetch(path, {...(opts || {}), headers: {
+    'X-Admin-Token': ADMIN, 'Content-Type': 'application/json',
+    ...((opts || {}).headers || {})}});
+}
+
+async function managedError(r, title) {
+  let d = r.statusText;
+  try { d = (await r.json()).detail || d; } catch (e) { /* keep statusText */ }
+  if (r.status === 401) ADMIN = '';
+  return `<h2>${esc(title)}</h2><div class="note">${esc(String(d))}</div>`
+    + (r.status === 401 ? `<p class="lede">The admin token was refused; enter
+      it again from the view menu.</p>` : '');
+}
+
+async function fleet() {
+  const gate = managedGate('Fleet'); if (gate) return gate;
+  if (!FLEET) {
+    const r = await mfetch('/api/fleet');
+    if (!r.ok) return managedError(r, 'Fleet');
+    FLEET = await r.json();
+  }
+  const ds = FLEET.devices || [];
+  return `<h2>Fleet</h2>
+  <p class="lede">Enrolled devices, from the receiver's registry — who holds a
+  credential, rather than who has reported lately (the Devices view derives
+  that from findings). Revoking stops that one machine's credential on its
+  next request and touches nothing else.</p>
+  ${adminBar()}
+  ${ds.length ? `<table><tr><th>device</th><th>platform</th><th>serial</th>
+    <th>enrolled</th><th>last seen</th><th>agent</th><th>status</th><th></th></tr>
+  ${ds.map(d => `<tr>
+    <td>${esc(d.hostname || d.serial)}<br><span class="mono" style="font-size:11px;color:var(--mut)">${esc(d.id)}</span></td>
+    <td>${esc(d.platform)}</td><td class="mono">${esc(d.serial)}</td>
+    <td>${when(d.enrolled_at)}</td><td>${when(d.last_seen)}</td>
+    <td>${esc(d.agent_version || '—')}</td>
+    <td>${d.revoked_at ? '<span class="pill p-mut">revoked</span>'
+                       : '<span class="pill p-ok">active</span>'}</td>
+    <td>${d.revoked_at ? '' : `<button class="mini" data-act="revoke-device" data-key="${esc(d.id)}">revoke</button>`}</td>
+  </tr>`).join('')}</table>`
+  : `<div class="note">No devices enrolled yet. Mint an enrollment token in
+    the Enrollment tokens view, or download a pre-configured collector from
+    Setup, and machines appear here as they enroll.</div>`}`;
+}
+
+async function tokens() {
+  const gate = managedGate('Enrollment tokens'); if (gate) return gate;
+  if (!TOKENS) {
+    const r = await mfetch('/api/enrollment-tokens');
+    if (!r.ok) return managedError(r, 'Enrollment tokens');
+    TOKENS = await r.json();
+  }
+  const ts = TOKENS.tokens || [];
+  const nowIso = new Date().toISOString();
+  const state = t => t.revoked_at ? ['revoked', 'p-mut']
+    : t.expires_at <= nowIso ? ['expired', 'p-mut'] : ['active', 'p-ok'];
+  return `<h2>Enrollment tokens</h2>
+  <p class="lede">An enrollment token goes where the shared token goes today —
+  a Jamf parameter, the Intune script, an RMM variable — and machines exchange
+  it once for their own credential. It can create auditable device records and
+  nothing else, which is why a long life inside an MDM artifact is
+  acceptable; revoke it here the moment it is not.</p>
+  ${adminBar()}
+  ${MINTED ? (MINTED.error
+    ? `<div class="note">${esc(MINTED.error)}
+       <button class="mini" data-act="dismiss-minted">dismiss</button></div>`
+    : `<div class="tokpane"><strong>Token ${esc(MINTED.id)} minted.</strong>
+       This is the only time it is shown — the receiver stores a hash.
+       <br><code>${esc(MINTED.token)}</code><br>
+       <button class="mini" data-act="copy" data-copy="${esc(MINTED.token)}">copy</button>
+       <button class="mini" data-act="dismiss-minted">done, it is saved</button>
+       </div>`) : ''}
+  <div style="margin:10px 0 16px">
+    <input id="mint-note" class="mfield" placeholder="note, e.g. macOS Jamf rollout">
+    <input id="mint-ttl" class="mfield" style="min-width:90px" value="180" title="days until expiry">
+    <button class="mini" data-act="mint">Mint token</button>
+  </div>
+  ${ts.length ? `<table><tr><th>id</th><th>note</th><th>created</th><th>expires</th><th>status</th><th></th></tr>
+  ${ts.map(t => { const [lbl, cls] = state(t); return `<tr>
+    <td class="mono">${esc(t.id)}</td><td>${esc(t.note || '—')}</td>
+    <td>${when(t.created_at)}</td><td>${when(t.expires_at)}</td>
+    <td><span class="pill ${cls}">${lbl}</span></td>
+    <td>${lbl === 'active' ? `<button class="mini" data-act="revoke-token" data-key="${esc(t.id)}">revoke</button>` : ''}</td>
+  </tr>`; }).join('')}</table>` : '<div class="note">No enrollment tokens yet.</div>'}`;
+}
+
+async function managedAction(act, el) {
+  if (act === 'admin-save') {
+    const v = document.getElementById('admin-token-input');
+    ADMIN = ((v && v.value) || '').trim();
+    FLEET = null; TOKENS = null; render(); return;
+  }
+  if (act === 'admin-forget') {
+    ADMIN = ''; FLEET = null; TOKENS = null; MINTED = null; render(); return;
+  }
+  if (act === 'dismiss-minted') { MINTED = null; render(); return; }
+  if (act === 'copy') {
+    try { await navigator.clipboard.writeText(el.getAttribute('data-copy') || '');
+          el.textContent = 'copied'; } catch (e) { /* clipboard denied */ }
+    return;
+  }
+  if (!ADMIN) {
+    alert('Enter the receiver admin token first — Managed section, either view.');
+    return;
+  }
+  if (act === 'mint') {
+    const note = (document.getElementById('mint-note')?.value || '').trim();
+    const ttl = parseInt(document.getElementById('mint-ttl')?.value || '180', 10) || 180;
+    const r = await mfetch('/api/enrollment-tokens',
+      {method: 'POST', body: JSON.stringify({note, ttl_days: ttl})});
+    if (r.ok) { MINTED = await r.json(); TOKENS = null; }
+    else {
+      let d = r.statusText; try { d = (await r.json()).detail || d; } catch (e) {}
+      if (r.status === 401) ADMIN = '';
+      MINTED = {error: String(d)};
+    }
+    render(); return;
+  }
+  if (act === 'revoke-token' || act === 'revoke-device') {
+    const id = el.getAttribute('data-key');
+    const what = act === 'revoke-token' ? 'enrollment token' : 'device credential';
+    if (!confirm('Revoke ' + what + ' ' + id + '? This cannot be undone; a '
+                 + 'revoked device re-enrolls with a valid enrollment token.')) return;
+    const path = act === 'revoke-token'
+      ? '/api/enrollment-tokens/' + encodeURIComponent(id) + '/revoke'
+      : '/api/devices/' + encodeURIComponent(id) + '/revoke';
+    const r = await mfetch(path, {method: 'POST'});
+    if (!r.ok) {
+      let d = r.statusText; try { d = (await r.json()).detail || d; } catch (e) {}
+      if (r.status === 401) ADMIN = '';
+      alert('Revoke failed: ' + d);
+    }
+    FLEET = null; TOKENS = null; render(); return;
+  }
+  if (act === 'artifact') {
+    const kind = el.getAttribute('data-key');
+    const r = await mfetch('/api/artifacts/' + encodeURIComponent(kind), {method: 'POST'});
+    if (!r.ok) {
+      let d = r.statusText; try { d = (await r.json()).detail || d; } catch (e) {}
+      if (r.status === 401) ADMIN = '';
+      alert('Could not generate the artifact: ' + d);
+      return;
+    }
+    // Each artifact mints its own enrollment token, so the tokens list is
+    // stale the moment this succeeds.
+    TOKENS = null;
+    const blob = await r.blob();
+    const m = (r.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = (m && m[1]) || 'ai-guard-collector';
+    a.click();
+    URL.revokeObjectURL(a.href);
+    return;
+  }
+}
+
 function drawNav() {
   const n = document.getElementById('nav');
   n.innerHTML = NAV.map(sec =>
@@ -1181,6 +1384,8 @@ async function render() {
   if (view === 'register') { app.innerHTML = await register(); return; }
   if (view === 'paste') { app.innerHTML = await paste(); return; }
   if (view === 'iso') { app.innerHTML = await iso(); return; }
+  if (view === 'fleet') { app.innerHTML = await fleet(); return; }
+  if (view === 'tokens') { app.innerHTML = await tokens(); return; }
   app.innerHTML = ({setup, overview, devices, people, tools, coverage,
                     dashboard, personal, mcp})[view]();
 }
@@ -1201,6 +1406,13 @@ app.addEventListener('click', e => {
   if (!el) return;
   const kind = el.getAttribute('data-open');
   open_(kind || null, el.getAttribute('data-key'));
+});
+// Managed actions, same delegation for the same reason. A separate listener
+// rather than branches in the one above, because data-open is navigation and
+// data-act is a side effect, and a row carrying both should do both.
+app.addEventListener('click', e => {
+  const el = e.target.closest('[data-act]');
+  if (el) managedAction(el.getAttribute('data-act'), el);
 });
 // Someone editing the fragment, or arriving on a link to a view.
 window.addEventListener('hashchange', () => {

@@ -841,6 +841,11 @@ def status_from(findings):
          "a collector is reporting and this is not, nobody has wired up an MCP "
          "server yet."),
     ]
+    # Sources the portal can generate a pre-configured deployment artifact
+    # for, when managed mode is on. The value doubles as the API path
+    # segment (/api/artifacts/<kind>); only the endpoint collectors today.
+    artifact_sources = {"collector-macos", "collector-linux", "collector-windows"}
+
     rows = []
     for group, src, label, doc, needs in expected:
         e = by_source.get(src)
@@ -850,6 +855,7 @@ def status_from(findings):
             "label": label,
             "doc": doc,
             "needs": needs,
+            "artifact": src if src in artifact_sources else "",
             "reporting": bool(e),
             "findings": e["findings"] if e else 0,
             "devices": len(e["devices"]) if e else 0,

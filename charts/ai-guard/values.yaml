@@ -123,6 +123,16 @@ ingress:
 portal:
   enabled: true
 
+  # Managed mode only (managed.enabled above): where the portal proxies
+  # admin actions, and the ingest URL that gets baked into downloaded
+  # deployment artifacts. Both default sensibly - the chart's own receiver
+  # service, and the receiver ingress host when one is enabled. Set
+  # receiverPublicUrl explicitly when agents reach the receiver some other
+  # way: it must be reachable from the machines being enrolled, which a
+  # cluster-internal service name is not.
+  receiverUrl: ""
+  receiverPublicUrl: ""
+
   image:
     repository: ghcr.io/amansk5/shadow-ai-guard/portal
     tag: ""          # defaults to the chart's appVersion
