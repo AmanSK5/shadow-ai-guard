@@ -119,6 +119,7 @@ the portal.
 | `alertmanager.url` | `""` | unset means findings are logged and dashboarded but nothing pages |
 | `alertmanager.ttlMinutes` | `120` | how long a warn finding counts as already alerted |
 | `displayTz` | `UTC` | timezone for the readable timestamp on alerts only |
+| `corpDomains` | `[]` | corporate domains served to the collectors via `/registry/collector`; collectors prefer this to their local list, so a change here reaches the fleet on its next check-in with no MDM re-push |
 | `registry.create` | `true` | ship the compiled registry as a ConfigMap |
 | `registry.existingConfigMap` | `""` | use your own, for example built by CI on every merge |
 | `service.type` | `ClusterIP` | |

@@ -52,7 +52,9 @@ reports as `warn`; everything else is `info`.
    - Parameter 5: the receiver bearer token
    - Parameter 6: corporate domains, comma-separated, e.g.
      `example.com,example.co.uk`. Leave this correct: an empty value means no
-     domain counts as corporate and every account warns.
+     domain counts as corporate and every account warns. If the receiver has
+     `CORP_DOMAINS` set, its list overrides this parameter at runtime, so the
+     fleet follows a receiver-side change without a Jamf re-edit.
    - Trigger: Recurring Check-in, plus a custom trigger (e.g. `aiguard`) so
      you can run it on demand with `sudo jamf policy -event aiguard`.
    - Frequency: Ongoing. The 24 hour throttle above keeps the volume sane.

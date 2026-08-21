@@ -59,6 +59,10 @@ spec:
             {{- end }}
             - name: DISPLAY_TZ
               value: {{ .Values.displayTz | quote }}
+            {{- with .Values.corpDomains }}
+            - name: CORP_DOMAINS
+              value: {{ join "," . | quote }}
+            {{- end }}
           volumeMounts:
             - name: registry
               mountPath: /etc/ai-guard

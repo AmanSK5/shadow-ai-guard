@@ -197,6 +197,49 @@ def test_domain_map_survives_a_missing_registry():
     assert _build_domain_map(None) == {}
     assert _build_domain_map({}) == {}
 
+def test_corp_domains_are_normalised_for_the_strictest_matcher():
+    """The macOS collector matches with a comma-anchored case pattern: no
+    trimming, no case folding. A list served with a stray space or capital
+    would silently turn a work account into a personal-account warn."""
+    from app.main import _parse_corp_domains
+
+    raw = " Example.COM , example.co.uk ,, example.com "
+    assert _parse_corp_domains(raw) == ["example.com", "example.co.uk"]
+    assert _parse_corp_domains("") == []
+
+
+def test_collector_registry_carries_corp_domains_when_configured(tmp_path, monkeypatch):
+    """One value changed on the receiver reaches the fleet on its next
+    check-in, riding in the payload collectors already fetch."""
+    from app import main
+
+    reg = tmp_path / "collector.json"
+    reg.write_text('{"version": 1, "cli": []}')
+    monkeypatch.setattr(main, "COLLECTOR_REGISTRY_PATH", str(reg))
+    monkeypatch.setattr(main, "CORP_DOMAINS", ["example.com", "example.co.uk"])
+
+    resp = client.get("/registry/collector", headers=AUTH)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["config"]["corp_domains"] == ["example.com", "example.co.uk"]
+    assert body["version"] == 1  # the registry content is untouched
+
+
+def test_collector_registry_is_untouched_when_no_corp_domains(tmp_path, monkeypatch):
+    """No CORP_DOMAINS means no config key at all: a collector must fall back
+    to its local list, and an empty served list must not clobber it."""
+    from app import main
+
+    reg = tmp_path / "collector.json"
+    reg.write_text('{"version": 1}')
+    monkeypatch.setattr(main, "COLLECTOR_REGISTRY_PATH", str(reg))
+    monkeypatch.setattr(main, "CORP_DOMAINS", [])
+
+    resp = client.get("/registry/collector", headers=AUTH)
+    assert resp.status_code == 200
+    assert "config" not in resp.json()
+
+
 def test_a_rejected_push_is_counted_and_says_why():
     """A push that fails is a finding that exists only in this container's
     stdout. The receiver still answers 200, which is right - a log store being

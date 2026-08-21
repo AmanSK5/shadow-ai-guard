@@ -37,6 +37,7 @@ Everything is environment variables. Only the token is required.
 | `REGISTRY_PATH` | `/etc/ai-guard/registry.json` | where the compiled registry is mounted |
 | `COLLECTOR_REGISTRY_PATH` | `/etc/ai-guard/collector.json` | where the collector view is mounted |
 | `DISPLAY_TZ` | `UTC` | timezone for the human-readable timestamp on alerts only; machine timestamps are always UTC |
+| `CORP_DOMAINS` | unset | corporate domains, comma-separated. When set, served to the endpoint collectors inside `/registry/collector` as `config.corp_domains`; collectors prefer that list to their locally configured one, so a change here reaches the fleet on its next check-in with no MDM re-push. Unset means collectors keep using their local configuration |
 
 Any of these can be given as `NAME_FILE` pointing at a file instead:
 `AUTH_TOKEN_FILE=/run/secrets/auth_token` rather than `AUTH_TOKEN`. That
