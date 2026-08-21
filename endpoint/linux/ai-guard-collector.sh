@@ -21,7 +21,10 @@
 # variables, or export them from a wrapper):
 #   AIGUARD_RECEIVER_BASE   receiver base URL, e.g. https://ai-guard.example.com
 #   AIGUARD_TOKEN           receiver bearer token
-#   AIGUARD_CORP_DOMAINS    comma-separated corporate domains, e.g. example.com
+#   AIGUARD_CORP_DOMAINS    comma-separated corporate domains, e.g. example.com.
+#                           A receiver that serves config.corp_domains in
+#                           /registry/collector overrides this at runtime; the
+#                           variable is the fallback.
 # If AIGUARD_RECEIVER_BASE is unset, findings print to stdout instead of
 # POSTing, which is the local-test mode.
 #
@@ -384,6 +387,29 @@ REG_TSV=$(registry_tsv "$REG_FILE")
 if [ -z "$REG_TSV" ]; then
   echo "[ai-guard] registry parse failed: $REG_FILE"
   exit 1
+fi
+
+# Corporate domains can arrive with the registry: the receiver serves
+# config.corp_domains in the payload just fetched when it has CORP_DOMAINS
+# set. The served list wins over AIGUARD_CORP_DOMAINS, because a list changed
+# once on the receiver reaches the fleet on its next run rather than waiting
+# on an RMM variable edit per platform; the variable stays as the fallback,
+# so a receiver serving nothing changes nothing. Guarded on $PY, though a
+# registry parse without python3 already refused above.
+if [ -n "$PY" ]; then
+  CENTRAL_DOMAINS=$("$PY" - "$REG_FILE" <<'PYEOF' 2>/dev/null
+import json, sys
+try:
+    r = json.load(open(sys.argv[1]))
+    print(",".join((r.get("config") or {}).get("corp_domains") or []))
+except Exception:
+    pass
+PYEOF
+)
+  if [ -n "$CENTRAL_DOMAINS" ]; then
+    echo "[ai-guard] corporate domains from receiver: $CENTRAL_DOMAINS"
+    CORP_DOMAINS="$CENTRAL_DOMAINS"
+  fi
 fi
 
 STATE_NEW=$(mktemp /tmp/ai-guard-state.XXXXXX)

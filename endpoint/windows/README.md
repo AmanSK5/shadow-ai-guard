@@ -33,6 +33,10 @@ token cannot expand). Commit only the placeholder version; the tokenised copy
 exists only inside Intune. CI fails the build if the placeholder is missing, 
 so a tokenised copy cannot reach main by accident.
 
+If the receiver has `CORP_DOMAINS` set, its list overrides `$CorporateDomains`
+at runtime, so the fleet follows a receiver-side change without an Intune
+re-paste.
+
 ## Trying it against a local receiver
 
 No Intune needed. Edit the three variables at the top of the script, then run
