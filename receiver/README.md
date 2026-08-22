@@ -39,6 +39,8 @@ device id plus a per-profile install id) and `scanner` (serial is the
 scanner's configured id). Every authenticated request with a device
 credential - a report or a registry read - stamps the device's `last_seen`,
 and its agent version when the request carries `X-AiGuard-Agent-Version`.
+When every surface has enrolled, `REQUIRE_DEVICE_CREDENTIALS=true` turns the
+shared token off for ingest (see the configuration table).
 
 | method | path | auth | what |
 |--------|------|------|------|
@@ -75,6 +77,7 @@ Everything is environment variables. Only the token is required.
 | `MANAGED_MODE` | unset | `true` enables device enrollment, per-device credentials, revocation and a fleet inventory (see below). Unset means byte-for-byte the classic receiver: no state file, `/enroll` and `/admin/*` answer 404 |
 | `ADMIN_TOKEN` | required in managed mode | the credential that mints and revokes enrollment tokens and devices. Deliberately a separate secret from `AUTH_TOKEN`, which sits on every machine in the fleet - which is exactly why it must not be able to mint credentials |
 | `STATE_DB_PATH` | `/var/lib/ai-guard/state.db` | where the managed-mode SQLite file lives. The one non-disposable thing: it holds the device registry and its credential hashes |
+| `REQUIRE_DEVICE_CREDENTIALS` | unset | managed mode only: `true` turns the shared token off for ingest. `/report` and `/registry` accept device credentials only; the shared token gets a 401 that says "enroll". The final step of the migration once every surface has enrolled, not a mode - unset it and unenrolled machines report again. Refuses to start without `MANAGED_MODE` |
 
 Any of these can be given as `NAME_FILE` pointing at a file instead:
 `AUTH_TOKEN_FILE=/run/secrets/auth_token` rather than `AUTH_TOKEN`. That
