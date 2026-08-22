@@ -80,7 +80,8 @@ kubectl -n "$NS" create secret generic ai-guard-receiver \
 ```
 
 Every source authenticates with this one token: collectors, scanners and the
-browser extension.
+browser extension. (With `managed.enabled`, each of those can carry an
+enrollment token instead and hold a credential of its own - see below.)
 
 ### 2. The registry
 
@@ -136,9 +137,10 @@ Optional, all off by default:
   as the auth token. The portal gains a Managed section for this: enter that
   admin token there to see the fleet, mint and revoke enrollment tokens, and
   download pre-configured collector scripts from the Setup view - or drive
-  the same `/admin` API with curl. Enrollment tokens go in the MDM in place
-  of the shared token, one platform at a time. See the receiver and portal
-  READMEs for the details.
+  the same `/admin` API with curl. Enrollment tokens go wherever the shared
+  token goes today - collector parameters, the extension's managed policy,
+  the scanner Secret - one surface at a time; each enrolls and holds its own
+  credential. See the receiver and portal READMEs for the details.
 
 Confirm it is up:
 

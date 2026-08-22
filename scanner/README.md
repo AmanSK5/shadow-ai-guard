@@ -109,6 +109,24 @@ environment variables (receiver URL and token, corporate domain,
 credentials from your Kubernetes Secret or secret store). The `.env`
 mechanism is for local CLI use only; deployed scanners do not use it.
 
+With a receiver in managed mode, `RECEIVER_TOKEN` can be an **enrollment
+token** (`aige_...`) instead of the shared token; the prefix is the switch.
+The run then enrolls as `platform: scanner` with the serial in
+`AIGUARD_SCANNER_ID` (default `scanner`; `discovery` for the discovery job -
+set it per deployment if you run several) and uses the credential it
+receives for the registry fetch and every report, so the scanner shows in
+the portal's Fleet view with a last-seen time and can be revoked on its own.
+A CronJob pod keeps nothing between runs, so by default it enrolls on every
+run and the receiver reissues the same device's credential in place - one
+Fleet row per scanner, not one per run, at any schedule. That also means
+revoking a stateless scanner's row in the Fleet view only cuts the current
+run; the lever for it is the enrollment token it carries (mint one per
+scanner and the lever is precise) or the Secret. Set `AIGUARD_STATE_DIR` to
+a writable volume to keep `device.cred` between runs instead; then the row's
+revoke sticks until you delete that file. A refused enrollment, or a stored
+credential the receiver no longer accepts, is fatal before any scanning and
+names the reason in the job log. `DRY_RUN` never enrolls.
+
 ## Entra app registration
 
 The Entra, Exchange and Intune scanners share one app registration.

@@ -1219,15 +1219,17 @@ async function fleet() {
   return `<h2>Fleet</h2>
   <p class="lede">Enrolled devices, from the receiver's registry — who holds a
   credential, rather than who has reported lately (the Devices view derives
-  that from findings). Revoking stops that one machine's credential on its
-  next request and touches nothing else.</p>
+  that from findings). Revoking stops that one credential on its next
+  request and touches nothing else. A device that re-enrolled (a reimaged
+  laptop, a scanner that enrolls every run — or a serial someone else
+  enrolled while it was silent) keeps its row and says so under "enrolled".</p>
   ${adminBar()}
   ${ds.length ? `<table><tr><th>device</th><th>platform</th><th>serial</th>
     <th>enrolled</th><th>last seen</th><th>agent</th><th>status</th><th></th></tr>
   ${ds.map(d => `<tr>
     <td>${esc(d.hostname || d.serial)}<br><span class="mono" style="font-size:11px;color:var(--mut)">${esc(d.id)}</span></td>
     <td>${esc(d.platform)}</td><td class="mono">${esc(d.serial)}</td>
-    <td>${when(d.enrolled_at)}</td><td>${when(d.last_seen)}</td>
+    <td>${when(d.enrolled_at)}${d.reenrolled_at ? `<br><span style="font-size:11px;color:var(--mut)">re-enrolled ×${esc(String((d.enrollments || 1) - 1))}, last ${when(d.reenrolled_at)}</span>` : ''}</td><td>${when(d.last_seen)}</td>
     <td>${esc(d.agent_version || '—')}</td>
     <td>${d.revoked_at ? '<span class="pill p-mut">revoked</span>'
                        : '<span class="pill p-ok">active</span>'}</td>
