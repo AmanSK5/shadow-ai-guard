@@ -14,6 +14,19 @@ spec:
   # wedge waiting for a mount the old pod still holds.
   strategy:
     type: Recreate
+  {{- else }}
+  # Spelled out although it is the default, and not for readability: server-
+  # side apply only clears fields the chart owns, so a release that never
+  # declared rollingUpdate cannot later switch to Recreate - the defaulted
+  # block stays behind, unowned, and the API server rejects the combination.
+  # Owning it from the start is what makes managed.enabled a clean flip.
+  # (Releases installed before this block need one manual step first; see
+  # the managed.enabled comment in values.yaml.)
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
   {{- end }}
   selector:
     matchLabels:
