@@ -92,17 +92,27 @@ class Registry:
     instead of iterating the full service list per event.
     """
 
-    def __init__(self, path: Optional[Path] = None, url: Optional[str] = None):
+    def __init__(self, path: Optional[Path] = None, url: Optional[str] = None,
+                 token: Optional[str] = None):
         self.path = path or REGISTRY_PATH
 
         # When set, the registry is fetched from the receiver rather than read
         # from disk. Pass url="" explicitly to force the bundled copy.
         self.url = url if url is not None else os.environ.get("AIGUARD_REGISTRY_URL", "")
+        # The bearer for that fetch. The entrypoint passes the credential it
+        # resolved for the run (a device credential in managed mode); the CLI
+        # and older callers fall back to the environment as before.
+        self.token = token if token is not None else os.environ.get("RECEIVER_TOKEN", "")
 
         # Which source actually supplied the data. Worth logging: otherwise a
         # silently failing fetch means scanning against a stale registry for
         # weeks without noticing.
         self.source = "bundled"
+        # The HTTP status of a failed fetch, when the failure was an HTTP
+        # status at all. The entrypoint reads it: a 401 on a device
+        # credential means the credential was revoked, which must not be
+        # absorbed into a quiet bundled-registry fallback.
+        self.fetch_status: Optional[int] = None
 
         self.services: list[AIService] = []
         self.bridge_targets: list[BridgeTarget] = []
@@ -128,8 +138,15 @@ class Registry:
         """
         import httpx
 
-        token = os.environ.get("RECEIVER_TOKEN", "")
-        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        headers = {}
+        if self.token:
+            from ai_guard import __version__
+
+            # The version rides on the registry read as on every report, so a
+            # managed-mode receiver's inventory knows what a scanner runs even
+            # on a run that finds nothing to report.
+            headers = {"Authorization": f"Bearer {self.token}",
+                       "X-AiGuard-Agent-Version": __version__}
         try:
             response = httpx.get(self.url, headers=headers, timeout=15)
             response.raise_for_status()
@@ -137,6 +154,7 @@ class Registry:
             self.source = self.url
             return data
         except Exception as e:  # noqa: BLE001 - any failure means fall back
+            self.fetch_status = getattr(getattr(e, "response", None), "status_code", None)
             logger.warning(
                 "Using bundled registry fallback; detection coverage may be reduced"
             )

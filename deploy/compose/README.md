@@ -208,7 +208,10 @@ traffic before it arrives is what protects everything else on the host.
 
 The receiver authenticates reporting sources with a shared bearer token, the one
 in `secrets/auth_token`. That token goes into your MDM script parameters, your
-managed browser configuration, and your scanner environment.
+managed browser configuration, and your scanner environment. With the managed
+overlay, an enrollment token minted in the portal goes in those same places
+instead, and each collector, browser profile and scanner exchanges it once for a
+credential of its own.
 
 The portal authenticates separately with HTTP basic auth, and **refuses to start
 without it**. It names who runs what on which machine, so coming up open because

@@ -541,8 +541,9 @@ def metrics():
 
 
 @app.get("/registry")
-def registry(authorization: str = Header(default="")):
+def registry(request: Request, authorization: str = Header(default="")):
     _auth(authorization)
+    _touch_device(request)
     reg = _load_registry()
     if reg is None:
         raise HTTPException(503, "registry not available")
@@ -550,7 +551,7 @@ def registry(authorization: str = Header(default="")):
 
 
 @app.get("/registry/collector")
-def registry_collector(authorization: str = Header(default="")):
+def registry_collector(request: Request, authorization: str = Header(default="")):
     """cli/ide/desktop/mcp identifiers for the endpoint collectors.
 
     Served so a new AI tool is a registry merge request rather than an edit
@@ -562,6 +563,7 @@ def registry_collector(authorization: str = Header(default="")):
     pre-dates the key ignores it.
     """
     _auth(authorization)
+    _touch_device(request)
     try:
         with open(COLLECTOR_REGISTRY_PATH) as f:
             reg = json.load(f)
@@ -580,6 +582,25 @@ def _auth(authorization: str):
         raise HTTPException(401, "bad token")
 
 
+def _touch_device(request: Request):
+    """Stamp last_seen (and the agent version, when sent) for the device that
+    authenticated this request.
+
+    A device credential is an identity; the shared token is not. Called from
+    every authenticated route, registry reads included, because "seen" should
+    mean seen: discovery only ever reads the registry, and a collector's
+    registry fetch precedes its report. The version travels as a header so
+    the finding schema stays untouched. That stamp is what turns the
+    inventory from inferred-from-silence into one that knows who exists and
+    what they run.
+    """
+    device = getattr(request.state, "device", None)
+    if device is not None and STATE is not None:
+        STATE.touch_device(
+            device["id"], request.headers.get("x-aiguard-agent-version", "")[:32]
+        )
+
+
 def _admin_auth(authorization: str):
     # Defence in depth for /admin/*, like _auth for ingest. 404 when managed
     # mode is off: routes that do not exist should not confirm they exist.
@@ -589,6 +610,14 @@ def _admin_auth(authorization: str):
         authorization.encode("latin-1"), _EXPECTED_ADMIN
     ):
         raise HTTPException(401, "bad token")
+
+
+# What can enroll. The three collector platforms, one browser profile
+# (platform "browser", serial = MDM device id plus a per-profile install id,
+# since one machine legitimately runs several managed profiles), and a scanner
+# (platform "scanner", serial = its configured id). The (platform, serial) key
+# is what keeps a laptop's browser profile from colliding with its collector.
+PLATFORMS = ("macos", "linux", "windows", "browser", "scanner")
 
 
 class EnrollRequest(BaseModel):
@@ -616,8 +645,8 @@ def enroll(req: EnrollRequest, authorization: str = Header(default="")):
     """
     if STATE is None:
         raise HTTPException(404, "Not Found")
-    if req.platform not in ("macos", "linux", "windows"):
-        raise HTTPException(422, "platform must be macos, linux or windows")
+    if req.platform not in PLATFORMS:
+        raise HTTPException(422, "platform must be one of " + ", ".join(PLATFORMS))
     token = authorization[len("Bearer "):] if authorization.startswith("Bearer ") else ""
     try:
         result = STATE.enroll(token, req.platform, req.serial, req.hostname,
@@ -785,17 +814,7 @@ async def _fire_alert(f: Finding):
 @app.post("/flag")  # legacy path, kept for older browser extension versions
 async def report(f: Finding, request: Request, authorization: str = Header(default="")):
     _auth(authorization)
-
-    # A device credential is an identity; the shared token is not. Stamping
-    # last_seen (and the script version, sent as a header so the finding
-    # schema stays untouched) on every authenticated report is what turns
-    # the inventory from inferred-from-silence into one that knows who
-    # exists and what they run.
-    device = getattr(request.state, "device", None)
-    if device is not None and STATE is not None:
-        STATE.touch_device(
-            device["id"], request.headers.get("x-aiguard-agent-version", "")[:32]
-        )
+    _touch_device(request)
 
     if f.surface not in VALID_SURFACES:
         f.surface = "browser"

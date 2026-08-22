@@ -11,7 +11,13 @@ Differs from `ai-guard scan` on a laptop in three ways:
 
 Environment:
   RECEIVER_URL           http://ai-guard-receiver.<namespace>.svc.cluster.local
-  RECEIVER_TOKEN         bearer token, same secret the extension uses
+  RECEIVER_TOKEN         the shared bearer token, or an enrollment token
+                         (aige_...) from a managed-mode receiver: the run then
+                         enrolls as a scanner and reports with its own credential
+  AIGUARD_SCANNER_ID     this scanner's identity on the receiver (default
+                         "scanner"; set per deployment if you run several)
+  AIGUARD_STATE_DIR      optional writable dir that keeps the device credential
+                         between runs (device.cred); unset means enroll per run
   AIGUARD_REGISTRY_URL   $RECEIVER_URL/registry  (set by the CronJob)
   CORPORATE_DOMAIN       example.com
   AIGUARD_*              scanner credentials, from the ai-guard-scanner secret
@@ -19,7 +25,7 @@ Environment:
 
 Exit codes:
   0  scan completed, findings reported (or none found)
-  1  no scanner could run, or any finding failed to report
+  1  enrollment refused, no scanner could run, or any finding failed to report
 """
 from __future__ import annotations
 
@@ -39,7 +45,8 @@ from ai_guard.scanners.intune import IntuneScanner
 from ai_guard.scanners.jamf import JAMFScanner
 from ai_guard.scanners.sentinelone import SentinelOneScanner
 
-from receiver_reporter import ReceiverReporter
+from receiver_reporter import (DEVICE_PREFIX, ENROLL_PREFIX, EnrollmentError,
+                               ReceiverReporter, resolve_credential)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -64,7 +71,36 @@ async def run() -> int:
     policy_path = Path(os.environ.get("POLICY_PATH", "policy.yaml"))
     config = Config.from_file(policy_path) if policy_path.exists() else Config.default()
 
-    registry = Registry()  # picks up AIGUARD_REGISTRY_URL from the environment
+    # The bearer for the whole run: the registry fetch and every report. In
+    # managed mode this is where the scanner enrolls; refused is fatal before
+    # any scanning, so the CronJob fails rather than reporting nothing. A dry
+    # run does not enroll: it would reissue the real scanner's credential in
+    # place (or 409 against it), and printing payloads needs no identity.
+    token = os.environ.get("RECEIVER_TOKEN", "")
+    if DRY_RUN:
+        if token.startswith(ENROLL_PREFIX):
+            log.info("dry run: not enrolling; the registry fetch will fall back to the bundled copy")
+    else:
+        try:
+            token = resolve_credential(
+                os.environ.get("RECEIVER_URL", ""), token,
+                os.environ.get("AIGUARD_SCANNER_ID", "scanner"),
+            )
+        except EnrollmentError as e:
+            log.error("%s", e)
+            return 1
+
+    registry = Registry(token=token)  # picks up AIGUARD_REGISTRY_URL from the environment
+    if registry.fetch_status == 401 and token.startswith(DEVICE_PREFIX):
+        # The stored credential was revoked (or reissued elsewhere). The
+        # registry fallback would let the run carry on, find nothing, and
+        # exit 0 - a dead scanner with a green CronJob. Loud and fatal instead,
+        # and never re-enrolled from here: the operator deletes the stored
+        # credential to enroll again.
+        log.error("the receiver refused this scanner's device credential (revoked?);"
+                  " delete device.cred under AIGUARD_STATE_DIR and supply a valid"
+                  " enrollment token to re-enroll")
+        return 1
     log.info(
         "registry loaded from %s: %d services, %d bridge targets",
         registry.source,
@@ -112,7 +148,7 @@ async def run() -> int:
         log.info("scan complete: no findings")
         return 0
 
-    reporter = ReceiverReporter(dry_run=DRY_RUN)
+    reporter = ReceiverReporter(token=token, dry_run=DRY_RUN)
     sent, failed = reporter.send(all_findings)
 
     if DRY_RUN:
