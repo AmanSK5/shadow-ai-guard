@@ -88,6 +88,10 @@ spec:
             {{- if .Values.managed.enabled }}
             - name: MANAGED_MODE
               value: "true"
+            {{- if .Values.managed.requireDeviceCredentials }}
+            - name: REQUIRE_DEVICE_CREDENTIALS
+              value: "true"
+            {{- end }}
             - name: STATE_DB_PATH
               value: /var/lib/ai-guard/state.db
             - name: ADMIN_TOKEN

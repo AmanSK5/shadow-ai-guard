@@ -27,6 +27,11 @@ services:
       MANAGED_MODE: "true"
       ADMIN_TOKEN_FILE: /run/secrets/admin_token
       STATE_DB_PATH: /var/lib/ai-guard/state.db
+      # Once every collector, browser profile and scanner has enrolled, set
+      # REQUIRE_DEVICE_CREDENTIALS=true in .env: the shared token is then
+      # refused for ingest (with a 401 that says "enroll"), and only device
+      # credentials report. Flip it back and unenrolled machines report again.
+      REQUIRE_DEVICE_CREDENTIALS: ${REQUIRE_DEVICE_CREDENTIALS:-false}
     volumes:
       - managed-state:/var/lib/ai-guard
       - ./secrets/admin_token:/run/secrets/admin_token:ro

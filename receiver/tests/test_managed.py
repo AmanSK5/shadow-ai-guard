@@ -296,6 +296,52 @@ def test_an_actively_reporting_device_cannot_be_displaced(managed):
     assert _enroll(token).status_code == 200
 
 
+# ------------------------------------------------------ the off-switch --
+
+
+def test_requiring_device_credentials_turns_the_shared_token_away(managed, monkeypatch,
+                                                                  tmp_path):
+    """The final step of the migration: once every surface has enrolled, the
+    shared token stops being a credential. Device credentials, enrollment and
+    admin all keep working; the refusal names itself so a straggler's MDM
+    log says enroll rather than bad token."""
+    from app import main
+
+    reg = tmp_path / "collector.json"
+    reg.write_text('{"version": 1}')
+    monkeypatch.setattr(main, "COLLECTOR_REGISTRY_PATH", str(reg))
+
+    cred = _enroll(_mint()["token"]).json()["device_token"]
+    monkeypatch.setattr(main, "REQUIRE_DEVICE_CREDENTIALS", True)
+
+    for path, call, kw in (("/report", client.post, {"json": {"tool": "x"}}),
+                           ("/registry/collector", client.get, {})):
+        resp = call(path, headers=AUTH, **kw)
+        assert resp.status_code == 401
+        assert "enroll" in resp.json()["detail"]
+        assert call(path, headers={"Authorization": f"Bearer {cred}"}, **kw).status_code == 200
+    # A wrong token is still just a bad token, not an invitation.
+    assert client.post("/report", json={"tool": "x"},
+                       headers={"Authorization": "Bearer nope"}).json()["detail"] == "bad token"
+    assert _enroll(_mint()["token"], serial="OTHER").status_code == 200
+    assert client.get("/admin/devices", headers=ADMIN).status_code == 200
+
+
+def test_requiring_device_credentials_without_managed_mode_refuses_to_start():
+    """Nothing could authenticate: a startup error, not a receiver that
+    silently 401s the whole estate."""
+    import subprocess
+    import sys
+
+    env = {**os.environ, "AUTH_TOKEN": "x", "REQUIRE_DEVICE_CREDENTIALS": "true"}
+    env.pop("MANAGED_MODE", None)
+    proc = subprocess.run([sys.executable, "-c", "import app.main"], env=env,
+                          capture_output=True, text=True,
+                          cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    assert proc.returncode != 0
+    assert "MANAGED_MODE" in proc.stderr
+
+
 # ------------------------------------------------------------- edge cases --
 
 
