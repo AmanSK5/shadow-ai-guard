@@ -420,10 +420,22 @@ case "$TOKEN" in
           CRED=$(sed -n 's/.*"device_token":"\([^"]*\)".*/\1/p' "$ENROLL_RESP")
         fi
         if [ -n "$CRED" ]; then
-          ( umask 077; printf '%s' "$CRED" > "$CRED_FILE" )
-          chmod 600 "$CRED_FILE" 2>/dev/null
-          TOKEN="$CRED"
-          echo "[ai-guard] enrolled: device credential stored in $CRED_FILE"
+          if ( umask 077; printf '%s' "$CRED" > "$CRED_FILE" ) 2>/dev/null; then
+            chmod 600 "$CRED_FILE" 2>/dev/null
+            TOKEN="$CRED"
+            echo "[ai-guard] enrolled: device credential stored in $CRED_FILE"
+          else
+            # Loud and fatal, like an enrollment refusal: the receiver just
+            # minted this device a credential, and losing it here means every
+            # future run enrolls again - device churn in the fleet view and,
+            # once a run reports, a 409 that blocks the fix for an hour.
+            # Exiting before the scan keeps this device silent, so a correctly
+            # privileged run supersedes it immediately.
+            echo "[ai-guard] enrolled, but cannot write $CRED_FILE (run as root?)"
+            echo "[ai-guard] refusing to scan: the credential would be lost and every run would re-enroll"
+            rm -f "$ENROLL_RESP"
+            exit 1
+          fi
         fi
       else
         # Loud and fatal: an enrollment token cannot report findings, so
