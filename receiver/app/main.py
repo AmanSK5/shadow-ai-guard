@@ -125,7 +125,10 @@ def _ingest_token_ok(header: str) -> tuple[bool, dict | None]:
     constant-time scan.
     """
     if _token_ok(header):
-        return True, None
+        # The shared token: the estate's anonymous credential - until the
+        # operator turns it off, at which point it is a known string that
+        # is no longer a credential at all.
+        return (not REQUIRE_DEVICE_CREDENTIALS), None
     if STATE is not None and header.startswith("Bearer " + _state.DEVICE_PREFIX):
         dev = STATE.device_for(header[len("Bearer "):])
         if dev is not None:
@@ -246,6 +249,21 @@ if MANAGED_MODE:
     # mint credentials.
     _EXPECTED_ADMIN = b"Bearer " + _secret("ADMIN_TOKEN").encode()
     STATE = _state.State(os.environ.get("STATE_DB_PATH", "/var/lib/ai-guard/state.db"))
+
+# The off-switch for the shared token, once every surface has enrolled: with
+# this set, /report and /registry accept device credentials only and the
+# shared AUTH_TOKEN is refused with a 401 that says so. It is the final step
+# of a migration, not a mode: flip it back and unenrolled machines report
+# again. Meaningless without managed mode - there would be no other credential
+# to require - so that combination is a startup error rather than a receiver
+# that silently rejects everything.
+REQUIRE_DEVICE_CREDENTIALS = os.environ.get(
+    "REQUIRE_DEVICE_CREDENTIALS", "").lower() in ("1", "true", "yes")
+if REQUIRE_DEVICE_CREDENTIALS and not MANAGED_MODE:
+    raise SystemExit(
+        "REQUIRE_DEVICE_CREDENTIALS needs MANAGED_MODE=true: without enrollment"
+        " there is no credential to require"
+    )
 
 # "network" is a DNS/flow observation from SentinelOne: a device resolved a
 # domain, but the resolving process may be a browser, a desktop app, a CLI or
@@ -454,9 +472,15 @@ async def authenticate_before_reading(request: Request, call_next):
     """
     path = request.url.path
     if path.startswith(_PROTECTED):
-        ok, device = _ingest_token_ok(request.headers.get("authorization", ""))
+        auth = request.headers.get("authorization", "")
+        ok, device = _ingest_token_ok(auth)
         if not ok:
-            return JSONResponse({"detail": "bad token"}, status_code=401)
+            # Named when it is the shared token being turned away: the
+            # straggler's MDM log should say "enroll", not "bad token".
+            detail = ("shared token not accepted: this receiver requires device"
+                      " credentials; enroll with an enrollment token"
+                      if REQUIRE_DEVICE_CREDENTIALS and _token_ok(auth) else "bad token")
+            return JSONResponse({"detail": detail}, status_code=401)
         # Which device authenticated, for /report to stamp last_seen. None
         # when the shared token did, which is not an identity.
         request.state.device = device
