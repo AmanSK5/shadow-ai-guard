@@ -128,7 +128,7 @@ On the compose route it is already there, on port 8091. Otherwise:
 docker run --rm -p 8091:8091 \
   -e LOKI_URL=http://your-loki:3100 \
   -e PORTAL_USER=admin -e PORTAL_PASSWORD=... \
-  ghcr.io/amansk5/shadow-ai-guard/portal:0.9.5
+  ghcr.io/amansk5/shadow-ai-guard/portal:0.9.6
 ```
 
 It refuses to start without authentication, because it names who runs what on
