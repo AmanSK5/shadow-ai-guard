@@ -211,7 +211,8 @@ in `secrets/auth_token`. That token goes into your MDM script parameters, your
 managed browser configuration, and your scanner environment. With the managed
 overlay, an enrollment token minted in the portal goes in those same places
 instead, and each collector, browser profile and scanner exchanges it once for a
-credential of its own.
+credential of its own; `REQUIRE_DEVICE_CREDENTIALS=true` in `.env` then turns
+the shared token off for ingest once everything has enrolled.
 
 The portal authenticates separately with HTTP basic auth, and **refuses to start
 without it**. It names who runs what on which machine, so coming up open because

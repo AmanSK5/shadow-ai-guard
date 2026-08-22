@@ -140,7 +140,9 @@ Optional, all off by default:
   the same `/admin` API with curl. Enrollment tokens go wherever the shared
   token goes today - collector parameters, the extension's managed policy,
   the scanner Secret - one surface at a time; each enrolls and holds its own
-  credential. See the receiver and portal READMEs for the details.
+  credential. Once every surface has, `managed.requireDeviceCredentials:
+  true` turns the shared token off for ingest. See the receiver and portal
+  READMEs for the details.
 
 Confirm it is up:
 

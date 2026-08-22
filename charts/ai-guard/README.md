@@ -125,6 +125,7 @@ the portal.
 | `managed.adminToken.existingSecret` | `""` | a Secret you created yourself, key `adminToken` |
 | `managed.persistence.size` | `1Gi` | the state PVC. Annotated `helm.sh/resource-policy: keep`: uninstalling the chart does not unenroll the fleet |
 | `managed.persistence.existingClaim` | `""` | use a PVC you created yourself |
+| `managed.requireDeviceCredentials` | `false` | the shared token's off-switch, once every surface has enrolled: ingest accepts device credentials only and refuses the shared token with a 401 that says "enroll". Flip it back and unenrolled machines report again |
 | `portal.receiverUrl` | receiver service | managed mode: where the portal proxies admin actions; defaults to the chart's own receiver service |
 | `portal.receiverPublicUrl` | ingress host | managed mode: the ingest URL baked into downloaded deployment artifacts; defaults to the receiver ingress host when one is enabled |
 | `registry.create` | `true` | ship the compiled registry as a ConfigMap |

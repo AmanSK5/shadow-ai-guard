@@ -93,6 +93,13 @@ managed:
     size: 1Gi
     storageClass: ""     # empty means the cluster default
     existingClaim: ""    # use a PVC you created yourself
+  # The off-switch for the shared token, once every collector, browser
+  # profile and scanner has enrolled: /report and /registry then accept
+  # device credentials only, and the shared token is refused with a 401 that
+  # says "enroll". The final step of the migration, not a mode - flip it back
+  # and unenrolled machines report again. The shared token Secret stays
+  # (the receiver still requires it at startup); it just stops being accepted.
+  requireDeviceCredentials: false
 
 # The compiled registry ships with the chart, so the receiver has an
 # identifier list on first install with nothing to build. Set create: false to
