@@ -19,7 +19,7 @@
     },
     "authToken": {
       "title": "Auth token",
-      "description": "Bearer token sent to the report endpoint (matches the receiver's AUTH_TOKEN)",
+      "description": "Bearer token sent to the report endpoint: the receiver's shared AUTH_TOKEN, or an enrollment token (aige_...) from a managed-mode receiver, which this browser profile exchanges once for its own device credential",
       "type": "string"
     },
     "pasteGuardMode": {

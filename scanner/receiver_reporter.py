@@ -31,14 +31,117 @@ import json
 import logging
 import os
 import re
+import socket
 import unicodedata
 from typing import Optional
 
 import httpx
 
+from ai_guard import __version__ as AGENT_VERSION
 from ai_guard.scanners.base import DetectionSource, Finding, occurrence_unit
 
 logger = logging.getLogger(__name__)
+
+# Managed mode. RECEIVER_TOKEN may be an enrollment token (aige_...) from a
+# managed-mode receiver instead of the shared token: the run then exchanges it
+# at /enroll for this scanner's own device credential (aigd_...) and uses that
+# for the registry fetch and every report. The prefix is the switch, the same
+# contract as the endpoint collectors and the browser extension, so the
+# operator changes one Secret value when ready.
+#
+# A CronJob pod has no disk of its own, so by default the scanner enrolls on
+# every run: the receiver reissues the same device's credential in place
+# (platform "scanner", serial AIGUARD_SCANNER_ID, exempt from the one-hour
+# active guard that protects laptops), so the fleet shows one row per scanner,
+# not one per run. Set AIGUARD_STATE_DIR to a writable volume to keep the
+# credential between runs instead; then revoking the scanner's row in the
+# fleet view sticks, whereas a stateless scanner simply enrolls again next run
+# and the lever for it is revoking the enrollment token it carries.
+ENROLL_PREFIX = "aige_"
+DEVICE_PREFIX = "aigd_"
+CRED_FILENAME = "device.cred"
+
+
+class EnrollmentError(Exception):
+    """Enrollment was refused or the credential could not be kept. Fatal
+    before any scanning: an enrollment token cannot report findings, so
+    carrying on would 401 every POST and look like a clean estate."""
+
+
+def resolve_credential(
+    url: str,
+    token: str,
+    scanner_id: str,
+    state_dir: Optional[str] = None,
+    timeout: float = 15.0,
+) -> str:
+    """The bearer this run reports with.
+
+    A stored device credential wins; an enrollment token is exchanged for
+    one; anything else is used as-is (the shared token, classic mode).
+    """
+    if not token.startswith(ENROLL_PREFIX):
+        return token
+    if state_dir is None:
+        state_dir = os.environ.get("AIGUARD_STATE_DIR", "")
+    cred_path = os.path.join(state_dir, CRED_FILENAME) if state_dir else ""
+
+    if cred_path and os.path.exists(cred_path):
+        try:
+            with open(cred_path) as f:
+                stored = f.read().strip()
+        except OSError as e:
+            # A volume written under another uid, typically. Named, not a
+            # traceback: it is the same class of deployment mistake as an
+            # unwritable state dir.
+            raise EnrollmentError(f"cannot read {cred_path} ({e.strerror})") from e
+        if stored.startswith(DEVICE_PREFIX):
+            return stored
+        logger.warning("%s does not hold a device credential; enrolling again", cred_path)
+
+    body = {
+        "platform": "scanner",
+        "serial": scanner_id,
+        "hostname": socket.gethostname(),
+        "agent_version": AGENT_VERSION,
+    }
+    try:
+        r = httpx.post(f"{url.rstrip('/')}/enroll", json=body, timeout=timeout,
+                       headers={"Authorization": f"Bearer {token}"})
+    except httpx.HTTPError as e:
+        raise EnrollmentError(f"enrollment failed: {type(e).__name__} reaching {url}") from e
+    if r.status_code != 200:
+        detail = ""
+        try:
+            detail = r.json().get("detail", "")
+        except ValueError:
+            pass
+        raise EnrollmentError(
+            f"enrollment failed: HTTP {r.status_code} from {url.rstrip('/')}/enroll"
+            + (f": {detail}" if detail else "")
+        )
+    cred = r.json().get("device_token", "")
+    if not cred.startswith(DEVICE_PREFIX):
+        raise EnrollmentError("enrollment failed: receiver returned no device credential")
+
+    if cred_path:
+        # Loud and fatal, like the collectors: a run that enrolled but could
+        # not keep the credential would enroll again next time, and an
+        # unwritable state dir is a deployment mistake to fix, not to mask.
+        try:
+            os.makedirs(state_dir, exist_ok=True)
+            fd = os.open(cred_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as f:
+                f.write(cred)
+        except OSError as e:
+            raise EnrollmentError(
+                f"enrolled, but cannot write {cred_path} ({e.strerror}); refusing to scan:"
+                " the credential would be lost and every run would re-enroll"
+            ) from e
+        logger.info("enrolled as scanner %r; credential stored in %s", scanner_id, cred_path)
+    else:
+        logger.info("enrolled as scanner %r for this run (no AIGUARD_STATE_DIR)", scanner_id)
+    return cred
 
 # DetectionSource -> (surface, os). Surfaces match the receiver's vocabulary:
 # browser, cli, ide, desktop, mcp, cloud.
@@ -221,7 +324,10 @@ class ReceiverReporter:
         headers = {
             "Authorization": f"Bearer {self.token}",
             "Content-Type": "application/json",
+            # So the receiver's inventory knows which scanner version reported.
+            "X-AiGuard-Agent-Version": AGENT_VERSION,
         }
+        revoked_said = False
         with httpx.Client(timeout=self.timeout) as client:
             for f in findings:
                 body = {k: v for k, v in self.payload(f).items() if v is not None}
@@ -232,4 +338,16 @@ class ReceiverReporter:
                 except httpx.HTTPError as e:
                     failed += 1
                     logger.warning("receiver: %s (%s)", e, body.get("tool"))
+                    status = getattr(getattr(e, "response", None), "status_code", None)
+                    if (status == 401 and self.token.startswith(DEVICE_PREFIX)
+                            and not revoked_said):
+                        # Said once, not per finding. Never re-enrolled from
+                        # here: a revoked scanner must be visible in the job
+                        # log, and the operator removes the stored credential
+                        # (or the state dir) to enroll it again.
+                        revoked_said = True
+                        logger.error(
+                            "this scanner's device credential was refused (revoked?);"
+                            " delete %s under AIGUARD_STATE_DIR and supply a valid"
+                            " enrollment token to re-enroll", CRED_FILENAME)
         return sent, failed

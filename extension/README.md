@@ -236,10 +236,45 @@ content anywhere in it.
 | --- | --- | --- |
 | `allowedDomains` | array | Account domains not flagged (your corporate domains) |
 | `reportEndpoint` | string | Receiver URL for finding POSTs |
-| `authToken` | string | Bearer token (write-only credential: it can submit findings, not read them) |
+| `authToken` | string | Bearer token (write-mostly credential: it can submit findings and read the registry, nothing else). The receiver's shared `AUTH_TOKEN`, or an enrollment token (`aige_...`) from a managed-mode receiver - see below |
 | `deviceIdentifier` | string | Device attribution value stamped by the MDM |
 | `pasteGuardMode` | string | `off`, `warn`, or `block`; unset behaves as `warn` |
 | `classificationMarkings` | array | Labels from your document classification policy |
+
+## Enrolling with a managed-mode receiver
+
+With a receiver running in managed mode, `authToken` can carry an
+**enrollment token** (`aige_...`, minted in the portal or via `/admin`)
+instead of the shared token. The prefix is the switch - no other key
+changes, and the same policy value works for both. Each browser profile then:
+
+1. On its first report, POSTs `/enroll` (derived from `reportEndpoint` by
+   dropping the trailing `/report`) with `platform: browser` and a serial of
+   `<deviceIdentifier>/<install id>` - the install id is eight hex characters
+   made once per profile, because one machine legitimately runs several
+   managed profiles (Chrome and Edge, two Chrome profiles) and they must not
+   displace each other on the receiver.
+2. Keeps the credential it receives in the extension's `storage.local` and
+   reports with it from then on, sending its version in
+   `X-AiGuard-Agent-Version`. The profile appears in the portal's Fleet view
+   as platform `browser`.
+3. If the receiver refuses that credential (revoked in the Fleet view), the
+   profile goes quiet and says so in the service worker console; the hourly
+   heartbeat retry keeps checking. It re-enrolls **only when the policy
+   carries a different enrollment token** than the one its credential last
+   reported under (a rotation while the credential still worked is recorded
+   as such, so only a rotation *after* the revoke counts). Revoking a profile
+   therefore sticks until you rotate the token - the browser analogue of
+   deleting a collector's `device.cred` - and rotating it is also how an
+   accidental revoke is undone.
+
+A profile whose extension storage is wiped (reinstall, profile reset) makes
+a new install id and appears as a new row; the old row stays, with its last
+seen time, until you revoke it. The receiver knows the two belong to one
+machine only by the shared device identifier prefix.
+
+The shared token keeps working alongside, which is the migration path: flip
+the policy value per browser, per platform, at your own pace.
 
 ## Rollout advice
 

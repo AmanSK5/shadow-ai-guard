@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AI Guard",
-  "version": "1.3.1",
+  "version": "1.4.0",
   "description": "Flags AI tools signed in with a non-corporate account and stops secrets being pasted into them. Reports detector ids and account domains only, never content.",
   "permissions": [
     "storage",
