@@ -69,6 +69,16 @@ corpDomains: []
 # SQLite has one writer, so managed mode requires replicaCount: 1 (the chart
 # refuses to render otherwise) and uses a Recreate strategy so two pods never
 # hold the volume at once.
+#
+# Enabling this on a release installed with chart 0.8.7 or older needs one
+# manual step first: those charts never declared an update strategy, so the
+# API server's defaulted rollingUpdate block is owned by nobody and server-
+# side apply cannot clear it when the strategy switches to Recreate. Either
+# upgrade to this chart once with managed off (the chart takes ownership),
+# or clear it directly and upgrade straight to managed:
+#   kubectl patch deployment <release>-ai-guard --type=json -p='[
+#     {"op":"remove","path":"/spec/strategy/rollingUpdate"},
+#     {"op":"replace","path":"/spec/strategy/type","value":"Recreate"}]'
 managed:
   enabled: false
   # The credential that mints and revokes enrollment tokens and devices.

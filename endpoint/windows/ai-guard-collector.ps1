@@ -301,11 +301,30 @@ if (-not $FunctionsOnly) {
                 -Method Post -TimeoutSec 15 `
                 -Headers @{ Authorization = "Bearer $Token" } `
                 -ContentType 'application/json' -Body $enrollBody -ErrorAction Stop
-            Set-Content -Path $CredFile -Value $r.device_token -NoNewline
+            try {
+                Set-Content -Path $CredFile -Value $r.device_token -NoNewline -ErrorAction Stop
+            } catch {
+                # Loud and fatal, like an enrollment refusal: the receiver
+                # just minted this device a credential, and losing it here
+                # means every run enrolls again - device churn in the fleet
+                # view and, once a run reports, a 409 that blocks the fix for
+                # an hour. Exiting before the scan keeps this device silent,
+                # so a correctly privileged run supersedes it immediately.
+                Write-Output "ai-guard: enrolled, but cannot write $CredFile (run as SYSTEM or elevated?)"
+                Write-Output 'ai-guard: refusing to scan - the credential would be lost and every run would re-enroll'
+                exit 1
+            }
             # The state dir inherits ProgramData's ACL, which lets ordinary
             # users read. A device credential must not be readable by the
-            # people whose AI accounts it reports on.
+            # people whose AI accounts it reports on - so an ACL that cannot
+            # be restricted means the file must not stay behind either.
             icacls $CredFile /inheritance:r /grant 'SYSTEM:(F)' 'Administrators:(F)' | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                Remove-Item $CredFile -Force -ErrorAction SilentlyContinue
+                Write-Output "ai-guard: enrolled, but could not restrict $CredFile to SYSTEM/Administrators"
+                Write-Output 'ai-guard: refusing to scan - a device credential readable by every user is worse than none'
+                exit 1
+            }
             $Token = $r.device_token
             Write-Output "ai-guard: enrolled, device credential stored in $CredFile"
         } catch {
