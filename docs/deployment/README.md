@@ -26,7 +26,9 @@ but nothing downstream can tell.
 
 **The bearer token.** One shared token that every collector, scanner and the
 browser extension authenticate with. Where it lives differs; what it does does
-not.
+not. In managed mode each of them can instead carry an enrollment token and
+exchange it once for a credential of its own, which is what makes one machine,
+one browser profile or one scanner revocable on its own.
 
 **The log store.** Neither route bundles one for production. The receiver
 writes JSON lines to stdout regardless, and pushes to Loki when

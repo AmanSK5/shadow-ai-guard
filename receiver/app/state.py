@@ -34,12 +34,22 @@ from datetime import datetime, timedelta, timezone
 ENROLL_PREFIX = "aige_"
 DEVICE_PREFIX = "aigd_"
 
-# A device that authenticated a report this recently is alive, and a
-# same-serial enrollment must not displace it silently: that is the stolen
-# token scenario, not the reimaged laptop one. A reimaged machine stops
-# reporting the moment its disk is wiped, so the legitimate case sails
-# through after at most this long.
+# A device that authenticated this recently is alive, and a same-serial
+# enrollment must not displace it silently: that is the stolen token
+# scenario, not the reimaged laptop one. A reimaged machine stops reporting
+# the moment its disk is wiped, so the legitimate case sails through after at
+# most this long. A stateless scanner that enrolls on every run is bound by
+# the same window, which is why a sub-hourly schedule needs a state dir.
 SUPERSEDE_QUIET_SECONDS = 3600
+
+# Platforms whose agents keep no state between runs and so enroll on every
+# run by design. The active guard above would misfire for them: an hourly
+# scanner's previous run is still inside the window when the next starts,
+# and a Job retried after its registry fetch is "actively reporting" itself.
+# For these a same-serial enrollment always reissues. The guard bought at
+# most an hour's delay against a stolen enrollment token anyway; the lever
+# for a scanner is revoking the enrollment token it carries.
+STATELESS_PLATFORMS = ("scanner",)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS enrollment_tokens (
@@ -69,6 +79,17 @@ CREATE TABLE IF NOT EXISTS events (
   detail TEXT NOT NULL
 );
 """
+
+# Columns added after the first release, applied to databases that predate
+# them. CREATE TABLE IF NOT EXISTS leaves an existing table alone, so a
+# deployment that upgraded keeps its rows and gains the columns here.
+_DEVICE_COLUMNS_ADDED = (
+    # A same-serial re-enrollment reissues the credential in place, so the
+    # row keeps its id; these are the visible trace that it happened (the
+    # reimaged laptop, the stateless scanner - or a displaced device).
+    ("reenrolled_at", "TEXT"),
+    ("enrollments", "INTEGER NOT NULL DEFAULT 1"),
+)
 
 
 def _now() -> str:
@@ -105,6 +126,10 @@ class State:
             self._db.execute("PRAGMA journal_mode=WAL")
             self._db.execute("PRAGMA foreign_keys=ON")
             self._db.executescript(_SCHEMA)
+            have = {r["name"] for r in self._db.execute("PRAGMA table_info(devices)")}
+            for name, decl in _DEVICE_COLUMNS_ADDED:
+                if name not in have:
+                    self._db.execute(f"ALTER TABLE devices ADD COLUMN {name} {decl}")
             self._db.commit()
 
     def _event(self, kind: str, detail: dict):
@@ -173,7 +198,7 @@ class State:
                 " WHERE platform = ? AND serial = ? AND revoked_at IS NULL",
                 (platform, serial),
             ).fetchone()
-            if prior is not None:
+            if prior is not None and platform not in STATELESS_PLATFORMS:
                 quiet_since = (
                     datetime.now(timezone.utc) - timedelta(seconds=SUPERSEDE_QUIET_SECONDS)
                 ).isoformat()
@@ -189,21 +214,39 @@ class State:
                     raise EnrollError(
                         409, "a device with this serial is actively reporting; revoke it first"
                     )
-                self._db.execute(
-                    "UPDATE devices SET revoked_at = ? WHERE id = ?", (now, prior["id"]),
-                )
-                self._event("superseded", {"old": prior["id"], "serial": serial})
 
             cred = DEVICE_PREFIX + secrets.token_urlsafe(32)
-            did = secrets.token_hex(8)
-            self._db.execute(
-                "INSERT INTO devices (id, platform, serial, hostname, cred_hash,"
-                " enrolled_at, enrolled_with, agent_version)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (did, platform, serial, hostname, _hash(cred), now, row["id"], agent_version),
-            )
-            self._event("enrolled", {"device": did, "platform": platform,
-                                     "serial": serial, "with": row["id"]})
+            if prior is not None:
+                # Reissue in place: same device, new credential. The old one
+                # is dead the instant the hash is replaced, which is the same
+                # property revoke-and-insert had, but the device keeps its id
+                # across a reimage and a stateless scanner that enrolls on
+                # every run does not leave a revoked row behind each time.
+                # enrolled_at stays the first enrollment; reenrolled_at and
+                # the count are the operator-visible trace, in place of the
+                # revoked row that used to sit beside the new one. A
+                # *manually* revoked row is not a prior here (revoked_at set),
+                # so it stays as history and a fresh row is made instead.
+                did = prior["id"]
+                self._db.execute(
+                    "UPDATE devices SET hostname = ?, cred_hash = ?, reenrolled_at = ?,"
+                    " enrollments = enrollments + 1, enrolled_with = ?, agent_version = ?"
+                    " WHERE id = ?",
+                    (hostname, _hash(cred), now, row["id"], agent_version, did),
+                )
+                self._event("reenrolled", {"device": did, "platform": platform,
+                                           "serial": serial, "with": row["id"]})
+            else:
+                did = secrets.token_hex(8)
+                self._db.execute(
+                    "INSERT INTO devices (id, platform, serial, hostname, cred_hash,"
+                    " enrolled_at, enrolled_with, agent_version)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (did, platform, serial, hostname, _hash(cred), now, row["id"],
+                     agent_version),
+                )
+                self._event("enrolled", {"device": did, "platform": platform,
+                                         "serial": serial, "with": row["id"]})
             self._db.commit()
         return {"device_id": did, "device_token": cred}
 
@@ -239,7 +282,7 @@ class State:
         with self._lock:
             rows = self._db.execute(
                 "SELECT id, platform, serial, hostname, enrolled_at, enrolled_with,"
-                " last_seen, agent_version, revoked_at"
+                " reenrolled_at, enrollments, last_seen, agent_version, revoked_at"
                 " FROM devices ORDER BY enrolled_at DESC"
             ).fetchall()
         return [dict(r) for r in rows]

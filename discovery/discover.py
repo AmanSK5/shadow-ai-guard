@@ -14,7 +14,14 @@ Human stays the approval gate: nothing enters detection until the MR merges.
 
 Env:
   S1_BASE_URL, S1_API_TOKEN
-  RECEIVER_URL, RECEIVER_TOKEN          (to fetch the live registry)
+  RECEIVER_URL, RECEIVER_TOKEN          (to fetch the live registry; the token
+                                         may be an enrollment token, aige_...,
+                                         from a managed-mode receiver - the run
+                                         then enrolls as a scanner first)
+  AIGUARD_SCANNER_ID                    (identity on the receiver, default
+                                         "discovery")
+  AIGUARD_STATE_DIR                     (optional: keeps the device credential
+                                         between runs; unset enrolls per run)
   ANTHROPIC_API_KEY                     (classification)
   ANTHROPIC_MODEL                       (default claude-sonnet-4-6)
   GITLAB_URL, GITLAB_TOKEN, GITLAB_PROJECT_ID
@@ -25,6 +32,7 @@ Env:
 import json
 import os
 import re
+import socket
 import sys
 import time
 from collections import defaultdict
@@ -88,14 +96,81 @@ def etld1(host: str) -> str:
     return ".".join(parts[-2:]) if len(parts) >= 2 else host
 
 
+# ---------------------------------------------------------- enrollment ------
+# Managed mode, mirrored from scanner/receiver_reporter.py (discovery ships as
+# its own image and deliberately imports nothing from the scanner package).
+# RECEIVER_TOKEN may be an enrollment token: the run exchanges it at /enroll
+# for this job's own device credential and reads the registry with that. With
+# no AIGUARD_STATE_DIR the job enrolls on every run and the receiver reissues
+# the same device's credential in place, so the fleet shows one "discovery"
+# row. A schedule tighter than hourly needs the state dir on a volume.
+
+ENROLL_PREFIX = "aige_"
+DEVICE_PREFIX = "aigd_"
+AGENT_VERSION = "discovery/1"
+SCANNER_ID = os.environ.get("AIGUARD_SCANNER_ID", "discovery")
+STATE_DIR = os.environ.get("AIGUARD_STATE_DIR", "")
+
+
+def resolve_credential(url: str, token: str, scanner_id: str, state_dir: str) -> str:
+    """A stored device credential wins; an enrollment token is exchanged for
+    one; anything else is used as-is. Refusal exits: an enrollment token
+    cannot read the registry, and a run without a registry is no run."""
+    if not token.startswith(ENROLL_PREFIX):
+        return token
+    cred_path = os.path.join(state_dir, "device.cred") if state_dir else ""
+    if cred_path and os.path.exists(cred_path):
+        try:
+            with open(cred_path) as f:
+                stored = f.read().strip()
+        except OSError as e:
+            sys.exit(f"cannot read {cred_path} ({e.strerror})")
+        if stored.startswith(DEVICE_PREFIX):
+            return stored
+    body = {"platform": "scanner", "serial": scanner_id,
+            "hostname": socket.gethostname(), "agent_version": AGENT_VERSION}
+    try:
+        r = httpx.post(f"{url}/enroll", json=body, timeout=15,
+                       headers={"Authorization": f"Bearer {token}"})
+    except httpx.HTTPError as e:
+        sys.exit(f"enrollment failed: {type(e).__name__} reaching {url}")
+    if r.status_code != 200:
+        try:
+            detail = r.json().get("detail", "")
+        except ValueError:
+            detail = ""
+        sys.exit(f"enrollment failed: HTTP {r.status_code} from {url}/enroll"
+                 + (f": {detail}" if detail else ""))
+    cred = r.json().get("device_token", "")
+    if not cred.startswith(DEVICE_PREFIX):
+        sys.exit("enrollment failed: receiver returned no device credential")
+    if cred_path:
+        try:
+            os.makedirs(state_dir, exist_ok=True)
+            fd = os.open(cred_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as f:
+                f.write(cred)
+        except OSError as e:
+            sys.exit(f"enrolled, but cannot write {cred_path} ({e.strerror}); refusing to"
+                     " run: the credential would be lost and every run would re-enroll")
+    print(f"enrolled as scanner {scanner_id!r}")
+    return cred
+
+
 # ------------------------------------------------------------ registry ------
 
-def fetch_registry() -> dict:
+def fetch_registry(token: str = "") -> dict:
     r = httpx.get(
         f"{RECEIVER_URL}/registry",
-        headers={"Authorization": f"Bearer {RECEIVER_TOKEN}"},
+        headers={"Authorization": f"Bearer {token or RECEIVER_TOKEN}",
+                 "X-AiGuard-Agent-Version": AGENT_VERSION},
         timeout=15,
     )
+    if r.status_code == 401 and (token or RECEIVER_TOKEN).startswith(DEVICE_PREFIX):
+        # Never re-enrolled from here: a revoked job must be visible in its
+        # log, and the operator removes the stored credential to enroll again.
+        sys.exit("the receiver refused this job's device credential (revoked?); delete"
+                 " device.cred under AIGUARD_STATE_DIR and supply a valid enrollment token")
     r.raise_for_status()
     return r.json()
 
@@ -459,7 +534,8 @@ def open_mr(groups: list[dict], registry: dict):
 # ------------------------------------------------------------------- main ---
 
 def main():
-    registry = fetch_registry()
+    token = resolve_credential(RECEIVER_URL, RECEIVER_TOKEN, SCANNER_ID, STATE_DIR)
+    registry = fetch_registry(token)
     known = known_domains(registry)
     allow = set()
     if ALLOWLIST_FILE.exists():

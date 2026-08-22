@@ -28,18 +28,25 @@ migration path).
 ### Managed mode
 
 `MANAGED_MODE=true` adds device enrollment on top: an operator mints an
-enrollment token (`aige_...`), puts it in the MDM where the shared token
-goes, and each machine exchanges it once at `/enroll` for its own credential
-(`aigd_...`). One machine can then be revoked without touching any other,
-and the inventory knows who exists rather than inferring it from silence.
+enrollment token (`aige_...`), puts it where the shared token goes - the MDM
+script parameters, the browser extension's managed policy, the scanner's
+Secret - and each endpoint collector, browser profile and scanner exchanges
+it once at `/enroll` for its own credential (`aigd_...`). One of them can
+then be revoked without touching any other, and the inventory knows who
+exists rather than inferring it from silence. Platforms are `macos`, `linux`,
+`windows`, `browser` (one row per managed browser profile: serial is the MDM
+device id plus a per-profile install id) and `scanner` (serial is the
+scanner's configured id). Every authenticated request with a device
+credential - a report or a registry read - stamps the device's `last_seen`,
+and its agent version when the request carries `X-AiGuard-Agent-Version`.
 
 | method | path | auth | what |
 |--------|------|------|------|
-| POST | `/enroll` | enrollment token | exchange for this machine's device credential; same-serial re-enroll supersedes a silent device, 409s an active one |
+| POST | `/enroll` | enrollment token | exchange for this device's own credential; a same-serial re-enroll reissues a silent device's credential in place (same id, old credential dead, `reenrolled_at` and `enrollments` say it happened - the reimaged laptop, or a stateless scanner enrolling every run) and 409s a device seen within the hour. Platform `scanner` is exempt from that guard: it enrolls every run by design |
 | POST | `/admin/enrollment-tokens` | admin | mint (`note`, `ttl_days`, default 180) |
 | GET  | `/admin/enrollment-tokens` | admin | list - ids, notes and expiry, never token material |
 | POST | `/admin/enrollment-tokens/{id}/revoke` | admin | |
-| GET  | `/admin/devices` | admin | the fleet: platform, serial, hostname, last seen, agent version |
+| GET  | `/admin/devices` | admin | the fleet: platform, serial, hostname, enrolled / re-enrolled, last seen, agent version |
 | POST | `/admin/devices/{id}/revoke` | admin | that machine's credential stops working on its next request |
 
 Only SHA-256 hashes of credentials are stored: a copied database file is a

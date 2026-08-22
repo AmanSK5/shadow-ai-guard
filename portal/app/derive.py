@@ -792,8 +792,9 @@ def status_from(findings):
          "extension/README.md",
          "Push the extension by managed policy (Jamf for Chrome/Edge on macOS, "
          "Intune ADMX on Windows) with the receiver URL and token in the "
-         "managed configuration. Reports which account is signed into an AI "
-         "tool in the browser."),
+         "managed configuration - in managed mode an enrollment token, which "
+         "each browser profile exchanges once for its own credential. Reports "
+         "which account is signed into an AI tool in the browser."),
         ("browser", "paste_guard", "Browser extension: paste guard",
          "extension/README.md",
          "Part of the same extension. Reports pastes it stopped or flagged, "
