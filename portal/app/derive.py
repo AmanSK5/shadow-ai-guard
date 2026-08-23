@@ -830,19 +830,23 @@ def status_from(findings):
          "the same three variables at the top of the script."),
         ("browser", "browser_extension", "Browser extension: accounts",
          "extension/README.md",
-         "Push the extension by managed policy (Jamf for Chrome/Edge on "
-         "macOS, the deploy script on Windows). In managed mode, download "
-         "the pre-configured managed-storage policy below - URL, enrollment "
-         "token and corporate domains baked; each browser profile exchanges "
-         "the token once for its own credential. Reports which account is "
-         "signed into an AI tool in the browser."),
+         "Push the extension by managed policy. In managed mode the portal "
+         "generates the full matrix pre-configured - Chromium policy for "
+         "macOS, deploy scripts for Windows, and Firefox equivalents (keyed "
+         "on the gecko id, installing the Mozilla-signed .xpi) - URL, "
+         "enrollment token, corporate domains and paste guard settings "
+         "baked; each browser profile exchanges the token once for its own "
+         "credential. Reports which account is signed into an AI tool in "
+         "the browser."),
         ("browser", "paste_guard", "Browser extension: paste guard",
          "extension/README.md",
-         "Part of the same extension. Reports pastes it stopped or flagged, "
-         "and a daily heartbeat proving the whole chain works on that device. "
-         "Silent while the accounts row reports means nobody has pasted "
-         "anything matching a detector, which is a different thing from not "
-         "being deployed."),
+         "The same extension, not a second install: its mode (off/warn/"
+         "block) and the classification markings it scans for are Settings "
+         "here, baked into the same policy artifacts. Reports pastes it "
+         "stopped or flagged, and a daily heartbeat proving the whole chain "
+         "works on that device. Silent while the accounts row reports means "
+         "nobody has pasted anything matching a detector, which is a "
+         "different thing from not being deployed."),
         ("cloud", "entra_sign_in", "Entra sign-ins", "scanner/README.md",
          "Register an app in Entra with AuditLog.Read.All and Directory.Read.All, "
          "then set AIGUARD_ENTRA_TENANT_ID, _CLIENT_ID and _CLIENT_SECRET."),

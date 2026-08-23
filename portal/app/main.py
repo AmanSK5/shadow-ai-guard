@@ -1324,6 +1324,12 @@ class SettingsWrite(BaseModel):
     grafana_panels: str | None = Field(default=None, max_length=2000)
     grafana_dashboard_uid: str | None = Field(default=None, max_length=128)
     overview_widgets: str | None = Field(default=None, max_length=500)
+    extension_update_url: str | None = Field(default=None, max_length=500)
+    extension_xpi_url: str | None = Field(default=None, max_length=500)
+    paste_guard_mode: str | None = Field(default=None, max_length=8)
+    firefox_extension_id: str | None = Field(default=None, max_length=128)
+    classification_markings: list[str] | None = Field(default=None,
+                                                      max_length=50)
 
 
 class DecisionWrite(BaseModel):
@@ -1486,8 +1492,9 @@ def api_password(req: PasswordWrite, _=Depends(require_auth),
 
 # Artifacts generated from templates rather than substituted into script
 # copies. Same minting and download shape as the collector kinds.
-GENERATED_ARTIFACTS = ("extension-policy", "scanner-cronjob",
-                       "discovery-cronjob")
+GENERATED_ARTIFACTS = ("extension-policy", "extension-windows",
+                       "firefox-policy", "firefox-windows",
+                       "scanner-cronjob", "discovery-cronjob")
 
 
 @app.post("/api/artifacts/{kind}")
@@ -1522,14 +1529,40 @@ def artifact(kind: str, _=Depends(require_auth),
                  "set RECEIVER_PUBLIC_URL). It is not the portal's internal "
                  "RECEIVER_URL; see the portal README.")
 
-    extension_id, corp_domains = "", []
-    if kind == "extension-policy":
-        extension_id = (stored.get("extension_id") or {}).get("value") or ""
-        corp_domains = (stored.get("corp_domains") or {}).get("value") or []
-        if not extension_id:
+    def setting(key):
+        return (stored.get(key) or {}).get("value") or ""
+
+    extension_kinds = ("extension-policy", "extension-windows",
+                       "firefox-policy", "firefox-windows")
+    extension_id = corp_domains = mode = markings = None
+    if kind in extension_kinds:
+        corp_domains = setting("corp_domains") or []
+        mode = setting("paste_guard_mode") or "warn"
+        # value may be a stored empty list (a real choice: no markings);
+        # only an absent setting falls back to the default set.
+        raw = stored.get("classification_markings") or {}
+        markings = raw.get("value") if raw.get("source") == "db" else None
+        if kind in ("extension-policy", "extension-windows"):
+            extension_id = setting("extension_id")
+            if not extension_id:
+                raise HTTPException(
+                    409, "set the extension ID in Settings first: the "
+                         "policy is keyed on it")
+        else:
+            extension_id = setting("firefox_extension_id")
+            if not extension_id:
+                raise HTTPException(
+                    409, "set the Firefox extension ID (the gecko id) in "
+                         "Settings first: Firefox policy is keyed on it")
+        if kind == "extension-windows" and not setting("extension_update_url"):
             raise HTTPException(
-                409, "set the extension ID in Settings first: the policy "
-                     "names the per-browser upload domains with it")
+                409, "set the extension update URL in Settings first: "
+                     "Windows installs the extension from it")
+        if kind in ("firefox-policy", "firefox-windows") \
+                and not setting("extension_xpi_url"):
+            raise HTTPException(
+                409, "set the signed .xpi URL in Settings first: Firefox "
+                     "installs only the Mozilla-signed file, from that URL")
 
     minted = _receiver("POST", "/admin/enrollment-tokens", token,
                        {"note": "portal artifact: %s" % kind})
@@ -1537,7 +1570,21 @@ def artifact(kind: str, _=Depends(require_auth),
         if kind == "extension-policy":
             filename, content = managed.generate_extension_policy(
                 extension_id, public_url, minted["token"],
-                corp_domains)
+                corp_domains, mode, markings)
+        elif kind == "extension-windows":
+            filename, content = managed.generate_extension_windows(
+                COLLECTOR_SCRIPTS_DIR, extension_id,
+                setting("extension_update_url"), public_url,
+                minted["token"], corp_domains, mode, markings)
+        elif kind == "firefox-policy":
+            filename, content = managed.generate_firefox_policy(
+                extension_id, setting("extension_xpi_url"), public_url,
+                minted["token"], corp_domains, mode, markings)
+        elif kind == "firefox-windows":
+            filename, content = managed.generate_firefox_windows(
+                COLLECTOR_SCRIPTS_DIR, extension_id,
+                setting("extension_xpi_url"), public_url,
+                minted["token"], corp_domains, mode, markings)
         elif kind == "scanner-cronjob":
             # A release build's version is the image tag on ghcr; a dev
             # build has no matching image, and "latest" is the honest
