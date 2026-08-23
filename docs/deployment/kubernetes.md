@@ -17,18 +17,57 @@ If you have no cluster, you do not need one: see [the routes](README.md).
   network, so the receiver has to be reachable, with TLS and a real
   certificate.
 
-## The short way
+## The short way: managed mode
 
-The chart does everything below in one command, with the compiled registry
-already inside it:
+One command, no clone - the chart is published as an OCI artifact beside the
+images. Only what creates cluster objects goes on the command line (the
+ingresses); everything else is configured in the portal afterwards:
 
 ```bash
-helm install ai-guard charts/ai-guard \
+helm install ai-guard oci://ghcr.io/amansk5/shadow-ai-guard/charts/ai-guard \
+  --namespace ai-guard --create-namespace \
+  --set managed.enabled=true \
+  --set ingress.enabled=true \
+  --set ingress.host=ai-guard.example.com \
+  --set portal.ingress.enabled=true \
+  --set portal.ingress.host=ai-guard-portal.example.com
+```
+
+(On a Tailscale-operator cluster: `ingress.className=tailscale` and
+`portal.ingress.className=tailscale` with short hostnames like `ai-guard` -
+the operator serves them at `https://<host>.<tailnet>.ts.net`.)
+
+Then read the one-time setup code the receiver printed:
+
+```bash
+kubectl -n ai-guard logs deploy/ai-guard | grep setup_code
+```
+
+Open the portal, enter the code, create the admin account, and the first-run
+wizard takes it from there: the public receiver URL (with a probe that warns
+about names other machines cannot resolve - on Tailscale it must be the full
+`.ts.net` address, not the short ingress name), the log store (self-hosted or
+Grafana Cloud, with connection tests both ways), corporate domains, a
+governance baseline, the extension ID, and pre-configured deployment
+downloads for every surface. Nothing after `helm install` touches a values
+file, and everything the wizard sets is editable later under Settings.
+
+## The short way: classic mode
+
+The same install without managed mode is entirely environment-driven, as it
+always was:
+
+```bash
+helm install ai-guard oci://ghcr.io/amansk5/shadow-ai-guard/charts/ai-guard \
   --namespace ai-guard --create-namespace \
   --set loki.pushUrl=http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push \
+  --set portal.lokiUrl=http://loki.monitoring.svc.cluster.local:3100 \
   --set ingress.enabled=true \
   --set ingress.host=ai-guard.example.com
 ```
+
+(A checked-out repo installs the same chart from `charts/ai-guard` instead of
+the OCI reference.)
 
 Read the token it generated:
 
@@ -198,16 +237,22 @@ arrive is that failure.
 
 ### Authentication
 
-The portal names who runs what on which machine, so it refuses to start without
-credentials. The chart generates a password on first install and keeps it
-across upgrades:
+The portal names who runs what on which machine, so it refuses to start
+without credentials. What those are depends on the mode.
+
+**Managed mode** replaces all of this with a real login: the admin account
+created from the boot-printed setup code (see the short way above). No portal
+password Secret exists, and `portal.auth.*` is moot unless set to `none`.
+
+**Classic mode** is basic auth. The chart generates a password on first
+install and keeps it across upgrades:
 
     kubectl -n "$NS" get secret ai-guard-portal \
       -o jsonpath='{.data.password}' | base64 -d; echo
 
-If your ingress can do OIDC or mTLS, do it there and set
-`portal.auth.mode=none` behind it. That is the better arrangement: basic auth
-is one shared credential with no per-user trail.
+Either way, if your ingress can do OIDC or mTLS, do it there and set
+`portal.auth.mode=none` behind it - one shared credential with no per-user
+trail is a floor, not a ceiling.
 
 ### Governance and identity
 

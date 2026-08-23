@@ -819,3 +819,32 @@ jobs:
           echo "$got"
           echo "$got" | grep -qx 'linux/amd64' || { echo "::error::amd64 missing"; exit 1; }
           echo "$got" | grep -qx 'linux/arm64' || { echo "::error::arm64 missing"; exit 1; }
+  publish-chart:
+    # Tags only: the chart is a release artifact, versioned by its own
+    # chart version and published beside the images it deploys, so
+    #   helm install ai-guard oci://ghcr.io/amansk5/shadow-ai-guard/charts/ai-guard
+    # works with no clone. Runs after the images so a freshly published
+    # chart never points at tags that do not exist yet.
+    if: github.ref_type == 'tag'
+    permissions:
+      contents: read
+      packages: write
+    needs: [build-images]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: package and push the chart as OCI
+        run: |
+          REPO="ghcr.io/${{ github.repository }}"
+          REPO="${REPO,,}"   # ghcr requires lowercase
+          echo '${{ secrets.GITHUB_TOKEN }}' | helm registry login ghcr.io \
+            -u '${{ github.actor }}' --password-stdin
+          helm package charts/ai-guard
+          TGZ=$(ls ai-guard-*.tgz)
+          helm push "$TGZ" "oci://$REPO/charts"
+      - name: confirm the published chart resolves
+        run: |
+          REPO="ghcr.io/${{ github.repository }}"
+          REPO="${REPO,,}"
+          VER=$(awk '/^version:/{print $2}' charts/ai-guard/Chart.yaml)
+          helm show chart "oci://$REPO/charts/ai-guard" --version "$VER"
