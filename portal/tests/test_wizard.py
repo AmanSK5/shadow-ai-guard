@@ -136,7 +136,12 @@ def test_the_extension_policy_route_reads_settings_then_mints(receiver):
     assert 'filename="ai-guard-extension-policy.plist"' in resp.headers["content-disposition"]
     assert resp.headers["x-enrollment-token-id"] == "tok9"
     body = resp.body.decode()
-    assert "aige_MINTED" in body and "example.com" in body
+    # The exact plist elements, not loose substrings: the token as the
+    # authToken value and the settings-sourced domain inside allowedDomains.
+    # (Also what keeps CodeQL from reading a plain "example.com" in body as
+    # URL-substring sanitization, which this never was.)
+    assert "<string>aige_MINTED</string>" in body
+    assert "<string>example.com</string>" in body
     # Settings were read before minting, on the caller's own session.
     assert [c["path"] for c in receiver] == ["/admin/settings",
                                              "/admin/enrollment-tokens"]
