@@ -126,6 +126,12 @@ CREATE TABLE IF NOT EXISTS registry_entries (
   updated_at TEXT NOT NULL,
   updated_by TEXT NOT NULL DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS candidate_devices (
+  key        TEXT NOT NULL,
+  device     TEXT NOT NULL,
+  last_seen  TEXT NOT NULL,
+  PRIMARY KEY (key, device)
+);
 CREATE TABLE IF NOT EXISTS candidates (
   key          TEXT PRIMARY KEY,
   kind         TEXT NOT NULL,
@@ -681,6 +687,48 @@ class State:
                  json.dumps(domains), devices, evidence, source, now, now),
             )
             self._event("candidate_reported", {"key": key, "source": source})
+            self._db.commit()
+
+    def observe_candidate(self, key: str, kind: str, name: str,
+                          evidence: str, source: str, device: str = ""):
+        """An ingest-time sighting, as opposed to a scanner's whole-picture
+        report: insert the candidate if it is new, refresh last_seen if it
+        is not, and count the reporting device once. devices becomes the
+        count of distinct devices observed - findings arrive one at a time,
+        so no single report can state a fleet-wide number, and re-reports
+        from the same machine must not inflate one. A dismissed candidate
+        keeps accumulating sightings without reopening: the decision stands,
+        the record stays honest. One event per candidate lifetime, on first
+        insert - per-sighting events would bury the audit log under every
+        collector run."""
+        now = _now()
+        with self._lock:
+            fresh = self._db.execute(
+                "SELECT 1 FROM candidates WHERE key = ?", (key,)
+            ).fetchone() is None
+            self._db.execute(
+                "INSERT INTO candidates (key, kind, name, evidence, source,"
+                " first_seen, last_seen) VALUES (?, ?, ?, ?, ?, ?, ?)"
+                " ON CONFLICT(key) DO UPDATE SET last_seen = excluded.last_seen",
+                (key, kind, name, evidence, source, now, now),
+            )
+            if device:
+                self._db.execute(
+                    "INSERT INTO candidate_devices (key, device, last_seen)"
+                    " VALUES (?, ?, ?)"
+                    " ON CONFLICT(key, device) DO UPDATE SET"
+                    " last_seen = excluded.last_seen",
+                    (key, device, now),
+                )
+                self._db.execute(
+                    "UPDATE candidates SET devices = MAX(devices,"
+                    " (SELECT COUNT(*) FROM candidate_devices WHERE key = ?))"
+                    " WHERE key = ?",
+                    (key, key),
+                )
+            if fresh:
+                self._event("candidate_observed", {"key": key,
+                                                   "source": source})
             self._db.commit()
 
     def dismiss_candidate(self, key: str, by: str = "") -> bool:

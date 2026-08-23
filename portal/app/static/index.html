@@ -515,8 +515,11 @@ const WIDGETS = {
       <h4 style="margin:10px 0 4px">New AI tools found
         <span class="count">${cands.length}</span></h4>
       <table>${cands.slice(0, 6).map(c => `<tr>
-        <td>${esc(c.name)}<div style="color:var(--mut);font-size:12px">
-          ${esc((c.domains || []).join(', '))}</div></td>
+        <td>${esc(c.name)}
+          ${c.kind === 'mcp_server' ? ' <span class="pill p-acc">MCP server</span>' : ''}
+          <div style="color:var(--mut);font-size:12px">
+          ${esc(c.kind === 'mcp_server' ? (c.evidence || '')
+                                        : (c.domains || []).join(', '))}</div></td>
         <td style="color:var(--mut)">${c.devices || 0} device${c.devices === 1 ? '' : 's'}
           ${c.confidence ? ' · ' + esc(c.confidence) : ''}</td>
         <td style="white-space:nowrap">
