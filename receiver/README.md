@@ -62,6 +62,9 @@ shared token off for ingest (see the configuration table).
 | POST | `/admin/test/log-store-push` | admin | push one synthetic `kind:"test"` line with the effective configuration and report what happened, hints included - catches the write-only-token trap at setup time instead of on the first quiet dashboard |
 | GET  | `/admin/registry-entries` | admin | the portal-defined registry entries, each flagged `shadowed` if a later release ships the same id (shipped wins at serve time; a shadowed local copy is a row to delete) |
 | PUT  | `/admin/registry-entries` | admin | upsert (`entries`) and delete (`delete`) portal-defined tools - the same shape as a shipped registry entry, validated against the registry's own schema and rules (lowercase domains, no domain claimed twice, no shipped id redefined; `added_by`/`approved` are forced, approval lives in governance). The whole batch validates before anything writes; the merged registry serves immediately, so collectors detect a defined tool on their next check-in |
+| POST | `/candidates` | shared token or device credential | suggest observed-but-undefined tools (the discovery service's classified DNS residue). Re-validated here field by field - a reporting credential can suggest a tool but never define one; candidates wait in the portal's review queue |
+| GET  | `/admin/candidates` | admin | the candidates queue, each flagged `resolved` once the merged registry claims one of its domains |
+| POST | `/admin/candidates/{key}/dismiss` | admin | record a dismissal; the same candidate resurfacing on a later run stays dismissed |
 | GET  | `/admin/governance` | admin | the portal-recorded governance decisions |
 | PUT  | `/admin/governance` | admin | upsert (`decisions`) and delete (`delete`) decisions, validated to the governance file's own rules - an approval needs a `review_due` date. The whole batch validates before anything is written |
 

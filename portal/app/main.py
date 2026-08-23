@@ -1486,7 +1486,8 @@ def api_password(req: PasswordWrite, _=Depends(require_auth),
 
 # Artifacts generated from templates rather than substituted into script
 # copies. Same minting and download shape as the collector kinds.
-GENERATED_ARTIFACTS = ("extension-policy", "scanner-cronjob")
+GENERATED_ARTIFACTS = ("extension-policy", "scanner-cronjob",
+                       "discovery-cronjob")
 
 
 @app.post("/api/artifacts/{kind}")
@@ -1543,6 +1544,10 @@ def artifact(kind: str, _=Depends(require_auth),
             # nearest thing.
             tag = APP_VERSION if APP_VERSION[:1].isdigit() else "latest"
             filename, content = managed.generate_scanner_cronjob(
+                public_url, minted["token"], tag)
+        elif kind == "discovery-cronjob":
+            tag = APP_VERSION if APP_VERSION[:1].isdigit() else "latest"
+            filename, content = managed.generate_discovery_cronjob(
                 public_url, minted["token"], tag)
         else:
             filename, content = managed.generate(
@@ -1602,6 +1607,27 @@ def api_registry_entries_write(req: RegistryEntriesWrite,
     _registry_entries_cache.update(at=0.0, data=None)
     _cache.clear()
     return out
+
+
+class CandidateDismiss(BaseModel):
+    model_config = {"extra": "forbid"}
+    key: str = Field(min_length=1, max_length=100)
+
+
+@app.get("/api/candidates")
+def api_candidates(_=Depends(require_auth), token: str = Depends(_admin_forward)):
+    """The discovery queue: tools the estate observed that nobody has
+    defined. The receiver annotates each row resolved/dismissed; what to
+    show is the page's business, so this forwards unfiltered."""
+    return _receiver("GET", "/admin/candidates", token)
+
+
+@app.post("/api/candidates/dismiss")
+def api_candidate_dismiss(req: CandidateDismiss, _=Depends(require_auth),
+                          token: str = Depends(_admin_forward)):
+    return _receiver(
+        "POST", "/admin/candidates/%s/dismiss"
+        % urllib.parse.quote(req.key, safe=""), token)
 
 
 @app.get("/")

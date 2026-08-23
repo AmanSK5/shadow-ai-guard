@@ -126,6 +126,22 @@ CREATE TABLE IF NOT EXISTS registry_entries (
   updated_at TEXT NOT NULL,
   updated_by TEXT NOT NULL DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS candidates (
+  key          TEXT PRIMARY KEY,
+  kind         TEXT NOT NULL,
+  name         TEXT NOT NULL,
+  vendor       TEXT NOT NULL DEFAULT '',
+  category     TEXT NOT NULL DEFAULT '',
+  confidence   TEXT NOT NULL DEFAULT '',
+  domains      TEXT NOT NULL DEFAULT '[]',
+  devices      INTEGER NOT NULL DEFAULT 0,
+  evidence     TEXT NOT NULL DEFAULT '',
+  source       TEXT NOT NULL DEFAULT '',
+  first_seen   TEXT NOT NULL,
+  last_seen    TEXT NOT NULL,
+  dismissed_at TEXT,
+  dismissed_by TEXT NOT NULL DEFAULT ''
+);
 """
 
 # Columns added after the first release, applied to databases that predate
@@ -616,6 +632,66 @@ class State:
                 "DELETE FROM registry_entries WHERE tool_id = ?", (tool_id,))
             if cur.rowcount:
                 self._event("registry_entry_deleted", {"tool": tool_id, "by": by})
+            self._db.commit()
+        return bool(cur.rowcount)
+
+    # ------------------------------------------------ candidates (managed) --
+    # Tools the estate observed that nobody has defined: the discovery
+    # service's classified DNS residue, and (in time) raw identifiers the
+    # collectors surface. A candidate is a suggestion, never a detection -
+    # it enters no registry and no register until a human turns it into a
+    # registry entry in the portal, or dismisses it. Dismissal is a stored
+    # decision, not a deletion: the same domain resurfacing next run must
+    # not reopen a question somebody already answered.
+
+    def list_candidates(self) -> list[dict]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT key, kind, name, vendor, category, confidence,"
+                " domains, devices, evidence, source, first_seen, last_seen,"
+                " dismissed_at, dismissed_by FROM candidates"
+                " ORDER BY last_seen DESC"
+            ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["domains"] = json.loads(d["domains"])
+            out.append(d)
+        return out
+
+    def upsert_candidate(self, key: str, kind: str, name: str, vendor: str,
+                         category: str, confidence: str, domains: list,
+                         devices: int, evidence: str, source: str):
+        """New key inserts; a known key refreshes what a rerun can know
+        better (device count, confidence, last_seen) and keeps what it
+        cannot (first_seen, and any dismissal)."""
+        now = _now()
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO candidates (key, kind, name, vendor, category,"
+                " confidence, domains, devices, evidence, source,"
+                " first_seen, last_seen)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                " ON CONFLICT(key) DO UPDATE SET"
+                " vendor = excluded.vendor, category = excluded.category,"
+                " confidence = excluded.confidence, domains = excluded.domains,"
+                " devices = excluded.devices, evidence = excluded.evidence,"
+                " last_seen = excluded.last_seen",
+                (key, kind, name, vendor, category, confidence,
+                 json.dumps(domains), devices, evidence, source, now, now),
+            )
+            self._event("candidate_reported", {"key": key, "source": source})
+            self._db.commit()
+
+    def dismiss_candidate(self, key: str, by: str = "") -> bool:
+        with self._lock:
+            cur = self._db.execute(
+                "UPDATE candidates SET dismissed_at = ?, dismissed_by = ?"
+                " WHERE key = ? AND dismissed_at IS NULL",
+                (_now(), by, key),
+            )
+            if cur.rowcount:
+                self._event("candidate_dismissed", {"key": key, "by": by})
             self._db.commit()
         return bool(cur.rowcount)
 

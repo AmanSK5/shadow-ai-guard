@@ -466,7 +466,7 @@ app = FastAPI(title="ai-guard-receiver", version=APP_VERSION)
 # healthz is a probe target and metrics carries only bounded label values.
 # _PROTECTED takes the shared token or, in managed mode, a device credential;
 # _MANAGED exists only in managed mode, with its own credentials.
-_PROTECTED = ("/report", "/flag", "/registry")
+_PROTECTED = ("/report", "/flag", "/registry", "/candidates")
 _MANAGED = ("/enroll", "/admin")
 
 # The two doors into admin auth. Exempt from the admin gate - they are how a
@@ -1326,6 +1326,109 @@ def put_registry_entries(req: RegistryEntriesUpdate,
         STATE.delete_registry_entry(tid, by)
     _refresh_domain_map()
     return get_registry_entries(authorization)
+
+
+# ------------------------------------------------------------- candidates --
+# Tools the estate observed that nobody has defined. The discovery service
+# posts its classified DNS residue here (it used to open a GitLab merge
+# request - the queue in the portal replaces the queue in a forge), and the
+# human gate is unchanged: a candidate detects nothing until someone turns
+# it into a registry entry, or dismisses it. The poster authenticates like
+# any reporting source, but the receiver validates every field itself -
+# a scanner credential must not become a way to put arbitrary text in
+# front of an admin who is one click from adding it to the registry.
+
+_CANDIDATE_KINDS = ("domain", "mcp_server")
+# The same shape discovery enforces on classifier output, enforced again
+# here because the receiver cannot know its caller ran that code.
+_CANDIDATE_TEXT = re.compile(r"^[\w .,'&()/+-]{1,80}$")
+_CANDIDATE_DOMAIN = re.compile(r"^[a-z0-9.-]{1,253}$")
+_CANDIDATE_CONFIDENCES = ("", "high", "medium", "low")
+
+
+class CandidateIn(BaseModel):
+    model_config = {"extra": "forbid"}
+    kind: str = Field(default="domain", max_length=16)
+    name: str = Field(min_length=1, max_length=80)
+    vendor: str = Field(default="", max_length=80)
+    category: str = Field(default="", max_length=40)
+    confidence: str = Field(default="", max_length=8)
+    domains: list[str] = Field(default_factory=list, max_length=20)
+    devices: int = Field(default=0, ge=0, le=1_000_000)
+    evidence: str = Field(default="", max_length=500)
+
+
+class CandidatesPost(BaseModel):
+    model_config = {"extra": "forbid"}
+    candidates: list[CandidateIn] = Field(default_factory=list, max_length=100)
+
+
+def _candidate_key(kind: str, name: str) -> str:
+    """The stored identity: kind plus the slugified name, computed here and
+    never taken from the caller, so one product cannot occupy two rows by
+    varying its capitalisation and a key is always safe in a URL path."""
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "unknown"
+    return "%s:%s" % (kind, slug[:80])
+
+
+@app.post("/candidates")
+def post_candidates(req: CandidatesPost, request: Request,
+                    authorization: str = Header(default="")):
+    if STATE is None:
+        raise HTTPException(404, "Not Found")
+    _auth(authorization)
+    _touch_device(request)
+    device = getattr(request.state, "device", None)
+    source = device["serial"] if device else "shared-token"
+
+    accepted = 0
+    for c in req.candidates:
+        if c.kind not in _CANDIDATE_KINDS:
+            raise HTTPException(422, "unknown candidate kind: %s" % c.kind[:16])
+        for field in ("name", "vendor", "category"):
+            v = getattr(c, field)
+            if v and not _CANDIDATE_TEXT.match(v):
+                raise HTTPException(
+                    422, "%s is not a plain product name: %s" % (field, v[:60]))
+        if c.confidence not in _CANDIDATE_CONFIDENCES:
+            raise HTTPException(422, "bad confidence: %s" % c.confidence[:8])
+        for d in c.domains:
+            if not _CANDIDATE_DOMAIN.match(d):
+                raise HTTPException(422, "bad domain: %s" % d[:60])
+        STATE.upsert_candidate(
+            _candidate_key(c.kind, c.name), c.kind, c.name, c.vendor,
+            c.category, c.confidence, sorted(set(c.domains)), c.devices,
+            c.evidence, source)
+        accepted += 1
+    return {"accepted": accepted}
+
+
+@app.get("/admin/candidates")
+def get_candidates(authorization: str = Header(default="")):
+    """Every candidate, each flagged resolved once the merged registry
+    claims one of its domains - the row's question has been answered by an
+    entry, and the portal hides it rather than asking again."""
+    _admin_auth(authorization)
+    # The merged view when the shipped file is readable; the portal-defined
+    # entries alone when it is not. An unreadable shipped registry must not
+    # un-resolve every candidate an operator already answered with an entry.
+    reg = _merged_registry()
+    tools = reg.get("tools", []) if reg else STATE.registry_entry_values()
+    claimed = {d for t in tools for d in t.get("domains", [])}
+    out = STATE.list_candidates()
+    for c in out:
+        c["resolved"] = any(d in claimed for d in c["domains"])
+    return {"candidates": out}
+
+
+@app.post("/admin/candidates/{key}/dismiss")
+def dismiss_candidate(key: str, authorization: str = Header(default="")):
+    _admin_auth(authorization)
+    if not re.fullmatch(r"[a-z0-9_:-]{1,100}", key):
+        raise HTTPException(422, "malformed candidate key")
+    if not STATE.dismiss_candidate(key, _admin_actor(authorization)):
+        raise HTTPException(404, "no undismissed candidate with that key")
+    return {"dismissed": key}
 
 
 @app.get("/admin/governance")
