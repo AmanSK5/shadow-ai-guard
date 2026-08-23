@@ -403,7 +403,6 @@ jobs:
           cp .env.example .env
           mkdir -p secrets
           openssl rand -hex 32 > secrets/auth_token
-          openssl rand -hex 24 > secrets/portal_password
           # Both images run as uid 65532 and a Linux bind mount preserves
           # ownership, so 600 owned by the runner is a file the container
           # cannot read - it exits at startup rather than running with an
@@ -484,32 +483,55 @@ jobs:
             echo "::error::a wrong token was not refused ($code)"; exit 1
           fi
 
-      - name: the portal requires authentication
+      - name: the portal is in login mode and gates its data APIs
         working-directory: deploy/compose
         run: |
           for _ in $(seq 1 30); do
             curl -s -o /dev/null http://127.0.0.1:8091/healthz && break
             sleep 2
           done
+          # Managed mode: the shell is open (it has to load for the login
+          # screen to exist) and every data API is gated.
           code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8091/)
           if [ "$code" = "000" ]; then
             echo "::error::the portal never became reachable"
             docker compose --profile with-logs logs portal
             exit 1
           fi
+          if [ "$code" != "200" ]; then
+            echo "::error::the login shell did not load ($code)"; exit 1
+          fi
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8091/api/config)
           if [ "$code" != "401" ]; then
-            echo "::error::the portal served its UI without credentials ($code)"; exit 1
+            echo "::error::a data API answered without a session ($code)"; exit 1
+          fi
+
+      - name: the boot-printed setup code becomes the admin account
+        working-directory: deploy/compose
+        run: |
+          code=$(docker compose logs receiver | grep -o 'aigs_[A-Za-z0-9_-]*' | head -1)
+          if [ -z "$code" ]; then
+            echo "::error::no setup code in the receiver log"
+            docker compose logs receiver; exit 1
+          fi
+          status=$(curl -s -o /tmp/setup.json -w '%{http_code}' -c /tmp/jar \
+            -X POST -H 'Content-Type: application/json' \
+            -d "{\"setup_code\":\"$code\",\"username\":\"ci-admin\",\"password\":\"ci-password-long-enough\"}" \
+            http://127.0.0.1:8091/api/setup)
+          if [ "$status" != "200" ]; then
+            echo "::error::setup was refused ($status)"; cat /tmp/setup.json; exit 1
           fi
 
       - name: the finding comes back out of the portal as an entity
         working-directory: deploy/compose
         run: |
-          pw=$(cat secrets/portal_password)
-          # Loki ingests asynchronously, so retry rather than sleeping once and
-          # hoping. A failure here means the whole chain is broken, not that it
-          # was slow.
+          # On the session the setup step minted - the managed default has
+          # no basic auth to fall back to, which is the point.
+          # Loki ingests asynchronously, so retry rather than sleeping once
+          # and hoping. A failure here means the whole chain is broken, not
+          # that it was slow.
           for _ in $(seq 1 30); do
-            body=$(curl -s -u "admin:$pw" 'http://127.0.0.1:8091/api/graph?hours=1' || true)
+            body=$(curl -s -b /tmp/jar 'http://127.0.0.1:8091/api/graph?hours=1' || true)
             echo "$body" | grep -q 'CI-DEVICE' && break
             sleep 2
           done
