@@ -189,6 +189,11 @@ let SETTINGS = null;
 let GOVEDIT = null, GOVPRE = null, GOVERR = '';
 // One-line outcome of the last Settings action ("saved", or a refusal).
 let SETMSG = '';
+// The wizard's second fetches: the registry watchlist and the recorded
+// decisions, so the governance baseline shows what stands. Owner and
+// review date survive the re-render each decision causes, or the second
+// approval would silently carry an empty owner.
+let REGTOOLS = null, GOVDECS = null, WIZOWNER = '', WIZREVIEW = '';
 let S = null, CFG = {}, loadError = '';
 // What /api/auth said: {mode, authenticated, username, setup_needed}.
 // The session itself is an HttpOnly cookie this script can never read -
@@ -216,6 +221,7 @@ function showLogin(msg) {
   // minted it: signing out and back in would show the plaintext again.
   MINTED = null; FLEET = null; TOKENS = null; SETTINGS = null;
   GOVEDIT = null; GOVPRE = null; GOVERR = ''; SETMSG = '';
+  REGTOOLS = null; GOVDECS = null;
   chrome(false);
   const create = AUTH && AUTH.setup_needed;
   app.innerHTML = `<div style="max-width:440px;margin:8vh auto 0">
@@ -263,7 +269,7 @@ async function load(force) {
   const q = force ? '?refresh=true' : '';
   // Refresh must clear the views that read a second endpoint too, or the
   // button refreshes some of the page and silently not the rest.
-  if (force) { DIAG = null; REG = null; EV = null; PG = null; FLEET = null; TOKENS = null; SETTINGS = null; }
+  if (force) { DIAG = null; REG = null; EV = null; PG = null; FLEET = null; TOKENS = null; SETTINGS = null; REGTOOLS = null; GOVDECS = null; }
   try {
     const cr = await fetch('/api/config');
     if (cr.status === 401 && AUTH && AUTH.mode === 'login') { sessionLost(); return; }
@@ -280,6 +286,21 @@ async function load(force) {
     loadError = '';
   } catch (e) {
     loadError = String(e.message || e);
+  }
+  // First run: a managed deployment that has never finished onboarding
+  // opens on the wizard - unless the operator navigated somewhere on
+  // purpose, because a wizard that traps is worse than none.
+  if (CFG.managed && CFG.managed.enabled && AUTH && AUTH.mode === 'login') {
+    if (!SETTINGS) {
+      const wr = await mfetch('/api/settings');
+      if (wr.ok) SETTINGS = await wr.json();
+    }
+    const done = SETTINGS && SETTINGS.settings
+      && SETTINGS.settings.onboarding_done.value;
+    if (SETTINGS && !done && (!location.hash || location.hash === '#wizard')) {
+      view = 'wizard';
+      history.replaceState(null, '', '#wizard');
+    }
   }
   render();
   showFreshness();
@@ -326,7 +347,9 @@ const NAV = [
 // #register was missing from it: the nav entry worked, the view rendered, and
 // reloading the page silently sent you back to setup because the fragment was
 // not recognised. Two lists that must agree, with nothing enforcing it.
-const VIEWS = NAV.flatMap(sec => sec.items.map(([id]) => id));
+// 'wizard' is reachable by fragment but absent from the nav: it is a door
+// you walk through once, not a place to live.
+const VIEWS = NAV.flatMap(sec => sec.items.map(([id]) => id)).concat(['wizard']);
 const fromHash = () => {
   const h = (location.hash || '').replace(/^#/, '');
   return VIEWS.includes(h) ? h : 'setup';
@@ -1075,6 +1098,105 @@ async function iso() {
   <a href="/api/evidence?download=true" style="color:var(--pri)">Download JSON</a></p>`;
 }
 
+// The first-run wizard: everything a fresh managed install needs, in
+// order, on one page. Every step is skippable and everything here is
+// editable later (Settings, and the register's edit controls); Finish just
+// records that onboarding happened so the portal stops opening here.
+async function wizard() {
+  if (!CFG.managed || !CFG.managed.enabled) return managedGate('Setup wizard')
+    || '<h2>Setup wizard</h2>';
+  if (!REGTOOLS) {
+    const r = await mfetch('/api/registry-tools');
+    if (!r.ok) { if (r.status === 401) { sessionLost(); return ''; } REGTOOLS = []; }
+    else REGTOOLS = (await r.json()).tools || [];
+  }
+  if (!GOVDECS) {
+    const r = await mfetch('/api/governance-decisions');
+    GOVDECS = r.ok ? (await r.json()).decisions || [] : [];
+  }
+  const s = (SETTINGS && SETTINGS.settings) || {};
+  const cd = s.corp_domains || {value: [], source: 'unset'};
+  const eid = (s.extension_id || {}).value || '';
+  const decided = {};
+  GOVDECS.forEach(d => { decided[d.tool_id] = d.status; });
+  const yearOut = new Date(Date.now() + 365 * 86400000).toISOString().slice(0, 10);
+  const LABEL = {approved: ['approved', 'p-ok'],
+                 not_approved: ['not approved', 'p-warn']};
+
+  const toolRow = t => {
+    const d = decided[t.id];
+    const state = d && LABEL[d]
+      ? `<span class="pill ${LABEL[d][1]}">${LABEL[d][0]}</span>`
+      : d ? `<span class="pill p-acc">${esc(d)}</span>`
+      : '<span class="none">no decision</span>';
+    return `<tr><td>${esc(t.name)}</td>
+      <td style="color:var(--mut)">${esc(t.vendor)}</td>
+      <td>${state}</td>
+      <td><button class="mini" data-act="wiz-approve" data-key="${esc(t.id)}">approve</button>
+          <button class="mini" data-act="wiz-notapprove" data-key="${esc(t.id)}">not approved</button></td>
+    </tr>`;
+  };
+
+  return `<h2>Welcome — set up your deployment</h2>
+  <p class="lede">Four steps, all optional, all editable later. What you set
+  here is stored centrally and reaches the fleet at runtime; nothing needs a
+  redeploy afterwards.</p>
+  ${SETMSG ? `<div class="note">${esc(SETMSG)}</div>` : ''}
+
+  <div class="wcard" style="margin-bottom:10px"><h3>1 · Corporate domains</h3>
+  <p class="lede" style="margin-bottom:10px">Accounts on these domains are
+  work accounts; everything else reads as personal. Served to the collectors
+  on every check-in.</p>
+  <input id="set-domains" class="mfield" style="min-width:340px"
+    placeholder="example.com, example.co.uk"
+    value="${esc((cd.value || []).join(', '))}">
+  <button class="mini" data-act="save-domains">save</button></div>
+
+  <div class="wcard" style="margin-bottom:10px"><h3>2 · Governance baseline</h3>
+  <p class="lede" style="margin-bottom:10px">What your organisation has
+  decided about the tools the registry watches for. Touch only the ones you
+  have a position on - the rest stay undecided, which is the honest state.
+  Approvals carry the review date below; refine any decision later on the
+  AI register.</p>
+  ${GOVERR ? `<div class="note">${esc(GOVERR)}</div>` : ''}
+  <div style="margin-bottom:10px">
+    <input id="wiz-owner" class="mfield" value="${esc(WIZOWNER)}"
+      placeholder="owner for these decisions, e.g. Security">
+    <input id="wiz-review" class="mfield" style="min-width:170px"
+      value="${esc(WIZREVIEW || yearOut)}" title="review due date for approvals">
+  </div>
+  <table><tr><th>tool</th><th>vendor</th><th>decision</th><th></th></tr>
+  ${REGTOOLS.map(toolRow).join('')}</table></div>
+
+  <div class="wcard" style="margin-bottom:10px"><h3>3 · Browser extension ID</h3>
+  <p class="lede" style="margin-bottom:10px">The packed extension's 32-letter
+  id (extension/README.md shows how to derive it). It unlocks the
+  pre-configured policy download below.</p>
+  <input id="set-extid" class="mfield" style="min-width:340px"
+    placeholder="the browser extension's ID" value="${esc(eid)}">
+  <button class="mini" data-act="save-extid">save</button></div>
+
+  <div class="wcard" style="margin-bottom:10px"><h3>4 · Deployment downloads</h3>
+  <p class="lede" style="margin-bottom:10px">Each download mints its own
+  enrollment token (revocable on its own under Enrollment tokens) and bakes
+  the receiver URL, so what you upload to the MDM works as-is. Machines
+  enroll themselves and appear under Fleet.</p>
+  ${CFG.managed.artifacts_ready ? `<div style="display:flex;gap:8px;flex-wrap:wrap">
+    <button class="mini" data-act="artifact" data-key="collector-macos">macOS collector</button>
+    <button class="mini" data-act="artifact" data-key="collector-linux">Linux collector</button>
+    <button class="mini" data-act="artifact" data-key="collector-windows">Windows collector</button>
+    <button class="mini" data-act="artifact" data-key="extension-policy">extension policy${eid ? '' : ' (needs step 3)'}</button>
+    <button class="mini" data-act="artifact" data-key="scanner-cronjob">scanner CronJob</button>
+  </div>` : `<div class="note">RECEIVER_PUBLIC_URL is not set, so downloads
+  cannot bake a URL agents can reach; set it and these appear.</div>`}</div>
+
+  <div style="margin:18px 0">
+    <button class="mini" style="padding:8px 18px" data-act="wiz-finish">Finish setup</button>
+    <span class="src-note" style="margin-left:10px">Opens the Setup view;
+    everything above stays editable under Settings and the AI register.</span>
+  </div>`;
+}
+
 // The editable deployment settings, managed mode only: what the receiver
 // stores centrally and serves to the fleet at runtime. Everything below it
 // in the Settings view stays the read-only diagnostics it always was.
@@ -1239,7 +1361,7 @@ function setup() {
           ${esc(r.needs || '')}
           <br><span class="mono" style="font-size:11px">${esc(r.doc)}</span></div>`}
         ${r.artifact && CFG.managed && CFG.managed.artifacts_ready ? `<div style="margin-top:6px">
-          <button class="mini" data-act="artifact" data-key="${esc(r.artifact)}">Download pre-configured script</button></div>` : ''}</td>
+          <button class="mini" data-act="artifact" data-key="${esc(r.artifact)}">Download pre-configured artifact</button></div>` : ''}</td>
       <td>${r.reporting ? '<span class="pill p-ok">reporting</span>'
                         : '<span class="pill p-mut">not reporting</span>'}</td>
       <td>${r.findings || '—'}</td><td>${r.devices || '—'}</td>
@@ -1470,6 +1592,39 @@ async function managedAction(act, el) {
     }
     return;
   }
+  if (act === 'wiz-approve' || act === 'wiz-notapprove') {
+    const id = el.getAttribute('data-key');
+    const approve = act === 'wiz-approve';
+    WIZOWNER = _val('wiz-owner'); WIZREVIEW = _val('wiz-review');
+    const r = await mfetch('/api/governance-decisions', {method: 'POST',
+      body: JSON.stringify({decisions: [{
+        tool_id: id,
+        status: approve ? 'approved' : 'not_approved',
+        owner: _val('wiz-owner'),
+        review_due: approve ? _val('wiz-review') : '',
+        reason: 'onboarding baseline',
+      }]})});
+    if (r.ok) { GOVDECS = (await r.json()).decisions || []; GOVERR = ''; REG = null; EV = null; }
+    else {
+      if (r.status === 401) { sessionLost(); return; }
+      let d = r.statusText; try { d = (await r.json()).detail || d; } catch (e) {}
+      GOVERR = typeof d === 'string' ? d : 'Check the review date: YYYY-MM-DD.';
+    }
+    render(); return;
+  }
+  if (act === 'wiz-finish') {
+    const r = await mfetch('/api/settings', {method: 'POST',
+      body: JSON.stringify({onboarding_done: true})});
+    if (!r.ok) {
+      if (r.status === 401) { sessionLost(); return; }
+      let d = r.statusText; try { d = (await r.json()).detail || d; } catch (e) {}
+      SETMSG = 'Could not finish: ' + d; render(); return;
+    }
+    SETTINGS = await r.json(); SETMSG = '';
+    view = 'setup'; detail = null;
+    history.replaceState(null, '', '#setup');
+    drawNav(); render(); return;
+  }
   if (act === 'gov-edit') {
     const id = el.getAttribute('data-key');
     GOVPRE = null; GOVERR = '';
@@ -1640,6 +1795,7 @@ async function render() {
   if (view === 'iso') { app.innerHTML = await iso(); return; }
   if (view === 'fleet') { app.innerHTML = await fleet(); return; }
   if (view === 'tokens') { app.innerHTML = await tokens(); return; }
+  if (view === 'wizard') { app.innerHTML = await wizard(); return; }
   app.innerHTML = ({setup, overview, devices, people, tools, coverage,
                     dashboard, personal, mcp})[view]();
 }
