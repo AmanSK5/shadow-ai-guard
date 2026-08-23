@@ -119,6 +119,13 @@ CREATE TABLE IF NOT EXISTS governance_decisions (
   updated_at TEXT NOT NULL,
   updated_by TEXT NOT NULL DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS registry_entries (
+  tool_id    TEXT PRIMARY KEY,
+  entry      TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL DEFAULT ''
+);
 """
 
 # Columns added after the first release, applied to databases that predate
@@ -558,6 +565,57 @@ class State:
                 "DELETE FROM governance_decisions WHERE tool_id = ?", (tool_id,))
             if cur.rowcount:
                 self._event("decision_cleared", {"tool": tool_id, "by": by})
+            self._db.commit()
+        return bool(cur.rowcount)
+
+    # -------------------------------------- custom registry (managed) --
+    # Portal-defined tools, the same shape as a shipped registry entry.
+    # Stored as validated JSON (main.py owns validation - schema plus the
+    # registry build's own rules) and merged into what /registry and
+    # /registry/collector serve, so a tool defined in the portal is a tool
+    # the fleet detects on its next check-in.
+
+    def list_registry_entries(self) -> list[dict]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT tool_id, entry, created_at, updated_at, updated_by"
+                " FROM registry_entries ORDER BY tool_id"
+            ).fetchall()
+        return [{"tool_id": r["tool_id"], "entry": json.loads(r["entry"]),
+                 "created_at": r["created_at"], "updated_at": r["updated_at"],
+                 "updated_by": r["updated_by"]} for r in rows]
+
+    def registry_entry_values(self) -> list[dict]:
+        """Just the entries themselves, for the serving merge."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT entry FROM registry_entries ORDER BY tool_id"
+            ).fetchall()
+        return [json.loads(r["entry"]) for r in rows]
+
+    def upsert_registry_entry(self, tool_id: str, entry: dict, by: str = ""):
+        now = _now()
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO registry_entries"
+                " (tool_id, entry, created_at, updated_at, updated_by)"
+                " VALUES (?, ?, ?, ?, ?)"
+                " ON CONFLICT(tool_id) DO UPDATE SET entry = excluded.entry,"
+                " updated_at = excluded.updated_at,"
+                " updated_by = excluded.updated_by",
+                (tool_id, json.dumps(entry), now, now, by),
+            )
+            # The id and who, not the entry: identifiers are not secret,
+            # but the event log's rule is ids only and it stays one rule.
+            self._event("registry_entry_saved", {"tool": tool_id, "by": by})
+            self._db.commit()
+
+    def delete_registry_entry(self, tool_id: str, by: str = "") -> bool:
+        with self._lock:
+            cur = self._db.execute(
+                "DELETE FROM registry_entries WHERE tool_id = ?", (tool_id,))
+            if cur.rowcount:
+                self._event("registry_entry_deleted", {"tool": tool_id, "by": by})
             self._db.commit()
         return bool(cur.rowcount)
 

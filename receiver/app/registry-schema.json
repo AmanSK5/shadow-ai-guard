@@ -1,0 +1,280 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ai-guard AI service registry",
+  "type": "object",
+  "required": [
+    "version",
+    "tools"
+  ],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "tools": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "vendor",
+          "category",
+          "approved"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*$",
+            "description": "Stable slug used as the tool label everywhere (extension, collector, scanner, Loki, metrics)."
+          },
+          "name": {
+            "type": "string"
+          },
+          "vendor": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "assistant",
+              "coding",
+              "transcription",
+              "writing",
+              "image",
+              "search",
+              "local-model",
+              "voice",
+              "productivity",
+              "platform",
+              "agent",
+              "other",
+              "unreviewed"
+            ]
+          },
+          "approved": {
+            "type": "boolean",
+            "description": "true = sanctioned in your organisation. Records a governance position and does not affect finding severity: severity depends on the account domain, not on approval."
+          },
+          "notes": {
+            "type": "string"
+          },
+          "added_by": {
+            "type": "string",
+            "description": "manual | feed:<name> | discovery"
+          },
+          "domains": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9.-]+$"
+            },
+            "description": "eTLD+1 or subdomain, no scheme, no path. Consumed by extension, S1 scanner, discovery diff."
+          },
+          "login_selector": {
+            "type": "string",
+            "description": "Optional CSS selector hint for the extension to locate the account email in the DOM."
+          },
+          "bundle_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "macOS app bundle IDs (Jamf/collector) e.g. com.anthropic.claudefordesktop"
+          },
+          "app_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "macOS .app names and Windows display names for inventory matching."
+          },
+          "extension_ids": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "vscode": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "chrome": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "jetbrains": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "edge": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "cli": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "config_paths": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/relativePath"
+                },
+                "description": "Paths relative to $HOME that indicate the tool is present."
+              },
+              "account_json_path": {
+                "$ref": "#/$defs/relativePath",
+                "description": "File holding the account identity, if the tool stores one."
+              },
+              "account_json_keys": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Key path within account_json_path to the email, e.g. [\"oauthAccount\",\"emailAddress\"]."
+              },
+              "binaries": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "account_jwt_path": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Key path within account_json_path to a JWT string, e.g. [\"tokens\",\"id_token\"]. Use instead of account_json_keys when the tool stores the identity inside a token rather than a plain field."
+              },
+              "account_jwt_claim": {
+                "type": "string",
+                "description": "Claim inside the decoded JWT payload holding the email, e.g. \"email\"."
+              }
+            }
+          },
+          "mcp_config_paths": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/relativePath"
+            },
+            "description": "MCP config paths valid on any OS, relative to the user's home. Use the _macos/_windows variants when the location differs per platform."
+          },
+          "email_senders": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Signup/verification sender domains for the Exchange scanner."
+          },
+          "risk_tier": {
+            "type": "string",
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ],
+            "description": "Default risk assessment. Carried from the CLI registry; used to prioritise triage, not to gate alerts."
+          },
+          "entra_app_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Entra ID application/client IDs, matched against sign-in logs by the Entra scanner."
+          },
+          "exe_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Windows executable names for Intune inventory matching."
+          },
+          "mcp_identifiers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "MCP server names/slugs this tool exposes or connects as."
+          },
+          "mcp_config_paths_macos": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/relativePath"
+            },
+            "description": "MCP config paths that exist only on macOS, relative to $HOME."
+          },
+          "mcp_config_paths_linux": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/relativePath"
+            },
+            "description": "MCP config paths that exist only on Linux, relative to $HOME."
+          },
+          "mcp_config_paths_windows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/relativePath"
+            },
+            "description": "MCP config paths that exist only on Windows, relative to the user profile."
+          }
+        }
+      }
+    },
+    "bridge_targets": {
+      "type": "array",
+      "description": "SaaS services that should only be reached by browsers. A non-browser process connecting indicates an MCP bridge or API-token integration.",
+      "items": {
+        "type": "object",
+        "required": [
+          "name",
+          "domains"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "domains": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "notes": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "allowed_processes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Processes that legitimately reach bridge targets: browsers, native SaaS apps, system daemons. Anything else triggers a bridge finding."
+    },
+    "discover_exclude_domains": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Domains that match AI keywords but are not AI services. Filtered out by the discovery job."
+    }
+  },
+  "$defs": {
+    "relativePath": {
+      "type": "string",
+      "pattern": "^(?!.*\\.\\.)(?![/\\\\])(?![A-Za-z]:)[^\\u0000-\\u001f]{1,256}$",
+      "description": "A path relative to the user's home directory. The collectors run as root or SYSTEM and join these to a home directory before reading them, so absolute paths, drive letters, parent traversal and control characters are refused here rather than trusted there."
+    }
+  }
+}
