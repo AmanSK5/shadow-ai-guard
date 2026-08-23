@@ -1,0 +1,28 @@
+# Classic mode overlay: the file-and-environment deployment, exactly as it
+# was before managed mode became the default.
+#
+#   - no server-side state: the receiver keeps no database, nothing to back up
+#   - configuration is env vars and files (governance.yaml, the registry from
+#     your checkout), reviewable in whatever repo holds them
+#   - the portal uses basic auth (PORTAL_USER / secrets/portal_password)
+#   - one shared bearer token for every source, rotated by redeploying it
+#
+#     openssl rand -hex 24 > secrets/portal_password
+#     docker compose -f docker-compose.yml -f docker-compose.classic.yml up -d
+#
+# LOKI_URL is required in this mode (set it in .env): there is no portal
+# wizard to configure the log store at runtime.
+
+services:
+  receiver:
+    environment:
+      MANAGED_MODE: "false"
+
+  portal:
+    environment:
+      # Empty switches the portal out of login mode; basic auth takes over.
+      RECEIVER_URL: ""
+      PORTAL_USER: ${PORTAL_USER:-admin}
+      PORTAL_PASSWORD_FILE: /run/secrets/portal_password
+    volumes:
+      - ./secrets/portal_password:/run/secrets/portal_password:ro

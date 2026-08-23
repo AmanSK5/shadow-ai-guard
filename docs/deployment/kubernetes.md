@@ -17,16 +17,16 @@ If you have no cluster, you do not need one: see [the routes](README.md).
   network, so the receiver has to be reachable, with TLS and a real
   certificate.
 
-## The short way: managed mode
+## The short way: managed mode (the default)
 
 One command, no clone - the chart is published as an OCI artifact beside the
-images. Only what creates cluster objects goes on the command line (the
-ingresses); everything else is configured in the portal afterwards:
+images, and managed mode is the default since 0.9.9. Only what creates
+cluster objects goes on the command line (the ingresses); everything else is
+configured in the portal afterwards:
 
 ```bash
 helm install ai-guard oci://ghcr.io/amansk5/shadow-ai-guard/charts/ai-guard \
   --namespace ai-guard --create-namespace \
-  --set managed.enabled=true \
   --set ingress.enabled=true \
   --set ingress.host=ai-guard.example.com \
   --set portal.ingress.enabled=true \
@@ -54,12 +54,15 @@ file, and everything the wizard sets is editable later under Settings.
 
 ## The short way: classic mode
 
-The same install without managed mode is entirely environment-driven, as it
-always was:
+The file-and-environment deployment, for teams that want configuration in a
+repo rather than a portal: no server-side state, governance and the registry
+as reviewable files, basic auth (or your ingress's SSO). Set
+`managed.enabled=false` and configure by values, as it always worked:
 
 ```bash
 helm install ai-guard oci://ghcr.io/amansk5/shadow-ai-guard/charts/ai-guard \
   --namespace ai-guard --create-namespace \
+  --set managed.enabled=false \
   --set loki.pushUrl=http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push \
   --set portal.lokiUrl=http://loki.monitoring.svc.cluster.local:3100 \
   --set ingress.enabled=true \

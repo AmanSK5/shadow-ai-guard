@@ -42,7 +42,8 @@ should accept before deploying:
   detect.
 - Compromise of one endpoint reveals the same token every endpoint uses.
 
-If that is unacceptable in your threat model, enable managed mode: the
+If that is unacceptable in your threat model, use managed mode (the
+default since 0.9.9): the
 endpoint collectors then enroll for per-device credentials, one machine can
 be revoked without touching any other, and an enrollment token in an MDM
 artifact can create auditable device records but never submit findings. The

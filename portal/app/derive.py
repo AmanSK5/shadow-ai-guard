@@ -825,7 +825,10 @@ def status_from(findings):
          "with a work email outside SSO, which disabling Entra does not close."),
         ("fleet", "jamf_app", "Jamf applications", "scanner/README.md",
          "A Jamf Pro API client with read access to computer inventory. Set "
-         "AIGUARD_JAMF_URL, _CLIENT_ID and _CLIENT_SECRET."),
+         "AIGUARD_JAMF_URL, _CLIENT_ID and _CLIENT_SECRET. Jamf is the "
+         "reference implementation of this surface - on Kandji, Addigy or "
+         "another MDM, any source that emits the finding shape fills this "
+         "row; see docs/writing-a-scanner.md."),
         ("fleet", "jamf_extension", "Jamf browser extensions", "scanner/README.md",
          "Same Jamf credentials. Reports AI browser extensions from inventory."),
         ("fleet", "intune_app", "Intune applications", "scanner/README.md",
@@ -836,7 +839,10 @@ def status_from(findings):
          "Same Intune permissions. Not yet emitted by any scanner."),
         ("network", "sentinelone_dns", "SentinelOne DNS", "scanner/README.md",
          "A SentinelOne API token with Deep Visibility read access. Set "
-         "AIGUARD_S1_URL and AIGUARD_S1_TOKEN."),
+         "AIGUARD_S1_URL and AIGUARD_S1_TOKEN. SentinelOne is the reference "
+         "implementation of the network surface - a dedicated DNS or "
+         "network-security service works the same way: any source emitting "
+         "the finding shape fills this row; see docs/writing-a-scanner.md."),
         ("network", "sentinelone_network", "SentinelOne network", "scanner/README.md",
          "Same SentinelOne token. Catches local process bridges that never "
          "touch a browser."),
