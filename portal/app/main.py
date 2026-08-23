@@ -1317,25 +1317,28 @@ def api_governance_write(req: GovernanceWrite, _=Depends(require_auth),
     return out
 
 
-class UrlProbe(BaseModel):
-    url: str = Field(min_length=1, max_length=500)
-
-
 @app.post("/api/test/receiver-url")
-def test_receiver_url(req: UrlProbe, _=Depends(require_auth),
+def test_receiver_url(_=Depends(require_auth),
                       token: str = Depends(_admin_forward)):
-    """Probe a candidate public receiver URL before an artifact bakes it.
+    """Probe the EFFECTIVE public receiver URL - the saved setting, else
+    the deployment's env value - before an artifact bakes it.
 
-    Server-side on purpose - the browser's CSP keeps it on 'self', and the
+    Server-side on purpose: the browser's CSP keeps it on 'self', and the
     point is to catch the URL that LOOKS right in a browser on this machine
-    and resolves nowhere else. Deliberately a requester-supplied URL: this
-    is a prober an admin aims, gated behind the admin session, restricted
-    to http(s), and it reads only /healthz - which returns nothing about
-    the estate even on the real receiver.
+    and resolves nowhere else. Deliberately not a requester-supplied URL,
+    matching the log-store tests: save first, then probe what was saved.
+    That is one more click in the wizard and one fewer route that fetches
+    whatever the request names.
     """
     import urllib.request as _urlreq
 
-    url = req.url.strip().rstrip("/")
+    stored = _receiver("GET", "/admin/settings", token).get("settings", {})
+    url = (((stored.get("receiver_public_url") or {}).get("value")
+            or RECEIVER_PUBLIC_URL) or "").strip().rstrip("/")
+    if not url:
+        raise HTTPException(
+            400, "no public receiver URL to probe: save one in Settings "
+                 "first (or set RECEIVER_PUBLIC_URL)")
     if not url.startswith(("http://", "https://")):
         raise HTTPException(422, "the URL must be http:// or https://")
     warnings = []
