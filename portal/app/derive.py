@@ -780,21 +780,27 @@ def status_from(findings):
     expected = [
         ("endpoint", "collector-macos", "macOS collector", "endpoint/macos/README.md",
          "Deploy ai-guard-collector.sh as a Jamf policy running as root on a "
-         "recurring check-in. Set AIGUARD_RECEIVER_BASE, AIGUARD_TOKEN and "
+         "recurring check-in. In managed mode, download the pre-configured "
+         "script below - receiver URL and enrollment token already baked. "
+         "Classically, set AIGUARD_RECEIVER_BASE, AIGUARD_TOKEN and "
          "AIGUARD_CORP_DOMAINS as script parameters."),
         ("endpoint", "collector-linux", "Linux collector", "endpoint/linux/README.md",
-         "Run ai-guard-collector.sh as root on a schedule: an RMM, a cron job "
-         "or a systemd timer. Same three environment variables as macOS."),
+         "Run ai-guard-collector.sh as root on a schedule: an RMM scheduled "
+         "job, cron, or a systemd timer. In managed mode the download below "
+         "is ready to paste in as-is; classically, same three environment "
+         "variables as macOS."),
         ("endpoint", "collector-windows", "Windows collector", "endpoint/windows/README.md",
-         "Deploy ai-guard-collector.ps1 as an Intune platform script. Same "
-         "three variables, set at the top of the script or as parameters."),
+         "Deploy ai-guard-collector.ps1 as an Intune platform script. In "
+         "managed mode the download below is upload-ready; classically, set "
+         "the same three variables at the top of the script."),
         ("browser", "browser_extension", "Browser extension: accounts",
          "extension/README.md",
-         "Push the extension by managed policy (Jamf for Chrome/Edge on macOS, "
-         "Intune ADMX on Windows) with the receiver URL and token in the "
-         "managed configuration - in managed mode an enrollment token, which "
-         "each browser profile exchanges once for its own credential. Reports "
-         "which account is signed into an AI tool in the browser."),
+         "Push the extension by managed policy (Jamf for Chrome/Edge on "
+         "macOS, the deploy script on Windows). In managed mode, download "
+         "the pre-configured managed-storage policy below - URL, enrollment "
+         "token and corporate domains baked; each browser profile exchanges "
+         "the token once for its own credential. Reports which account is "
+         "signed into an AI tool in the browser."),
         ("browser", "paste_guard", "Browser extension: paste guard",
          "extension/README.md",
          "Part of the same extension. Reports pastes it stopped or flagged, "

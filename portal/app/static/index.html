@@ -296,6 +296,11 @@ async function load(force) {
     // guard widget and a widget that fetches on render would flash empty.
     const pr = await fetch('/api/paste-guard' + q);
     if (pr.ok) PG = await pr.json();
+    // Same again for the review queue: it draws from the register.
+    if ((CFG.overview_widgets || []).some(w => w.kind === 'review_queue')) {
+      const rr = await fetch('/api/register' + q);
+      if (rr.ok) REG = await rr.json();
+    }
     loadError = '';
   } catch (e) {
     loadError = String(e.message || e);
@@ -482,6 +487,45 @@ const WIDGETS = {
            pasted nothing.`}</p></div>`;
   },
 
+  review_queue: () => {
+    // The queue that replaces a weekly review pipeline: observed tools no
+    // one has decided about. Recording the decision IS the acknowledgment,
+    // so an empty queue means exactly what it says. Not-in-registry rows
+    // first - they are the gap evidence - then newest first.
+    if (!REG || !REG.rows) return `<div class="wcard w6"><h3>Awaiting a decision</h3>
+      <p class="lede">No register data - open the AI register for the reason.</p></div>`;
+    const dayAgo = Date.now() - 86400000;
+    const isNew = r => r.first_seen && Date.parse(r.first_seen) > dayAgo;
+    const undecided = (REG.rows || [])
+      .filter(r => r.status_source !== 'governance' && r.status_source !== 'portal')
+      .sort((a, b) => ((a.in_registry ? 1 : 0) - (b.in_registry ? 1 : 0))
+        || ((Date.parse(b.first_seen || 0) || 0) - (Date.parse(a.first_seen || 0) || 0)));
+    if (!undecided.length) {
+      const ago = t => {
+        const m = Math.round((Date.now() - Date.parse(t)) / 60000);
+        return m < 90 ? m + 'm ago' : Math.round(m / 60) + 'h ago';
+      };
+      const srcs = ((S && S.groups) || []).flatMap(g => g.sources || [])
+        .filter(x => x.last_seen).sort((a, b) => a.last_seen < b.last_seen ? 1 : -1)
+        .slice(0, 2);
+      return `<div class="wcard w6"><h3>Awaiting a decision</h3>
+        <p class="lede">No new AI tools awaiting a decision.${srcs.length
+          ? ' Newest source data: ' + srcs.map(x =>
+              esc(x.label) + ' ' + ago(x.last_seen)).join(', ') + '.' : ''}</p></div>`;
+    }
+    return `<div class="wcard w6"><h3>Awaiting a decision
+      <span class="count">${undecided.length}</span></h3>
+    <table>${undecided.slice(0, 6).map(r => `<tr>
+      <td><a href="#register" style="color:var(--fg);text-decoration:none">${esc(r.name)}</a></td>
+      <td>${!r.in_registry ? '<span class="pill p-warn">not in registry</span>' : ''}
+          ${isNew(r) ? '<span class="pill p-acc">new today</span>' : ''}</td>
+      <td style="color:var(--mut)">${esc((r.first_seen || '').slice(0, 10))}</td>
+    </tr>`).join('')}</table>
+    <p class="src-note"><a href="#register" style="color:var(--pri)">Decide on
+    the AI register</a> - a decision is the acknowledgment, so deciding
+    clears the queue.</p></div>`;
+  },
+
   grafana: (w) => {
     const base = CFG.grafana_url;
     if (!base) return `<div class="wcard w4"><h3>${esc(w.ref)}</h3>
@@ -510,8 +554,8 @@ const WIDGETS = {
 };
 
 function overview() {
-  const ws = CFG.overview_widgets || [{kind:'stat_row'},{kind:'top_tools'},
-    {kind:'recent_personal_accounts'},{kind:'detection_coverage'}];
+  const ws = CFG.overview_widgets || [{kind:'stat_row'},{kind:'review_queue'},
+    {kind:'top_tools'},{kind:'recent_personal_accounts'},{kind:'detection_coverage'}];
   const stat = ws.filter(w => w.kind === 'stat_row');
   const rest = ws.filter(w => w.kind !== 'stat_row');
   return `<h2>Overview</h2>
@@ -971,6 +1015,13 @@ async function register() {
   }
   const rows = (REG.rows || []).filter(r =>
     match(r.name) || match(r.id) || match(r.vendor) || match(r.category));
+  // Queue order: undecided first (the register doubles as the review
+  // queue), keeping the server's exposure order within each half.
+  const _decided = r => (r.status_source === 'governance'
+    || r.status_source === 'portal') ? 1 : 0;
+  rows.sort((a, b) => _decided(a) - _decided(b));
+  const _newToday = r => r.first_seen
+    && Date.parse(r.first_seen) > Date.now() - 86400000;
 
   const win = REG.hours >= 24 ? Math.round(REG.hours / 24) + ' days'
                               : REG.hours + ' hours';
@@ -1132,7 +1183,8 @@ async function register() {
   ${rows.map(r => `<div class="card">
     <div class="card-top">
       <div style="min-width:0">
-        <div class="card-name">${esc(r.name)}</div>
+        <div class="card-name">${esc(r.name)}
+          ${_newToday(r) ? '<span class="pill p-acc">new today</span>' : ''}</div>
         <div class="card-meta">${r.vendor ? esc(r.vendor) + ' · ' : ''}${esc(r.id)}</div>
       </div>
       ${status(r)}
@@ -1716,6 +1768,13 @@ async function settings() {
   not set it leaves it empty rather than guessing.</p></div>`;
 }
 
+// Repo docs as real links, pinned to the release this portal runs - the
+// docs a reader lands on should match the version they run, and nobody
+// deploying from the OCI chart has a checkout to open files in.
+const docUrl = d => 'https://github.com/AmanSK5/shadow-ai-guard/blob/'
+  + (/^\d+\./.test(CFG.version || '') ? 'v' + CFG.version : 'main')
+  + '/' + d;
+
 function setup() {
   if (loadError) return `<h2>Setup</h2>
     <div class="note">Could not read findings: ${esc(loadError)}</div>
@@ -1746,7 +1805,9 @@ function setup() {
       <td>${esc(r.label)}<br><span class="mono" style="font-size:11px;color:var(--mut)">${esc(r.source)}</span>
         ${r.reporting ? '' : `<div style="margin-top:6px;font-family:inherit;font-size:12px;color:var(--mut);max-width:52ch;line-height:1.5">
           ${esc(r.needs || '')}
-          <br><span class="mono" style="font-size:11px">${esc(r.doc)}</span></div>`}
+          <br><a class="mono" style="font-size:11px;color:var(--acc)"
+            href="${esc(docUrl(r.doc))}" target="_blank"
+            rel="noopener noreferrer">${esc(r.doc)}</a></div>`}
         ${r.artifact && CFG.managed && CFG.managed.artifacts_ready ? `<div style="margin-top:6px">
           <button class="mini" data-act="artifact" data-key="${esc(r.artifact)}">Download pre-configured artifact</button></div>` : ''}</td>
       <td>${r.reporting ? '<span class="pill p-ok">reporting</span>'
