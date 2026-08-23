@@ -52,6 +52,16 @@ are reporting versus silent.
   It is running WITHOUT AUTHENTICATION (portal.auth.mode=none). It shows which
   people use which AI tools on which machines. Correct behind something that
   authenticates for it; wrong on anything reachable.
+{{- else if .Values.managed.enabled }}
+
+  Sign in with the admin account. On a fresh install none exists yet: the
+  receiver prints a one-time setup code to its log at every boot until one
+  does. Read it, then open the portal and create the account:
+
+    kubectl -n {{ .Release.Namespace }} logs deploy/{{ include "ai-guard.fullname" . }} | grep setup_code
+
+  Everything after that happens in the portal: corporate domains, enrollment
+  tokens, pre-configured collector downloads, the fleet.
 {{- else }}
 
   Log in as {{ .Values.portal.auth.username }}. Read the password:

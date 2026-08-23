@@ -3,30 +3,33 @@
 #
 # Classic deployments never touch this file. To enable managed mode:
 #
-#   1. Create the admin credential (mints and revokes enrollment tokens and
-#      devices - deliberately a separate secret from the shared token, which
-#      sits on every machine in the fleet):
-#        umask 077; openssl rand -base64 36 > secrets/admin_token
-#   2. Start with both files:
-#        docker compose -f docker-compose.yml -f docker-compose.managed.yml up -d
+#   docker compose -f docker-compose.yml -f docker-compose.managed.yml up -d
 #
-# Then mint an enrollment token and put it in your MDM in place of the shared
-# token, one platform at a time:
-#   curl -s -X POST -H "Authorization: Bearer $(cat secrets/admin_token)" \
-#     -H 'Content-Type: application/json' -d '{"note":"macos rollout"}' \
-#     http://127.0.0.1:8080/admin/enrollment-tokens
+# That is the whole server side. The portal now has a real login instead of
+# basic auth: on first boot no admin account exists, and the receiver prints
+# a one-time setup code to its log until one does. Read it, open the portal,
+# create the account:
+#
+#   docker compose logs receiver | grep setup_code
+#
+# Everything after that happens in the portal - enrollment tokens,
+# pre-configured collector downloads, the fleet, revocation.
 #
 # The state volume is the one thing in this deployment that is not
-# disposable: it holds the device registry and its credential hashes.
-# `docker compose down` leaves named volumes in place; only `down -v`
-# destroys it, which unenrolls the entire fleet.
+# disposable: it holds the device registry, the admin account and the
+# credential hashes. `docker compose down` leaves named volumes in place;
+# only `down -v` destroys it, which unenrolls the entire fleet.
 
 services:
   receiver:
     environment:
       MANAGED_MODE: "true"
-      ADMIN_TOKEN_FILE: /run/secrets/admin_token
       STATE_DB_PATH: /var/lib/ai-guard/state.db
+      # OPTIONAL: an API credential for /admin/* - automation, and
+      # break-glass recovery when the portal password is lost (set it, POST
+      # /admin/password with just {"new": ...}, unset it). Humans need the
+      # portal login, not this. Empty means it does not exist.
+      ADMIN_TOKEN: ${AIGUARD_ADMIN_TOKEN:-}
       # Once every collector, browser profile and scanner has enrolled, set
       # REQUIRE_DEVICE_CREDENTIALS=true in .env: the shared token is then
       # refused for ingest (with a 401 that says "enroll"), and only device
@@ -34,7 +37,6 @@ services:
       REQUIRE_DEVICE_CREDENTIALS: ${REQUIRE_DEVICE_CREDENTIALS:-false}
     volumes:
       - managed-state:/var/lib/ai-guard
-      - ./secrets/admin_token:/run/secrets/admin_token:ro
 
   portal:
     environment:
@@ -44,6 +46,10 @@ services:
       # URL, not a compose service name. Set it in .env.
       RECEIVER_URL: http://receiver:8080
       RECEIVER_PUBLIC_URL: ${RECEIVER_PUBLIC_URL:-}
+      # Managed mode replaces basic auth with the portal login, so the base
+      # file's pair is cleared rather than left to be ignored with a warning.
+      PORTAL_USER: ""
+      PORTAL_PASSWORD_FILE: ""
 
 volumes:
   managed-state:

@@ -132,17 +132,20 @@ Optional, all off by default:
   this list to their locally configured one, so a change here reaches the
   fleet on its next check-in with no MDM re-push per platform.
 - `managed.enabled` - device enrollment, per-device credentials and
-  revocation, backed by SQLite on a PVC. The chart generates an admin token
-  into `<release>-ai-guard-admin` on first install; read it back the same way
-  as the auth token. The portal gains a Managed section for this: enter that
-  admin token there to see the fleet, mint and revoke enrollment tokens, and
-  download pre-configured collector scripts from the Setup view - or drive
-  the same `/admin` API with curl. Enrollment tokens go wherever the shared
-  token goes today - collector parameters, the extension's managed policy,
-  the scanner Secret - one surface at a time; each enrolls and holds its own
-  credential. Once every surface has, `managed.requireDeviceCredentials:
-  true` turns the shared token off for ingest. See the receiver and portal
-  READMEs for the details.
+  revocation, backed by SQLite on a PVC. The portal gets a real login in
+  this mode: on first boot the receiver prints a one-time setup code to its
+  log (`kubectl logs deploy/<release>-ai-guard | grep setup_code` - NOTES
+  prints the exact command), and the portal's first screen turns it into
+  the admin account. From there the Managed section shows the fleet, mints
+  and revokes enrollment tokens, and downloads pre-configured collector
+  scripts from the Setup view. No admin secret is provisioned by default;
+  set `managed.adminToken.value` only if automation drives the `/admin` API
+  with curl, or as break-glass when the portal password is lost. Enrollment
+  tokens go wherever the shared token goes today - collector parameters,
+  the extension's managed policy, the scanner Secret - one surface at a
+  time; each enrolls and holds its own credential. Once every surface has,
+  `managed.requireDeviceCredentials: true` turns the shared token off for
+  ingest. See the receiver and portal READMEs for the details.
 
 Confirm it is up:
 
