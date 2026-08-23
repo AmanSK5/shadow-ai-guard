@@ -7,17 +7,22 @@ Weekly CronJob. Pipeline:
   2. Reduce to distinct eTLD+1 domains; drop anything already in the
      registry, in the allowlist, or below the device-count floor.
   3. Classify the residue with Claude ("is this an AI/LLM service?").
-  4. Open a GitLab MR appending candidates to registry.yaml with
-     category: unreviewed, approved: false, added_by: discovery.
+  4. Post candidates to the receiver's /candidates queue, where they wait
+     in the portal's review queue for a human to define or dismiss.
+     With GitLab configured, open an MR against registry.yaml instead -
+     the original emit path, kept for deployments whose registry review
+     lives in a forge.
 
-Human stays the approval gate: nothing enters detection until the MR merges.
+Human stays the approval gate either way: nothing enters detection until
+someone turns a candidate into a registry entry (or merges the MR).
 
 Env:
   S1_BASE_URL, S1_API_TOKEN
-  RECEIVER_URL, RECEIVER_TOKEN          (to fetch the live registry; the token
-                                         may be an enrollment token, aige_...,
-                                         from a managed-mode receiver - the run
-                                         then enrolls as a scanner first)
+  RECEIVER_URL, RECEIVER_TOKEN          (to fetch the live registry and post
+                                         candidates; the token may be an
+                                         enrollment token, aige_..., from a
+                                         managed-mode receiver - the run then
+                                         enrolls as a scanner first)
   AIGUARD_SCANNER_ID                    (identity on the receiver, default
                                          "discovery")
   AIGUARD_STATE_DIR                     (optional: keeps the device credential
@@ -25,8 +30,10 @@ Env:
   ANTHROPIC_API_KEY                     (classification)
   ANTHROPIC_MODEL                       (default claude-sonnet-4-6)
   GITLAB_URL, GITLAB_TOKEN, GITLAB_PROJECT_ID
+                                        (all three set: emit an MR instead of
+                                         posting to the receiver)
   MIN_DEVICES                           (default 1)
-  DRY_RUN                               (set to skip the MR, print instead)
+  DRY_RUN                               (set to print candidates, emit nothing)
 """
 
 import json
@@ -531,6 +538,40 @@ def open_mr(groups: list[dict], registry: dict):
     print("MR:", mr.json()["web_url"])
 
 
+# ----------------------------------------------------------------- receiver --
+
+def post_candidates(groups: list[dict], token: str):
+    """Hand the candidates to the receiver's queue.
+
+    The receiver re-validates every field against its own rules - this
+    payload is shaped to them, but the receiver cannot know its caller ran
+    this code, so a 422 here means this code and the receiver disagree and
+    the run should fail loudly rather than drop candidates on the floor.
+    """
+    body = [{
+        "kind": "domain",
+        "name": g["name"][:80],
+        "vendor": ("" if g["vendor"] == "unknown" else g["vendor"])[:80],
+        "category": ("" if g["category"] == "unreviewed" else g["category"])[:40],
+        "confidence": g["confidence"] if g["confidence"] in ("high", "medium", "low") else "",
+        "domains": g["domains"][:20],
+        "devices": len(g["devices"]),
+        "evidence": "seen in fleet DNS over the last 7 days",
+    } for g in groups]
+    headers = {"Authorization": f"Bearer {token}",
+               "X-AiGuard-Agent-Version": AGENT_VERSION}
+    for i in range(0, len(body), 100):  # the receiver caps a batch at 100
+        r = httpx.post(f"{RECEIVER_URL}/candidates",
+                       json={"candidates": body[i:i + 100]},
+                       headers=headers, timeout=30)
+        if r.status_code == 404:
+            sys.exit("the receiver has no candidates queue (classic mode?):"
+                     " use a managed-mode receiver, or configure GITLAB_URL /"
+                     " GITLAB_TOKEN / GITLAB_PROJECT_ID to emit an MR instead")
+        r.raise_for_status()
+    print(f"posted {len(groups)} candidate(s) to the receiver's review queue")
+
+
 # ------------------------------------------------------------------- main ---
 
 def main():
@@ -569,7 +610,10 @@ def main():
         printable = [{**g, "devices": sorted(g["devices"])} for g in groups]
         print(json.dumps(printable, indent=2))
         return
-    open_mr(groups, registry)
+    if GITLAB_URL and GITLAB_TOKEN and GITLAB_PROJECT:
+        open_mr(groups, registry)
+    else:
+        post_candidates(groups, token)
 
 
 if __name__ == "__main__":
