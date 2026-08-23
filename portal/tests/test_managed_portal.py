@@ -130,17 +130,36 @@ def http_error(fn, *args, **kw) -> HTTPException:
     return e.value
 
 
+def _request(cookie_token=None, scheme="http", headers=()):
+    """A bare Starlette request, the shape _admin_forward and require_auth
+    read: no client, no body, just cookies and headers."""
+    from starlette.requests import Request
+
+    hs = [(b"host", b"portal")] + [(k.encode(), v.encode()) for k, v in headers]
+    if cookie_token is not None:
+        hs.append((b"cookie",
+                   ("%s=%s" % (main.SESSION_COOKIE, cookie_token)).encode()))
+    return Request({"type": "http", "method": "GET", "path": "/",
+                    "scheme": scheme, "headers": hs, "query_string": b""})
+
+
 def test_unconfigured_managed_routes_say_what_is_missing(monkeypatch):
     monkeypatch.setattr(main, "RECEIVER_URL", "")
-    err = http_error(main._admin_forward, x_admin_token="anything")
+    err = http_error(main._admin_forward, _request(cookie_token="aigt_x"))
     assert err.status_code == 503
     assert "RECEIVER_URL" in err.detail
 
 
-def test_a_missing_admin_header_is_a_401_that_explains_the_model(configured):
-    err = http_error(main._admin_forward, x_admin_token="")
+def test_a_missing_session_is_a_401_that_explains_the_model(configured):
+    err = http_error(main._admin_forward, _request())
     assert err.status_code == 401
-    assert "never stores" in err.detail
+    assert "never stored" in err.detail
+
+
+def test_the_session_cookie_is_what_gets_forwarded(configured):
+    """The write path forwards the operator's own session; there is no
+    portal-held credential and no header to type a token into any more."""
+    assert main._admin_forward(_request(cookie_token="aigt_sess")) == "aigt_sess"
 
 
 def test_the_admin_token_is_forwarded_verbatim(receiver):

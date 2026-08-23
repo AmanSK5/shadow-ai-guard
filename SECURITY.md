@@ -54,9 +54,13 @@ the shared token is on every machine in the fleet.
 
 ### The portal
 
-The portal authenticates separately, and it is worth being plain about what
-that is. It is HTTP basic auth: one shared credential, no per-user trail, and
-plaintext without TLS in front of it. That is a floor, not a ceiling.
+The portal authenticates separately, and what that is depends on the mode.
+In managed mode it is a real login: an admin account in the receiver's state
+DB (scrypt-hashed password, created on first boot with a one-time setup code
+the receiver prints to its log), a session carried as an HttpOnly
+SameSite=Strict cookie, validated against the receiver per request.
+Classically it is HTTP basic auth: one shared credential, no per-user trail,
+and plaintext without TLS in front of it. That is a floor, not a ceiling.
 
 It refuses to start without it. Coming up open because a variable was missed is
 the failure that matters for this component: it is reachable, it looks like it
