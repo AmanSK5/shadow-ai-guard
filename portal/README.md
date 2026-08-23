@@ -116,13 +116,22 @@ with a fresh enrollment token baked in as the script's own fallback default
 (MDM-supplied values still win; corporate domains are never baked - the
 receiver serves those at runtime).
 
+The Settings view grows a **Central settings** card: corporate domains and
+the extension ID are saved into the receiver's state DB and served to the
+fleet at runtime, with the source of each value named - a saved list shows
+what environment value it is shadowing, and clearing it falls back. The AI
+register's cards gain an **edit** control for governance decisions (status,
+owner, review date, reason), stored the same way and merged per tool with
+the governance file - the recorded decision wins, the file fills the gaps,
+and the card says "set in the portal" so the two are never mistaken for one
+another. Exceptions stay file-only
+([docs/governance.md](../docs/governance.md)).
+
 Every one of those actions is authorized by the **receiver**, not the
 portal: the operator's own session token is forwarded per request and never
 stored anywhere in the portal. The portal still holds no database and no
 credentials - a compromised portal yields readable findings, which it
-always did, and nothing that can mint or revoke. Governance decisions
-remain in the file ([docs/governance.md](../docs/governance.md)); these
-routes manage operational credentials, which is a different kind of thing.
+always did, and nothing that can mint or revoke.
 
 ### Reading from a hosted log store
 
