@@ -116,6 +116,16 @@ with a fresh enrollment token baked in as the script's own fallback default
 (MDM-supplied values still win; corporate domains are never baked - the
 receiver serves those at runtime).
 
+On a fresh managed install the portal opens on a **first-run wizard**:
+corporate domains, a governance baseline over the registry's watchlist, the
+extension ID, and pre-configured deployment downloads for all five surfaces
+(three collectors, the extension's managed-storage policy plist, a scanner
+CronJob manifest with its token in a Secret). Every step is skippable and
+everything it sets is editable later; Finish records `onboarding_done` so
+the portal stops opening there. The extension policy is the one artifact
+that bakes corporate domains - the extension reads no central config, so a
+domain change means regenerating that file (its header says so).
+
 The Settings view grows a **Central settings** card: corporate domains and
 the extension ID are saved into the receiver's state DB and served to the
 fleet at runtime, with the source of each value named - a saved list shows

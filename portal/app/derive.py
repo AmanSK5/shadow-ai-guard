@@ -843,9 +843,16 @@ def status_from(findings):
          "server yet."),
     ]
     # Sources the portal can generate a pre-configured deployment artifact
-    # for, when managed mode is on. The value doubles as the API path
-    # segment (/api/artifacts/<kind>); only the endpoint collectors today.
-    artifact_sources = {"collector-macos", "collector-linux", "collector-windows"}
+    # for, when managed mode is on. The value is the API path segment
+    # (/api/artifacts/<kind>). The paste guard row deliberately has none:
+    # it is the same extension as the accounts row, and two buttons that
+    # mint two tokens for one deployment would be a trap.
+    artifact_sources = {
+        "collector-macos": "collector-macos",
+        "collector-linux": "collector-linux",
+        "collector-windows": "collector-windows",
+        "browser_extension": "extension-policy",
+    }
 
     rows = []
     for group, src, label, doc, needs in expected:
@@ -856,7 +863,7 @@ def status_from(findings):
             "label": label,
             "doc": doc,
             "needs": needs,
-            "artifact": src if src in artifact_sources else "",
+            "artifact": artifact_sources.get(src, ""),
             "reporting": bool(e),
             "findings": e["findings"] if e else 0,
             "devices": len(e["devices"]) if e else 0,

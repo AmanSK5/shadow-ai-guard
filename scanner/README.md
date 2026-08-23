@@ -109,6 +109,12 @@ environment variables (receiver URL and token, corporate domain,
 credentials from your Kubernetes Secret or secret store). The `.env`
 mechanism is for local CLI use only; deployed scanners do not use it.
 
+With a receiver in managed mode, the portal generates a ready-to-apply
+CronJob manifest (the onboarding wizard's downloads): receiver URL and a
+fresh enrollment token baked in, the token in a Secret rather than inline
+env, and the scanner-specific credentials named as comments for you to add
+from your own secret store.
+
 With a receiver in managed mode, `RECEIVER_TOKEN` can be an **enrollment
 token** (`aige_...`) instead of the shared token; the prefix is the switch.
 The run then enrolls as `platform: scanner` with the serial in
