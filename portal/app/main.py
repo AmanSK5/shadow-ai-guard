@@ -12,15 +12,23 @@ one stateless container either way.
 
 Authentication is required, not optional. This page names who runs what on
 which machine, which is the most sensitive thing the platform produces, so it
-refuses to start rather than come up open by accident. Set PORTAL_USER and
-PORTAL_PASSWORD, or set PORTAL_AUTH=none deliberately for localhost. Basic auth
-is a floor, not a ceiling: it is one shared credential with no per-user trail,
-so anyone already running a reverse proxy should authenticate there instead and
-run this with PORTAL_AUTH=none behind it.
+refuses to start rather than come up open by accident. Three shapes:
+
+  managed (RECEIVER_URL set): a real login. The operator signs in with the
+    admin account that lives in the receiver's state DB; the session rides
+    as an HttpOnly cookie and the portal validates it against the receiver
+    per request (with a short positive cache). PORTAL_USER/PORTAL_PASSWORD
+    are ignored, with a warning, because two auth systems on one page is
+    how one of them quietly stops being real.
+  classic basic auth: PORTAL_USER and PORTAL_PASSWORD, as ever.
+  PORTAL_AUTH=none: no portal auth, for localhost or behind a reverse proxy
+    that authenticates. In managed mode reads are then open but admin
+    actions still require the login - the receiver demands a credential
+    and the session is how a person gets one.
 
 Configuration, all optional except LOKI_URL and the auth pair:
-  PORTAL_USER       basic auth username
-  PORTAL_PASSWORD   basic auth password
+  PORTAL_USER       basic auth username (classic mode only)
+  PORTAL_PASSWORD   basic auth password (classic mode only)
 
 Any of PORTAL_USER, PORTAL_PASSWORD, LOKI_TOKEN and LOKI_PASSWORD can be given as
 NAME_FILE pointing at a file instead. Compose has no real secret story: an
@@ -70,7 +78,7 @@ import time
 import urllib.parse
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel, Field
@@ -112,36 +120,27 @@ PORTAL_USER = _secret("PORTAL_USER")
 PORTAL_PASSWORD = _secret("PORTAL_PASSWORD")
 PORTAL_AUTH = os.environ.get("PORTAL_AUTH", "").lower()
 
-# Fail closed. Coming up open because a variable was missed is the failure
-# that matters here: the portal is reachable, it looks like it works, and
-# nothing says the door is off. Refusing to start is loud and immediate.
-if PORTAL_AUTH == "none":
-    log.warning(
-        "PORTAL_AUTH=none: this portal is running WITHOUT AUTHENTICATION. It "
-        "shows which people use which AI tools on which machines. That is fine "
-        "on localhost and behind a proxy that authenticates for it, and it is "
-        "not fine on anything reachable."
-    )
-elif not (PORTAL_USER and PORTAL_PASSWORD):
-    raise SystemExit(
-        "refusing to start without authentication.\n\n"
-        "This portal shows which people use which AI tools on which machines.\n"
-        "Set PORTAL_USER and PORTAL_PASSWORD, or set PORTAL_AUTH=none if you\n"
-        "mean it - localhost, or behind a proxy that authenticates for you.\n\n"
-        "Basic auth is one shared credential with no per-user trail. If you\n"
-        "already run a reverse proxy, authenticate there instead and run this\n"
-        "with PORTAL_AUTH=none behind it."
-    )
-
 _basic = HTTPBasic(auto_error=False)
 
 
-def require_auth(creds: HTTPBasicCredentials = Depends(_basic)):
-    """Compared with compare_digest so a wrong username and a wrong password
-    take the same time to reject: a difference there is enough to enumerate a
-    valid username one character at a time."""
+def require_auth(request: Request,
+                 creds: HTTPBasicCredentials = Depends(_basic)):
+    """The gate on every data route, in whichever shape this deployment runs.
+
+    Managed mode: the session cookie, validated against the receiver (which
+    owns the accounts) with a short positive cache. Classic mode: basic auth,
+    compared with compare_digest so a wrong username and a wrong password
+    take the same time to reject - a difference there is enough to enumerate
+    a valid username one character at a time.
+    """
     if PORTAL_AUTH == "none":
         return
+    if LOGIN_MODE:
+        token = request.cookies.get(SESSION_COOKIE, "")
+        if token and _session_ok(token):
+            return
+        # No WWW-Authenticate: the login is a page, not a browser dialog.
+        raise HTTPException(status_code=401, detail="login required")
     if creds is None:
         raise HTTPException(
             status_code=401,
@@ -156,6 +155,20 @@ def require_auth(creds: HTTPBasicCredentials = Depends(_basic)):
             detail="invalid credentials",
             headers={"WWW-Authenticate": "Basic"},
         )
+
+
+def require_page_auth(request: Request,
+                      creds: HTTPBasicCredentials = Depends(_basic)):
+    """The gate on the HTML shell and the logo.
+
+    In managed mode these are open: the shell is a static file holding no
+    estate data, it has to load for the login screen to exist at all, and
+    every API it calls is behind require_auth above. Classic mode keeps
+    basic auth on them, as ever.
+    """
+    if LOGIN_MODE:
+        return
+    require_auth(request, creds)
 
 
 def require_http_url(name, url):
@@ -222,6 +235,50 @@ DEPLOY_NAMESPACE = os.environ.get("DEPLOY_NAMESPACE", "")
 RECEIVER_URL = require_http_url("RECEIVER_URL", os.environ.get("RECEIVER_URL", ""))
 RECEIVER_PUBLIC_URL = require_http_url(
     "RECEIVER_PUBLIC_URL", os.environ.get("RECEIVER_PUBLIC_URL", ""))
+
+# Managed mode is also login mode: one switch, not two that can disagree.
+# The receiver owns the admin account (created first-boot with the setup
+# code it prints); the portal signs in against it, carries the session as
+# an HttpOnly cookie, and validates per request below. Basic auth belongs
+# to classic mode only.
+LOGIN_MODE = bool(RECEIVER_URL)
+SESSION_COOKIE = "aiguard_session"
+# How long a positive validation is trusted before the receiver is asked
+# again. Bounds the revocation latency, and only the positive answer is
+# cached: a refused session is refused every time.
+SESSION_CACHE_TTL = 60
+_session_cache: dict[str, tuple[float, str]] = {}  # token -> (until, username)
+
+# Fail closed. Coming up open because a variable was missed is the failure
+# that matters here: the portal is reachable, it looks like it works, and
+# nothing says the door is off. Refusing to start is loud and immediate.
+# Checked here rather than beside PORTAL_USER above because the answer
+# depends on RECEIVER_URL: managed mode brings its own login and needs no
+# basic-auth pair.
+if PORTAL_AUTH == "none":
+    log.warning(
+        "PORTAL_AUTH=none: this portal is running WITHOUT AUTHENTICATION. It "
+        "shows which people use which AI tools on which machines. That is fine "
+        "on localhost and behind a proxy that authenticates for it, and it is "
+        "not fine on anything reachable."
+    )
+elif LOGIN_MODE:
+    if PORTAL_USER or PORTAL_PASSWORD:
+        log.warning(
+            "PORTAL_USER/PORTAL_PASSWORD are ignored in managed mode: the "
+            "portal login (the receiver's admin account) replaces basic auth. "
+            "Unset them to remove the ambiguity."
+        )
+elif not (PORTAL_USER and PORTAL_PASSWORD):
+    raise SystemExit(
+        "refusing to start without authentication.\n\n"
+        "This portal shows which people use which AI tools on which machines.\n"
+        "Set PORTAL_USER and PORTAL_PASSWORD, or set PORTAL_AUTH=none if you\n"
+        "mean it - localhost, or behind a proxy that authenticates for you.\n\n"
+        "Basic auth is one shared credential with no per-user trail. If you\n"
+        "already run a reverse proxy, authenticate there instead and run this\n"
+        "with PORTAL_AUTH=none behind it."
+    )
 # Verified copies of the endpoint collector scripts, shipped in the image
 # because the build cannot see the endpoint/ tree (same pattern as the
 # chart's bundled registry; a test asserts byte equality with the sources).
@@ -291,6 +348,31 @@ async def security_headers(request, call_next):
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Cache-Control", "no-store")
     return response
+
+@app.middleware("http")
+async def json_posts_only(request, call_next):
+    """The CSRF half that cookies made necessary.
+
+    The old write path was immune by construction: the credential lived in
+    JS memory and rode a custom header no cross-site request can set. A
+    cookie goes wherever the browser goes, so two things stand in for that
+    header now: SameSite=Strict on the cookie itself, and this rule - every
+    POST under /api must declare application/json, which a cross-site form
+    cannot (forms speak urlencoded, multipart and text/plain only, and a
+    fetch that sets the header triggers CORS preflight, which 'self' fails).
+    Enforced in login mode only: classic mode has no cookie to protect and
+    its callers were never asked for the header.
+    """
+    if (LOGIN_MODE and request.method == "POST"
+            and request.url.path.startswith("/api")
+            and not request.headers.get("content-type", "")
+                                    .startswith("application/json")):
+        return JSONResponse(
+            {"detail": "POST bodies here are JSON: send "
+                       "Content-Type: application/json"},
+            status_code=415)
+    return await call_next(request)
+
 
 # A derived graph, kept briefly. Not state in any meaningful sense: it rebuilds
 # from Loki on the next miss and on every restart. Without it, a 7 day query
@@ -506,7 +588,8 @@ def diagnostics(_=Depends(require_auth)):
             "loki_last_error": _last_loki_error,
             "lookback_hours": LOOKBACK_HOURS,
             "cache_ttl_seconds": CACHE_TTL,
-            "auth_mode": PORTAL_AUTH or "basic",
+            "auth_mode": ("login" if LOGIN_MODE and PORTAL_AUTH != "none"
+                          else PORTAL_AUTH or "basic"),
             "auth_configured": bool(PORTAL_AUTH != "none"),
             "registry_loaded": reg_ok,
             "registry_tools": reg_tools,
@@ -751,12 +834,14 @@ def suggest_identities(hours: float = Query(default=None, gt=0, le=24 * 90),
 
 
 # ----------------------------------------------------------- managed mode --
-# The portal's first write path, and it is deliberately a thin one: every
-# route below forwards the operator's admin token to the receiver, which is
+# The portal's write path, and it is deliberately a thin one: every route
+# below forwards the operator's own session token to the receiver, which is
 # the component that actually authorizes and records. The portal checks
 # nothing but shape, stores nothing, and a portal database still does not
-# exist. Governance decisions remain in the file (docs/governance.md); these
-# routes manage operational credentials, which is a different kind of thing.
+# exist: the session lives in the operator's browser (an HttpOnly cookie)
+# and in the receiver's state DB, never here. Governance decisions remain
+# in the file (docs/governance.md); these routes manage operational
+# credentials, which is a different kind of thing.
 
 # Receiver-assigned ids are hex, but the exact alphabet is the receiver's
 # business; this guard only ensures a path segment cannot smuggle separators
@@ -764,18 +849,166 @@ def suggest_identities(hours: float = Query(default=None, gt=0, le=24 * 90),
 _ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
-def _admin_forward(x_admin_token: str = Header(default="")) -> str:
-    """The operator's admin token, from the header, or the refusal that
-    explains the model: forwarded per request, never stored here."""
+def _session_ok(token: str) -> bool:
+    """Is this session live, by the receiver's word?
+
+    The receiver owns sessions; the portal only asks. A yes is trusted for
+    SESSION_CACHE_TTL so a page of API calls costs one validation rather
+    than ten, which bounds revocation latency at a minute. A no is never
+    cached, and a receiver that cannot be reached is a 502 rather than
+    either answer: unreachable must not read as revoked, and it must
+    certainly not read as valid.
+    """
+    now = time.time()
+    hit = _session_cache.get(token)
+    if hit and hit[0] > now:
+        return True
+    try:
+        who = managed.receiver_request(RECEIVER_URL, "GET", "/admin/session",
+                                       token)
+    except managed.ReceiverError as e:
+        if e.status == 502:
+            log.warning("receiver call failed for %s: %s",
+                        _redact_url(RECEIVER_URL), e.detail)
+            raise HTTPException(
+                502, "could not reach the receiver to validate the session")
+        return False
+    if len(_session_cache) > 512:
+        # The cache is per live session and sessions expire in hours, so
+        # growth past this is garbage from old logins; sweep it.
+        for k in [k for k, v in _session_cache.items() if v[0] <= now]:
+            _session_cache.pop(k, None)
+    _session_cache[token] = (now + SESSION_CACHE_TTL,
+                             str(who.get("username", "")))
+    return True
+
+
+def _cookie_secure(request: Request) -> bool:
+    """Whether the session cookie should carry Secure.
+
+    Judged from how the login actually arrived: direct TLS, or a TLS
+    ingress saying so in X-Forwarded-Proto. A hard-coded True would break
+    the documented localhost and plain-HTTP-behind-a-proxy paths silently -
+    the cookie would simply never come back.
+    """
+    return (request.url.scheme == "https"
+            or request.headers.get("x-forwarded-proto", "") == "https")
+
+
+def _login_mode_only():
+    if not LOGIN_MODE:
+        # Classic portals have no login; the route should not advertise one.
+        raise HTTPException(404, "Not Found")
+
+
+def _session_response(out: dict, request: Request) -> JSONResponse:
+    """The logged-in answer: session details for the page, token in an
+    HttpOnly cookie the page can never read. SameSite=Strict plus the
+    JSON-only rule on POSTs (middleware below) is the CSRF story."""
+    resp = JSONResponse({"ok": True,
+                         "username": str(out.get("username", "")),
+                         "expires_at": out.get("expires_at")})
+    resp.set_cookie(SESSION_COOKIE, str(out.get("token", "")),
+                    httponly=True, samesite="strict",
+                    secure=_cookie_secure(request), path="/")
+    return resp
+
+
+class LoginRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=1, max_length=256)
+
+
+class SetupRequest(BaseModel):
+    setup_code: str = Field(min_length=1, max_length=128)
+    username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=12, max_length=256)
+
+
+@app.get("/api/auth")
+def auth_state(request: Request):
+    """What the login screen needs before anyone has authenticated.
+
+    Unauthenticated on purpose, and it says nothing about the estate: the
+    mode, whether this browser holds a live session, who that is, and
+    whether the receiver is still waiting for its first admin account (so
+    the page can honestly offer create-account instead of sign-in).
+    """
+    if not LOGIN_MODE:
+        return {"mode": PORTAL_AUTH or "basic", "authenticated": None,
+                "username": "", "setup_needed": False}
+    token = request.cookies.get(SESSION_COOKIE, "")
+    authenticated = bool(token) and _session_ok(token)
+    setup_needed = False
+    if not authenticated:
+        try:
+            setup_needed = bool(managed.receiver_request(
+                RECEIVER_URL, "GET", "/admin/setup", "").get("needed"))
+        except managed.ReceiverError as e:
+            # A login screen that cannot say whether an account exists should
+            # say why, not guess a form.
+            raise HTTPException(e.status, e.detail)
+    return {"mode": "login" if PORTAL_AUTH != "none" else "none",
+            "authenticated": authenticated,
+            "username": (_session_cache.get(token) or (0, ""))[1],
+            "setup_needed": setup_needed}
+
+
+@app.post("/api/login")
+def api_login(req: LoginRequest, request: Request):
+    _login_mode_only()
+    out = _receiver("POST", "/admin/login", "",
+                    {"username": req.username, "password": req.password})
+    return _session_response(out, request)
+
+
+@app.post("/api/setup")
+def api_setup(req: SetupRequest, request: Request):
+    """First boot: claim the receiver's boot-printed setup code, create the
+    admin account, and arrive signed in - the receiver returns a session."""
+    _login_mode_only()
+    out = _receiver("POST", "/admin/setup",  "",
+                    {"setup_code": req.setup_code, "username": req.username,
+                     "password": req.password})
+    return _session_response(out, request)
+
+
+@app.post("/api/logout")
+def api_logout(request: Request):
+    _login_mode_only()
+    token = request.cookies.get(SESSION_COOKIE, "")
+    _session_cache.pop(token, None)
+    if token:
+        try:
+            managed.receiver_request(RECEIVER_URL, "POST", "/admin/logout",
+                                     token)
+        except managed.ReceiverError:
+            # The cookie dies either way; a receiver hiccup must not trap
+            # someone in a session they asked to leave. The receiver-side
+            # session then simply expires on its own TTL.
+            pass
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie(SESSION_COOKIE, path="/")
+    return resp
+
+
+def _admin_forward(request: Request) -> str:
+    """The operator's session, bound for the receiver's admin API.
+
+    The receiver authorizes; the portal only carries. Nothing here checks
+    the session first - the receiver's own answer comes back through the
+    proxy, and checking twice would just be a second place to be wrong.
+    """
     if not RECEIVER_URL:
         raise HTTPException(
             503, "RECEIVER_URL is not set. Managed mode needs the portal to "
                  "reach the receiver's admin API; see the portal README.")
-    if not x_admin_token:
+    token = request.cookies.get(SESSION_COOKIE, "")
+    if not token:
         raise HTTPException(
-            401, "X-Admin-Token required: the receiver's admin token. The "
-                 "portal forwards it per request and never stores it.")
-    return x_admin_token
+            401, "login required: managed actions use your portal session, "
+                 "forwarded to the receiver per request and never stored.")
+    return token
 
 
 def _receiver(method: str, path: str, token: str, body: dict | None = None):
@@ -868,7 +1101,7 @@ def artifact(kind: str, _=Depends(require_auth),
 
 
 @app.get("/")
-def index(_=Depends(require_auth)):
+def index(_=Depends(require_page_auth)):
     return FileResponse(STATIC / "index.html")
 
 
@@ -877,7 +1110,7 @@ def index(_=Depends(require_auth)):
 # the dependency is that this portal does not answer to anyone who has not
 # authenticated.
 @app.get("/logo.png")
-def logo(_=Depends(require_auth)):
+def logo(_=Depends(require_page_auth)):
     return FileResponse(STATIC / "logo.png", media_type="image/png")
 
 

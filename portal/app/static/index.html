@@ -140,14 +140,13 @@ h2{font-size:19px;margin:0 0 4px}
    constraint on the prose only makes it stop short of the table it
    introduces, which reads as a broken line rather than a measure. */
 input{background:var(--sf2);border:1px solid var(--bd);color:var(--fg);border-radius:6px;padding:6px 10px;font:inherit;min-width:220px}
-/* Managed views: small action buttons, the admin-token field, and the
-   one-time pane a minted token appears in. */
+/* Managed views: small action buttons, the login fields, and the one-time
+   pane a minted token appears in. */
 button.mini{font:inherit;font-size:12px;padding:3px 10px;border:1px solid var(--line,#8884);border-radius:6px;background:transparent;color:var(--pri);cursor:pointer}
 button.mini:hover{border-color:var(--pri)}
 .mfield{font:inherit;font-size:13px;padding:5px 8px;border:1px solid var(--line,#8884);border-radius:6px;background:transparent;color:inherit;min-width:260px}
 .tokpane{border:1px solid var(--pri);border-radius:8px;padding:12px 14px;margin:14px 0}
 .tokpane code{word-break:break-all}
-.adminbar{margin:10px 0 14px;font-size:12px;color:var(--mut)}
 </style>
 <div class="shell">
   <aside>
@@ -164,6 +163,8 @@ button.mini:hover{border-color:var(--pri)}
       <input id="q" placeholder="filter…">
       <span id="freshness" class="mono" style="font-size:11px;color:var(--mut)"></span>
       <button id="refresh" class="back" style="margin:0">refresh</button>
+      <span id="who" class="mono" style="font-size:11px;color:var(--mut);margin-left:auto"></span>
+      <button id="signout" class="back" style="margin:0;display:none">sign out</button>
     </div>
     <main id="app"></main>
   </div>
@@ -181,15 +182,72 @@ let PG = null;
 let FLEET = null;
 let TOKENS = null;
 let S = null, CFG = {}, loadError = '';
-// The receiver admin token, held in this tab's memory for the session and
-// sent per request as a header. Never written to storage of any kind: the
-// portal's whole security story for the write path is that it stores no
-// credential, and localStorage would quietly undo that.
-let ADMIN = '';
-// The one moment a minted token is visible. Kept until dismissed or the
-// admin token is forgotten, because a pane that vanishes on the next click
-// loses a credential that cannot be recovered.
+// What /api/auth said: {mode, authenticated, username, setup_needed}.
+// The session itself is an HttpOnly cookie this script can never read -
+// the portal's whole security story for the write path is that nothing
+// credential-shaped is reachable from page script.
+let AUTH = null;
+// The one moment a minted token is visible. Kept until dismissed, because a
+// pane that vanishes on the next click loses a credential that cannot be
+// recovered.
 let MINTED = null;
+
+// The login screen replaces the whole page, so the chrome around it (nav,
+// filter, refresh) goes quiet rather than sitting there doing nothing.
+function chrome(on) {
+  document.querySelector('.topbar').style.display = on ? '' : 'none';
+  document.getElementById('nav').style.display = on ? '' : 'none';
+  const so = document.getElementById('signout'), who = document.getElementById('who');
+  const login = AUTH && AUTH.mode === 'login';
+  so.style.display = on && login ? '' : 'none';
+  who.textContent = on && login && AUTH.username ? AUTH.username : '';
+}
+
+function showLogin(msg) {
+  // A minted token's show-once pane must not outlive the session that
+  // minted it: signing out and back in would show the plaintext again.
+  MINTED = null; FLEET = null; TOKENS = null;
+  chrome(false);
+  const create = AUTH && AUTH.setup_needed;
+  app.innerHTML = `<div style="max-width:440px;margin:8vh auto 0">
+    <h2>${create ? 'Create the admin account' : 'Sign in'}</h2>
+    <p class="lede">${create
+      ? `No admin account exists yet. The receiver printed a one-time setup
+         code to its log at boot — <code>kubectl logs deploy/&lt;release&gt;-ai-guard
+         | grep setup_code</code>, or <code>docker compose logs receiver</code>.
+         Enter it here; it is consumed on use and a restart mints a fresh one.`
+      : `The portal signs in against the receiver's admin account. The session
+         is an HttpOnly cookie: nothing is stored where page script can read it.`}</p>
+    ${msg ? `<div class="note">${esc(msg)}</div>` : ''}
+    ${create ? `<p><input id="li-code" class="mfield" style="width:100%"
+      placeholder="setup code (aigs_…)" autocomplete="off"></p>` : ''}
+    <p><input id="li-user" class="mfield" style="width:100%"
+      placeholder="username" autocomplete="username"></p>
+    <p><input id="li-pass" class="mfield" style="width:100%" type="password"
+      placeholder="${create ? 'password (12 characters or more)' : 'password'}"
+      autocomplete="${create ? 'new-password' : 'current-password'}"></p>
+    <button class="mini" style="padding:6px 16px"
+      data-act="${create ? 'do-setup' : 'do-login'}">${create ? 'Create account' : 'Sign in'}</button>
+  </div>`;
+  const u = document.getElementById(create ? 'li-code' : 'li-user');
+  if (u) u.focus();
+}
+
+// A 401 mid-session means the session expired or was revoked; the honest
+// response is the login screen with a line saying why, not a broken view.
+async function sessionLost() {
+  if (AUTH) AUTH.authenticated = false;
+  try { AUTH = await (await fetch('/api/auth')).json(); } catch (e) { /* keep what we had */ }
+  showLogin('Signed out — the session expired or was revoked. Sign in again.');
+}
+
+async function boot() {
+  try { AUTH = await (await fetch('/api/auth')).json(); }
+  catch (e) { AUTH = null; }
+  if (AUTH && AUTH.mode === 'login' && !AUTH.authenticated) { showLogin(); return; }
+  chrome(true);
+  load();
+}
 
 async function load(force) {
   app.innerHTML = '<p class="lede">Reading findings…</p>';
@@ -198,7 +256,9 @@ async function load(force) {
   // button refreshes some of the page and silently not the rest.
   if (force) { DIAG = null; REG = null; EV = null; PG = null; FLEET = null; TOKENS = null; }
   try {
-    CFG = await (await fetch('/api/config')).json();
+    const cr = await fetch('/api/config');
+    if (cr.status === 401 && AUTH && AUTH.mode === 'login') { sessionLost(); return; }
+    CFG = await cr.json();
     const gr = await fetch('/api/graph' + q);
     if (!gr.ok) throw new Error((await gr.json()).detail || gr.statusText);
     G = await gr.json();
@@ -1170,9 +1230,10 @@ function dashboard() {
 }
 
 // ------------------------------------------------------------- managed --
-// These two views call the receiver's admin API through the portal. The
-// admin token is entered once per session, held in the ADMIN variable, and
-// forwarded per request; forgetting it (or a 401) drops back to the gate.
+// These two views call the receiver's admin API through the portal, on the
+// same session the whole page runs on: the portal forwards the cookie's
+// token per request and the receiver authorizes. Nothing to enter, nothing
+// held in page script.
 
 function managedGate(title) {
   if (!CFG.managed || !CFG.managed.enabled) return `<h2>${esc(title)}</h2>
@@ -1180,32 +1241,22 @@ function managedGate(title) {
   on the portal (and <code>MANAGED_MODE=true</code> on the receiver) to manage
   enrollment tokens and devices from here. The classic file-and-token flow
   keeps working without it.</p>`;
-  if (!ADMIN) return `<h2>${esc(title)}</h2>
-  <p class="lede">This view calls the receiver's admin API. Enter the
-  receiver's admin token: it is held in this tab's memory only, sent with
-  each request, and never stored — the portal keeps holding no credentials.</p>
-  <input type="password" id="admin-token-input" class="mfield"
-    placeholder="receiver admin token">
-  <button class="mini" data-act="admin-save">Unlock</button>`;
   return '';
 }
 
-const adminBar = () => `<div class="adminbar">admin token held in memory —
-  <button class="mini" data-act="admin-forget">forget it</button></div>`;
-
 async function mfetch(path, opts) {
+  // Content-Type on every request, body or not: in login mode the portal
+  // refuses POSTs without it, which is the CSRF rule cookies made necessary.
   return fetch(path, {...(opts || {}), headers: {
-    'X-Admin-Token': ADMIN, 'Content-Type': 'application/json',
+    'Content-Type': 'application/json',
     ...((opts || {}).headers || {})}});
 }
 
 async function managedError(r, title) {
+  if (r.status === 401) { sessionLost(); return ''; }
   let d = r.statusText;
   try { d = (await r.json()).detail || d; } catch (e) { /* keep statusText */ }
-  if (r.status === 401) ADMIN = '';
-  return `<h2>${esc(title)}</h2><div class="note">${esc(String(d))}</div>`
-    + (r.status === 401 ? `<p class="lede">The admin token was refused; enter
-      it again from the view menu.</p>` : '');
+  return `<h2>${esc(title)}</h2><div class="note">${esc(String(d))}</div>`;
 }
 
 async function fleet() {
@@ -1223,7 +1274,6 @@ async function fleet() {
   request and touches nothing else. A device that re-enrolled (a reimaged
   laptop, a scanner that enrolls every run — or a serial someone else
   enrolled while it was silent) keeps its row and says so under "enrolled".</p>
-  ${adminBar()}
   ${ds.length ? `<table><tr><th>device</th><th>platform</th><th>serial</th>
     <th>enrolled</th><th>last seen</th><th>agent</th><th>status</th><th></th></tr>
   ${ds.map(d => `<tr>
@@ -1257,7 +1307,6 @@ async function tokens() {
   it once for their own credential. It can create auditable device records and
   nothing else, which is why a long life inside an MDM artifact is
   acceptable; revoke it here the moment it is not.</p>
-  ${adminBar()}
   ${MINTED ? (MINTED.error
     ? `<div class="note">${esc(MINTED.error)}
        <button class="mini" data-act="dismiss-minted">dismiss</button></div>`
@@ -1281,23 +1330,36 @@ async function tokens() {
   </tr>`; }).join('')}</table>` : '<div class="note">No enrollment tokens yet.</div>'}`;
 }
 
+const _val = id => (document.getElementById(id)?.value || '').trim();
+
 async function managedAction(act, el) {
-  if (act === 'admin-save') {
-    const v = document.getElementById('admin-token-input');
-    ADMIN = ((v && v.value) || '').trim();
-    FLEET = null; TOKENS = null; render(); return;
-  }
-  if (act === 'admin-forget') {
-    ADMIN = ''; FLEET = null; TOKENS = null; MINTED = null; render(); return;
+  if (act === 'do-login' || act === 'do-setup') {
+    const body = act === 'do-setup'
+      ? {setup_code: _val('li-code'), username: _val('li-user'), password: _val('li-pass')}
+      : {username: _val('li-user'), password: _val('li-pass')};
+    const r = await mfetch(act === 'do-setup' ? '/api/setup' : '/api/login',
+      {method: 'POST', body: JSON.stringify(body)});
+    if (r.ok) {
+      const o = await r.json();
+      AUTH = {mode: 'login', authenticated: true, username: o.username, setup_needed: false};
+      chrome(true); load();
+    } else {
+      let d = r.statusText;
+      try {
+        const e = await r.json();
+        // 422 is pydantic refusing the shape (a short password, an empty
+        // field); its detail is a list, so name the field rule instead.
+        d = r.status === 422 ? 'Check the fields: the password needs 12 '
+          + 'characters or more and nothing may be empty.' : e.detail || d;
+      } catch (e) { /* keep statusText */ }
+      showLogin(String(d));
+    }
+    return;
   }
   if (act === 'dismiss-minted') { MINTED = null; render(); return; }
   if (act === 'copy') {
     try { await navigator.clipboard.writeText(el.getAttribute('data-copy') || '');
           el.textContent = 'copied'; } catch (e) { /* clipboard denied */ }
-    return;
-  }
-  if (!ADMIN) {
-    alert('Enter the receiver admin token first — Managed section, either view.');
     return;
   }
   if (act === 'mint') {
@@ -1307,8 +1369,8 @@ async function managedAction(act, el) {
       {method: 'POST', body: JSON.stringify({note, ttl_days: ttl})});
     if (r.ok) { MINTED = await r.json(); TOKENS = null; }
     else {
+      if (r.status === 401) { sessionLost(); return; }
       let d = r.statusText; try { d = (await r.json()).detail || d; } catch (e) {}
-      if (r.status === 401) ADMIN = '';
       MINTED = {error: String(d)};
     }
     render(); return;
@@ -1323,8 +1385,8 @@ async function managedAction(act, el) {
       : '/api/devices/' + encodeURIComponent(id) + '/revoke';
     const r = await mfetch(path, {method: 'POST'});
     if (!r.ok) {
+      if (r.status === 401) { sessionLost(); return; }
       let d = r.statusText; try { d = (await r.json()).detail || d; } catch (e) {}
-      if (r.status === 401) ADMIN = '';
       alert('Revoke failed: ' + d);
     }
     FLEET = null; TOKENS = null; render(); return;
@@ -1333,8 +1395,8 @@ async function managedAction(act, el) {
     const kind = el.getAttribute('data-key');
     const r = await mfetch('/api/artifacts/' + encodeURIComponent(kind), {method: 'POST'});
     if (!r.ok) {
+      if (r.status === 401) { sessionLost(); return; }
       let d = r.statusText; try { d = (await r.json()).detail || d; } catch (e) {}
-      if (r.status === 401) ADMIN = '';
       alert('Could not generate the artifact: ' + d);
       return;
     }
@@ -1421,7 +1483,20 @@ window.addEventListener('hashchange', () => {
   const h = fromHash();
   if (h !== view) { view = h; detail = null; drawNav(); render(); }
 });
+// Enter in a login field is the same as clicking its button. Delegated like
+// the clicks, because the form is re-rendered on every failed attempt.
+app.addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  if (!e.target.matches || !e.target.matches('#li-user,#li-pass,#li-code')) return;
+  const btn = app.querySelector('[data-act="do-login"],[data-act="do-setup"]');
+  if (btn) btn.click();
+});
 q.oninput = e => { filter = e.target.value.toLowerCase(); detail = null; render(); };
 document.getElementById('refresh').onclick = () => load(true);
-load();
+document.getElementById('signout').onclick = async () => {
+  await mfetch('/api/logout', {method: 'POST'});
+  AUTH = {mode: 'login', authenticated: false, username: '', setup_needed: false};
+  showLogin('Signed out.');
+};
+boot();
 </script>

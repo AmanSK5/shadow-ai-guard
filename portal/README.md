@@ -37,6 +37,11 @@ thing the platform produces. Coming up open because a variable was missed is
 the failure that matters: the portal is reachable, it looks like it works, and
 nothing says the door is off. So it fails closed and says why.
 
+In **managed mode** (`RECEIVER_URL` set) none of the below applies: the
+portal has a real login backed by the receiver's admin account, and the
+basic-auth pair is ignored with a warning. See "Managed mode" further down.
+Classic mode:
+
     PORTAL_USER=admin
     PORTAL_PASSWORD=...
 
@@ -64,8 +69,8 @@ about the estate.
 
 | Variable | Required | Meaning |
 |---|---|---|
-| `PORTAL_USER` | yes* | basic auth username |
-| `PORTAL_PASSWORD` | yes* | basic auth password |
+| `PORTAL_USER` | yes* | basic auth username (classic mode; ignored in managed mode) |
+| `PORTAL_PASSWORD` | yes* | basic auth password (classic mode; ignored in managed mode) |
 | `PORTAL_AUTH` | yes* | `none` to run without auth, deliberately |
 | `LOKI_URL` | yes | Loki base URL, the same one the receiver writes to |
 | `LOKI_TOKEN` | no | bearer token, if your Loki needs one |
@@ -87,25 +92,37 @@ about the estate.
 | `RECEIVER_PUBLIC_URL` | no | the ingest URL agents can reach, baked into downloaded deployment artifacts. Different from `RECEIVER_URL` on purpose: a cluster-internal service name baked into a Jamf script would enroll nothing |
 | `COLLECTOR_SCRIPTS_DIR` | no | verified copies of the endpoint collector scripts, shipped in the image; override for development |
 
-## Managed mode: the one write path
+## Managed mode: the login, and the one write path
 
 With `RECEIVER_URL` set (and `MANAGED_MODE=true` on the receiver), the
-portal gains a Managed section: a fleet view of enrolled devices, an
-enrollment-token view that mints and revokes, and per-source Download
+portal is in **login mode**: basic auth is replaced by a real sign-in
+against the admin account that lives in the receiver's state DB.
+`PORTAL_USER`/`PORTAL_PASSWORD` are ignored, with a warning. On a fresh
+deployment no account exists yet - the receiver prints a one-time setup
+code to its log at every boot until one does (`kubectl logs ... | grep
+setup_code`, or `docker compose logs receiver`), and the portal's first
+screen turns it into the admin account. The session is an HttpOnly,
+SameSite=Strict cookie that page script can never read; the portal
+validates it against the receiver per request (with a 60-second positive
+cache, which bounds revocation latency) and stores nothing. `PORTAL_AUTH=none`
+still means what it always did - reads are open for a reverse proxy that
+authenticates - but admin actions still require the login, because the
+receiver demands a credential either way.
+
+The portal also gains a Managed section: a fleet view of enrolled devices,
+an enrollment-token view that mints and revokes, and per-source Download
 buttons on the Setup view that generate a pre-configured collector script
 with a fresh enrollment token baked in as the script's own fallback default
 (MDM-supplied values still win; corporate domains are never baked - the
 receiver serves those at runtime).
 
 Every one of those actions is authorized by the **receiver**, not the
-portal: the operator enters the receiver's admin token in the UI, it is
-held in the tab's memory only, forwarded per request in an `X-Admin-Token`
-header, and never stored anywhere in the portal. The portal still holds no
-database and no credentials - a compromised portal yields readable
-findings, which it always did, and nothing that can mint or revoke.
-Governance decisions remain in the file ([docs/governance.md](../docs/governance.md));
-these routes manage operational credentials, which is a different kind of
-thing.
+portal: the operator's own session token is forwarded per request and never
+stored anywhere in the portal. The portal still holds no database and no
+credentials - a compromised portal yields readable findings, which it
+always did, and nothing that can mint or revoke. Governance decisions
+remain in the file ([docs/governance.md](../docs/governance.md)); these
+routes manage operational credentials, which is a different kind of thing.
 
 ### Reading from a hosted log store
 

@@ -214,15 +214,19 @@ instead, and each collector, browser profile and scanner exchanges it once for a
 credential of its own; `REQUIRE_DEVICE_CREDENTIALS=true` in `.env` then turns
 the shared token off for ingest once everything has enrolled.
 
-The portal authenticates separately with HTTP basic auth, and **refuses to start
-without it**. It names who runs what on which machine, so coming up open because
-a variable was missed is the failure that matters.
+The portal authenticates separately, and **refuses to start without it**. It
+names who runs what on which machine, so coming up open because a variable
+was missed is the failure that matters.
 
-Basic auth is one shared credential with no per-user trail. If you already run a
-reverse proxy, authenticate there instead - it can do OIDC, mTLS or an
-allowlist against whatever you already have - and run the portal with
-`PORTAL_AUTH=none` behind it. That opt-out logs a warning on every start, so an
-unauthenticated deployment is never something nobody noticed.
+With the managed overlay the portal has a real login: the receiver prints a
+one-time setup code to its log on first boot (`docker compose logs receiver
+| grep setup_code`), and the portal's first screen turns it into the admin
+account. Without the overlay it is HTTP basic auth - one shared credential
+with no per-user trail. If you already run a reverse proxy, authenticate
+there instead - it can do OIDC, mTLS or an allowlist against whatever you
+already have - and run the portal with `PORTAL_AUTH=none` behind it. That
+opt-out logs a warning on every start, so an unauthenticated deployment is
+never something nobody noticed.
 
 ## The registry
 
