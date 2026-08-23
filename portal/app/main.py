@@ -1190,30 +1190,65 @@ def api_password(req: PasswordWrite, _=Depends(require_auth),
                      {"current": req.current, "new": req.new})
 
 
+# Artifacts generated from templates rather than substituted into script
+# copies. Same minting and download shape as the collector kinds.
+GENERATED_ARTIFACTS = ("extension-policy", "scanner-cronjob")
+
+
 @app.post("/api/artifacts/{kind}")
 def artifact(kind: str, _=Depends(require_auth),
              token: str = Depends(_admin_forward)):
-    """A pre-configured collector script, with a fresh enrollment token.
+    """A pre-configured deployment artifact, with a fresh enrollment token.
 
     POST, not GET, because generating one mints: each download gets its own
     token, noted with the artifact kind, so the tokens list shows where
     every credential went and any single artifact can be revoked without
-    touching the others. Values are baked as the scripts' own fallback
-    defaults, so MDM-supplied parameters still win; corporate domains are
-    not baked at all - the receiver serves those at runtime.
+    touching the others. For the collector scripts, values are baked as the
+    scripts' own fallback defaults, so MDM-supplied parameters still win,
+    and corporate domains are not baked - the receiver serves those at
+    runtime. The extension policy is the exception: the extension reads no
+    central config, so its policy bakes the domains and needs regenerating
+    when they change (the file's header says so).
     """
-    if kind not in managed.ARTIFACTS:
+    if kind not in managed.ARTIFACTS and kind not in GENERATED_ARTIFACTS:
         raise HTTPException(404, "no such artifact")
     if not RECEIVER_PUBLIC_URL:
         raise HTTPException(
             503, "RECEIVER_PUBLIC_URL is not set. Artifacts bake the ingest "
                  "URL agents reach from outside, which is not the portal's "
                  "internal RECEIVER_URL; see the portal README.")
+
+    # The extension policy's preconditions are checked before minting, so a
+    # refusal does not leave a token dangling behind an artifact that never
+    # existed.
+    extension_id, corp_domains = "", []
+    if kind == "extension-policy":
+        stored = _receiver("GET", "/admin/settings", token).get("settings", {})
+        extension_id = (stored.get("extension_id") or {}).get("value") or ""
+        corp_domains = (stored.get("corp_domains") or {}).get("value") or []
+        if not extension_id:
+            raise HTTPException(
+                409, "set the extension ID in Settings first: the policy "
+                     "names the per-browser upload domains with it")
+
     minted = _receiver("POST", "/admin/enrollment-tokens", token,
                        {"note": "portal artifact: %s" % kind})
     try:
-        filename, content = managed.generate(
-            kind, COLLECTOR_SCRIPTS_DIR, RECEIVER_PUBLIC_URL, minted["token"])
+        if kind == "extension-policy":
+            filename, content = managed.generate_extension_policy(
+                extension_id, RECEIVER_PUBLIC_URL, minted["token"],
+                corp_domains)
+        elif kind == "scanner-cronjob":
+            # A release build's version is the image tag on ghcr; a dev
+            # build has no matching image, and "latest" is the honest
+            # nearest thing.
+            tag = APP_VERSION if APP_VERSION[:1].isdigit() else "latest"
+            filename, content = managed.generate_scanner_cronjob(
+                RECEIVER_PUBLIC_URL, minted["token"], tag)
+        else:
+            filename, content = managed.generate(
+                kind, COLLECTOR_SCRIPTS_DIR, RECEIVER_PUBLIC_URL,
+                minted["token"])
     except managed.ArtifactError as e:
         # The token is already minted; say which one so it can be revoked
         # rather than left dangling behind a failed download.
@@ -1224,6 +1259,21 @@ def artifact(kind: str, _=Depends(require_auth),
         "Content-Disposition": 'attachment; filename="%s"' % filename,
         "X-Enrollment-Token-Id": minted.get("id", ""),
     })
+
+
+@app.get("/api/registry-tools")
+def registry_tools(_=Depends(require_auth)):
+    """The registry watchlist, id and name only.
+
+    For the wizard's governance baseline: unlike /api/register it needs no
+    findings and no log store, because a fresh install has neither and the
+    baseline is exactly the thing you record before anything reports.
+    """
+    reg = derive.load_registry(REGISTRY_PATH)
+    return {"tools": [
+        {"id": t["id"], "name": t.get("name") or t["id"],
+         "vendor": t.get("vendor") or "", "approved": bool(t.get("approved"))}
+        for t in (reg.get("tools") or []) if t.get("id")]}
 
 
 @app.get("/")
