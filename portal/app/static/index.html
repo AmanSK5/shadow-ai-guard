@@ -553,12 +553,21 @@ const WIDGETS = {
     to show.</p></div>`,
 };
 
+// The truncation banner (issue #104): a Loki read that stopped at the
+// safety cap means every count on screen is a floor. Saying so beats a
+// smaller number pretending to be the total.
+const truncNote = flag => flag ? `<div class="note">Only the newest findings
+  in this window were fetched (the read hit its safety cap): every count
+  here is a floor, not a total. Narrow the window, or raise
+  <span class="mono">LOKI_MAX_FINDINGS</span>.</div>` : '';
+
 function overview() {
   const ws = CFG.overview_widgets || [{kind:'stat_row'},{kind:'review_queue'},
     {kind:'top_tools'},{kind:'recent_personal_accounts'},{kind:'detection_coverage'}];
   const stat = ws.filter(w => w.kind === 'stat_row');
   const rest = ws.filter(w => w.kind !== 'stat_row');
   return `<h2>Overview</h2>
+  ${truncNote(G.findings_truncated)}
   <p class="lede">Which widgets appear is a deployment decision, set in
   <code>OVERVIEW_WIDGETS</code>, so an organisation shapes its own landing page
   and the portal keeps no state and needs no accounts.</p>
@@ -1131,6 +1140,7 @@ async function register() {
   };
 
   return `<h2>AI register</h2>
+  ${truncNote(REG.findings_truncated)}
   <p class="lede">The AI tools actually in use, from findings in the last
   ${esc(win)}. The registry is a watchlist rather than an inventory, so a tool
   it knows about and nothing has reported is counted below rather than listed.

@@ -120,7 +120,8 @@ def _due_soon(rows, days=REVIEW_SOON_DAYS, now=None):
 
 def evidence_from(register_rows, status, personal, mcp, paste,
                   registry_path="", governance_path="",
-                  app_version="", hours=0, now=None):
+                  app_version="", hours=0, now=None,
+                  findings_truncated=False):
     """A snapshot manifest, checksummed.
 
     Takes derivations already computed rather than findings, so a snapshot and
@@ -131,7 +132,11 @@ def evidence_from(register_rows, status, personal, mcp, paste,
     rows = list(register_rows or [])
     observed = [r for r in rows if r.get("observed")]
 
-    decided = [r for r in observed if r.get("status_source") == "governance"]
+    # "governance" is the file, "portal" the recorded decision - both are
+    # a human's decision and both count as one. Counting only the file made
+    # decisions_recorded lie the day the portal write path shipped.
+    decided = [r for r in observed
+               if r.get("status_source") in ("governance", "portal")]
     by_status = {}
     for r in decided:
         by_status[r["status"]] = by_status.get(r["status"], 0) + 1
@@ -148,6 +153,11 @@ def evidence_from(register_rows, status, personal, mcp, paste,
             "hours": int(hours) if float(hours or 0).is_integer() else hours,
         },
         "app_version": app_version,
+        # Whether the Loki read behind these numbers stopped at the safety
+        # cap. True means every count below is a floor computed over the
+        # newest findings, not a total - which an evidence artifact must
+        # say about itself or it is not evidence (issue #104).
+        "findings_truncated": bool(findings_truncated),
         "registry_sha256": file_sha256(registry_path),
         "governance_sha256": file_sha256(governance_path),
 

@@ -208,6 +208,10 @@ GRAFANA_URL = os.environ.get("GRAFANA_URL", "").rstrip("/")
 GRAFANA_PANELS = os.environ.get("GRAFANA_PANELS", "")
 GRAFANA_DASHBOARD_UID = os.environ.get("GRAFANA_DASHBOARD_UID", "")
 CACHE_TTL = int(os.environ.get("CACHE_TTL_SECONDS", "30"))
+# The pagination safety cap for one Loki read (issue #104): the read walks
+# the whole window page by page and stops early only here - and says so.
+# Raise it for a very large fleet rather than living with a floor.
+LOKI_MAX_FINDINGS = int(os.environ.get("LOKI_MAX_FINDINGS", "100000"))
 
 # Which widgets the overview shows, in order. A deployment decision rather than
 # a per-user one: the portal holds no state and has no users to hold it
@@ -422,6 +426,10 @@ STARTED_AT = time.time()
 # happening", and only this tells them apart.
 _last_loki_ok: float = 0.0
 _last_loki_error: str = ""
+# Whether the most recent Loki read stopped at LOKI_MAX_FINDINGS. Reported
+# on every derived response and in the evidence manifest, because a count
+# computed over a sample must never present itself as a total (issue #104).
+_last_read_truncated: bool = False
 
 
 def _redact_url(url):
@@ -574,15 +582,17 @@ def _findings(hours, request=None):
                    "Settings (managed mode), or set LOKI_URL - the same "
                    "store the receiver writes to.",
         )
-    global _last_loki_ok, _last_loki_error
+    global _last_loki_ok, _last_loki_error, _last_read_truncated
     try:
         out = derive.fetch_from_loki(
             # The bearer token is env configuration and belongs to the env
             # store; a portal-saved store authenticates with its own pair.
             url, hours, LOKI_TOKEN if source == "env" else None,
-            username=username or None, password=password or None)
+            username=username or None, password=password or None,
+            max_findings=LOKI_MAX_FINDINGS)
         _last_loki_ok = time.time()
         _last_loki_error = ""
+        _last_read_truncated = getattr(out, "truncated", False)
         return out
     except Exception as e:
         # The detail goes to the log, not to the caller. An exception message
@@ -753,6 +763,7 @@ def diagnostics(_=Depends(require_auth)):
             "loki_configured": bool(LOKI_URL),
             "loki_last_success": _last_loki_ok or None,
             "loki_last_error": _last_loki_error,
+            "loki_last_read_truncated": _last_read_truncated,
             "lookback_hours": LOOKBACK_HOURS,
             "cache_ttl_seconds": CACHE_TTL,
             "auth_mode": ("login" if LOGIN_MODE and PORTAL_AUTH != "none"
@@ -796,7 +807,8 @@ def graph(request: Request,
         return derive.graph_from(findings, domain_map, identity_map)
 
     value, at = _cached("graph", hours, build)
-    return JSONResponse(dict(value, derived_at=at, hours=hours))
+    return JSONResponse(dict(value, derived_at=at, hours=hours,
+                             findings_truncated=_last_read_truncated))
 
 
 @app.get("/api/status")
@@ -811,7 +823,8 @@ def status(request: Request,
         return derive.status_from(_findings(hours, request))
 
     value, at = _cached("status", hours, build)
-    return JSONResponse(dict(value, derived_at=at, hours=hours))
+    return JSONResponse(dict(value, derived_at=at, hours=hours,
+                             findings_truncated=_last_read_truncated))
 
 
 @app.get("/api/evidence")
@@ -845,6 +858,7 @@ def evidence_snapshot(request: Request,
         governance_path=GOVERNANCE_PATH,
         app_version=APP_VERSION,
         hours=hours,
+        findings_truncated=_last_read_truncated,
     )
 
     if download:
@@ -956,6 +970,7 @@ def register(request: Request,
         # portal: either means somebody is deciding, and the "nothing is
         # configured" note would be false.
         "governance_configured": bool(GOVERNANCE_PATH) or portal_decisions > 0,
+        "findings_truncated": _last_read_truncated,
         # Decisions naming a tool the registry does not know. Reported rather
         # than dropped: the likely cause is a typo, and a decision that
         # silently matches nothing is how an organisation believes it has

@@ -51,6 +51,15 @@ set -u
 # ------------------------------------------------------------------ config --
 RECEIVER_BASE="${AIGUARD_RECEIVER_BASE:-}"
 TOKEN="${AIGUARD_TOKEN:-}"
+
+# Every authenticated request goes through this: the Authorization header
+# travels to curl on stdin (-H @-), never in argv. /proc/<pid>/cmdline is
+# readable by every local user unless hidepid is set, so a bearer token in
+# a command line is a bearer token published to the machine (issue #106).
+# Requires curl 7.55+ (2017).
+auth_curl() {
+  printf 'Authorization: Bearer %s\n' "$TOKEN" | curl -H @- "$@"
+}
 CORP_DOMAINS="${AIGUARD_CORP_DOMAINS:-}"
 
 ENDPOINT=""
@@ -296,8 +305,8 @@ report() {
     return
   fi
   local code
-  code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' \
-    -X POST -H "Authorization: Bearer $TOKEN" \
+  code=$(auth_curl -s -m 10 -o /dev/null -w '%{http_code}' \
+    -X POST \
     -H "X-AiGuard-Agent-Version: $COLLECTOR_VERSION" \
     -H 'Content-Type: application/json' \
     --data "$payload" "$ENDPOINT" 2>/dev/null || echo 000)
@@ -337,8 +346,7 @@ fetch_registry() {
   REG_TMP=$(mktemp /tmp/ai-guard-reg.XXXXXX) || return 1
   REG_FILE="$REG_TMP"
   local code
-  code=$(curl -s -m 15 -o "$REG_FILE" -w '%{http_code}' \
-    -H "Authorization: Bearer $TOKEN" \
+  code=$(auth_curl -s -m 15 -o "$REG_FILE" -w '%{http_code}' \
     "${RECEIVER_BASE%/}/registry/collector" 2>/dev/null || echo 000)
   [ "$code" = "200" ]
 }
@@ -407,8 +415,8 @@ case "$TOKEN" in
       ENROLL_BODY=$(printf '{"platform":"linux","serial":"%s","hostname":"%s","agent_version":"%s"}' \
         "$(json_escape "$DEVICE")" "$(json_escape "$DEVICE_NAME")" "$COLLECTOR_VERSION")
       ENROLL_RESP=$(mktemp /tmp/ai-guard-enroll.XXXXXX)
-      ENROLL_CODE=$(curl -s -m 15 -o "$ENROLL_RESP" -w '%{http_code}' \
-        -X POST -H "Authorization: Bearer $TOKEN" \
+      ENROLL_CODE=$(auth_curl -s -m 15 -o "$ENROLL_RESP" -w '%{http_code}' \
+        -X POST \
         -H 'Content-Type: application/json' \
         --data "$ENROLL_BODY" "${RECEIVER_BASE%/}/enroll" 2>/dev/null || echo 000)
       if [ "$ENROLL_CODE" = "200" ]; then

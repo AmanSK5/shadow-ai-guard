@@ -40,7 +40,20 @@ should accept before deploying:
 - Any holder can read the registry via `/registry/collector`. The registry
   is not secret (it describes public products), but it does reveal what you
   detect.
-- Compromise of one endpoint reveals the same token every endpoint uses.
+- **A standard local user on any enrolled machine can read the token.** No
+  compromise required: it sits in a Jamf script parameter, an Intune script
+  body, or managed browser storage (a world-readable plist on macOS, HKLM
+  on Windows), all of which are readable without elevation on a default
+  install. Because it is the same token fleet-wide, any employee who looks
+  can then author findings about any colleague's machine - the register is
+  only as trustworthy as the least curious person in the fleet.
+- Historically the collectors also passed the token to `curl` as a
+  command-line argument, which publishes it to every local user via `ps`
+  for the duration of each request. Since 0.9.9 the collectors send the
+  `Authorization` header on curl's stdin (`-H @-`) so it never appears in
+  process arguments; the Windows collector uses `Invoke-RestMethod`, which
+  keeps it in-process. This narrows the exposure, but the storage locations
+  above still apply - argv hygiene does not make a shared secret per-device.
 
 If that is unacceptable in your threat model, use managed mode (the
 default since 0.9.9): the
@@ -49,9 +62,12 @@ be revoked without touching any other, and an enrollment token in an MDM
 artifact can create auditable device records but never submit findings. The
 shared token remains valid alongside (the browser extension and scanners
 still use it), so the consequences above shrink to those surfaces rather
-than disappearing. See the receiver README for the mechanics, including the
-separate `ADMIN_TOKEN` that mints credentials - separate precisely because
-the shared token is on every machine in the fleet.
+than disappearing - and `REQUIRE_DEVICE_CREDENTIALS=true` closes even that:
+the receiver then rejects the shared token on `/report` entirely, so a
+token read off a colleague's machine submits nothing. See the receiver
+README for the mechanics, including the separate `ADMIN_TOKEN` that mints
+credentials - separate precisely because the shared token is on every
+machine in the fleet.
 
 ### The portal
 
