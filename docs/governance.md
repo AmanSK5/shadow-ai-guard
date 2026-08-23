@@ -218,14 +218,26 @@ rendered by running the demo.
 
 ## The audit trail
 
-There is no write path. Decisions are edited in the file, and the file goes
-through whatever review your repository already has.
+In classic mode there is no write path. Decisions are edited in the file, and
+the file goes through whatever review your repository already has.
 
 That is not a limitation to be apologised for. A merge request is signed,
 timestamped, reviewable, and carries a diff of exactly what changed and who
 approved the change. Most governance portals build something weaker and call it
 an audit log.
 
-If, after living with it, the recurring thought is *I wish I could change this
-in the portal*, that is evidence for a write path. If editing the file turns
-out to be fine, a great deal of engineering has been avoided.
+This document used to end: *if, after living with it, the recurring thought is
+"I wish I could change this in the portal", that is evidence for a write
+path.* Managed mode is that thought, made deliberate. With it enabled, the
+register's cards gain an **edit** control: decisions (status, owner, review
+date, reason) are recorded centrally in the receiver's state DB, every write
+is stamped with who and when in the receiver's event log, and the same rules
+the file's validator enforces apply on the write path - an approval without a
+review date is refused there too.
+
+The two coexist per tool: a portal-recorded decision wins, the file fills the
+gaps, and the register labels which kind of decision it is showing ("set in
+the portal"). Exceptions - scoped, expiring departures - remain file-only:
+they are rarer, and the review a merge request gives them is worth more than
+the convenience of an editor. The file-based path stays first-class either
+way, so the argument above still holds for classic mode.

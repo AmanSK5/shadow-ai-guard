@@ -646,7 +646,8 @@ def status(hours: float = Query(default=None, gt=0, le=24 * 90),
 
 
 @app.get("/api/evidence")
-def evidence_snapshot(hours: float = Query(default=None, gt=0, le=24 * 90),
+def evidence_snapshot(request: Request,
+                      hours: float = Query(default=None, gt=0, le=24 * 90),
                       download: bool = Query(default=False),
                       _=Depends(require_auth)):
     """A checksummed statement of what the platform observed, for export.
@@ -663,7 +664,7 @@ def evidence_snapshot(hours: float = Query(default=None, gt=0, le=24 * 90),
     findings = _findings(hours)
     reg = derive.load_registry(REGISTRY_PATH)
     domain_map = derive.load_domain_map_from(reg)
-    gov, exceptions = governance.load_governance(GOVERNANCE_PATH)
+    gov, exceptions, _portal = _merged_governance(request)
 
     doc = evidence.evidence_from(
         derive.register_from(findings, reg, domain_map, gov, exceptions),
@@ -720,7 +721,8 @@ def paste_guard_events(hours: float = Query(default=None, gt=0, le=24 * 90),
 
 
 @app.get("/api/register")
-def register(hours: float = Query(default=None, gt=0, le=24 * 90),
+def register(request: Request,
+             hours: float = Query(default=None, gt=0, le=24 * 90),
              fmt: str = Query(default="json", pattern="^(json|csv)$"),
              refresh: bool = Query(default=False),
              _=Depends(require_auth)):
@@ -748,10 +750,14 @@ def register(hours: float = Query(default=None, gt=0, le=24 * 90),
     if refresh:
         _cache.pop("register", None)
 
+    # Fetched outside the cached build: the unmatched section below needs it
+    # on every request, and in managed mode it carries the portal-recorded
+    # decisions merged over the file.
+    gov, exceptions, portal_decisions = _merged_governance(request)
+
     def build():
         findings = _findings(hours)
         reg = derive.load_registry(REGISTRY_PATH)
-        gov, exceptions = governance.load_governance(GOVERNANCE_PATH)
         return derive.register_from(findings, reg,
                                     derive.load_domain_map_from(reg), gov,
                                     exceptions)
@@ -770,14 +776,16 @@ def register(hours: float = Query(default=None, gt=0, le=24 * 90),
             headers={"Content-Disposition": 'attachment; filename="%s"' % name},
         )
 
-    gov, exceptions = governance.load_governance(GOVERNANCE_PATH)
     known = [t.get("id") for t in (
         derive.load_registry(REGISTRY_PATH).get("tools") or [])]
     return JSONResponse({
         "rows": rows,
         "derived_at": at,
         "hours": hours,
-        "governance_configured": bool(GOVERNANCE_PATH),
+        # A governance file, or at least one decision recorded in the
+        # portal: either means somebody is deciding, and the "nothing is
+        # configured" note would be false.
+        "governance_configured": bool(GOVERNANCE_PATH) or portal_decisions > 0,
         # Decisions naming a tool the registry does not know. Reported rather
         # than dropped: the likely cause is a typo, and a decision that
         # silently matches nothing is how an organisation believes it has
@@ -992,6 +1000,47 @@ def api_logout(request: Request):
     return resp
 
 
+def _merged_governance(request: Request):
+    """(gov, exceptions, portal_decisions) - the effective governance.
+
+    The file as ever, plus, in managed mode, the decisions recorded in the
+    portal: merged per tool with the DB record winning and the file filling
+    the gaps, the same DB-wins-when-set rule every setting follows. Each DB
+    record carries origin "portal" so the register can label which kind of
+    decision it shows. Exceptions stay file-only on purpose.
+
+    A receiver that cannot answer is an error, not a silent fall-back to
+    the file: showing yesterday's decisions as if they were current is the
+    kind of quiet wrongness this project exists to avoid.
+    """
+    gov, exceptions = governance.load_governance(GOVERNANCE_PATH)
+    portal_count = 0
+    if LOGIN_MODE:
+        token = request.cookies.get(SESSION_COOKIE, "")
+        try:
+            out = managed.receiver_request(
+                RECEIVER_URL, "GET", "/admin/governance", token)
+        except managed.ReceiverError as e:
+            if e.status == 502:
+                log.warning("receiver call failed for %s: %s",
+                            _redact_url(RECEIVER_URL), e.detail)
+            raise HTTPException(
+                e.status, "could not read governance decisions from the "
+                          "receiver (%s)" % e.detail)
+        db = {}
+        for d in out.get("decisions", []):
+            db[str(d.get("tool_id"))] = {
+                "status": str(d.get("status") or ""),
+                "owner": str(d.get("owner") or ""),
+                "review_due": governance._parse_date(d.get("review_due")),
+                "reason": str(d.get("reason") or ""),
+                "origin": "portal",
+            }
+        portal_count = len(db)
+        gov = {**gov, **db}
+    return gov, exceptions, portal_count
+
+
 def _admin_forward(request: Request) -> str:
     """The operator's session, bound for the receiver's admin API.
 
@@ -1062,6 +1111,83 @@ def revoke_device(did: str, _=Depends(require_auth),
     if not _ID_RE.match(did):
         raise HTTPException(422, "malformed device id")
     return _receiver("POST", "/admin/devices/%s/revoke" % did, token)
+
+
+# Settings and governance writes. POST rather than PUT on the portal side,
+# because the CSRF rule (JSON-only POSTs) is what protects cookie-carried
+# writes and widening it to more methods is more surface than one verb
+# buys; the receiver side keeps its PUT.
+
+
+class SettingsWrite(BaseModel):
+    # extra=forbid, same as the receiver: an unknown key here would be
+    # silently dropped from model_fields_set and someone would believe a
+    # setting took effect.
+    model_config = {"extra": "forbid"}
+    corp_domains: list[str] | None = Field(default=None, max_length=200)
+    extension_id: str | None = Field(default=None, max_length=128)
+    onboarding_done: bool | None = None
+
+
+class DecisionWrite(BaseModel):
+    model_config = {"extra": "forbid"}
+    tool_id: str = Field(min_length=1, max_length=100)
+    status: str = Field(min_length=1, max_length=32)
+    owner: str = Field(default="", max_length=200)
+    review_due: str = Field(default="", max_length=10)
+    reason: str = Field(default="", max_length=1000)
+
+
+class GovernanceWrite(BaseModel):
+    model_config = {"extra": "forbid"}
+    decisions: list[DecisionWrite] = Field(default_factory=list, max_length=200)
+    delete: list[str] = Field(default_factory=list, max_length=200)
+
+
+class PasswordWrite(BaseModel):
+    current: str = Field(default="", max_length=256)
+    new: str = Field(min_length=12, max_length=256)
+
+
+@app.get("/api/settings")
+def api_settings(_=Depends(require_auth), token: str = Depends(_admin_forward)):
+    return _receiver("GET", "/admin/settings", token)
+
+
+@app.post("/api/settings")
+def api_settings_write(req: SettingsWrite, _=Depends(require_auth),
+                       token: str = Depends(_admin_forward)):
+    """Forward exactly the keys that were sent - a null deletes (fall back
+    to env), an absent key is untouched - and the receiver validates and
+    answers with the fresh effective view."""
+    body = {k: getattr(req, k) for k in req.model_fields_set}
+    return _receiver("PUT", "/admin/settings", token, body)
+
+
+@app.get("/api/governance-decisions")
+def api_governance(_=Depends(require_auth), token: str = Depends(_admin_forward)):
+    return _receiver("GET", "/admin/governance", token)
+
+
+@app.post("/api/governance-decisions")
+def api_governance_write(req: GovernanceWrite, _=Depends(require_auth),
+                         token: str = Depends(_admin_forward)):
+    out = _receiver("PUT", "/admin/governance", token, req.model_dump())
+    # The register is derived with governance folded in and cached for
+    # CACHE_TTL; a decision just changed, so that cache is now a view of
+    # the world before the operator acted.
+    _cache.pop("register", None)
+    return out
+
+
+@app.post("/api/password")
+def api_password(req: PasswordWrite, _=Depends(require_auth),
+                 token: str = Depends(_admin_forward)):
+    """The receiver enforces the rules (current password on the session
+    path, other sessions revoked); this session survives because it is the
+    bearer of the request."""
+    return _receiver("POST", "/admin/password",  token,
+                     {"current": req.current, "new": req.new})
 
 
 @app.post("/api/artifacts/{kind}")

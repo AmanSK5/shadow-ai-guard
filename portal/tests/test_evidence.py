@@ -356,7 +356,7 @@ def test_the_endpoint_produces_a_verifiable_snapshot():
     with patch.object(pm, "_findings", lambda h: findings), \
             patch.object(derive, "load_registry", lambda p: reg):
         pm._cache.clear()
-        body = json.loads(bytes(pm.evidence_snapshot(hours=168).body))
+        body = json.loads(bytes(pm.evidence_snapshot(None, hours=168).body))
 
     assert ev.verify(body) is True
     assert body["tools_observed"] == 2
@@ -378,7 +378,7 @@ def test_the_download_carries_provenance_in_the_filename():
     with patch.object(pm, "_findings", lambda h: []), \
             patch.object(derive, "load_registry", lambda p: {"tools": []}):
         pm._cache.clear()
-        resp = pm.evidence_snapshot(hours=168, download=True)
+        resp = pm.evidence_snapshot(None, hours=168, download=True)
 
     disposition = resp.headers["content-disposition"]
     assert "ai-guard-evidence-" in disposition
