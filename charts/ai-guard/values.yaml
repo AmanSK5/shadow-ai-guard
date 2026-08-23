@@ -81,11 +81,13 @@ corpDomains: []
 #     {"op":"replace","path":"/spec/strategy/type","value":"Recreate"}]'
 managed:
   enabled: false
-  # The credential that mints and revokes enrollment tokens and devices.
-  # Deliberately a separate secret from the shared token, which sits on every
-  # machine in the fleet. Leave both unset and the chart generates one on
-  # first install and keeps it across upgrades. Read it back with:
-  #   kubectl get secret <release>-ai-guard-admin -o jsonpath='{.data.adminToken}' | base64 -d
+  # OPTIONAL since 0.8.12: an API credential for /admin/* - automation, and
+  # break-glass recovery when the portal password is lost. Humans need
+  # nothing here: the receiver's first boot prints a one-time setup code to
+  # its log, and creating the admin account in the portal is the whole
+  # story. Leave both unset (the default) and no admin secret exists at all.
+  # Deliberately a separate secret from the shared token, which sits on
+  # every machine in the fleet.
   adminToken:
     value: ""
     existingSecret: ""   # a Secret with an `adminToken` key
@@ -169,10 +171,17 @@ portal:
   # The portal names who runs what on which machine, so it refuses to start
   # without authentication.
   #
+  # In MANAGED mode (managed.enabled above) this whole block is moot unless
+  # mode is none: the portal gets a real login backed by the receiver's
+  # admin account - created on first boot with the setup code the receiver
+  # prints to its log - and basic auth is not rendered at all.
+  #
+  # Classic mode:
   #   mode: basic   username plus a password, generated if you do not set one
   #   mode: none    no authentication. Correct behind a proxy or a mesh that
   #                 authenticates for it; wrong on anything reachable. Logs a
-  #                 warning on every start.
+  #                 warning on every start. (Also honoured in managed mode:
+  #                 reads are open, admin actions still need the login.)
   #
   # Basic auth is one shared credential with no per-user trail. If your
   # ingress can do OIDC or mTLS, do it there and set mode: none.

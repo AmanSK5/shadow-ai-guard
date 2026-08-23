@@ -74,7 +74,10 @@ spec:
             # something that authenticates for it; wrong on anything reachable.
             - name: PORTAL_AUTH
               value: "none"
-            {{- else }}
+            {{- else if not .Values.managed.enabled }}
+            # Classic mode only. In managed mode the portal login (the
+            # receiver's admin account) replaces basic auth, and the portal
+            # ignores this pair with a warning - so it is not rendered.
             - name: PORTAL_USER
               value: {{ .Values.portal.auth.username | quote }}
             - name: PORTAL_PASSWORD

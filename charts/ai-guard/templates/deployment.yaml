@@ -94,11 +94,16 @@ spec:
             {{- end }}
             - name: STATE_DB_PATH
               value: /var/lib/ai-guard/state.db
+            {{- if or .Values.managed.adminToken.value .Values.managed.adminToken.existingSecret }}
+            # Optional since 0.8.12: the admin API credential for automation
+            # and break-glass. Humans sign in through the portal instead
+            # (first boot prints a one-time setup code to this pod's log).
             - name: ADMIN_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.managed.adminToken.existingSecret | default (printf "%s-admin" (include "ai-guard.fullname" .)) }}
                   key: adminToken
+            {{- end }}
             {{- end }}
           volumeMounts:
             - name: registry
