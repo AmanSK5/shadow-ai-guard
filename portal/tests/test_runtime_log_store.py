@@ -178,11 +178,23 @@ def test_artifacts_bake_the_saved_public_url(login_mode, monkeypatch):
     monkeypatch.setattr(main.managed, "receiver_request", fake)
 
     resp = main.artifact("collector-macos", _=None, token="t")
-    assert "https://rx.saved.example" in resp.body.decode()
-    assert "rx.env.example" not in resp.body.decode()
+    # The exact baked fallback line, not a loose substring: the saved URL
+    # must land as the script's default, and the env one must not.
+    body = resp.body.decode()
+    assert 'RECEIVER_BASE="${4:-https://rx.saved.example}"' in body
+    assert 'RECEIVER_BASE="${4:-https://rx.env.example}"' not in body
 
 
 # ------------------------------------------------------------------- tests --
+
+
+def _probe_with_saved_url(monkeypatch, saved):
+    """The probe reads the SAVED public URL (save first, then probe) - the
+    route fetches nothing the request names, by design and for CodeQL."""
+    def fake(base, method, path, token, body=None):
+        return {"settings": {"receiver_public_url": {
+            "value": saved, "source": "db" if saved else "unset"}}}
+    monkeypatch.setattr(main.managed, "receiver_request", fake)
 
 
 def test_the_receiver_url_probe_warns_on_a_dotless_host(login_mode, monkeypatch):
@@ -198,22 +210,24 @@ def test_the_receiver_url_probe_warns_on_a_dotless_host(login_mode, monkeypatch)
     import urllib.request as _urlreq
     monkeypatch.setattr(_urlreq, "urlopen", lambda url, timeout=None: _Resp())
 
-    out = main.test_receiver_url(main.UrlProbe(url="https://ai-guard"),
-                                 _=None, token="t")
+    _probe_with_saved_url(monkeypatch, "https://ai-guard")
+    out = main.test_receiver_url(_=None, token="t")
     assert out["ok"] is True and out["version"] == "0.9.8"
     assert any("no dot" in w for w in out["warnings"])
 
-    out = main.test_receiver_url(
-        main.UrlProbe(url="https://ai-guard.tailfc8950.ts.net"), _=None,
-        token="t")
+    _probe_with_saved_url(monkeypatch, "https://ai-guard.tailfc8950.ts.net")
+    out = main.test_receiver_url(_=None, token="t")
     assert out["warnings"] == []
 
 
-def test_the_probe_refuses_non_http_schemes(login_mode):
+def test_the_probe_with_nothing_saved_falls_back_to_env_then_400(login_mode,
+                                                                 monkeypatch):
+    _probe_with_saved_url(monkeypatch, "")
+    monkeypatch.setattr(main, "RECEIVER_PUBLIC_URL", "")
     with pytest.raises(HTTPException) as e:
-        main.test_receiver_url(main.UrlProbe(url="file:///etc/passwd"),
-                               _=None, token="t")
-    assert e.value.status_code == 422
+        main.test_receiver_url(_=None, token="t")
+    assert e.value.status_code == 400
+    assert "save one in Settings" in e.value.detail
 
 
 def test_the_probe_reports_an_unreachable_host_without_crashing(login_mode,
@@ -223,8 +237,8 @@ def test_the_probe_reports_an_unreachable_host_without_crashing(login_mode,
     def boom(url, timeout=None):
         raise OSError("nope")
     monkeypatch.setattr(_urlreq, "urlopen", boom)
-    out = main.test_receiver_url(main.UrlProbe(url="https://rx.example.com"),
-                                 _=None, token="t")
+    _probe_with_saved_url(monkeypatch, "https://rx.example.com")
+    out = main.test_receiver_url(_=None, token="t")
     assert out["ok"] is False
     assert "could not reach" in out["detail"]
 
