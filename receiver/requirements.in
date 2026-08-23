@@ -4,3 +4,4 @@ httpx==0.28.*
 prometheus-client==0.26.*
 pydantic==2.*
 tzdata
+jsonschema==4.*
