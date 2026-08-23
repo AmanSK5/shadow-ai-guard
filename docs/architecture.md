@@ -121,10 +121,9 @@ Only the left-hand side does.
 The browser surface reports under two sources, because it answers two
 questions. `browser_extension` says which account is signed into an AI tool.
 `paste_guard` says what was stopped or flagged on the way into one, plus a
-daily heartbeat proving the chain works on that device. Both are the same
-extension; keeping them apart means "nobody has pasted anything matching a
-detector" is legible as a different state from "the extension is not
-deployed".
+daily heartbeat proving the chain works on that device. Both come from the same
+extension; keeping the sources separate is what lets you tell "nobody pasted
+anything risky" apart from "the extension isn't deployed".
 
 The paste guard is also the one place the platform prevents rather than
 observes: it scans pastes into AI tools on-device and warns or blocks before
@@ -221,28 +220,20 @@ telemetry are one laptop. The portal derives those relationships on request
 and holds no database, so like the dashboard it is a view rather than a store,
 and losing it loses nothing.
 
-The AI register is that view pointed at governance: the AI tools actually in
-use, with what the registry knows about each. The registry itself is a
-watchlist rather than an inventory, so a tool it knows about and nothing has
-reported is reported as a count rather than a row. A register padded with
-tools nobody in the organisation uses is a worse record of what that
-organisation does, not a more complete one, and it puts vendor defaults in
-front of a management review as though someone had taken a position on them.
-Coverage is a different question with its own answer in Setup and Uncovered
-devices. A tool observed and absent from the registry does get a row, flagged,
-because something in use that governance has never considered is worth acting
-on. Owner, review date and risk decision are organisational records rather
-than observations, so the register shows them as not set rather than leaving
-the columns blank. Owner, review date and the decision itself come from an optional governance
-file, described in [governance.md](governance.md), and the portal holds no
-governance state of its own: it reads the file and joins it at request time,
-the same way it joins findings.
+The AI register is that view pointed at governance: the tools actually in
+use, joined to what your organisation has decided about each. Tools the
+registry watches for but nobody uses show as a count, not a row - padding the
+register with unused tools would put vendor defaults in front of a management
+review as if someone had taken a position on them. A tool in use that the
+registry doesn't know does get a row, flagged, because that's the one worth
+acting on. Decisions (status, owner, review date) come from what you record
+in the portal or an optional governance file, described in
+[governance.md](governance.md).
 
-That file is deliberately not the registry. The registry answers what a tool is
-and how to detect it, and it ships with the project; governance answers what an
-organisation decided, which is nobody else's to ship. The separation is also
-physical, because approval used to be compiled into the browser extension's and
-the scanner's own config, neither of which had any use for it.
+Governance is kept separate from the registry on purpose. The registry
+answers "what is this tool and how do we detect it", and ships with the
+project. Governance answers "what did our organisation decide", which nobody
+else can ship for you.
 
 Approval records a position and does not change severity. Severity is decided
 at the point of detection and depends on the account domain, so an approved
@@ -250,40 +241,30 @@ tool signed into a personal account is still a warn, and an unapproved tool on
 a corporate account is still info. Those are independent dimensions and the
 portal keeps them that way: approval must never come to mean safe.
 
-An approval past its review date reports as reviewing, with the previous
-decision alongside, and the stored record is never rewritten. That is the same
-rule the platform applies to a source that has stopped reporting, turned on the
-decision instead: an approval nobody has revisited is not evidence a tool is
-safe, it is evidence that nobody looked.
+An approval past its review date shows as "reviewing" with the old decision
+alongside; the stored record is never rewritten. An approval nobody has
+revisited isn't evidence the tool is safe - it's evidence nobody looked.
 
-Evidence is that same idea pointed outwards. A snapshot states what was observed
-for a stated window, identifies the registry and governance files by hash rather
-than by version, and carries a digest of itself with that field omitted so it
-can be checked against itself later. It is neither reproducible nor
-tamper-evident, and both limits are worth stating plainly because the document
-is offered as evidence. Log retention means the same window may return less
-next year, so it cannot be recreated. And the digest is unkeyed with its rule
-published in the document, so it detects corruption and a careless edit rather
-than deliberate alteration: anyone changing a count recomputes the hash. Making
-it tamper-evident means signing the digest with a key the reader can verify and
-the editor cannot use, which is a piece of work rather than a stronger word. Every
-count that could flatter has its denominator beside it, because a snapshot
-reporting sources_reporting without sources_known would let a half-blind estate
-look complete on paper. See [evidence.md](evidence.md).
+The evidence snapshot is the same data packaged for an auditor: what was
+observed in a stated window, with the registry and governance files
+identified by hash, and a checksum over the whole document. Two limits are
+stated in the document itself because they matter for anything offered as
+evidence: it can't be regenerated identically later (log retention), and the
+checksum catches corruption and careless edits, not deliberate alteration
+(anyone changing a count can recompute it). Every count comes with its
+denominator - "8 sources reporting" always sits next to "of 12 known" -
+so a half-blind estate can't look complete on paper. See
+[evidence.md](evidence.md).
 
-Its entry points differ because the sources do. Endpoint findings carry a
-device and a local username, and the username is a hint rather than a key: it
-is firstname.lastname on one enrolment, a local account on another, whatever
-the person chose on an unmanaged machine. The device is reliable, because
-every fleet tool keys on the serial. Cloud findings carry an identity and no
-device, because Entra and Exchange know people, not machines. The two meet at
-the person, and that join is a lookup the deployer owns against whatever they
-run: an MDM, an RMM, a CMDB, a spreadsheet. The portal proposes a mapping and
-will not apply one, because a mapping the platform invented and then acted on
-is how the wrong name ends up on a report. A device with no mapping stays
-unattributed, which is a legitimate answer rather than a failure: a small team
-with no MDM still learns that three machines are running Ollama on personal
-accounts.
+Identity works in two halves. Endpoint findings know the machine (the
+serial is reliable - every fleet tool keys on it) but only a local username,
+which varies by how the machine was set up. Cloud findings know the person
+but not the machine. Joining them needs a lookup only the deployer has: an
+MDM, an RMM, a CMDB, a spreadsheet. The portal proposes a mapping from
+string matches but never applies one itself - a wrong guess acted on is how
+the wrong name ends up on a report. Devices with no mapping show as
+unattributed, which is fine: a small team with no MDM still learns that
+three machines are running Ollama on personal accounts.
 
 ## Why these choices
 

@@ -3,19 +3,20 @@
 A governance view over the findings the receiver already collects. Devices,
 identities, tools, and the relationships between them.
 
-It reads Loki on request and derives entities. It writes nothing, holds no
-database, and is not in the path of anything that already works: if the portal
-falls over, collection carries on.
+It reads findings from Loki when you open a page. It writes nothing and holds
+no database, and it sits outside the collection path, so if the portal goes
+down, collection keeps working.
 
 ## Why it exists
 
-Findings are a flat stream. Each one is an isolated row, and Loki can filter
-and count them but cannot say that these forty rows are the same twelve
-machines. Every governance question is a relationship: which tools a device
-has, which devices a person uses, who is signed into what.
+Findings arrive as a flat stream of rows. Loki can filter and count them, but
+it can't tell you that forty rows are really twelve machines. The questions
+you actually ask are about relationships: which tools does this device have,
+which devices does this person use, who is signed into what. That's what the
+portal answers.
 
-Grafana is better at graphs. This is better at relationships. Both are
-optional and neither replaces the other.
+Grafana is better at graphs and history. The portal is better at
+relationships and current state. Run either or both.
 
 ## Deployment
 
@@ -32,10 +33,9 @@ The receiver stays one stateless container in all three.
 
 **Required.** The portal refuses to start without it.
 
-This page names who runs what on which machine, which is the most sensitive
-thing the platform produces. Coming up open because a variable was missed is
-the failure that matters: the portal is reachable, it looks like it works, and
-nothing says the door is off. So it fails closed and says why.
+The portal shows who runs what on which machine - the most sensitive thing
+this platform produces - so it will not start unauthenticated by accident. If
+no auth is configured, it stops and tells you.
 
 In **managed mode** (`RECEIVER_URL` set) none of the below applies: the
 portal has a real login backed by the receiver's admin account, and the
@@ -45,25 +45,22 @@ Classic mode:
     PORTAL_USER=admin
     PORTAL_PASSWORD=...
 
-Basic auth is a floor rather than a ceiling: one shared credential, no
-per-user trail, and plaintext without TLS in front of it. **If you already run
-a reverse proxy, authenticate there instead** - it can do OIDC, mTLS or an
-allowlist against whatever you already have - and run the portal behind it
-with:
+Basic auth is the minimum, not a recommendation: it's one shared credential,
+no per-user trail, and plaintext unless TLS sits in front. **If you already
+run a reverse proxy, authenticate there instead** (OIDC, mTLS, an allowlist -
+whatever you already have) and run the portal behind it with:
 
     PORTAL_AUTH=none
 
-That opt-out logs a warning on every start, because an unauthenticated
-deployment should never be something nobody noticed. It is the right setting
-for localhost and for a proxy that authenticates for you, and the wrong one for
-anything reachable.
+That setting logs a warning on every start so an unauthenticated deployment
+is never an accident. Use it for localhost and behind an authenticating
+proxy; don't use it for anything directly reachable.
 
-OIDC in the portal itself is deliberately out of scope: correct, but heavy, and
-a lot of configuration surface for something that reads a log store.
+The portal doesn't do OIDC itself - a reverse proxy does it better with less
+configuration.
 
-`/healthz` is unauthenticated on purpose. A liveness probe that needs a
-credential is a probe that fails for the wrong reason, and it returns nothing
-about the estate.
+`/healthz` is unauthenticated on purpose: liveness probes shouldn't need
+credentials, and it reveals nothing about your estate.
 
 ## Configuration
 
@@ -180,18 +177,17 @@ So the two halves meet at the person, and joining them is a lookup you own.
 Supply `IDENTITY_MAP` as a CSV of `key,identity` where the key is a device or a
 local username, from your MDM, your RMM, a CMDB, or a spreadsheet.
 
-**A device with no mapping stays unattributed, and that is a legitimate answer
-rather than a failure.** A small team with no MDM still gets "these three
-machines are running Ollama on personal accounts", which is useful without a
-name attached.
+**A device with no mapping just shows as unattributed, and that's fine.** A
+small team with no MDM still gets "these three machines are running Ollama on
+personal accounts", which is useful without a name attached.
 
 To start a map, `GET /api/suggest-identities?fmt=csv` returns proposals built
 by comparing normalised local usernames against the identities cloud sources
 report.
 
-The portal will not apply those proposals itself. They are string matches, and
-a mapping this platform invented and then acted on is how the wrong name ends
-up on a report.
+The portal never applies those proposals automatically. They're string
+matches, and you should check every line - a wrong match puts the wrong
+person's name on a report.
 
 ### Where the file goes
 
@@ -255,21 +251,21 @@ effect within `CACHE_TTL_SECONDS` (default 30) without a restart.
 The tools actually in use, from findings in the lookback window, joined to what
 the registry knows and what your organisation has decided.
 
-The registry is a watchlist rather than an inventory, so a tool it knows about
-and nothing has reported is a count rather than a row. A register padded with
-tools nobody here uses is a worse record of what an organisation does, not a
-more complete one. A tool observed and absent from the registry does get a row,
-flagged, because something in use that governance has never considered is the
-anomaly worth acting on.
+Tools the registry watches for but nobody uses show as a count, not a row -
+padding the register with unused tools would make it a worse record, not a
+more complete one. A tool in use that the registry doesn't know does get a
+row, flagged, because something in use that nobody has considered is the
+thing worth acting on.
 
-Status, owner and review date come from an optional governance file. Without
-one, everything reads as undecided, which is honest: every tool ships
-`approved: false` and presenting that as a refusal would assert a decision
-nobody made. See [docs/governance.md](../docs/governance.md).
+Status, owner and review date come from your recorded decisions (in the
+portal, or an optional governance file). Without any, everything shows as
+undecided - every tool ships `approved: false`, and showing that as "banned"
+would claim a decision nobody made. See
+[docs/governance.md](../docs/governance.md).
 
-An approval past its review date reports as reviewing, says how long ago it
-expired, and shows the previous decision. The record is not rewritten: a clock
-ticking over is not a decision.
+An approval past its review date shows as "reviewing", says how long ago it
+expired, and keeps the previous decision visible. The record itself isn't
+rewritten - a date passing is not a decision.
 
 `GET /api/register?fmt=csv` exports the same rows the page shows, with the
 timestamp and lookback window in the filename. It is a convenience export
@@ -281,19 +277,17 @@ What the guard stopped, on which tool, and how often. Metadata only: it inspects
 clipboard content on the device and reports detector identifiers, so what was
 nearly pasted is not here and is not stored anywhere.
 
-Overrides sort first. Somebody shown the detector by name who pasted anyway is
-the row to follow up, and sorting by event count would bury one override under
-twenty warnings that worked.
+Overrides sort first: someone who was shown a warning and pasted anyway is
+the row worth following up.
 
-The page also reports how many devices the guard checked in from, and which
-versions and modes they are running. Without that, "0 pastes stopped" means both
-an estate where nobody pasted a secret and one where the extension was never
-deployed. More than one version is a rollout that stalled; a device in warn mode
-where policy says block is a policy not in force.
+The page also shows how many devices the guard is running on, and which
+versions and modes. That's what makes "0 pastes stopped" trustworthy - without
+it, zero could just mean the extension was never deployed. Multiple versions
+means a rollout stalled somewhere; a device in warn mode when your policy says
+block means the policy isn't in force there.
 
-Heartbeats are excluded from the event counts. They share the same source, and
-counting them would report every device's daily check-in as a paste somebody
-tried to make.
+Daily heartbeats are excluded from the event counts, so a check-in never
+counts as a paste.
 
 ## ISO 42001 evidence
 
@@ -322,88 +316,63 @@ OVERVIEW_WIDGETS=stat_row,top_tools,recent_personal_accounts,detection_coverage
 | `paste_guard` | pastes warned, overridden and blocked |
 | `grafana:<panel title>` | a panel named in `GRAFANA_PANELS` |
 
-Prefer a native widget to a `grafana:` one where both exist. An embedded panel
-renders cross-origin, so it arrives in Grafana's typography with a title the
-portal cannot restyle, and it sits visibly apart from the cards beside it.
-`paste_guard` used to be a panel for this reason and no longer needs to be: the
-portal derives those counts itself.
+Prefer a native widget over a `grafana:` one where both exist - embedded
+panels arrive in Grafana's styling and look out of place next to the cards.
 
-Unset gives a sensible default rather than an empty page. An unknown name
-renders an error card naming what is valid, because a widget that silently does
-not appear looks identical to one that appeared with nothing to show, and that
-sends someone off debugging their data instead of their config.
-
-This is a deployment decision rather than a per-user one. The portal holds no
-state and has no users to hold it against, so an organisation shapes its landing
-page here and the portal stays something that can be deleted and reinstalled
-with nothing lost.
+Leaving it unset gives you a sensible default. A typo in a widget name shows
+an error card listing the valid names, so you find out immediately instead of
+wondering where your widget went.
 
 ## Personal accounts
 
-Its own section rather than a number on a summary page, because an approved
-tool signed into a personal account is still unmanaged data flow and an
-offboarding gap.
+Personal accounts get their own page because even an approved tool on a
+personal account is unmanaged data flow and an offboarding gap.
 
-"Personal" is the reporting source's judgement, not the portal's: the collector
-and the extension are told the corporate domains and decide at the point of
-detection. The portal does not re-derive it, because it may not hold the same
-list, and two definitions that disagree is worse than one that is occasionally
-coarse.
-
-Rows are keyed on the full tuple of person, account, tool and device. The same
-person signing into two tools is two things to follow up, not one account with
-a longer attribute list.
+"Personal" is decided at the point of detection: the collector and extension
+know your corporate domains and judge each account against them. Each row is
+one person + account + tool + device combination, so the same person on two
+tools is two rows - two things to follow up.
 
 ## MCP servers
 
-Counted by server rather than by tool. An MCP server is a standing integration
-rather than an application someone opens: it holds its own credentials and can
-reach whatever it was pointed at whether or not the tool that configured it is
-in use.
+Counted by server, not by tool. An MCP server is an integration with its own
+credentials - it can reach whatever it was pointed at even when the tool that
+configured it isn't open, which makes the server the interesting unit.
 
-Server names come from the finding evidence. Two formats are read, because a
-Loki window holds both for a while: the current `mcpServers: figma,context7`,
-and the older form that folded the list into the tool name. That older form is
-why this exists at all, since every distinct combination of servers became a
-separate tool, and a machine with two servers looked unrelated to a machine
-with one of them.
-
-What a server can actually do wherever it points depends on the credentials it
-holds, which are not visible from here. The device count is reach, not risk.
+What a server can actually do depends on the credentials it holds, which
+aren't visible from here. The device count tells you reach, not risk.
 
 ## Settings and diagnostics
 
 Read only, and split in two on purpose.
 
-Everything under Application, Loki, Registry and Access is something the portal
-verified about itself: it either reached Loki or it did not, loaded the registry
-or it did not. Anything it was merely told is grouped separately and labelled
-"Provided by deployment configuration", so a chart version nobody updated is
-never presented as a fact something checked. A Compose deployment leaves those
-fields empty rather than guessing.
+Everything under Application, Loki, Registry and Access is something the
+portal actually checked: it reached Loki or it didn't, loaded the registry or
+it didn't. Values it was merely told (like a chart version) are grouped
+separately and labelled "Provided by deployment configuration", so nothing
+unverified reads as a fact.
 
-Credential values are never shown. Whether one is configured is useful; what it
-is, is not.
+Credential values are never shown - only whether one is configured.
 
 ## Setup view
 
 The view the portal opens on. It shows which sources are reporting and which
 are silent, derived from findings rather than from configuration being present.
 
-A source that has never reported is either not set up or genuinely has nothing
-to say, and from a dashboard those are identical. Listing them turns "I
-deployed this and see an empty screen" into "the Entra scanner has never
-reported". It stays useful afterwards as an is-it-still-working view.
+A source that has never reported might not be set up, or might genuinely have
+nothing to say - a dashboard can't tell those apart, so this page lists each
+one and what it needs. It turns "I deployed this and the screen is empty"
+into "the Entra scanner has never reported". Afterwards it stays useful as an
+is-it-still-working view.
 
 ## Embedding Grafana
 
 The Grafana tab embeds Grafana panels, so the portal can be the one place
 someone looks. It is optional, and everything else works without it.
 
-Grafana refuses to be framed by default, deliberately: framing a session
-someone is logged into is how clickjacking works. Turning that off is a
-decision for the deployer, not something this portal can do on their behalf.
-It needs, on the Grafana side:
+Grafana refuses to be embedded in another page by default (that's a
+clickjacking protection). Allowing it is your call to make on the Grafana
+side:
 
     GF_SECURITY_ALLOW_EMBEDDING=true
     GF_SECURITY_COOKIE_SAMESITE=none

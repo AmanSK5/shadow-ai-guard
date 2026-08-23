@@ -1,175 +1,160 @@
 # Getting started
 
-From a running receiver to your first finding on a dashboard. Once that thread
-works end to end, adding the other surfaces is repetition rather than new
-concepts.
+This page takes you from nothing to your first finding in the portal. Once one
+machine is reporting, every other surface is the same pattern: turn it on,
+watch it show up.
 
-If you just want to see what any of this looks like without deploying
-anything, skip to the demo at the end.
+If you just want to see what the project looks like before deploying anything,
+run the [demo](../demo/README.md) instead: `docker compose up` in `demo/`, no
+cluster, no credentials, fake data.
 
-## What you are building
+## The short version
 
-```
-one collector ──► receiver ──► logs (Loki) ──► Grafana dashboard
-                     │                            or the portal
-              registry (served to the collector at runtime)
-```
+1. Install the receiver and portal (one command).
+2. Get the one-time setup code from the receiver's log and create your admin
+   account.
+3. Follow the first-run wizard in the portal.
+4. Download a pre-configured collector from the wizard and run it on one
+   machine.
+5. Watch the finding appear.
 
-Everything else in the project is more sources feeding the same receiver. Get
-one source working first.
+That's the whole thing. The rest of this page is those five steps in detail.
 
-## Prerequisites
+## 1. Install
 
-- **A running receiver.** Two routes, both producing the same thing:
-  [Docker Compose](../deploy/compose/README.md) on a host, or
-  [Kubernetes](deployment/kubernetes.md). See
-  [the routes](deployment/README.md) if you are not sure which.
-- **A log pipeline that ingests container stdout.** The dashboard assumes
-  Loki, but the receiver's only output is JSON lines, so anything that scrapes
-  stdout works.
-- **Grafana**, to import the dashboard. Optional if you only want the portal.
-- **One macOS, Windows or Linux machine** you can run a script on as
-  root or admin, to be your first endpoint.
-
-You do not need Alertmanager, the cloud scanners or the browser extension to
-get started. Add those once the basic thread works.
-
-You also need the **bearer token** your receiver was deployed with. Every
-source authenticates with it. The route you followed says where to find it.
-
-**Managed mode shortcut (the default deployment):** the
-portal's first-run wizard replaces most of this page - it configures the log
-store and corporate domains centrally, and its deployment downloads are the
-collector scripts below with the receiver URL and a fresh enrollment token
-already baked in, so there is no token to find and nothing to edit. Download,
-run as root/admin (or push through your MDM), and skip to step 2.
-
-## 1. Roll out one collector
-
-Pick the OS of your test machine and follow its README:
-
-- macOS: [`endpoint/macos/README.md`](../endpoint/macos/README.md) (Jamf, or
-  run the script directly)
-- Windows: [`endpoint/windows/README.md`](../endpoint/windows/README.md)
-  (Intune)
-- Linux: [`endpoint/linux/README.md`](../endpoint/linux/README.md) (any RMM,
-  cron, or config management)
-
-Each needs the same three values:
-
-- the receiver base URL
-- the bearer token
-- your corporate domains, comma separated. Accounts on these are "work";
-  everything else is a personal-account finding.
-
-**How you pass them differs per platform**, because each matches its delivery
-mechanism, and this is the thing most likely to stop a first run:
-
-- **macOS** takes them as positional parameters, because that is how Jamf
-  passes script parameters. Environment variables are ignored. Running it by
-  hand means passing three empty strings first, since `$1`-`$3` are Jamf's own:
-
-      sudo ./ai-guard-collector.sh "" "" "" \
-        https://receiver.example.com <token> example.com
-
-- **Linux** takes environment variables: `AIGUARD_RECEIVER_BASE`,
-  `AIGUARD_TOKEN`, `AIGUARD_CORP_DOMAINS`.
-- **Windows** takes them at the top of the script or as Intune script
-  parameters.
-
-You can run any of them directly as root or admin with no MDM at all, which is
-the fastest way to see a finding.
-
-Run it once. The collector reads the AI tool config files in the user's home
-directory and POSTs findings to the receiver.
-
-## 2. See the finding
-
-Check the receiver's logs. Every finding it accepts is a JSON line on stdout,
-whether or not it also pushes to a log store:
+**Kubernetes:**
 
 ```bash
-# Docker Compose
-docker compose logs receiver --since 5m
+helm install ai-guard oci://ghcr.io/amansk5/shadow-ai-guard/charts/ai-guard \
+  --namespace ai-guard --create-namespace \
+  --set ingress.enabled=true --set ingress.host=ai-guard.your.domain \
+  --set portal.ingress.enabled=true --set portal.ingress.host=ai-guard-portal.your.domain
+```
 
+The two hosts are the URLs your machines will reach the receiver on and you
+will reach the portal on. Anything that gives those two services a hostname
+works: an ingress controller, Tailscale, a reverse proxy.
+
+**Docker Compose:**
+
+```bash
+git clone https://github.com/AmanSK5/shadow-ai-guard.git
+cd shadow-ai-guard/deploy/compose
+docker compose up -d
+```
+
+Both routes need a log store for findings. If you already run Loki, you will
+connect it in step 3 and nothing needs configuring up front. If you don't, the
+compose file includes one.
+
+## 2. Create your admin account
+
+The receiver prints a one-time setup code when it starts with no admin
+account:
+
+```bash
 # Kubernetes
-kubectl -n ai-guard logs deploy/ai-guard-receiver --since=5m
+kubectl logs deploy/ai-guard -n ai-guard | grep -i setup
+
+# Compose
+docker compose logs receiver | grep -i setup
 ```
 
-You should see a line carrying the tool, surface, account domain, device and
-user. That is the whole pipeline working: a config file on a machine became a
-structured finding in your log store.
+Open the portal, enter the code, pick a username and password. The code works
+exactly once and only for creating the first account.
 
-**If the collector reported success and you see nothing**, the collector never
-reached the receiver: check the URL and token it was given. **If you see the
-finding here but not in Grafana or the portal**, the push to the log store is
-failing rather than the collector - look for `"kind": "error"` in the same
-logs, which names the URL and the likely cause.
+## 3. Follow the wizard
 
-Nothing there? [Troubleshooting](../TROUBLESHOOTING.md) covers the usual
-reasons: a collector that printed nothing because the throttle suppressed a
-repeat, a receiver that accepted the finding but could not write it to Loki,
-and the parameters the macOS and Windows collectors need when you run them by
-hand rather than through Jamf or Intune.
+The portal opens on a first-run wizard. Work through it top to bottom:
 
-## 3. Import the dashboard
+1. **Public receiver URL** - the URL your laptops and servers can reach the
+   receiver on from outside the cluster. This gets baked into every download,
+   so the "save" button probes it and tells you if it's wrong.
+2. **Log store** - where findings are stored and read from. For an in-cluster
+   Loki this is one URL. For Grafana Cloud it's the URL, your numeric instance
+   ID as the username, and an access token with logs read *and* write. There
+   are test buttons for both directions; use them.
+3. **Corporate domains** - your work email domains. An AI tool signed into one
+   of these is a work account; anything else is flagged as personal.
+4. **Governance baseline** - which tools your organisation has approved or
+   banned. Only set the ones you have a position on; the rest stay undecided.
+5. **Browser extension and paste guard** - skip this on a first pass. Come
+   back to it once a collector is reporting (the extension needs packing
+   first; its [README](../extension/README.md) explains).
+6. **Alerting and Grafana** - optional, also fine to skip for now.
+7. **Deployment downloads** - this is the step that matters today. Download
+   the collector for whatever OS your test machine runs.
 
-In Grafana, import `dashboards/ai-guard.json`. Set the datasource variables to
-your Loki (and Prometheus, if used), and set the corporate domains variable to
-your domains.
+## 4. Run a collector on one machine
 
-The finding from step 2 should appear in the "who is running what" table,
-coloured by whether the account is personal or work.
-
-## 4. Optional: the portal
-
-Grafana answers how much and when. The portal answers what belongs to what:
-which tools a device has, which devices a person uses, and which of your
-sources are reporting versus silent. It reads the same logs, writes nothing,
-and is not in the ingest path, so it can be added or removed without touching
-anything above.
-
-On the compose route it is already there, on port 8091. Otherwise:
+The download from step 7 is ready to run: the receiver URL and an enrollment
+token are already inside it. Nothing to edit.
 
 ```bash
-docker run --rm -p 8091:8091 \
-  -e LOKI_URL=http://your-loki:3100 \
-  -e PORTAL_USER=admin -e PORTAL_PASSWORD=... \
-  ghcr.io/amansk5/shadow-ai-guard/portal:0.10.0
+# macOS / Linux, on the test machine
+sudo ./ai-guard-collector.sh
 ```
 
-It refuses to start without authentication, because it names who runs what on
-which machine.
+On Windows, run the `.ps1` as administrator.
 
-It opens on a setup view showing which sources are reporting and what each
-silent one needs, derived from findings rather than from configuration being
-present. Straight after step 2 that view is mostly empty, which is the honest
-picture rather than a broken one: one collector reporting and everything else
-not yet configured.
+The script reads the AI tool config files on that machine (which CLIs are
+installed, which accounts they're signed into, which IDE extensions and MCP
+servers exist) and reports what it finds. It also enrolls the machine, so it
+shows up under Fleet in the portal with its own credential you can revoke.
 
-[`portal/README.md`](../portal/README.md) covers attaching people to devices,
-embedding Grafana panels, and why basic auth is a floor rather than a ceiling.
+For a real rollout you push the same file through your MDM or RMM - Jamf,
+Intune, anything that can run a script as root/admin on a schedule. Each OS
+README ([macOS](../endpoint/macos/README.md),
+[Windows](../endpoint/windows/README.md),
+[Linux](../endpoint/linux/README.md)) has the exact steps for that. Pilot on
+one machine first.
+
+## 5. See the finding
+
+Open the portal. The overview should now show the tools found on your test
+machine, and Setup shows the collector as reporting.
+
+If nothing appears within a minute:
+
+- **The collector printed an error about the receiver URL or token** - it
+  never reached the receiver. Re-download the script (each download carries a
+  fresh token) and check the URL is reachable from that machine.
+- **The collector said it reported, but the portal is empty** - the receiver
+  got the finding but couldn't push it to the log store. Check the receiver's
+  logs for lines with `"kind": "error"`; they name the URL it tried and the
+  likely fix. The Diagnostics view in the portal shows the same thing.
+- Anything else: [Troubleshooting](../TROUBLESHOOTING.md).
 
 ## Where to go next
 
-- Add the other two collectors by repeating step 1.
-- Add cloud and network detection:
-  [`scanner/README.md`](../scanner/README.md) covers the Entra, Exchange,
-  Intune, Jamf and SentinelOne scanners, each optional.
-- Add the browser surface:
-  [`extension/README.md`](../extension/README.md) covers packing, hosting and
-  MDM deployment, including the paste guard.
-- Turn on alerting: set `ALERTMANAGER_URL` on the receiver so personal-account
-  findings page you.
-- Understand the design before extending it:
-  [`docs/architecture.md`](architecture.md).
-- Before deploying for real, read
-  [`docs/deployment-privacy.md`](deployment-privacy.md). This is workplace
-  monitoring and usually warrants a DPIA.
+Everything below is optional and independent. Add them in any order.
 
-## Just want to see it?
+- **More machines**: push the collector through your MDM/RMM.
+- **The browser extension and paste guard**: shows which accounts are signed
+  into AI sites, and warns or blocks when marked documents are pasted into
+  them. [extension/README.md](../extension/README.md) - it needs packing and
+  hosting once, then the portal generates the deployment files.
+- **Cloud and network scanners**: Entra sign-ins, OAuth grants, Exchange
+  signup evidence, Intune/Jamf inventory, SentinelOne DNS.
+  [scanner/README.md](../scanner/README.md). The portal generates the CronJob.
+- **Discovery**: a daily job that spots AI domains in your fleet's DNS that
+  the registry doesn't know yet, and queues them in the portal for you to
+  approve or dismiss. The portal generates this CronJob too.
+- **Grafana**: import `dashboards/ai-guard.json` for trends and history. The
+  portal can embed the panels.
+- **Alerting**: set the Alertmanager URL in Settings and personal-account
+  findings will page you.
 
-The demo in [`demo/`](../demo/README.md) needs no cluster, no real data and no
-credentials. `docker compose up` brings up the receiver, Loki, Grafana, the
-portal and a seeder, with both populated in a few minutes. Grafana is on 3000
-and the portal on 8091.
+Before deploying to real users' machines, read
+[deployment-privacy.md](deployment-privacy.md). This is workplace monitoring
+in most jurisdictions and usually needs a DPIA.
+
+## Running it classic (files instead of the portal)
+
+If you'd rather manage everything as files and environment variables in your
+own repo, with no server-side state, deploy with `managed.enabled=false` (or
+the compose classic overlay). You then edit `governance.yaml` and
+`registry/registry.yaml` by hand, set config through environment variables,
+and pass the receiver URL and shared token to collectors yourself - each OS
+README documents the values it needs. The
+[deployment docs](deployment/README.md) compare the two modes.
