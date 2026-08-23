@@ -28,12 +28,11 @@ docker compose down -v
 
 ## The portal
 
-Open http://localhost:8091. It lands on a setup view showing which sources
-are reporting, derived from the findings themselves rather than from
-configuration being present: a source that has never reported is either not
-set up or genuinely has nothing to say, and those are identical from a
-dashboard, so each is listed with what it would need. In the demo most are
-not reporting, which is what a partly-configured deployment looks like.
+Open http://localhost:8091. It lands on a setup view showing which detection
+sources are reporting and what each silent one would need. In the demo most
+are not reporting - that's what a partly-configured deployment looks like,
+and the page exists so you can always tell "not set up" apart from "nothing
+to report".
 
 The other tabs are the part Grafana cannot do. Findings are a flat stream of
 isolated rows; the portal derives the relationships between them, so a device

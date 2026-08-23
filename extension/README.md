@@ -57,11 +57,20 @@ warn to block is a policy push, not a release.
 
 ## Setup
 
-The extension is deployed as a force-installed managed extension through
-enterprise browser policy, not from a store listing. The moving parts:
-packed extension (.crx) and an update manifest (updates.xml) on public
-HTTPS, plus two policies per browser delivered by your MDM or GPO: an
-install policy (forcelist) and a managed-storage config.
+The extension is not on a web store - you pack it and deploy it yourself
+through enterprise browser policy. The one-time work is:
+
+1. Point the source at your receiver (a one-line manifest edit).
+2. Pack it, which gives you the extension's id and signing key.
+3. Host the packed file and its update manifest anywhere on HTTPS.
+   (Firefox: also submit to Mozilla for signing - covered below.)
+4. Deploy the policies through your MDM/GPO. In managed mode the portal
+   generates these pre-configured; classic mode uses the templates in
+   `deploy/`.
+5. Verify on one machine.
+
+After that, everything day-to-day (mode changes, domain changes, new
+enrollment tokens) is a policy push, and releases are pack-upload-done.
 
 With a managed-mode deployment, the portal generates the whole matrix
 pre-configured (the onboarding wizard, or the Setup view's browser row):

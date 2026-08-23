@@ -40,9 +40,9 @@ Shadow AI Guard detects AI usage across the places it actually appears, then
 correlates the findings so you can see the tools, accounts, users, devices and
 sources behind it.
 
-It is self-hosted, runs on infrastructure you probably already have for roughly
-the cost of nothing, and keeps AI governance close to the evidence rather than
-behind another SaaS platform.
+It is self-hosted and free. If you already run Docker or Kubernetes and a log
+stack, you have everything it needs. There is no SaaS platform behind it and
+nothing leaves your infrastructure.
 
 ## Contents
 
@@ -102,14 +102,13 @@ into the same downstream pipeline.
 
 ## Know your coverage
 
-A quiet source is not the same thing as a clean source.
+A source that reports nothing might be clean, or it might be broken. Those look
+identical on a dashboard, so the portal tells you the difference: which
+detection sources are reporting, which are set up but silent, and which you
+have not enabled yet.
 
-The portal shows which detection sources are reporting, which are configured
-but silent, and what still needs to be enabled. That matters because a green
-dashboard is only useful if you know what it can actually see.
-
-From the same findings, the portal derives relationships that are awkward to
-answer from a flat log stream:
+From the same findings, the portal also answers questions that are hard to get
+out of a flat log stream:
 
 - which tools a device has
 - which devices a person uses
@@ -206,13 +205,13 @@ MCP scanner ───────┘       │
 - **endpoint**: collectors for macOS, Windows and Linux. These read local AI
   tool configuration to report which account each tool is signed into. This is
   the data most API-level products do not have.
-- **discovery**: a scheduled job that classifies unrecognised AI-looking
-  domains from DNS telemetry and posts them to the portal's review queue as
-  candidates - "new AI tool found on N devices" - where defining or
-  dismissing each one is a human decision. Deployable from the portal as a
-  pre-configured CronJob. (With GitLab configured it opens merge requests
-  against the registry instead, for teams whose registry review lives in a
-  forge.)
+- **discovery**: a scheduled job that looks at your fleet's DNS activity,
+  filters out domains the registry already knows, and asks an LLM whether the
+  rest look like AI services. Anything that does shows up in the portal's
+  review queue as "new AI tool found on N devices". You then add it to the
+  registry with one click, or dismiss it. Nothing is detected until a person
+  decides. The portal generates a ready-to-apply CronJob for it. (If you set
+  the GitLab variables it opens merge requests against the registry instead.)
 - **portal**: the governance and relationship view. Findings arrive as isolated
   events; the portal correlates them into people, devices, tools and
   detection-source health. It reads from Loki, holds no database and is not in
@@ -271,35 +270,49 @@ that can run a container on a schedule.
 
 ## Two ways to run it
 
-**Managed (the default).** Zero-touch: one install command, a setup code,
-and everything else in the portal - the log store, corporate domains,
-governance decisions, registry additions for tools upstream does not know,
-per-device credentials with one-click revocation, and pre-configured
-deployment downloads for every surface. Configuration lives in the
-receiver's small state database and reaches the fleet at runtime; nobody
-needs this repository for anything but reading.
+**Managed (the default).** You install it once, log into the portal, and do
+everything else there: connect the log store, set your corporate domains,
+approve tools, add new tools to detection, enroll and revoke devices, and
+download pre-configured deployment files for every surface. You never need to
+touch this repository again after the install.
 
-**Classic (`managed.enabled=false`, or the compose classic overlay).** The
-file-and-environment deployment for teams that want full edit control and
-a review trail in their own repo: clone, and everything is a file or an
-env var - `governance.yaml` for decisions, `registry/registry.yaml` for
-detection identifiers, `CORP_DOMAINS` and friends for config, basic auth
-(or your reverse proxy's SSO) on the portal, one shared token, and **no
-server-side state at all** - losing any component loses nothing. Every
-managed feature has a file or env equivalent, and a merge request is a
-signed, reviewable audit log that most governance portals only imitate.
+**Classic (`managed.enabled=false`, or the compose classic overlay).** For
+teams that would rather manage everything as files in their own repo. Every
+setting is a file or an environment variable: `governance.yaml` for approval
+decisions, `registry/registry.yaml` for what gets detected, `CORP_DOMAINS`
+and friends for config. The receiver keeps no state at all, so there is
+nothing to back up and nothing to lose. Changes go through your normal merge
+request review, which some teams prefer as their audit trail.
 
-The two share one codebase and one finding schema; managed is classic plus
-a state file, not a fork.
+Both modes are the same codebase and the same finding schema. Managed is
+classic plus a small state database, not a fork. If you are not sure which
+you want, start with managed.
 
 ## Deployment order
 
-Managed mode is the default, and the order is one step and then the portal:
-`helm install` from the published OCI chart (plus ingress values), create
-the admin account from the boot-printed setup code, and the first-run
-wizard handles the rest - log store, domains, governance, registry
-additions, and pre-configured downloads for every surface. See
-[Kubernetes](docs/deployment/kubernetes.md).
+In managed mode (the default) the whole install is one command plus the
+portal:
+
+```bash
+helm install ai-guard oci://ghcr.io/amansk5/shadow-ai-guard/charts/ai-guard \
+  --namespace ai-guard --create-namespace \
+  --set ingress.enabled=true --set ingress.host=ai-guard.your.domain \
+  --set portal.ingress.enabled=true --set portal.ingress.host=ai-guard-portal.your.domain
+```
+
+Then:
+
+1. Get the one-time setup code from the receiver's log:
+   `kubectl logs deploy/ai-guard -n ai-guard | grep setup`
+2. Open the portal, create your admin account with that code.
+3. Follow the first-run wizard. It walks you through the log store, your
+   corporate domains, tool approvals, and gives you pre-configured downloads
+   for the collectors, the browser extension and the scanners.
+
+Docker Compose works the same way: `docker compose up` in `deploy/compose/`,
+then the same setup code and wizard. Details for both are in
+[Kubernetes](docs/deployment/kubernetes.md) and
+[Compose](deploy/compose/README.md).
 
 In classic mode, or by hand:
 
@@ -372,12 +385,12 @@ monitoring in most jurisdictions and usually warrants a DPIA.
 
 ## Status and known limitations
 
-This is an alpha, released early on purpose. It runs in production in one
-environment, and the rough edges are labelled rather than hidden.
+This is an alpha. It runs in production in one environment, and the rough
+edges are listed here rather than hidden.
 
-The list has changed since the first release: registry fallback drift, the
-Entra scanner counting failed sign-ins as usage, ongoing delegated access going
-unreported, and browser extension inventory have all been fixed and tested.
+The list keeps shrinking: registry fallback drift, the Entra scanner counting
+failed sign-ins as usage, unreported delegated access, and browser extension
+inventory have all been fixed and tested since the first release.
 
 Current known limitations:
 
