@@ -206,6 +206,8 @@ let WLOPEN = false;
 // from (kept across a refused save so typing survives), the last refusal,
 // and whether the advanced-JSON editor is showing.
 let RENTRIES = null, REDIT = null, RPRE = null, RERR = '', RADV = false;
+// The discovery queue: candidates the estate observed that nobody defined.
+let CAND = null;
 let S = null, CFG = {}, loadError = '';
 // What /api/auth said: {mode, authenticated, username, setup_needed}.
 // The session itself is an HttpOnly cookie this script can never read -
@@ -282,7 +284,7 @@ async function load(force) {
   const q = force ? '?refresh=true' : '';
   // Refresh must clear the views that read a second endpoint too, or the
   // button refreshes some of the page and silently not the rest.
-  if (force) { DIAG = null; REG = null; EV = null; PG = null; FLEET = null; TOKENS = null; SETTINGS = null; REGTOOLS = null; GOVDECS = null; RENTRIES = null; }
+  if (force) { DIAG = null; REG = null; EV = null; PG = null; FLEET = null; TOKENS = null; SETTINGS = null; REGTOOLS = null; GOVDECS = null; RENTRIES = null; CAND = null; }
   try {
     const cr = await fetch('/api/config');
     if (cr.status === 401 && AUTH && AUTH.mode === 'login') { sessionLost(); return; }
@@ -296,10 +298,15 @@ async function load(force) {
     // guard widget and a widget that fetches on render would flash empty.
     const pr = await fetch('/api/paste-guard' + q);
     if (pr.ok) PG = await pr.json();
-    // Same again for the review queue: it draws from the register.
+    // Same again for the review queue: it draws from the register, and in
+    // managed mode from the discovery candidates queue too.
     if ((CFG.overview_widgets || []).some(w => w.kind === 'review_queue')) {
       const rr = await fetch('/api/register' + q);
       if (rr.ok) REG = await rr.json();
+      if (CFG.managed && CFG.managed.enabled && AUTH && AUTH.mode === 'login') {
+        const cq = await mfetch('/api/candidates');
+        if (cq.ok) CAND = (await cq.json()).candidates || [];
+      }
     }
     loadError = '';
   } catch (e) {
@@ -500,7 +507,24 @@ const WIDGETS = {
       .filter(r => r.status_source !== 'governance' && r.status_source !== 'portal')
       .sort((a, b) => ((a.in_registry ? 1 : 0) - (b.in_registry ? 1 : 0))
         || ((Date.parse(b.first_seen || 0) || 0) - (Date.parse(a.first_seen || 0) || 0)));
-    if (!undecided.length) {
+    // Discovery candidates: observed in the estate's telemetry, defined by
+    // nobody. Open ones only - resolved means a registry entry answered it,
+    // dismissed means a human did.
+    const cands = (CAND || []).filter(c => !c.resolved && !c.dismissed_at);
+    const candBlock = !cands.length ? '' : `
+      <h4 style="margin:10px 0 4px">New AI tools found
+        <span class="count">${cands.length}</span></h4>
+      <table>${cands.slice(0, 6).map(c => `<tr>
+        <td>${esc(c.name)}<div style="color:var(--mut);font-size:12px">
+          ${esc((c.domains || []).join(', '))}</div></td>
+        <td style="color:var(--mut)">${c.devices || 0} device${c.devices === 1 ? '' : 's'}
+          ${c.confidence ? ' · ' + esc(c.confidence) : ''}</td>
+        <td style="white-space:nowrap">
+          <button class="btn" data-act="cand-add" data-key="${esc(c.key)}">Add to registry</button>
+          <button class="btn" data-act="cand-dismiss" data-key="${esc(c.key)}">Dismiss</button>
+        </td></tr>`).join('')}</table>
+      ${cands.length > 6 ? `<p class="src-note">And ${cands.length - 6} more in the queue.</p>` : ''}`;
+    if (!undecided.length && !cands.length) {
       const ago = t => {
         const m = Math.round((Date.now() - Date.parse(t)) / 60000);
         return m < 90 ? m + 'm ago' : Math.round(m / 60) + 'h ago';
@@ -514,13 +538,16 @@ const WIDGETS = {
               esc(x.label) + ' ' + ago(x.last_seen)).join(', ') + '.' : ''}</p></div>`;
     }
     return `<div class="wcard w6"><h3>Awaiting a decision
-      <span class="count">${undecided.length}</span></h3>
+      <span class="count">${undecided.length + cands.length}</span></h3>
+    ${candBlock}
+    ${!undecided.length ? '' : `
+    ${cands.length ? '<h4 style="margin:10px 0 4px">Observed, no decision recorded</h4>' : ''}
     <table>${undecided.slice(0, 6).map(r => `<tr>
       <td><a href="#register" style="color:var(--fg);text-decoration:none">${esc(r.name)}</a></td>
       <td>${!r.in_registry ? '<span class="pill p-warn">not in registry</span>' : ''}
           ${isNew(r) ? '<span class="pill p-acc">new today</span>' : ''}</td>
       <td style="color:var(--mut)">${esc((r.first_seen || '').slice(0, 10))}</td>
-    </tr>`).join('')}</table>
+    </tr>`).join('')}</table>`}
     <p class="src-note"><a href="#register" style="color:var(--pri)">Decide on
     the AI register</a> - a decision is the acknowledgment, so deciding
     clears the queue.</p></div>`;
@@ -1592,6 +1619,7 @@ async function wizard() {
     <button class="mini" data-act="artifact" data-key="collector-windows">Windows collector</button>
     <button class="mini" data-act="artifact" data-key="extension-policy">extension policy${eid ? '' : ' (needs step 5)'}</button>
     <button class="mini" data-act="artifact" data-key="scanner-cronjob">scanner CronJob</button>
+    <button class="mini" data-act="artifact" data-key="discovery-cronjob">discovery CronJob</button>
   </div>` : `<div class="note">No public receiver URL yet, so downloads cannot
   bake a URL agents can reach - save one in step 1 and these appear.</div>`}</div>
 
@@ -2112,6 +2140,38 @@ async function managedAction(act, el) {
     history.replaceState(null, '', '#registry');
     drawNav(); render(); return;
   }
+  if (act === 'cand-add') {
+    // From the review queue: open the registry form prefilled with what
+    // discovery observed and how the classifier read it. Saving the entry
+    // is what resolves the candidate - the receiver marks it resolved the
+    // moment the registry claims one of its domains, so there is no second
+    // "yes I meant it" step.
+    const c = (CAND || []).find(x => x.key === el.getAttribute('data-key'));
+    if (!c) return;
+    const slug = c.name.toLowerCase().replace(/[^a-z0-9-]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'new-tool';
+    RPRE = {id: slug, name: c.name};
+    if (c.vendor) RPRE.vendor = c.vendor;
+    if (REG_CATEGORIES.indexOf(c.category) >= 0) RPRE.category = c.category;
+    if ((c.domains || []).length) RPRE.domains = c.domains;
+    REDIT = ''; RERR = ''; RADV = false;
+    view = 'registry'; detail = null;
+    history.replaceState(null, '', '#registry');
+    drawNav(); render(); return;
+  }
+  if (act === 'cand-dismiss') {
+    const key = el.getAttribute('data-key');
+    const r = await mfetch('/api/candidates/dismiss',
+      {method: 'POST', body: JSON.stringify({key})});
+    if (!r.ok) {
+      if (r.status === 401) { sessionLost(); return; }
+      let d = r.statusText; try { d = (await r.json()).detail || d; } catch (e) {}
+      alert('Could not dismiss: ' + d);
+    } else {
+      CAND = (CAND || []).filter(x => x.key !== key);
+    }
+    render(); return;
+  }
   if (act === 'reg-save') {
     let entry;
     try { entry = regEntryFromForm(); }
@@ -2121,8 +2181,9 @@ async function managedAction(act, el) {
     if (r.ok) {
       RENTRIES = (await r.json()).entries || [];
       REDIT = null; RPRE = null; RERR = ''; RADV = false;
-      // The registry feeds everything derived; those views are stale now.
-      REG = null; REGTOOLS = null; EV = null;
+      // The registry feeds everything derived; those views are stale now,
+      // the candidates queue included - a saved entry may have resolved one.
+      REG = null; REGTOOLS = null; EV = null; CAND = null;
     } else {
       if (r.status === 401) { sessionLost(); return; }
       let d = r.statusText; try { d = (await r.json()).detail || d; } catch (e) {}
@@ -2142,7 +2203,7 @@ async function managedAction(act, el) {
       let d = r.statusText; try { d = (await r.json()).detail || d; } catch (e) {}
       alert('Could not delete: ' + d);
     } else { RENTRIES = (await r.json()).entries || []; }
-    REG = null; REGTOOLS = null; EV = null;
+    REG = null; REGTOOLS = null; EV = null; CAND = null;
     render(); return;
   }
   if (act === 'gov-edit') {

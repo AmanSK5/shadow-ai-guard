@@ -206,9 +206,13 @@ MCP scanner ───────┘       │
 - **endpoint**: collectors for macOS, Windows and Linux. These read local AI
   tool configuration to report which account each tool is signed into. This is
   the data most API-level products do not have.
-- **discovery**: a weekly job that classifies unrecognised AI-looking domains
-  from DNS telemetry and proposes registry additions as merge requests. A human
-  approves every change.
+- **discovery**: a scheduled job that classifies unrecognised AI-looking
+  domains from DNS telemetry and posts them to the portal's review queue as
+  candidates - "new AI tool found on N devices" - where defining or
+  dismissing each one is a human decision. Deployable from the portal as a
+  pre-configured CronJob. (With GitLab configured it opens merge requests
+  against the registry instead, for teams whose registry review lives in a
+  forge.)
 - **portal**: the governance and relationship view. Findings arrive as isolated
   events; the portal correlates them into people, devices, tools and
   detection-source health. It reads from Loki, holds no database and is not in
@@ -217,9 +221,6 @@ MCP scanner ───────┘       │
   analysis, trends, counts and drilling into the underlying telemetry. Grafana
   panels can also be embedded into the portal.
 - **Alertmanager**: optional alerting for findings such as personal-account use.
-
-The discovery job currently opens GitLab merge requests; a GitHub backend is on
-the roadmap.
 
 <p align="right"><a href="#top">Back to top ↑</a></p>
 

@@ -201,8 +201,11 @@ supports. They run as a scheduled job and post findings to the receiver like
 any other source.
 
 **discovery**, a scheduled job that classifies unrecognised AI-looking
-domains from DNS telemetry and proposes registry additions for human review.
-It never adds to the registry itself; a person approves every change.
+domains from DNS telemetry and posts candidates to the receiver, where they
+wait in the portal's review queue. It never adds to the registry itself; a
+person turns each candidate into a registry entry or dismisses it. (With
+GitLab configured it proposes merge requests against the registry source
+instead.)
 
 **dashboard**, Grafana over the log store. It reads findings, not a
 database, and computes personal-vs-work from the corporate domain variable
