@@ -313,10 +313,13 @@ def _frame_src() -> str:
     setting as last seen in the settings cache.
 
     The cache only, deliberately: this runs on every response with no
-    session to fetch with. The consequence is one page-load of lag after
-    saving a Grafana URL before frames unblock - the next /api/config call
-    warms the cache - which beats either fetching per response or leaving
-    settings-configured Grafana permanently unframeable.
+    session to fetch with. The consequence is real and worth stating
+    plainly: a document's CSP is fixed when it is served, so a page that
+    was open BEFORE a Grafana URL was saved stays blocked until a full
+    reload, however warm this cache gets - which the homelab install
+    demonstrated as "This content is blocked" with a correct header on the
+    wire. The page therefore forces location.reload() after saving any
+    grafana_* setting; this cache covers every load after that.
     """
     if GRAFANA_URL:
         return GRAFANA_URL
