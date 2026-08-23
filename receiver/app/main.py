@@ -27,12 +27,13 @@ import hmac
 import json
 import logging
 import os
+import re
 import secrets
 import sys
 import threading
 import time
 import urllib.parse
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -492,8 +493,13 @@ def _admin_header_ok(header: str) -> bool:
 
 
 def _body_size_response(request: Request):
-    """The 4xx a too-large or unsized POST body earns, or None if fine."""
-    if request.method != "POST":
+    """The 4xx a too-large or unsized POST/PUT body earns, or None if fine.
+
+    PUT joined POST when /admin/settings arrived: a method check that names
+    only POST is a size cap the next body-carrying method silently walks
+    past.
+    """
+    if request.method not in ("POST", "PUT"):
         return None
     declared = request.headers.get("content-length")
     if declared is None:
@@ -643,9 +649,26 @@ def registry_collector(request: Request, authorization: str = Header(default="")
             reg = json.load(f)
     except (OSError, json.JSONDecodeError):
         raise HTTPException(503, "collector registry not available")
-    if CORP_DOMAINS and isinstance(reg, dict):
-        reg.setdefault("config", {})["corp_domains"] = CORP_DOMAINS
+    domains = _effective_corp_domains()
+    if domains and isinstance(reg, dict):
+        reg.setdefault("config", {})["corp_domains"] = domains
     return reg
+
+
+def _effective_corp_domains() -> list[str]:
+    """The corp domains the fleet should hear: the portal-saved list when
+    one exists, the environment otherwise.
+
+    The DB row wins even when empty - an operator who saved an empty list
+    said "none", and falling back to the env there would resurrect the very
+    value they removed. Deleting the row (set_setting None) is how the env
+    comes back into effect.
+    """
+    if STATE is not None:
+        stored = STATE.get_setting("corp_domains")
+        if stored is not None:
+            return stored
+    return CORP_DOMAINS
 
 
 def _auth(authorization: str):
@@ -867,6 +890,165 @@ def session_info(authorization: str = Header(default="")):
         if u is not None:
             return {"username": u["username"], "expires_at": u["expires_at"]}
     return {"username": "", "expires_at": None}
+
+
+# ------------------------------------------------------- central settings --
+# Deployment configuration the portal edits and the fleet hears at runtime.
+# Precedence is DB-wins-when-set: a saved value overrides the matching
+# environment variable, and clearing it (null) falls back. The environment
+# stays the whole story for classic mode, which has no DB to consult.
+
+
+def _admin_actor(authorization: str) -> str:
+    """Who to stamp on a write: the session's username, or "api" for the
+    ADMIN_TOKEN credential - a credential, not a person."""
+    token = _bearer(authorization)
+    if STATE is not None and token.startswith(_state.SESSION_PREFIX):
+        u = STATE.session_user(token)
+        if u is not None:
+            return u["username"]
+    return "api"
+
+
+class SettingsUpdate(BaseModel):
+    # extra=forbid: an unknown key is a typo or a version mismatch, and
+    # accepting it silently is how someone believes a setting is in effect.
+    model_config = {"extra": "forbid"}
+    corp_domains: list[str] | None = Field(default=None, max_length=200)
+    extension_id: str | None = Field(default=None, max_length=128)
+    onboarding_done: bool | None = None
+
+
+@app.get("/admin/settings")
+def get_settings(authorization: str = Header(default="")):
+    """Each setting with its effective value AND where it came from, because
+    the portal must show when a saved value is shadowing an environment one
+    rather than let two sources of truth look like one."""
+    _admin_auth(authorization)
+    stored = STATE.get_settings()
+    corp = stored.get("corp_domains")
+    return {"settings": {
+        "corp_domains": {
+            "value": corp if corp is not None else CORP_DOMAINS,
+            "source": ("db" if corp is not None
+                       else "env" if CORP_DOMAINS else "unset"),
+            # The env list rides along so the portal can say what a saved
+            # value is shadowing, and what clearing it would fall back to.
+            "env": CORP_DOMAINS,
+        },
+        "extension_id": {
+            "value": stored.get("extension_id") or "",
+            "source": "db" if stored.get("extension_id") is not None else "unset",
+        },
+        "onboarding_done": {
+            "value": bool(stored.get("onboarding_done")),
+            "source": "db" if stored.get("onboarding_done") is not None else "unset",
+        },
+    }}
+
+
+@app.put("/admin/settings")
+def put_settings(req: SettingsUpdate, authorization: str = Header(default="")):
+    """Partial upsert: only the keys sent change. An explicit null deletes
+    the row, which is how the environment value comes back into effect."""
+    _admin_auth(authorization)
+    by = _admin_actor(authorization)
+
+    if "corp_domains" in req.model_fields_set:
+        if req.corp_domains is None:
+            STATE.set_setting("corp_domains", None, by)
+        else:
+            # The same normalisation the env path applies, for the same
+            # reason: the macOS collector matches with a comma-anchored
+            # case pattern, and a stray space or upper-case letter served
+            # here would silently turn a work account into a warn.
+            domains = _parse_corp_domains(",".join(req.corp_domains))
+            for d in domains:
+                if len(d) > 253:
+                    raise HTTPException(422, "corp domain too long: %s" % d[:60])
+            STATE.set_setting("corp_domains", domains, by)
+
+    if "extension_id" in req.model_fields_set:
+        eid = (req.extension_id or "").strip()
+        if not eid:
+            STATE.set_setting("extension_id", None, by)
+        else:
+            if any(c.isspace() or ord(c) < 32 for c in eid):
+                raise HTTPException(422, "extension id cannot contain whitespace")
+            STATE.set_setting("extension_id", eid, by)
+
+    if "onboarding_done" in req.model_fields_set:
+        STATE.set_setting("onboarding_done", req.onboarding_done, by)
+
+    return get_settings(authorization)
+
+
+# What a portal-recorded decision may look like. Same three states and the
+# same review-date discipline the governance file's validator enforces: an
+# approval with no review date is the one that outlives the person who made
+# it, and the write path must not be the way around that rule.
+_VALID_STATUSES = ("approved", "not_approved", "reviewing")
+_TOOL_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,100}$")
+
+
+class DecisionWrite(BaseModel):
+    model_config = {"extra": "forbid"}
+    tool_id: str = Field(min_length=1, max_length=100)
+    status: str = Field(min_length=1, max_length=32)
+    owner: str = Field(default="", max_length=200)
+    review_due: str = Field(default="", max_length=10)
+    reason: str = Field(default="", max_length=1000)
+
+
+class GovernanceUpdate(BaseModel):
+    model_config = {"extra": "forbid"}
+    decisions: list[DecisionWrite] = Field(default_factory=list, max_length=200)
+    delete: list[str] = Field(default_factory=list, max_length=200)
+
+
+@app.get("/admin/governance")
+def get_governance(authorization: str = Header(default="")):
+    _admin_auth(authorization)
+    return {"decisions": STATE.list_decisions()}
+
+
+@app.put("/admin/governance")
+def put_governance(req: GovernanceUpdate, authorization: str = Header(default="")):
+    """Upsert and delete decisions, validated to the same rules as the file.
+
+    Validation happens for the whole batch before anything is written, so a
+    422 means nothing changed rather than half a batch applied.
+    """
+    _admin_auth(authorization)
+    by = _admin_actor(authorization)
+
+    for d in req.decisions:
+        if not _TOOL_ID_RE.match(d.tool_id):
+            raise HTTPException(422, "malformed tool id: %s" % d.tool_id[:60])
+        if d.status not in _VALID_STATUSES:
+            raise HTTPException(
+                422, "status must be one of " + ", ".join(_VALID_STATUSES))
+        if d.review_due:
+            try:
+                date.fromisoformat(d.review_due)
+            except ValueError:
+                raise HTTPException(
+                    422, "review_due must be an ISO date (YYYY-MM-DD)")
+        if d.status == "approved" and not d.review_due:
+            raise HTTPException(
+                422, "an approval needs a review_due date: an approval with"
+                     " no expiry is the one that outlives the person who"
+                     " made it")
+    for tid in req.delete:
+        if not _TOOL_ID_RE.match(tid):
+            raise HTTPException(422, "malformed tool id: %s" % tid[:60])
+
+    for d in req.decisions:
+        STATE.upsert_decision(d.tool_id, d.status, d.owner.strip(),
+                              d.review_due, d.reason.strip(), by)
+    for tid in req.delete:
+        STATE.delete_decision(tid, by)
+    return {"decisions": STATE.list_decisions()}
 
 
 @app.post("/admin/password")

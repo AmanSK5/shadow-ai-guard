@@ -56,6 +56,10 @@ shared token off for ingest (see the configuration table).
 | POST | `/admin/logout` | admin | revoke the presented session |
 | GET  | `/admin/session` | admin | who this session is and until when; the portal's validity probe |
 | POST | `/admin/password` | admin | change the password (`current` + `new`). With the `ADMIN_TOKEN` credential, `current` is not required - the break-glass reset. Every other session dies with the old password |
+| GET  | `/admin/settings` | admin | each central setting with its effective value and its source (`db`, `env`, `unset`), so a saved value shadowing an environment one is visible as such |
+| PUT  | `/admin/settings` | admin | partial upsert of `corp_domains`, `extension_id`, `onboarding_done`; a saved value wins over the matching env var, an explicit `null` deletes the row and falls back to it. Unknown keys are 422 |
+| GET  | `/admin/governance` | admin | the portal-recorded governance decisions |
+| PUT  | `/admin/governance` | admin | upsert (`decisions`) and delete (`delete`) decisions, validated to the governance file's own rules - an approval needs a `review_due` date. The whole batch validates before anything is written |
 
 **Admin auth** is either of two things: a session from `/admin/login`, or
 the optional `ADMIN_TOKEN` API credential. Humans get the first; automation
@@ -88,7 +92,7 @@ Everything is environment variables. Only the token is required.
 | `REGISTRY_PATH` | `/etc/ai-guard/registry.json` | where the compiled registry is mounted |
 | `COLLECTOR_REGISTRY_PATH` | `/etc/ai-guard/collector.json` | where the collector view is mounted |
 | `DISPLAY_TZ` | `UTC` | timezone for the human-readable timestamp on alerts only; machine timestamps are always UTC |
-| `CORP_DOMAINS` | unset | corporate domains, comma-separated. When set, served to the endpoint collectors inside `/registry/collector` as `config.corp_domains`; collectors prefer that list to their locally configured one, so a change here reaches the fleet on its next check-in with no MDM re-push. Unset means collectors keep using their local configuration |
+| `CORP_DOMAINS` | unset | corporate domains, comma-separated. When set, served to the endpoint collectors inside `/registry/collector` as `config.corp_domains`; collectors prefer that list to their locally configured one, so a change here reaches the fleet on its next check-in with no MDM re-push. Unset means collectors keep using their local configuration. In managed mode a list saved in the portal (`/admin/settings`) wins over this, and clearing it there falls back here |
 | `MANAGED_MODE` | unset | `true` enables device enrollment, per-device credentials, revocation and a fleet inventory (see below). Unset means byte-for-byte the classic receiver: no state file, `/enroll` and `/admin/*` answer 404 |
 | `ADMIN_TOKEN` | unset | optional API credential for `/admin/*` - automation, and break-glass recovery when the portal password is lost. Humans use an account and a session instead (see managed mode above). Deliberately a separate secret from `AUTH_TOKEN`, which sits on every machine in the fleet - which is exactly why it must not be able to mint credentials |
 | `STATE_DB_PATH` | `/var/lib/ai-guard/state.db` | where the managed-mode SQLite file lives. The one non-disposable thing: it holds the device registry and its credential hashes |
