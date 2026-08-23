@@ -63,6 +63,16 @@ packed extension (.crx) and an update manifest (updates.xml) on public
 HTTPS, plus two policies per browser delivered by your MDM or GPO: an
 install policy (forcelist) and a managed-storage config.
 
+With a managed-mode deployment, the portal generates the managed-storage
+config pre-configured (the onboarding wizard, or the Setup view's browser
+row): receiver URL, a fresh enrollment token, and your corporate domains
+baked into a ready-to-upload plist whose header names the per-browser
+preference domains and the Windows script invocation. Set the extension ID
+in the portal's Settings first - the id comes from packing (step 2 below)
+and the portal cannot derive it for you. Because this extension reads no
+central config, a corporate-domain change means regenerating and re-pushing
+that policy.
+
 ### 1. Customise the source
 
 In `src/manifest.json`, replace `https://ai-guard.example.com/*` in
