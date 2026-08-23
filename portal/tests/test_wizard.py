@@ -259,3 +259,22 @@ def test_the_js_category_list_matches_the_schema():
     js_list = html[start:html.index("];", start)]
     for value in enum:
         assert "'%s'" % value in js_list, value
+
+
+def test_every_setup_doc_reference_is_a_real_file():
+    """The Setup view renders these as GitHub links pinned to the running
+    release. A renamed or moved doc becomes a 404 on every deployment's
+    Setup page, so the paths are held to the repo here."""
+    from app.derive import status_from
+
+    repo = Path(__file__).parent.parent.parent
+    docs = {r["doc"] for g in status_from([])["groups"] for r in g["sources"]}
+    for d in sorted(docs):
+        assert (repo / d).is_file(), d
+
+
+def test_the_page_carries_the_review_queue():
+    html = (main.STATIC / "index.html").read_text()
+    for needle in ("review_queue", "Awaiting a decision", "new today",
+                   "docUrl", "github.com/AmanSK5/shadow-ai-guard/blob/"):
+        assert needle in html, needle

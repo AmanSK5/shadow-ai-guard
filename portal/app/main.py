@@ -684,10 +684,11 @@ KNOWN_WIDGETS = {
     "detection_coverage": "How much of each surface is reporting",
     "source_health": "Sources reporting versus silent",
     "paste_guard": "Pastes warned, overridden and blocked",
+    "review_queue": "Observed tools awaiting a governance decision",
 }
 
-DEFAULT_WIDGETS = ["stat_row", "top_tools", "recent_personal_accounts",
-                   "detection_coverage"]
+DEFAULT_WIDGETS = ["stat_row", "review_queue", "top_tools",
+                   "recent_personal_accounts", "detection_coverage"]
 
 
 def _widgets(spec=None):
