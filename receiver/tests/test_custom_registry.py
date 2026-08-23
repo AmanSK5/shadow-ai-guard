@@ -8,6 +8,8 @@ receiver's domain normalization - so the fleet detects it with no rebuild.
 
 import json
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 os.environ.setdefault("AUTH_TOKEN", "test-token-for-ci")
@@ -24,6 +26,26 @@ client = TestClient(app)
 AUTH = {"Authorization": "Bearer test-token-for-ci"}
 ADMIN = {"Authorization": "Bearer admin-test-token"}
 REPO = Path(__file__).parent.parent.parent
+DIST = REPO / "registry" / "dist"
+
+
+def _ensure_dist() -> bool:
+    """registry/dist is a build output, not committed: CI checkouts start
+    without it. Build it (no scanner-fallback write, so the tree stays
+    clean) - requirements-ci.txt provides pyyaml and jsonschema there. A
+    machine that can neither find nor build it skips rather than fails,
+    because that is a machine missing the registry toolchain, not a bug."""
+    if (DIST / "collector.json").exists() and (DIST / "registry.json").exists():
+        return True
+    proc = subprocess.run(
+        [sys.executable, str(REPO / "registry" / "build.py"), "--no-fallback"],
+        capture_output=True, text=True, cwd=str(REPO / "registry"))
+    return proc.returncode == 0
+
+
+if not _ensure_dist():
+    pytest.skip("registry/dist not built and build.py could not run here",
+                allow_module_level=True)
 
 ENTRY = {
     "id": "acme-copilot",
