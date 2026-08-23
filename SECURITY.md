@@ -91,19 +91,17 @@ before; the wizard step is optional and the env path is unchanged.
 Classically it is HTTP basic auth: one shared credential, no per-user trail,
 and plaintext without TLS in front of it. That is a floor, not a ceiling.
 
-It refuses to start without it. Coming up open because a variable was missed is
-the failure that matters for this component: it is reachable, it looks like it
-works, and nothing says the door is off. `PORTAL_AUTH=none` exists for
-localhost and for running behind a proxy that authenticates instead, and it
-logs a warning on every start so an unauthenticated deployment is never
-something nobody noticed.
+It refuses to start without auth configured, so it can't come up open just
+because a variable was missed. `PORTAL_AUTH=none` exists for localhost and
+for running behind a proxy that authenticates instead, and it logs a warning
+on every start so an unauthenticated deployment is always a visible choice.
 
 If you already run a reverse proxy, authenticate there. It can do OIDC, mTLS
 or an allowlist against whatever you already have, which is better than what
 the portal can offer on its own.
 
-`/healthz` is unauthenticated deliberately: a liveness probe that needs a
-credential fails for the wrong reason, and it returns nothing about the estate.
+`/healthz` is unauthenticated on purpose: liveness probes shouldn't need
+credentials, and it reveals nothing about the estate.
 
 ## Rotating the bearer token
 
