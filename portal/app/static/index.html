@@ -201,6 +201,11 @@ let WIZSTORE = 'self', TESTS = {};
 // decision re-renders the view, and a <details> that snaps shut under the
 // operator mid-triage would lose their place.
 let WLOPEN = false;
+// The Tool registry view: the custom entries listing, which entry the form
+// is editing ('' = a new one, null = no form), the prefill the form renders
+// from (kept across a refused save so typing survives), the last refusal,
+// and whether the advanced-JSON editor is showing.
+let RENTRIES = null, REDIT = null, RPRE = null, RERR = '', RADV = false;
 let S = null, CFG = {}, loadError = '';
 // What /api/auth said: {mode, authenticated, username, setup_needed}.
 // The session itself is an HttpOnly cookie this script can never read -
@@ -229,6 +234,7 @@ function showLogin(msg) {
   MINTED = null; FLEET = null; TOKENS = null; SETTINGS = null;
   GOVEDIT = null; GOVPRE = null; GOVERR = ''; SETMSG = '';
   REGTOOLS = null; GOVDECS = null; TESTS = {}; WLOPEN = false;
+  RENTRIES = null; REDIT = null; RPRE = null; RERR = ''; RADV = false;
   chrome(false);
   const create = AUTH && AUTH.setup_needed;
   app.innerHTML = `<div style="max-width:440px;margin:8vh auto 0">
@@ -276,7 +282,7 @@ async function load(force) {
   const q = force ? '?refresh=true' : '';
   // Refresh must clear the views that read a second endpoint too, or the
   // button refreshes some of the page and silently not the rest.
-  if (force) { DIAG = null; REG = null; EV = null; PG = null; FLEET = null; TOKENS = null; SETTINGS = null; REGTOOLS = null; GOVDECS = null; }
+  if (force) { DIAG = null; REG = null; EV = null; PG = null; FLEET = null; TOKENS = null; SETTINGS = null; REGTOOLS = null; GOVDECS = null; RENTRIES = null; }
   try {
     const cr = await fetch('/api/config');
     if (cr.status === 401 && AUTH && AUTH.mode === 'login') { sessionLost(); return; }
@@ -343,8 +349,8 @@ const NAV = [
                            ['devices','Devices'],['personal','Personal accounts'],
                            ['mcp','MCP servers']]},
   {grp:'Coverage',  items:[['setup','Setup'],['coverage','Uncovered devices']]},
-  {grp:'Governance',items:[['register','AI register'],['paste','Paste guard'],
-                           ['iso','ISO 42001 evidence']]},
+  {grp:'Governance',items:[['register','AI register'],['registry','Tool registry'],
+                           ['paste','Paste guard'],['iso','ISO 42001 evidence']]},
   {grp:'Analytics', items:[['dashboard','Grafana']]},
   {grp:'Managed',   items:[['fleet','Fleet'],['tokens','Enrollment tokens']]},
   {grp:'System',    items:[['settings','Settings']]},
@@ -736,6 +742,160 @@ function govForm(r) {
   </div>`;
 }
 
+// ------------------------------------------------------- tool registry --
+// Portal-defined tools: the same shape as a shipped entry, validated by
+// the receiver to the registry's own rules, detected by the fleet on its
+// next check-in. Shipped entries are shown read-only - they update with
+// releases, which is the point of not touching them.
+
+// The categories the registry schema allows. Mirrored from
+// registry/schema.json; a source-text test keeps the two in step.
+const REG_CATEGORIES = ['assistant', 'coding', 'transcription', 'writing',
+  'image', 'search', 'local-model', 'voice', 'productivity', 'platform',
+  'agent', 'other', 'unreviewed'];
+
+const _csv = v => (v || []).join(', ');
+const _uncsv = id => _val(id).split(',').map(x => x.trim()).filter(Boolean);
+
+function regForm() {
+  const e = RPRE || {};
+  const cli = e.cli || {};
+  const ext = e.extension_ids || {};
+  const row = (id, label, val, ph) => `<dt>${esc(label)}</dt>
+    <dd><input id="${id}" class="mfield" style="min-width:340px"
+      value="${esc(val || '')}" placeholder="${esc(ph || '')}"></dd>`;
+  const opt = (v, cur) => `<option value="${v}"${v === cur ? ' selected' : ''}>${v}</option>`;
+  return `<div class="wcard" style="margin-bottom:10px">
+  <h3>${REDIT === '' ? 'Define a tool' : 'Edit ' + esc(REDIT)}</h3>
+  <p class="lede" style="margin-bottom:10px">Identifiers are what the fleet
+  scans for - list only what you have seen or verified. Comma-separated
+  where a list is asked for. The receiver validates everything to the
+  registry's own rules and says exactly what it refuses.</p>
+  ${RERR ? `<div class="note">${esc(RERR)}</div>` : ''}
+  <div style="margin-bottom:8px">
+    <button class="mini" data-act="reg-adv">${RADV ? 'form editor' : 'advanced: edit as JSON'}</button>
+  </div>
+  ${RADV ? `<textarea id="re-json" class="mfield" rows="14"
+      style="width:100%;font-family:ui-monospace,monospace"
+      >${esc(JSON.stringify(e, null, 2))}</textarea>`
+  : `<dl class="kv">
+    ${REDIT === '' ? row('re-id', 'id', e.id, 'lowercase-slug, e.g. acme-copilot')
+      : `<dt>id</dt><dd class="mono">${esc(REDIT)}</dd>`}
+    ${row('re-name', 'name', e.name, 'Acme Copilot')}
+    ${row('re-vendor', 'vendor', e.vendor, 'Acme')}
+    <dt>category</dt><dd><select id="re-category" class="mfield">
+      ${REG_CATEGORIES.map(c => opt(c, e.category || 'unreviewed')).join('')}</select></dd>
+    <dt>risk tier</dt><dd><select id="re-risk" class="mfield">
+      ${['high', 'medium', 'low'].map(r => opt(r, e.risk_tier || 'medium')).join('')}</select></dd>
+    ${row('re-domains', 'browser domains', _csv(e.domains), 'copilot.acme.example (lowercase)')}
+    ${row('re-app-names', 'macOS app names', _csv(e.app_names), 'Acme Copilot.app')}
+    ${row('re-bundle-ids', 'macOS bundle ids', _csv(e.bundle_ids), 'com.acme.copilot')}
+    ${row('re-exe-names', 'windows exe names', _csv(e.exe_names), 'acme.exe')}
+    ${row('re-cli-binaries', 'cli binaries', _csv(cli.binaries), 'acme')}
+    ${row('re-cli-config', 'cli config paths (from $HOME)', _csv(cli.config_paths), '.acme')}
+    ${row('re-ext-vscode', 'vscode extension ids', _csv(ext.vscode), 'acme.copilot')}
+    ${row('re-email', 'signup email sender domains', _csv(e.email_senders), 'acme.example')}
+    ${row('re-mcp-ids', 'mcp identifiers', _csv(e.mcp_identifiers), 'acme-copilot')}
+    ${row('re-mcp-any', 'mcp config paths (all OS, from $HOME)', _csv(e.mcp_config_paths), '.acme/mcp.json')}
+    ${row('re-mcp-macos', 'mcp config paths (macOS)', _csv(e.mcp_config_paths_macos), 'Library/Acme/mcp.json')}
+    ${row('re-mcp-windows', 'mcp config paths (Windows)', _csv(e.mcp_config_paths_windows), 'AppData/Acme/mcp.json')}
+    ${row('re-mcp-linux', 'mcp config paths (Linux)', _csv(e.mcp_config_paths_linux), '.config/acme/mcp.json')}
+    ${row('re-notes', 'notes', e.notes, '')}
+  </dl>`}
+  <div style="margin-top:10px">
+    <button class="mini" data-act="reg-save">save tool</button>
+    <button class="mini" data-act="reg-cancel">cancel</button>
+  </div></div>`;
+}
+
+// The entry the form currently describes. Empty lists and empty strings
+// are dropped, because the schema's shapes are optional-or-meaningful and
+// an empty cli object is neither.
+function regEntryFromForm() {
+  if (RADV) {
+    const t = document.getElementById('re-json');
+    return JSON.parse((t && t.value) || '{}');
+  }
+  const e = {
+    id: REDIT === '' ? _val('re-id') : REDIT,
+    name: _val('re-name'), vendor: _val('re-vendor'),
+    category: _val('re-category'), risk_tier: _val('re-risk'),
+  };
+  const lists = {
+    domains: _uncsv('re-domains'), app_names: _uncsv('re-app-names'),
+    bundle_ids: _uncsv('re-bundle-ids'), exe_names: _uncsv('re-exe-names'),
+    email_senders: _uncsv('re-email'), mcp_identifiers: _uncsv('re-mcp-ids'),
+    mcp_config_paths: _uncsv('re-mcp-any'),
+    mcp_config_paths_macos: _uncsv('re-mcp-macos'),
+    mcp_config_paths_windows: _uncsv('re-mcp-windows'),
+    mcp_config_paths_linux: _uncsv('re-mcp-linux'),
+  };
+  Object.keys(lists).forEach(k => { if (lists[k].length) e[k] = lists[k]; });
+  const binaries = _uncsv('re-cli-binaries'), config = _uncsv('re-cli-config');
+  if (binaries.length || config.length) {
+    e.cli = {};
+    if (config.length) e.cli.config_paths = config;
+    if (binaries.length) e.cli.binaries = binaries;
+  }
+  const vscode = _uncsv('re-ext-vscode');
+  if (vscode.length) e.extension_ids = {vscode: vscode};
+  const notes = _val('re-notes');
+  if (notes) e.notes = notes;
+  return e;
+}
+
+async function registryView() {
+  const gate = managedGate('Tool registry'); if (gate) return gate;
+  if (!RENTRIES) {
+    const r = await mfetch('/api/registry-entries');
+    if (!r.ok) return managedError(r, 'Tool registry');
+    RENTRIES = (await r.json()).entries || [];
+  }
+  if (!REGTOOLS) {
+    const r = await mfetch('/api/registry-tools');
+    REGTOOLS = r.ok ? (await r.json()).tools || [] : [];
+  }
+  const shipped = REGTOOLS.filter(t => !t.custom);
+  return `<h2>Tool registry</h2>
+  <p class="lede">What the fleet scans for. Tools defined here are served to
+  every collector on its next check-in and normalize findings immediately -
+  the whole point is that a new tool needs no repo, no rebuild and no
+  re-push. Whether a tool is <i>approved</i> is a separate question: record
+  that on the AI register.</p>
+
+  ${REDIT !== null ? regForm() : `<div style="margin-bottom:14px">
+    <button class="mini" style="padding:6px 14px" data-act="reg-add">define a tool</button>
+  </div>`}
+
+  <h2 style="font-size:16px">Your tools (${RENTRIES.length})</h2>
+  ${RENTRIES.length ? `<table>
+  <tr><th>id</th><th>name</th><th>vendor</th><th>identifiers</th><th>updated</th><th></th></tr>
+  ${RENTRIES.map(x => {
+    const e = x.entry;
+    const n = (e.domains || []).length + (e.app_names || []).length
+      + (e.exe_names || []).length + ((e.cli || {}).binaries || []).length
+      + ((e.cli || {}).config_paths || []).length;
+    return `<tr>
+    <td class="mono">${esc(x.tool_id)}${x.shadowed
+      ? ' <span class="pill p-warn">shadowed by a release - delete this copy</span>' : ''}</td>
+    <td>${esc(e.name || '')}</td><td>${esc(e.vendor || '')}</td>
+    <td>${n}</td>
+    <td>${when(x.updated_at)} <span style="color:var(--mut)">${esc(x.updated_by || '')}</span></td>
+    <td><button class="mini" data-act="reg-edit" data-key="${esc(x.tool_id)}">edit</button>
+        <button class="mini" data-act="reg-delete" data-key="${esc(x.tool_id)}">delete</button></td>
+  </tr>`; }).join('')}</table>`
+  : `<p class="lede">None yet. A tool observed on the register that the
+  registry does not know has an "add to registry" button - or define one
+  here before it ever appears.</p>`}
+
+  <details style="margin-top:22px">
+  <summary style="cursor:pointer;font-size:14px">Shipped registry (${shipped.length}) — read-only, updates with releases</summary>
+  <table style="margin-top:10px"><tr><th>id</th><th>name</th><th>vendor</th></tr>
+  ${shipped.map(t => `<tr><td class="mono">${esc(t.id)}</td>
+    <td>${esc(t.name)}</td><td style="color:var(--mut)">${esc(t.vendor)}</td></tr>`).join('')}
+  </table></details>`;
+}
+
 // The watchlist as a decision surface: registry tools nothing has observed
 // yet, with the same approve / not-approved controls the wizard's baseline
 // had. This exists because the wizard was the only place to record a
@@ -783,7 +943,19 @@ function watchlistBlock(observedIds) {
 
 async function register() {
   if (!REG) {
-    try { REG = await (await fetch('/api/register')).json(); }
+    try {
+      const r = await fetch('/api/register');
+      if (!r.ok) {
+        if (r.status === 401 && AUTH && AUTH.mode === 'login') { sessionLost(); return ''; }
+        // An error body parses as JSON too; storing it as REG rendered a
+        // page of "undefined" instead of the reason.
+        let d = r.statusText;
+        try { d = (await r.json()).detail || d; } catch (e2) { /* keep */ }
+        return `<h2>AI register</h2><div class="note">Could not build
+      the register: ${esc(String(d))}</div>`;
+      }
+      REG = await r.json();
+    }
     catch (e) { return `<h2>AI register</h2><div class="note">Could not build
       the register: ${esc(String(e.message || e))}</div>`; }
   }
@@ -985,7 +1157,9 @@ async function register() {
     ${CFG.managed && CFG.managed.enabled ? `<div style="margin-top:8px">
       <button class="mini" data-act="gov-edit" data-key="${esc(r.id)}">edit</button>
       ${r.status_source === 'portal' ? `<button class="mini" data-act="gov-clear"
-        data-key="${esc(r.id)}">clear decision</button>` : ''}</div>` : ''}`}
+        data-key="${esc(r.id)}">clear decision</button>` : ''}
+      ${!r.in_registry ? `<button class="mini" data-act="reg-suggest"
+        data-key="${esc(r.id)}">add to registry</button>` : ''}</div>` : ''}`}
     ${exceptionBlock(r)}
   </div>`).join('')}
   </div>` : `<p class="lede">No AI tools observed in the last ${esc(win)}.
@@ -1838,6 +2012,68 @@ async function managedAction(act, el) {
     history.replaceState(null, '', '#setup');
     drawNav(); render(); return;
   }
+  if (act === 'reg-add') { REDIT = ''; RPRE = null; RERR = ''; RADV = false; render(); return; }
+  if (act === 'reg-cancel') { REDIT = null; RPRE = null; RERR = ''; RADV = false; render(); return; }
+  if (act === 'reg-adv') {
+    // Toggling into JSON carries the form's current state with it, so
+    // nothing typed is lost; toggling back re-renders the form from the
+    // JSON if it parses, and stays put with the error if it does not.
+    try { RPRE = regEntryFromForm(); RADV = !RADV; RERR = ''; }
+    catch (e) { RERR = 'That JSON does not parse: ' + String(e.message || e); }
+    render(); return;
+  }
+  if (act === 'reg-edit') {
+    const id = el.getAttribute('data-key');
+    const x = (RENTRIES || []).find(r => r.tool_id === id);
+    REDIT = id; RPRE = x ? x.entry : null; RERR = ''; RADV = false;
+    render(); return;
+  }
+  if (act === 'reg-suggest') {
+    // From the register's "not in registry" row: open the form prefilled
+    // with what was observed. A domain-shaped tool name seeds domains.
+    const t = el.getAttribute('data-key');
+    const slug = t.toLowerCase().replace(/[^a-z0-9-]+/g, '-')
+      .replace(/^-+|-+$/g, '').replace(/^[^a-z0-9]+/, '') || 'new-tool';
+    RPRE = {id: slug, name: t};
+    if (t.indexOf('.') > 0 && t.indexOf(' ') < 0) RPRE.domains = [t.toLowerCase()];
+    REDIT = ''; RERR = ''; RADV = false;
+    view = 'registry'; detail = null;
+    history.replaceState(null, '', '#registry');
+    drawNav(); render(); return;
+  }
+  if (act === 'reg-save') {
+    let entry;
+    try { entry = regEntryFromForm(); }
+    catch (e) { RERR = 'That JSON does not parse: ' + String(e.message || e); render(); return; }
+    const r = await mfetch('/api/registry-entries',
+      {method: 'POST', body: JSON.stringify({entries: [entry]})});
+    if (r.ok) {
+      RENTRIES = (await r.json()).entries || [];
+      REDIT = null; RPRE = null; RERR = ''; RADV = false;
+      // The registry feeds everything derived; those views are stale now.
+      REG = null; REGTOOLS = null; EV = null;
+    } else {
+      if (r.status === 401) { sessionLost(); return; }
+      let d = r.statusText; try { d = (await r.json()).detail || d; } catch (e) {}
+      RERR = typeof d === 'string' ? d : 'Check the fields.';
+      RPRE = entry;  // the redraw keeps what was typed
+    }
+    render(); return;
+  }
+  if (act === 'reg-delete') {
+    const id = el.getAttribute('data-key');
+    if (!confirm('Delete the custom tool ' + id + '? The fleet stops '
+                 + 'scanning for its identifiers on the next check-in.')) return;
+    const r = await mfetch('/api/registry-entries',
+      {method: 'POST', body: JSON.stringify({delete: [id]})});
+    if (!r.ok) {
+      if (r.status === 401) { sessionLost(); return; }
+      let d = r.statusText; try { d = (await r.json()).detail || d; } catch (e) {}
+      alert('Could not delete: ' + d);
+    } else { RENTRIES = (await r.json()).entries || []; }
+    REG = null; REGTOOLS = null; EV = null;
+    render(); return;
+  }
   if (act === 'gov-edit') {
     const id = el.getAttribute('data-key');
     GOVPRE = null; GOVERR = '';
@@ -2076,6 +2312,7 @@ async function render() {
   if (view === 'fleet') { app.innerHTML = await fleet(); return; }
   if (view === 'tokens') { app.innerHTML = await tokens(); return; }
   if (view === 'wizard') { app.innerHTML = await wizard(); return; }
+  if (view === 'registry') { app.innerHTML = await registryView(); return; }
   app.innerHTML = ({setup, overview, devices, people, tools, coverage,
                     dashboard, personal, mcp})[view]();
 }

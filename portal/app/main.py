@@ -256,6 +256,7 @@ _session_cache: dict[str, tuple[float, str]] = {}  # token -> (until, username)
 SETTINGS_CACHE_TTL = 30
 _remote_settings_cache: dict = {"at": 0.0, "data": None}
 _log_store_cache: dict = {"at": 0.0, "data": None}
+_registry_entries_cache: dict = {"at": 0.0, "data": None}
 
 
 def _invalidate_settings_caches():
@@ -510,6 +511,50 @@ def _log_store(request):
     return (LOKI_URL, LOKI_USERNAME or "", LOKI_PASSWORD or "", "env")
 
 
+def _custom_registry_entries(request) -> list:
+    """The portal-defined registry entries (raw entry dicts, shadowed ones
+    excluded - shipped wins those), cached briefly, empty outside login
+    mode. Loud when the receiver cannot answer: quietly narrowing the
+    registry would make a portal-defined tool vanish from every view while
+    the fleet keeps detecting it, which is exactly the split-brain this
+    project exists to avoid."""
+    if not LOGIN_MODE or request is None:
+        return []
+    now = time.time()
+    if (_registry_entries_cache["data"] is not None
+            and now - _registry_entries_cache["at"] < SETTINGS_CACHE_TTL):
+        return _registry_entries_cache["data"]
+    token = request.cookies.get(SESSION_COOKIE, "")
+    try:
+        out = managed.receiver_request(
+            RECEIVER_URL, "GET", "/admin/registry-entries", token)
+    except managed.ReceiverError as e:
+        if e.status == 502:
+            log.warning("receiver call failed for %s: %s",
+                        _redact_url(RECEIVER_URL), e.detail)
+        raise HTTPException(
+            e.status, "could not read the custom registry entries from the "
+                      "receiver (%s)" % e.detail)
+    entries = [e["entry"] for e in out.get("entries", [])
+               if not e.get("shadowed")]
+    _registry_entries_cache.update(at=now, data=entries)
+    return entries
+
+
+def _registry(request) -> dict:
+    """The registry every portal view should reason over: the shipped file
+    plus the portal-defined entries, merged exactly as the receiver serves
+    them to the fleet. Classic mode is the file alone, as ever."""
+    reg = derive.load_registry(REGISTRY_PATH)
+    custom = _custom_registry_entries(request)
+    if custom:
+        reg = dict(reg)
+        shipped = {t.get("id") for t in reg.get("tools", [])}
+        reg["tools"] = list(reg.get("tools", [])) + [
+            e for e in custom if e.get("id") not in shipped]
+    return reg
+
+
 def _cached(key, hours, builder):
     now = time.time()
     hit = _cache.get(key)
@@ -745,7 +790,7 @@ def graph(request: Request,
         _cache.pop("graph", None)
     def build():
         findings = _findings(hours, request)
-        domain_map = derive.load_domain_map(REGISTRY_PATH)
+        domain_map = derive.load_domain_map_from(_registry(request))
         identity_map = derive.load_identity_map(IDENTITY_MAP) if IDENTITY_MAP else {}
         return derive.graph_from(findings, domain_map, identity_map)
 
@@ -785,7 +830,7 @@ def evidence_snapshot(request: Request,
     """
     hours = hours or LOOKBACK_HOURS
     findings = _findings(hours, request)
-    reg = derive.load_registry(REGISTRY_PATH)
+    reg = _registry(request)
     domain_map = derive.load_domain_map_from(reg)
     gov, exceptions, _portal = _merged_governance(request)
 
@@ -836,7 +881,7 @@ def paste_guard_events(request: Request,
 
     def build():
         findings = _findings(hours, request)
-        reg = derive.load_registry(REGISTRY_PATH)
+        reg = _registry(request)
         return paste_guard.paste_guard_from(
             findings, derive.load_domain_map_from(reg))
 
@@ -881,7 +926,7 @@ def register(request: Request,
 
     def build():
         findings = _findings(hours, request)
-        reg = derive.load_registry(REGISTRY_PATH)
+        reg = _registry(request)
         return derive.register_from(findings, reg,
                                     derive.load_domain_map_from(reg), gov,
                                     exceptions)
@@ -901,7 +946,7 @@ def register(request: Request,
         )
 
     known = [t.get("id") for t in (
-        derive.load_registry(REGISTRY_PATH).get("tools") or [])]
+        _registry(request).get("tools") or [])]
     return JSONResponse({
         "rows": rows,
         "derived_at": at,
@@ -949,7 +994,7 @@ def suggest_identities(request: Request,
     """
     hours = hours or LOOKBACK_HOURS
     findings = _findings(hours, request)
-    domain_map = derive.load_domain_map(REGISTRY_PATH)
+    domain_map = derive.load_domain_map_from(_registry(request))
     devices, identities, _t, _b, _u = derive.build(findings, domain_map, {})
     matched, unmatched = derive.suggest_identity_rows(devices, identities)
 
@@ -1500,18 +1545,47 @@ def artifact(kind: str, _=Depends(require_auth),
 
 
 @app.get("/api/registry-tools")
-def registry_tools(_=Depends(require_auth)):
-    """The registry watchlist, id and name only.
+def registry_tools(request: Request, _=Depends(require_auth)):
+    """The registry watchlist, id and name only, portal-defined entries
+    included and labelled.
 
-    For the wizard's governance baseline: unlike /api/register it needs no
-    findings and no log store, because a fresh install has neither and the
-    baseline is exactly the thing you record before anything reports.
+    For the wizard's governance baseline and the register's watchlist:
+    unlike /api/register it needs no findings and no log store, because a
+    fresh install has neither and the baseline is exactly the thing you
+    record before anything reports.
     """
-    reg = derive.load_registry(REGISTRY_PATH)
+    reg = _registry(request)
     return {"tools": [
         {"id": t["id"], "name": t.get("name") or t["id"],
-         "vendor": t.get("vendor") or "", "approved": bool(t.get("approved"))}
+         "vendor": t.get("vendor") or "", "approved": bool(t.get("approved")),
+         "custom": t.get("added_by") == "portal"}
         for t in (reg.get("tools") or []) if t.get("id")]}
+
+
+class RegistryEntriesWrite(BaseModel):
+    model_config = {"extra": "forbid"}
+    entries: list[dict] = Field(default_factory=list, max_length=100)
+    delete: list[str] = Field(default_factory=list, max_length=100)
+
+
+@app.get("/api/registry-entries")
+def api_registry_entries(_=Depends(require_auth),
+                         token: str = Depends(_admin_forward)):
+    return _receiver("GET", "/admin/registry-entries", token)
+
+
+@app.post("/api/registry-entries")
+def api_registry_entries_write(req: RegistryEntriesWrite,
+                               _=Depends(require_auth),
+                               token: str = Depends(_admin_forward)):
+    """Forward to the receiver, which owns validation (the registry's own
+    schema and rules), then drop every derived cache: the registry feeds
+    the domain maps, so the graph, the register and their kin are all
+    views of the world before this write."""
+    out = _receiver("PUT", "/admin/registry-entries", token, req.model_dump())
+    _registry_entries_cache.update(at=0.0, data=None)
+    _cache.clear()
+    return out
 
 
 @app.get("/")

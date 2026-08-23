@@ -193,12 +193,12 @@ def test_registry_tools_needs_no_findings(monkeypatch, tmp_path):
         "  - id: claude\n    name: Claude\n    vendor: Anthropic\n"
         "    approved: true\n")
     monkeypatch.setattr(main, "REGISTRY_PATH", str(reg))
-    out = main.registry_tools(_=None)
+    out = main.registry_tools(None, _=None)
     assert out["tools"] == [
         {"id": "chatgpt", "name": "ChatGPT", "vendor": "OpenAI",
-         "approved": False},
+         "approved": False, "custom": False},
         {"id": "claude", "name": "Claude", "vendor": "Anthropic",
-         "approved": True}]
+         "approved": True, "custom": False}]
 
 
 def test_the_setup_rows_offer_the_extension_policy_once():
@@ -234,3 +234,28 @@ def test_the_register_carries_the_watchlist_decisions():
                    "known, not observed",
                    "run the setup wizard again"):
         assert needle in html, needle
+
+
+def test_the_page_carries_the_tool_registry_view():
+    html = (main.STATIC / "index.html").read_text()
+    for needle in ("registryView", "reg-add", "reg-save", "reg-delete",
+                   "reg-suggest", "reg-adv", "'registry'", "Tool registry",
+                   "/api/registry-entries", "add to registry"):
+        assert needle in html, needle
+
+
+def test_the_js_category_list_matches_the_schema():
+    """REG_CATEGORIES is a hand-mirror of registry/schema.json's category
+    enum; a value added to one and not the other makes the form refuse (or
+    omit) a category the receiver accepts."""
+    import json
+
+    schema = json.loads(
+        (Path(__file__).parent.parent.parent / "registry" / "schema.json")
+        .read_text())
+    enum = schema["properties"]["tools"]["items"]["properties"]["category"]["enum"]
+    html = (main.STATIC / "index.html").read_text()
+    start = html.index("REG_CATEGORIES = [")
+    js_list = html[start:html.index("];", start)]
+    for value in enum:
+        assert "'%s'" % value in js_list, value
