@@ -6,9 +6,32 @@ with nothing to build first.
 
 ## Install
 
+The chart is published as an OCI artifact on every release, beside the
+images, so no clone is needed:
+
 ```bash
-helm install ai-guard charts/ai-guard \
+helm install ai-guard oci://ghcr.io/amansk5/shadow-ai-guard/charts/ai-guard \
+  --set managed.enabled=true \
+  --set ingress.enabled=true \
+  --set ingress.host=ai-guard.example.com \
+  --set portal.ingress.enabled=true \
+  --set portal.ingress.host=ai-guard-portal.example.com
+```
+
+With `managed.enabled` that is the whole install: the receiver prints a
+one-time setup code to its log, the portal turns it into the admin account,
+and the first-run wizard configures everything else (log store, public
+receiver URL, corporate domains, governance, deployment downloads) at
+runtime. See
+[../../docs/deployment/kubernetes.md](../../docs/deployment/kubernetes.md).
+
+Classic mode instead configures by values, as ever (from a checkout,
+`charts/ai-guard` in place of the OCI reference works the same):
+
+```bash
+helm install ai-guard oci://ghcr.io/amansk5/shadow-ai-guard/charts/ai-guard \
   --set loki.pushUrl=http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push \
+  --set portal.lokiUrl=http://loki.monitoring.svc.cluster.local:3100 \
   --set ingress.enabled=true \
   --set ingress.host=ai-guard.example.com
 ```

@@ -270,6 +270,15 @@ that can run a container on a schedule.
 
 ## Deployment order
 
+In managed mode the order is one step and then the portal: `helm install`
+from the published OCI chart with `managed.enabled=true` (plus ingress
+values), create the admin account from the boot-printed setup code, and the
+first-run wizard handles the rest - log store, domains, governance, and
+pre-configured downloads for every surface. See
+[Kubernetes](docs/deployment/kubernetes.md).
+
+Classically, or by hand:
+
 1. Deploy the receiver and publish the registry:
    [Docker Compose](deploy/compose/README.md) or
    [Kubernetes](docs/deployment/kubernetes.md).
