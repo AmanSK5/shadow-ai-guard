@@ -50,13 +50,28 @@ shared token off for ingest (see the configuration table).
 | POST | `/admin/enrollment-tokens/{id}/revoke` | admin | |
 | GET  | `/admin/devices` | admin | the fleet: platform, serial, hostname, enrolled / re-enrolled, last seen, agent version |
 | POST | `/admin/devices/{id}/revoke` | admin | that machine's credential stops working on its next request |
+| GET  | `/admin/setup` | none | one bit: does an admin account need creating? The portal chooses its first screen with it |
+| POST | `/admin/setup` | setup code | claim the boot-printed code, create the admin account, leave with a session |
+| POST | `/admin/login` | none | username + password for a session token (`aigt_...`) |
+| POST | `/admin/logout` | admin | revoke the presented session |
+| GET  | `/admin/session` | admin | who this session is and until when; the portal's validity probe |
+| POST | `/admin/password` | admin | change the password (`current` + `new`). With the `ADMIN_TOKEN` credential, `current` is not required - the break-glass reset. Every other session dies with the old password |
 
-Only SHA-256 hashes of credentials are stored: a copied database file is a
-list of devices, not a bag of credentials. Enrollment tokens default to a
-180-day life because they sit inside MDM artifacts, where a short TTL means
-the deployment silently breaks for new machines - their safety comes from
-what they cannot do (only create auditable device records) and from instant
-revocation, not from a short life.
+**Admin auth** is either of two things: a session from `/admin/login`, or
+the optional `ADMIN_TOKEN` API credential. Humans get the first; automation
+and break-glass recovery get the second. On a fresh managed deployment no
+admin account exists yet, and until one does, **every boot prints a one-time
+setup code** to the receiver's log as a JSON line with `"kind":
+"setup_code"`. Enter it in the portal (or POST it to `/admin/setup`) to
+create the account; the code is consumed on use, never stored, and once an
+account exists boots print nothing.
+
+Only SHA-256 hashes of credentials are stored (passwords: scrypt): a copied
+database file is a list of devices, not a bag of credentials. Enrollment
+tokens default to a 180-day life because they sit inside MDM artifacts,
+where a short TTL means the deployment silently breaks for new machines -
+their safety comes from what they cannot do (only create auditable device
+records) and from instant revocation, not from a short life.
 
 ## Configuration
 
@@ -75,8 +90,9 @@ Everything is environment variables. Only the token is required.
 | `DISPLAY_TZ` | `UTC` | timezone for the human-readable timestamp on alerts only; machine timestamps are always UTC |
 | `CORP_DOMAINS` | unset | corporate domains, comma-separated. When set, served to the endpoint collectors inside `/registry/collector` as `config.corp_domains`; collectors prefer that list to their locally configured one, so a change here reaches the fleet on its next check-in with no MDM re-push. Unset means collectors keep using their local configuration |
 | `MANAGED_MODE` | unset | `true` enables device enrollment, per-device credentials, revocation and a fleet inventory (see below). Unset means byte-for-byte the classic receiver: no state file, `/enroll` and `/admin/*` answer 404 |
-| `ADMIN_TOKEN` | required in managed mode | the credential that mints and revokes enrollment tokens and devices. Deliberately a separate secret from `AUTH_TOKEN`, which sits on every machine in the fleet - which is exactly why it must not be able to mint credentials |
+| `ADMIN_TOKEN` | unset | optional API credential for `/admin/*` - automation, and break-glass recovery when the portal password is lost. Humans use an account and a session instead (see managed mode above). Deliberately a separate secret from `AUTH_TOKEN`, which sits on every machine in the fleet - which is exactly why it must not be able to mint credentials |
 | `STATE_DB_PATH` | `/var/lib/ai-guard/state.db` | where the managed-mode SQLite file lives. The one non-disposable thing: it holds the device registry and its credential hashes |
+| `SESSION_TTL_HOURS` | `24` | how long a portal login lasts before it asks again |
 | `REQUIRE_DEVICE_CREDENTIALS` | unset | managed mode only: `true` turns the shared token off for ingest. `/report` and `/registry` accept device credentials only; the shared token gets a 401 that says "enroll". The final step of the migration once every surface has enrolled, not a mode - unset it and unenrolled machines report again. Refuses to start without `MANAGED_MODE` |
 
 Any of these can be given as `NAME_FILE` pointing at a file instead:

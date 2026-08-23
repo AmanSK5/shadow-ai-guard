@@ -21,9 +21,16 @@ identifiable in a log:
             cannot do and from instant revocation, not from a short life.
   aigd_...  device credential: one machine's bearer for /report and
             /registry, valid until revoked.
+  aigt_...  admin session: what a portal login yields, valid for hours
+            rather than until revoked, because it stands in for a person at
+            a keyboard, not a machine on a schedule.
+  aigs_...  setup code: never stored here at all. Generated in memory at
+            boot while no admin account exists, printed to the log, and
+            good for exactly one thing - creating the first account.
 """
 
 import hashlib
+import hmac
 import json
 import os
 import secrets
@@ -33,6 +40,8 @@ from datetime import datetime, timedelta, timezone
 
 ENROLL_PREFIX = "aige_"
 DEVICE_PREFIX = "aigd_"
+SESSION_PREFIX = "aigt_"
+SETUP_PREFIX = "aigs_"
 
 # A device that authenticated this recently is alive, and a same-serial
 # enrollment must not displace it silently: that is the stolen token
@@ -78,6 +87,20 @@ CREATE TABLE IF NOT EXISTS events (
   kind   TEXT NOT NULL,
   detail TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS admin_users (
+  id            TEXT PRIMARY KEY,
+  username      TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  created_at    TEXT NOT NULL,
+  last_login_at TEXT
+);
+CREATE TABLE IF NOT EXISTS sessions (
+  token_hash BLOB NOT NULL UNIQUE,
+  user_id    TEXT NOT NULL REFERENCES admin_users(id),
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  revoked_at TEXT
+);
 """
 
 # Columns added after the first release, applied to databases that predate
@@ -100,8 +123,50 @@ def _hash(token: str) -> bytes:
     return hashlib.sha256(token.encode()).digest()
 
 
+# scrypt from the stdlib, so a password store costs no new dependency. The
+# parameters ride inside each stored hash, so raising them later only
+# affects passwords set after the change - old rows keep verifying.
+_SCRYPT_N, _SCRYPT_R, _SCRYPT_P = 16384, 8, 1
+
+
+def _hash_password(password: str) -> str:
+    salt = secrets.token_bytes(16)
+    h = hashlib.scrypt(password.encode(), salt=salt,
+                       n=_SCRYPT_N, r=_SCRYPT_R, p=_SCRYPT_P)
+    return "scrypt$%d$%d$%d$%s$%s" % (_SCRYPT_N, _SCRYPT_R, _SCRYPT_P,
+                                      salt.hex(), h.hex())
+
+
+def _verify_password(password: str, stored: str) -> bool:
+    try:
+        algo, n, r, p, salt, expect = stored.split("$")
+        if algo != "scrypt":
+            return False
+        h = hashlib.scrypt(password.encode(), salt=bytes.fromhex(salt),
+                           n=int(n), r=int(r), p=int(p))
+        return hmac.compare_digest(h.hex(), expect)
+    except (ValueError, TypeError):
+        return False
+
+
+# Verified against when a login names a username that does not exist, so
+# that failure runs the same one scrypt derivation as a wrong password for
+# a real user. Computed once: deriving it per attempt would make the
+# unknown-username path cost two derivations and stand out on a stopwatch.
+_DUMMY_HASH = _hash_password(secrets.token_hex(8))
+
+
 class EnrollError(Exception):
     """A refused enrollment, carrying the HTTP status it should become."""
+
+    def __init__(self, status: int, detail: str):
+        self.status = status
+        self.detail = detail
+        super().__init__(detail)
+
+
+class AuthError(Exception):
+    """A refused admin-auth operation, carrying its HTTP status."""
 
     def __init__(self, status: int, detail: str):
         self.status = status
@@ -297,3 +362,128 @@ class State:
                 self._event("revoked", {"device": did})
             self._db.commit()
         return bool(cur.rowcount)
+
+    # ------------------------------------------------ admin auth (portal) --
+
+    def has_admin(self) -> bool:
+        with self._lock:
+            row = self._db.execute("SELECT 1 FROM admin_users LIMIT 1").fetchone()
+        return row is not None
+
+    def create_admin(self, username: str, password: str) -> dict:
+        """The first (and for now only) admin account.
+
+        Refuses once any account exists: creating an account is what the
+        one-time setup code authorizes, and after that the door is shut.
+        More accounts, when they come, will be minted by an admin from
+        inside, not by anyone holding a boot log.
+        """
+        uid = secrets.token_hex(8)
+        with self._lock:
+            if self._db.execute("SELECT 1 FROM admin_users LIMIT 1").fetchone():
+                raise AuthError(409, "an admin account already exists")
+            self._db.execute(
+                "INSERT INTO admin_users (id, username, password_hash, created_at)"
+                " VALUES (?, ?, ?, ?)",
+                (uid, username, _hash_password(password), _now()),
+            )
+            self._event("admin_created", {"user": uid, "username": username})
+            self._db.commit()
+        return {"id": uid, "username": username}
+
+    def login(self, username: str, password: str, ttl_hours: int = 24) -> dict:
+        """A session token for a correct username and password.
+
+        One failure message for both a wrong username and a wrong password:
+        naming which half was wrong tells an attacker which usernames exist.
+        The scrypt derivation runs either way, so the two failures cost the
+        same time as well as carry the same words.
+        """
+        now = _now()
+        with self._lock:
+            row = self._db.execute(
+                "SELECT id, password_hash FROM admin_users WHERE username = ?",
+                (username,),
+            ).fetchone()
+            stored = row["password_hash"] if row else _DUMMY_HASH
+            if not _verify_password(password, stored) or row is None:
+                self._event("login_failed", {"username": username[:64]})
+                self._db.commit()
+                raise AuthError(401, "bad username or password")
+
+            # Expired sessions have nothing left to say; a login is the
+            # natural moment to sweep them out.
+            self._db.execute("DELETE FROM sessions WHERE expires_at <= ?", (now,))
+            token = SESSION_PREFIX + secrets.token_urlsafe(32)
+            expires = (datetime.now(timezone.utc)
+                       + timedelta(hours=ttl_hours)).isoformat()
+            self._db.execute(
+                "INSERT INTO sessions (token_hash, user_id, created_at, expires_at)"
+                " VALUES (?, ?, ?, ?)",
+                (_hash(token), row["id"], now, expires),
+            )
+            self._db.execute(
+                "UPDATE admin_users SET last_login_at = ? WHERE id = ?",
+                (now, row["id"]),
+            )
+            self._event("login", {"user": row["id"]})
+            self._db.commit()
+        # The one moment the plaintext exists, same as every credential here.
+        return {"token": token, "expires_at": expires, "username": username}
+
+    def session_user(self, token: str) -> dict | None:
+        """Who this session belongs to, or None if it is not a live one."""
+        with self._lock:
+            row = self._db.execute(
+                "SELECT s.user_id, s.expires_at, u.username"
+                " FROM sessions s JOIN admin_users u ON u.id = s.user_id"
+                " WHERE s.token_hash = ? AND s.revoked_at IS NULL"
+                " AND s.expires_at > ?",
+                (_hash(token), _now()),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def logout(self, token: str) -> bool:
+        with self._lock:
+            cur = self._db.execute(
+                "UPDATE sessions SET revoked_at = ? WHERE token_hash = ?"
+                " AND revoked_at IS NULL",
+                (_now(), _hash(token)),
+            )
+            if cur.rowcount:
+                self._event("logout", {})
+            self._db.commit()
+        return bool(cur.rowcount)
+
+    def change_password(self, new_password: str, current: str | None = None,
+                        keep_session: str | None = None):
+        """Set the sole admin's password, optionally proving the current one.
+
+        current=None is the break-glass path, reached only with the API
+        credential (the operator who can set the receiver's environment
+        already owns the box). Every session except keep_session dies with
+        the old password - a stolen session must not outlive the password
+        change that was made because of it.
+        """
+        with self._lock:
+            row = self._db.execute(
+                "SELECT id, password_hash FROM admin_users LIMIT 1"
+            ).fetchone()
+            if row is None:
+                raise AuthError(409, "no admin account exists")
+            if current is not None and not _verify_password(
+                current, row["password_hash"]
+            ):
+                raise AuthError(401, "current password is wrong")
+            self._db.execute(
+                "UPDATE admin_users SET password_hash = ? WHERE id = ?",
+                (_hash_password(new_password), row["id"]),
+            )
+            keep = _hash(keep_session) if keep_session else b""
+            self._db.execute(
+                "UPDATE sessions SET revoked_at = ? WHERE user_id = ?"
+                " AND revoked_at IS NULL AND token_hash != ?",
+                (_now(), row["id"], keep),
+            )
+            self._event("password_changed", {"user": row["id"]})
+            self._db.commit()
