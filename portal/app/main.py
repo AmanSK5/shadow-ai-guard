@@ -1352,9 +1352,21 @@ def test_receiver_url(_=Depends(require_auth),
         with _urlreq.urlopen(url + "/healthz", timeout=5) as resp:
             body = json.loads(resp.read() or b"{}")
     except Exception as e:
+        # This probe runs from the portal's own pod, which is a different
+        # network from the endpoints the URL is FOR. A URL only reachable
+        # over a VPN or tailnet (a .ts.net name, say) can be exactly right
+        # and still fail here - the pod cannot even resolve it. Say so,
+        # and name the check that actually settles it.
         return {"ok": False, "warnings": warnings,
-                "detail": "could not reach %s/healthz (%s)"
-                          % (_redact_url(url), type(e).__name__)}
+                "detail": "could not reach %s/healthz from inside the "
+                          "cluster (%s). That can be normal: if the URL is "
+                          "only reachable from your endpoints' network (a "
+                          "VPN or tailnet), confirm from one of those "
+                          "machines instead - curl %s/healthz - and if it "
+                          "answers, the saved URL is right and this result "
+                          "can be ignored."
+                          % (_redact_url(url), type(e).__name__,
+                             _redact_url(url))}
     if not body.get("ok"):
         return {"ok": False, "warnings": warnings,
                 "detail": "%s answered, but not like an ai-guard receiver"
