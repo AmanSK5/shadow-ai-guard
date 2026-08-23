@@ -264,14 +264,12 @@ def test_a_rejected_push_is_counted_and_says_why():
 
     original = httpx.AsyncClient.post
     httpx.AsyncClient.post = boom
-    main.LOKI_PUSH_URL = "http://example.invalid/"
     try:
         class F:
             surface, severity, os = "cli", "warn", "linux"
-        asyncio.run(main._push_loki(F(), "{}"))
+        asyncio.run(main._push_loki(F(), "{}", "http://example.invalid/", "", ""))
     finally:
         httpx.AsyncClient.post = original
-        main.LOKI_PUSH_URL = ""
 
     metrics = generate_latest().decode()
     assert 'aiguard_loki_push_failures_total{reason="http_404"}' in metrics
