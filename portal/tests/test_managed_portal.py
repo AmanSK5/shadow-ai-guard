@@ -36,6 +36,10 @@ def test_the_script_copies_match_their_sources():
         ("collector-macos.sh", "endpoint/macos/ai-guard-collector.sh"),
         ("collector-linux.sh", "endpoint/linux/ai-guard-collector.sh"),
         ("collector-windows.ps1", "endpoint/windows/ai-guard-collector.ps1"),
+        ("extension-windows.ps1",
+         "extension/deploy/windows/Deploy-AiGuardExtension.ps1"),
+        ("firefox-windows.ps1",
+         "extension/deploy/windows/Deploy-AiGuardExtensionFirefox.ps1"),
     ]
     for copy, source in pairs:
         assert (SCRIPTS / copy).read_bytes() == (REPO / source).read_bytes(), (

@@ -997,7 +997,17 @@ _STR_SETTINGS = (
     ("grafana_panels", False, 2000),
     ("grafana_dashboard_uid", False, 128),
     ("overview_widgets", False, 500),
+    # Where the packed extension is served from: the Chromium update
+    # manifest, and the Mozilla-signed .xpi. The portal bakes these into
+    # the Windows deploy scripts and the Firefox policy.
+    ("extension_update_url", True, 500),
+    ("extension_xpi_url", True, 500),
 )
+
+# What the paste guard does when a marked document is pasted into an AI
+# tool. Baked into every extension policy artifact; "warn" is the default
+# when unset, matching the extension's own default.
+_PASTE_GUARD_MODES = ("off", "warn", "block")
 SECRET_SETTINGS = ("log_store_password",)
 
 
@@ -1018,6 +1028,12 @@ class SettingsUpdate(BaseModel):
     grafana_panels: str | None = Field(default=None, max_length=2000)
     grafana_dashboard_uid: str | None = Field(default=None, max_length=128)
     overview_widgets: str | None = Field(default=None, max_length=500)
+    extension_update_url: str | None = Field(default=None, max_length=500)
+    extension_xpi_url: str | None = Field(default=None, max_length=500)
+    paste_guard_mode: str | None = Field(default=None, max_length=8)
+    firefox_extension_id: str | None = Field(default=None, max_length=128)
+    classification_markings: list[str] | None = Field(default=None,
+                                                      max_length=50)
 
 
 @app.get("/admin/settings")
@@ -1074,6 +1090,15 @@ def get_settings(authorization: str = Header(default="")):
         "grafana_panels": plain("grafana_panels"),
         "grafana_dashboard_uid": plain("grafana_dashboard_uid"),
         "overview_widgets": plain("overview_widgets"),
+        "extension_update_url": plain("extension_update_url"),
+        "extension_xpi_url": plain("extension_xpi_url"),
+        "paste_guard_mode": plain("paste_guard_mode"),
+        "firefox_extension_id": plain("firefox_extension_id"),
+        "classification_markings": {
+            "value": stored.get("classification_markings"),
+            "source": ("db" if stored.get("classification_markings")
+                       is not None else "unset"),
+        },
     }}
 
 
@@ -1128,6 +1153,43 @@ def put_settings(req: SettingsUpdate, authorization: str = Header(default="")):
 
     if "onboarding_done" in req.model_fields_set:
         STATE.set_setting("onboarding_done", req.onboarding_done, by)
+
+    if "paste_guard_mode" in req.model_fields_set:
+        mode = (req.paste_guard_mode or "").strip()
+        if not mode:
+            STATE.set_setting("paste_guard_mode", None, by)
+        elif mode not in _PASTE_GUARD_MODES:
+            raise HTTPException(422, "paste_guard_mode must be one of: %s"
+                                % ", ".join(_PASTE_GUARD_MODES))
+        else:
+            STATE.set_setting("paste_guard_mode", mode, by)
+
+    if "firefox_extension_id" in req.model_fields_set:
+        fid = (req.firefox_extension_id or "").strip()
+        if not fid:
+            STATE.set_setting("firefox_extension_id", None, by)
+        else:
+            if any(c.isspace() or ord(c) < 32 for c in fid):
+                raise HTTPException(
+                    422, "firefox extension id cannot contain whitespace")
+            STATE.set_setting("firefox_extension_id", fid, by)
+
+    if "classification_markings" in req.model_fields_set:
+        if req.classification_markings is None:
+            STATE.set_setting("classification_markings", None, by)
+        else:
+            marks = [m.strip() for m in req.classification_markings
+                     if m and m.strip()]
+            for m in marks:
+                if len(m) > 120:
+                    raise HTTPException(422, "marking too long: %s" % m[:60])
+                if any(ord(c) < 32 for c in m):
+                    raise HTTPException(
+                        422, "marking cannot contain control characters")
+            # An explicit empty list is a real choice (no markings, guard
+            # only reports detector hits) and is stored as one; null
+            # deletes, falling back to the artifact default set.
+            STATE.set_setting("classification_markings", marks, by)
 
     for key, is_url, _max in _STR_SETTINGS:
         if key not in req.model_fields_set:

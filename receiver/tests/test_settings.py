@@ -237,3 +237,64 @@ def test_a_database_from_before_settings_gains_the_tables(tmp_path):
     assert st.get_settings() == {}
     assert st.list_decisions() == []
     assert st.list_tokens()[0]["id"] == "t1"
+
+
+# ------------------------------------- paste guard and extension delivery --
+# Settings baked into the portal's extension artifacts. The receiver only
+# stores and validates; what warrants tests is the validation - a mode
+# outside the enum or a marking that could carry control characters must
+# never reach an artifact generator.
+
+
+def test_paste_guard_mode_is_an_enum(managed):
+    ok = client.put("/admin/settings", headers=ADMIN,
+                    json={"paste_guard_mode": "block"})
+    assert ok.status_code == 200
+    got = client.get("/admin/settings", headers=ADMIN).json()["settings"]
+    assert got["paste_guard_mode"] == {"value": "block", "source": "db"}
+    bad = client.put("/admin/settings", headers=ADMIN,
+                     json={"paste_guard_mode": "loud"})
+    assert bad.status_code == 422
+    assert "off, warn, block" in bad.json()["detail"]
+
+
+def test_markings_store_as_a_list_and_empty_is_a_choice(managed):
+    client.put("/admin/settings", headers=ADMIN,
+               json={"classification_markings": [" Top Secret ", "", "Internal"]})
+    got = client.get("/admin/settings", headers=ADMIN).json()["settings"]
+    assert got["classification_markings"] == {
+        "value": ["Top Secret", "Internal"], "source": "db"}
+    # An explicit empty list is stored (no markings, on purpose); null
+    # deletes and the source goes back to unset.
+    client.put("/admin/settings", headers=ADMIN,
+               json={"classification_markings": []})
+    got = client.get("/admin/settings", headers=ADMIN).json()["settings"]
+    assert got["classification_markings"] == {"value": [], "source": "db"}
+    client.put("/admin/settings", headers=ADMIN,
+               json={"classification_markings": None})
+    got = client.get("/admin/settings", headers=ADMIN).json()["settings"]
+    assert got["classification_markings"]["source"] == "unset"
+
+
+def test_a_marking_with_control_characters_is_refused(managed):
+    bad = client.put("/admin/settings", headers=ADMIN,
+                     json={"classification_markings": ["a\nb"]})
+    assert bad.status_code == 422
+
+
+def test_the_firefox_id_refuses_whitespace(managed):
+    ok = client.put("/admin/settings", headers=ADMIN,
+                    json={"firefox_extension_id": "ai-guard@corp.example"})
+    assert ok.status_code == 200
+    bad = client.put("/admin/settings", headers=ADMIN,
+                     json={"firefox_extension_id": "ai guard@x"})
+    assert bad.status_code == 422
+
+
+def test_the_delivery_urls_must_be_urls(managed):
+    for key in ("extension_update_url", "extension_xpi_url"):
+        bad = client.put("/admin/settings", headers=ADMIN, json={key: "files/x"})
+        assert bad.status_code == 422, key
+        ok = client.put("/admin/settings", headers=ADMIN,
+                        json={key: "https://files.corp.example/x"})
+        assert ok.status_code == 200, key

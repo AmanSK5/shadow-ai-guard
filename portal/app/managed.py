@@ -158,8 +158,43 @@ def _refuse_unembeddable(pairs):
                                % name)
 
 
+# The extension's own default set, baked when the operator has not chosen
+# their own in Settings. Mirrors extension/deploy/*'s hand-written files.
+DEFAULT_MARKINGS = (
+    "Client Confidential",
+    "Internal Confidential",
+    "Internal Use Only",
+    "Strictly Confidential",
+    "Commercial in Confidence",
+)
+
+
+def _checked_markings(markings):
+    """The markings list an artifact will carry, validated for every
+    context it lands in (XML text and PowerShell single-quoted strings).
+    Spaces are legitimate here - these are document classification phrases
+    - so this is a narrower refusal than _refuse_unembeddable."""
+    out = list(DEFAULT_MARKINGS) if markings is None else list(markings)
+    for m in out:
+        if not m or any(c in m for c in "'\"\\$`\n\r\t<>&"):
+            raise ArtifactError(
+                "a classification marking cannot be embedded in an artifact:"
+                " %r" % m[:60])
+    return out
+
+
+def _checked_mode(mode):
+    mode = mode or "warn"
+    if mode not in ("off", "warn", "block"):
+        raise ArtifactError("paste guard mode must be off, warn or block")
+    return mode
+
+
 def generate_extension_policy(extension_id: str, url: str, token: str,
-                              corp_domains: list[str]) -> tuple[str, str]:
+                              corp_domains: list[str],
+                              paste_guard_mode: str = "warn",
+                              markings: list[str] | None = None
+                              ) -> tuple[str, str]:
     """The browser extension's managed-storage policy, ready to deploy.
 
     One plist body serves every Chromium browser - the browser is chosen by
@@ -189,9 +224,12 @@ def generate_extension_policy(extension_id: str, url: str, token: str,
                             for d in corp_domains) or (
         "        <!-- no corporate domains set; every account will read as"
         " personal until Settings has them and this file is regenerated -->")
+    markings_xml = "\n".join("        <string>%s</string>" % _xml(m)
+                             for m in _checked_markings(markings))
     return "ai-guard-extension-policy.plist", _EXTENSION_POLICY_TEMPLATE % {
         "id": _xml(extension_id), "url": _xml(url), "token": _xml(token),
-        "domains": domains_xml,
+        "domains": domains_xml, "mode": _checked_mode(paste_guard_mode),
+        "markings": markings_xml,
     }
 
 
@@ -241,15 +279,232 @@ _EXTENSION_POLICY_TEMPLATE = """\
 %(domains)s
     </array>
     <key>pasteGuardMode</key>
-    <string>warn</string>
+    <string>%(mode)s</string>
     <key>classificationMarkings</key>
     <array>
-        <string>Client Confidential</string>
-        <string>Internal Confidential</string>
-        <string>Internal Use Only</string>
-        <string>Strictly Confidential</string>
-        <string>Commercial in Confidence</string>
+%(markings)s
     </array>
+</dict>
+</plist>
+"""
+
+
+def _ps_str(v: str) -> str:
+    """A PowerShell single-quoted literal. The only escape in single quotes
+    is doubling the quote itself, and quotes are refused upstream anyway -
+    this keeps the property even if a refusal is ever loosened."""
+    return "'" + v.replace("'", "''") + "'"
+
+
+def _ps_arr(values) -> str:
+    return "@(" + ", ".join(_ps_str(v) for v in values) + ")"
+
+
+# The config block both Windows deploy scripts carry verbatim (a test
+# asserts the copies match extension/deploy/windows/). Substituted as one
+# anchor each so a script that changes shape fails loudly at generate time.
+_PS_SHARED_ANCHORS = (
+    "$AllowedDomains = @('example.com')",
+    "$PasteGuardMode = 'warn'",
+    """$ClassificationMarkings = @(
+    'Client Confidential'
+    'Internal Confidential'
+    'Internal Use Only'
+    'Strictly Confidential'
+    'Commercial in Confidence'
+)""",
+)
+
+
+def _generate_ps_deploy(scripts_dir: str, script: str, download: str,
+                        head_anchors: list, url: str, token: str,
+                        corp_domains: list[str], mode: str,
+                        markings) -> tuple[str, str]:
+    """One pre-configured Windows deploy script: the head anchors are the
+    script's own REPLACE_WITH placeholders, the shared trio is domains,
+    paste guard mode and markings."""
+    for d in corp_domains:
+        _refuse_unembeddable(((d, "corp domain"),))
+    marks = _checked_markings(markings)
+    path = Path(scripts_dir) / script
+    try:
+        content = path.read_text()
+    except OSError as e:
+        raise ArtifactError("deploy script not readable: %s (%s)"
+                            % (path.name, type(e).__name__))
+
+    subs = list(head_anchors) + [
+        # An empty list bakes @() - every account reads as personal until
+        # Settings has domains and the script is regenerated. Leaving the
+        # placeholder would deploy example.com as a corporate domain.
+        (_PS_SHARED_ANCHORS[0],
+         "$AllowedDomains = %s" % _ps_arr(corp_domains)),
+        (_PS_SHARED_ANCHORS[1],
+         "$PasteGuardMode = %s" % _ps_str(_checked_mode(mode))),
+        (_PS_SHARED_ANCHORS[2],
+         "$ClassificationMarkings = %s" % _ps_arr(marks)),
+    ]
+    for anchor, repl in subs:
+        if content.count(anchor) != 1:
+            raise ArtifactError(
+                "substitution anchor not found exactly once in %s: %r - the "
+                "deploy script changed shape; update the anchors to match"
+                % (script, anchor.splitlines()[0]))
+        content = content.replace(anchor, repl)
+    return download, content
+
+
+def generate_extension_windows(scripts_dir: str, extension_id: str,
+                               update_url: str, url: str, token: str,
+                               corp_domains: list[str], mode: str = "warn",
+                               markings=None) -> tuple[str, str]:
+    """The Chromium Windows deploy script, pre-configured: Intune-ready,
+    same trust story as every artifact (fresh token, values baked as the
+    script's own config block)."""
+    _refuse_unembeddable(((url, "receiver URL"), (token, "token"),
+                          (update_url, "extension update URL")))
+    if not re.fullmatch(r"[a-p]{32}", extension_id or ""):
+        raise ArtifactError(
+            "the extension id does not look like a Chromium extension id"
+            " (32 letters a-p); check Settings")
+    head = [
+        ("$ExtensionId = 'REPLACE_WITH_EXTENSION_ID'",
+         "$ExtensionId = %s" % _ps_str(extension_id)),
+        ("$UpdatesXml  = 'https://REPLACE_WITH_HOST/updates.xml'",
+         "$UpdatesXml  = %s" % _ps_str(update_url)),
+        ("$Endpoint    = 'https://REPLACE_WITH_HOST/report'",
+         "$Endpoint    = %s" % _ps_str(url.rstrip("/") + "/report")),
+        ("$AuthToken   = 'REPLACE_WITH_TOKEN'",
+         "$AuthToken   = %s" % _ps_str(token)),
+    ]
+    return _generate_ps_deploy(scripts_dir, "extension-windows.ps1",
+                               "Deploy-AiGuardExtension.ps1", head, url,
+                               token, corp_domains, mode, markings)
+
+
+def generate_firefox_windows(scripts_dir: str, gecko_id: str, xpi_url: str,
+                             url: str, token: str, corp_domains: list[str],
+                             mode: str = "warn",
+                             markings=None) -> tuple[str, str]:
+    """The Firefox Windows deploy script, pre-configured. The .xpi it
+    installs must be the Mozilla-signed one - no policy can waive that -
+    which is why the signed file's URL is a setting the operator supplies
+    rather than something the portal can invent."""
+    _refuse_unembeddable(((url, "receiver URL"), (token, "token"),
+                          (xpi_url, "signed .xpi URL"),
+                          (gecko_id, "Firefox extension id")))
+    head = [
+        ("$GeckoId   = 'REPLACE_WITH_GECKO_ID'",
+         "$GeckoId   = %s" % _ps_str(gecko_id)),
+        ("$XpiUrl    = 'https://REPLACE_WITH_HOST/ai-guard-1.0.0.xpi'",
+         "$XpiUrl    = %s" % _ps_str(xpi_url)),
+        ("$Endpoint  = 'https://REPLACE_WITH_HOST/report'",
+         "$Endpoint  = %s" % _ps_str(url.rstrip("/") + "/report")),
+        ("$AuthToken = 'REPLACE_WITH_TOKEN'",
+         "$AuthToken = %s" % _ps_str(token)),
+    ]
+    return _generate_ps_deploy(scripts_dir, "firefox-windows.ps1",
+                               "Deploy-AiGuardExtensionFirefox.ps1", head,
+                               url, token, corp_domains, mode, markings)
+
+
+def generate_firefox_policy(gecko_id: str, xpi_url: str, url: str,
+                            token: str, corp_domains: list[str],
+                            mode: str = "warn",
+                            markings=None) -> tuple[str, str]:
+    """Firefox's install-and-configure payload for macOS, in one plist.
+
+    Mirrors extension/deploy/macos/firefox/managed-storage.plist: policy
+    lives under org.mozilla.firefox (not a per-extension domain), managed
+    storage under 3rdparty > Extensions > the gecko id, and install_url
+    (not update_url) pointing at the Mozilla-SIGNED .xpi - Firefox refuses
+    unsigned extensions on release builds and no enterprise policy changes
+    that, so the signed file's URL is an operator-supplied setting."""
+    _refuse_unembeddable(((url, "receiver URL"), (token, "token"),
+                          (xpi_url, "signed .xpi URL"),
+                          (gecko_id, "Firefox extension id")))
+    for d in corp_domains:
+        _refuse_unembeddable(((d, "corp domain"),))
+    domains_xml = "\n".join(
+        "                <string>%s</string>" % _xml(d)
+        for d in corp_domains) or (
+        "                <!-- no corporate domains set; every account will"
+        " read as personal until Settings has them and this file is"
+        " regenerated -->")
+    markings_xml = "\n".join(
+        "                <string>%s</string>" % _xml(m)
+        for m in _checked_markings(markings))
+    return "ai-guard-firefox-policy.plist", _FIREFOX_POLICY_TEMPLATE % {
+        "id": _xml(gecko_id), "xpi": _xml(xpi_url), "url": _xml(url),
+        "token": _xml(token), "domains": domains_xml,
+        "mode": _checked_mode(mode), "markings": markings_xml,
+    }
+
+
+_FIREFOX_POLICY_TEMPLATE = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  ai-guard browser extension: Firefox install-and-configure payload,
+  generated by the portal with a fresh enrollment token baked in.
+
+  Upload as an "Application &amp; Custom Settings" payload under the
+  preference domain org.mozilla.firefox. Unlike the Chromium browsers,
+  Firefox reads install and configuration from this one payload.
+
+  install_url points at the Mozilla-SIGNED .xpi (Settings holds its URL).
+  Firefox refuses unsigned extensions on release builds, and no enterprise
+  policy changes that; sign by submitting to addons.mozilla.org as a
+  self-distributed add-on. See extension/README.md.
+
+  deviceIdentifier: $SERIALNUMBER is substituted per machine by Jamf;
+  other MDMs have equivalents. allowedDomains and the paste guard settings
+  are baked because the extension reads no central config - changing them
+  in the portal means regenerating and re-pushing this policy.
+-->
+<plist version="1.0">
+<dict>
+    <key>EnterprisePoliciesEnabled</key>
+    <true/>
+
+    <key>ExtensionSettings</key>
+    <dict>
+        <key>%(id)s</key>
+        <dict>
+            <key>installation_mode</key>
+            <string>force_installed</string>
+            <key>install_url</key>
+            <string>%(xpi)s</string>
+            <key>updates_disabled</key>
+            <false/>
+        </dict>
+    </dict>
+
+    <key>3rdparty</key>
+    <dict>
+        <key>Extensions</key>
+        <dict>
+            <key>%(id)s</key>
+            <dict>
+                <key>reportEndpoint</key>
+                <string>%(url)s/report</string>
+                <key>authToken</key>
+                <string>%(token)s</string>
+                <key>deviceIdentifier</key>
+                <string>$SERIALNUMBER</string>
+                <key>pasteGuardMode</key>
+                <string>%(mode)s</string>
+                <key>allowedDomains</key>
+                <array>
+%(domains)s
+                </array>
+                <key>classificationMarkings</key>
+                <array>
+%(markings)s
+                </array>
+            </dict>
+        </dict>
+    </dict>
 </dict>
 </plist>
 """

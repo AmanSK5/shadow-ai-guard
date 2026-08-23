@@ -63,15 +63,18 @@ packed extension (.crx) and an update manifest (updates.xml) on public
 HTTPS, plus two policies per browser delivered by your MDM or GPO: an
 install policy (forcelist) and a managed-storage config.
 
-With a managed-mode deployment, the portal generates the managed-storage
-config pre-configured (the onboarding wizard, or the Setup view's browser
-row): receiver URL, a fresh enrollment token, and your corporate domains
-baked into a ready-to-upload plist whose header names the per-browser
-preference domains and the Windows script invocation. Set the extension ID
-in the portal's Settings first - the id comes from packing (step 2 below)
-and the portal cannot derive it for you. Because this extension reads no
-central config, a corporate-domain change means regenerating and re-pushing
-that policy.
+With a managed-mode deployment, the portal generates the whole matrix
+pre-configured (the onboarding wizard, or the Setup view's browser row):
+the Chromium managed-storage plist for macOS, the Windows deploy scripts
+for Chromium and Firefox, and the Firefox install-and-configure plist for
+macOS - receiver URL, a fresh enrollment token per download, your
+corporate domains, and the paste guard settings (mode and classification
+markings, both editable in the portal) baked in. Set the extension IDs in
+the portal's Settings first - the Chromium id comes from packing (step 2
+below), the Firefox gecko id from the manifest - plus the update-manifest
+URL (Chromium) and the signed .xpi URL (Firefox), which the portal cannot
+derive for you. Because this extension reads no central config, changing
+any of those means regenerating and re-pushing the policies.
 
 ### 1. Customise the source
 

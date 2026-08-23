@@ -1449,6 +1449,52 @@ function settingRow(key, label, placeholder, note) {
     <div class="src-note">${esc(note)}${note ? ' ' : ''}${secretNote || src}</div></dd>`;
 }
 
+// The paste guard and extension-delivery settings, shared by the wizard
+// and the Settings view. The paste guard IS the browser extension - one
+// package, one policy - and these values are baked into every generated
+// policy artifact, so a change here means regenerate and re-push.
+function pasteGuardFields() {
+  const s = (SETTINGS && SETTINGS.settings) || {};
+  const mode = (s.paste_guard_mode || {}).value || '';
+  const marksSet = (s.classification_markings || {}).source === 'db';
+  const marks = marksSet ? ((s.classification_markings || {}).value || []) : null;
+  const opt = (v, label) => `<option value="${v}"${mode === v ? ' selected' : ''}>${label}</option>`;
+  return `
+    <dt>Paste guard mode</dt><dd>
+      <select id="set-paste_guard_mode" class="mfield">
+        <option value=""${mode ? '' : ' selected'}>warn (default)</option>
+        ${opt('off', 'off')}${opt('warn', 'warn')}${opt('block', 'block')}
+      </select>
+      <button class="mini" data-act="save-setting" data-key="paste_guard_mode">save</button>
+      <div class="src-note">What the guard does when a paste into an AI tool
+      matches a marking or detector: warn asks the person, block stops it.
+      Baked into every extension policy artifact below.</div></dd>
+    <dt>Classification markings</dt><dd>
+      <textarea id="set-classification_markings" class="mfield" rows="4"
+        style="min-width:340px;resize:vertical;font-family:inherit"
+        placeholder="one marking per line (empty = the default set)">${marks === null ? '' : esc(marks.join('\n'))}</textarea>
+      <button class="mini" data-act="save-markings">save</button>
+      ${marksSet ? '<button class="mini" data-act="clear-markings">clear (default set)</button>' : ''}
+      <div class="src-note">Document phrases the guard scans pastes for, one
+      per line. Saving an empty box records "no markings" as a real choice;
+      clear falls back to the default five. Content never leaves the device -
+      the guard reports detector ids only.</div></dd>
+    ${settingRow('firefox_extension_id', 'Firefox extension ID (gecko id)',
+      'ai-guard@your-org.example',
+      'From browser_specific_settings.gecko.id in the manifest - a different'
+      + ' string from the Chromium id, for the same extension. Unlocks the'
+      + ' Firefox artifacts.')}
+    ${settingRow('extension_update_url', 'Chromium update manifest URL',
+      'https://files.example.com/updates.xml',
+      'Where the packed extension update manifest is hosted. Unlocks the'
+      + ' Windows Chromium deploy script.')}
+    ${settingRow('extension_xpi_url', 'Signed .xpi URL (Firefox)',
+      'https://files.example.com/ai-guard-1.0.0.xpi',
+      'The Mozilla-SIGNED file (addons.mozilla.org self-distribution) -'
+      + ' Firefox refuses unsigned extensions on release builds, and no'
+      + ' enterprise policy changes that. Unlocks the Firefox artifacts.')}`;
+}
+
 // The last result of a connection test, rendered where its button lives.
 function testNote(which) {
   const t = TESTS[which];
@@ -1593,13 +1639,23 @@ async function wizard() {
   <table><tr><th>tool</th><th>vendor</th><th>decision</th><th></th></tr>
   ${REGTOOLS.map(toolRow).join('')}</table></div>
 
-  <div class="wcard" style="margin-bottom:10px"><h3>5 · Browser extension ID</h3>
-  <p class="lede" style="margin-bottom:10px">The packed extension's 32-letter
-  id (extension/README.md shows how to derive it). It unlocks the
-  pre-configured policy download below.</p>
-  <input id="set-extid" class="mfield" style="min-width:340px"
-    placeholder="the browser extension's ID" value="${esc(eid)}">
-  <button class="mini" data-act="save-extid">save</button></div>
+  <div class="wcard" style="margin-bottom:10px"><h3>5 · Browser extension &amp; paste guard</h3>
+  <p class="lede" style="margin-bottom:10px">One extension does both jobs:
+  reporting which account is signed into an AI tool, and the paste guard
+  that warns or blocks when marked content is pasted into one. Chrome, Edge
+  and Brave install it by Chromium policy; Firefox by Mozilla policy from a
+  signed .xpi. Everything here is baked into the policy downloads in
+  step 7.</p>
+  <dl class="kv">
+    <dt>Chromium extension ID</dt><dd>
+      <input id="set-extid" class="mfield" style="min-width:340px"
+        placeholder="the 32-letter id from chrome://extensions" value="${esc(eid)}">
+      <button class="mini" data-act="save-extid">save</button>
+      <div class="src-note">The packed extension's 32-letter id
+      (extension/README.md shows how to derive it). Unlocks the Chromium
+      policy downloads.</div></dd>
+    ${pasteGuardFields()}
+  </dl></div>
 
   <div class="wcard" style="margin-bottom:10px"><h3>6 · Alerting and Grafana (optional)</h3>
   <dl class="kv">
@@ -1620,7 +1676,10 @@ async function wizard() {
     <button class="mini" data-act="artifact" data-key="collector-macos">macOS collector</button>
     <button class="mini" data-act="artifact" data-key="collector-linux">Linux collector</button>
     <button class="mini" data-act="artifact" data-key="collector-windows">Windows collector</button>
-    <button class="mini" data-act="artifact" data-key="extension-policy">extension policy${eid ? '' : ' (needs step 5)'}</button>
+    <button class="mini" data-act="artifact" data-key="extension-policy">extension policy · Chromium macOS${eid ? '' : ' (needs step 5)'}</button>
+    <button class="mini" data-act="artifact" data-key="extension-windows">extension deploy · Chromium Windows</button>
+    <button class="mini" data-act="artifact" data-key="firefox-policy">extension policy · Firefox macOS</button>
+    <button class="mini" data-act="artifact" data-key="firefox-windows">extension deploy · Firefox Windows</button>
     <button class="mini" data-act="artifact" data-key="scanner-cronjob">scanner CronJob</button>
     <button class="mini" data-act="artifact" data-key="discovery-cronjob">discovery CronJob</button>
   </div>` : `<div class="note">No public receiver URL yet, so downloads cannot
@@ -1671,6 +1730,7 @@ function managedSettings() {
       <button class="mini" data-act="save-extid">save</button>
       <div class="src-note">Used to generate the extension's managed-policy
       artifact. Empty clears it.</div></dd>
+    ${pasteGuardFields()}
   </dl></div>
 
   <div class="wcard" style="margin-bottom:10px"><h3>Receiver</h3>
@@ -2253,6 +2313,17 @@ async function managedAction(act, el) {
       alert('Could not clear the decision: ' + d);
     }
     REG = null; EV = null; render(); return;
+  }
+  if (act === 'save-markings' || act === 'clear-markings') {
+    const marks = act === 'clear-markings' ? null
+      : _val('set-classification_markings').split('\n')
+          .map(x => x.trim()).filter(Boolean);
+    const r = await mfetch('/api/settings',
+      {method: 'POST', body: JSON.stringify({classification_markings: marks})});
+    if (r.ok) { SETTINGS = await r.json(); SETMSG = 'Saved. Regenerate the extension artifacts to roll it out.'; }
+    else if (r.status === 401) { sessionLost(); return; }
+    else { let d = r.statusText; try { d = (await r.json()).detail || d; } catch (e) {} SETMSG = 'Not saved: ' + d; }
+    render(); return;
   }
   if (act === 'save-setting') {
     const key = el.getAttribute('data-key');
