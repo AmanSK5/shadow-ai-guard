@@ -213,8 +213,11 @@ def test_an_artifact_mints_its_own_token_and_downloads_configured(receiver):
     body = resp.body.decode()
     assert 'RECEIVER_BASE="${4:-https://rx.example.com}"' in body
     assert 'TOKEN="${5:-aige_MINTED}"' in body
-    # Provenance: the minted token names the artifact it left inside.
-    assert receiver[0]["body"]["note"] == "portal artifact: collector-macos"
+    # Settings are consulted first (they may supply the public URL), then
+    # the mint; the minted token names the artifact it left inside.
+    assert [c["path"] for c in receiver] == ["/admin/settings",
+                                             "/admin/enrollment-tokens"]
+    assert receiver[1]["body"]["note"] == "portal artifact: collector-macos"
 
 
 def test_an_artifact_without_a_public_url_is_refused_before_minting(
@@ -226,7 +229,9 @@ def test_an_artifact_without_a_public_url_is_refused_before_minting(
     err = http_error(main.artifact, "collector-macos", _=None, token="t")
     assert err.status_code == 503
     assert "RECEIVER_PUBLIC_URL" in err.detail
-    assert receiver == []
+    # The settings were consulted (they could have supplied the URL), but
+    # nothing was minted for an artifact that never existed.
+    assert [c["path"] for c in receiver] == ["/admin/settings"]
 
 
 def test_an_unknown_artifact_is_404_before_minting(receiver):
@@ -238,8 +243,9 @@ def test_an_unknown_artifact_is_404_before_minting(receiver):
 def test_config_names_which_managed_flag_is_missing(monkeypatch):
     monkeypatch.setattr(main, "RECEIVER_URL", "http://r.internal:8080")
     monkeypatch.setattr(main, "RECEIVER_PUBLIC_URL", "")
-    assert main.config(_=None)["managed"] == {
-        "enabled": True, "artifacts_ready": False}
+    assert main.config(None, _=None)["managed"] == {
+        "enabled": True, "artifacts_ready": False,
+        "receiver_public_url_default": ""}
 
 
 # --------------------------------------------------------- receiver client --

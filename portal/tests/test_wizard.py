@@ -163,12 +163,15 @@ def test_no_extension_id_refuses_before_minting(receiver, monkeypatch):
     assert [c["path"] for c in receiver] == ["/admin/settings"]
 
 
-def test_the_cronjob_route_needs_no_settings(receiver, monkeypatch):
+def test_the_cronjob_route_requires_nothing_from_settings(receiver, monkeypatch):
     monkeypatch.setattr(main, "APP_VERSION", "0.9.7")
     resp = main.artifact("scanner-cronjob", _=None, token="t")
     assert 'filename="ai-guard-scanner-cronjob.yaml"' in resp.headers["content-disposition"]
     assert "scanner:0.9.7" in resp.body.decode()
-    assert [c["path"] for c in receiver] == ["/admin/enrollment-tokens"]
+    # Settings are read for the public URL, but nothing scanner-specific
+    # is required from them.
+    assert [c["path"] for c in receiver] == ["/admin/settings",
+                                             "/admin/enrollment-tokens"]
 
 
 def test_a_dev_build_bakes_latest_not_a_nonexistent_image(receiver, monkeypatch):

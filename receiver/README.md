@@ -56,8 +56,10 @@ shared token off for ingest (see the configuration table).
 | POST | `/admin/logout` | admin | revoke the presented session |
 | GET  | `/admin/session` | admin | who this session is and until when; the portal's validity probe |
 | POST | `/admin/password` | admin | change the password (`current` + `new`). With the `ADMIN_TOKEN` credential, `current` is not required - the break-glass reset. Every other session dies with the old password |
-| GET  | `/admin/settings` | admin | each central setting with its effective value and its source (`db`, `env`, `unset`), so a saved value shadowing an environment one is visible as such |
-| PUT  | `/admin/settings` | admin | partial upsert of `corp_domains`, `extension_id`, `onboarding_done`; a saved value wins over the matching env var, an explicit `null` deletes the row and falls back to it. Unknown keys are 422 |
+| GET  | `/admin/settings` | admin | each central setting with its effective value and its source (`db`, `env`, `unset`), so a saved value shadowing an environment one is visible as such. The log-store password is reported as `{set, source}` only, never its value |
+| PUT  | `/admin/settings` | admin | partial upsert; a saved value wins over the matching env var, an explicit `null` (or empty) deletes the row and falls back to it. Unknown keys are 422. Keys: `corp_domains`, `extension_id`, `onboarding_done`, `receiver_public_url`, `log_store_url` (base - the push endpoint is **derived** as `<base>/loki/api/v1/push`), `log_store_push_url` (explicit override for gateways), `log_store_username`, `log_store_password`, `alertmanager_url`, `grafana_url`, `grafana_panels`, `grafana_dashboard_uid`, `overview_widgets` |
+| GET  | `/admin/settings/secrets` | admin | the stored log-store configuration with the password in plaintext - for the portal's server-side reads; the portal exposes no route that relays it. See SECURITY.md on integration secrets vs fleet credentials |
+| POST | `/admin/test/log-store-push` | admin | push one synthetic `kind:"test"` line with the effective configuration and report what happened, hints included - catches the write-only-token trap at setup time instead of on the first quiet dashboard |
 | GET  | `/admin/governance` | admin | the portal-recorded governance decisions |
 | PUT  | `/admin/governance` | admin | upsert (`decisions`) and delete (`delete`) decisions, validated to the governance file's own rules - an approval needs a `review_due` date. The whole batch validates before anything is written |
 
@@ -70,12 +72,16 @@ setup code** to the receiver's log as a JSON line with `"kind":
 create the account; the code is consumed on use, never stored, and once an
 account exists boots print nothing.
 
-Only SHA-256 hashes of credentials are stored (passwords: scrypt): a copied
-database file is a list of devices, not a bag of credentials. Enrollment
-tokens default to a 180-day life because they sit inside MDM artifacts,
-where a short TTL means the deployment silently breaks for new machines -
-their safety comes from what they cannot do (only create auditable device
-records) and from instant revocation, not from a short life.
+Only SHA-256 hashes of fleet credentials are stored (passwords: scrypt): a
+copied database file cannot impersonate a device or an admin. The one
+exception, since 0.9.8, is an *integration* secret - a log store password
+saved in the portal is stored recoverable because the receiver must present
+it to push; SECURITY.md states the trade and the env/Secret path remains
+for anyone who declines it. Enrollment tokens default to a 180-day life
+because they sit inside MDM artifacts, where a short TTL means the
+deployment silently breaks for new machines - their safety comes from what
+they cannot do (only create auditable device records) and from instant
+revocation, not from a short life.
 
 ## Configuration
 
@@ -84,10 +90,10 @@ Everything is environment variables. Only the token is required.
 | variable | default | what it does |
 |----------|---------|--------------|
 | `AUTH_TOKEN` | required | the one bearer token every source authenticates with |
-| `LOKI_PUSH_URL` | unset | if set, findings are POSTed straight to Loki as well; stdout logging happens regardless. The **full push endpoint**, `/loki/api/v1/push`, not the base URL |
+| `LOKI_PUSH_URL` | unset | if set, findings are POSTed straight to Loki as well; stdout logging happens regardless. The **full push endpoint**, `/loki/api/v1/push`, not the base URL. In managed mode a log store saved in the portal wins over this (its push endpoint is derived from the base, and it brings its own credentials) |
 | `LOKI_USERNAME` | unset | basic auth for the push, if your log store needs it. Hosted Loki usually does; a self-hosted one usually does not |
 | `LOKI_PASSWORD` | unset | with the above. Sent only when a username is set, because an empty credential pair is not the same as sending none |
-| `ALERTMANAGER_URL` | unset | if set, `warn` findings raise Alertmanager alerts; unset means findings are logged and dashboarded but nothing pages |
+| `ALERTMANAGER_URL` | unset | if set, `warn` findings raise Alertmanager alerts; unset means findings are logged and dashboarded but nothing pages. In managed mode a URL saved in the portal wins over this |
 | `ALERT_TTL_MINUTES` | `120` | how long a warn finding counts as already alerted, so a device reporting the same thing repeatedly does not page repeatedly |
 | `REGISTRY_PATH` | `/etc/ai-guard/registry.json` | where the compiled registry is mounted |
 | `COLLECTOR_REGISTRY_PATH` | `/etc/ai-guard/collector.json` | where the collector view is mounted |

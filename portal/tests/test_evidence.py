@@ -353,7 +353,7 @@ def test_the_endpoint_produces_a_verifiable_snapshot():
                      {"id": "chatgpt", "name": "ChatGPT", "approved": False,
                       "domains": ["chatgpt.com"]}]}
 
-    with patch.object(pm, "_findings", lambda h: findings), \
+    with patch.object(pm, "_findings", lambda h, request=None: findings), \
             patch.object(derive, "load_registry", lambda p: reg):
         pm._cache.clear()
         body = json.loads(bytes(pm.evidence_snapshot(None, hours=168).body))
@@ -375,7 +375,7 @@ def test_the_download_carries_provenance_in_the_filename():
     from app import derive
     from app import main as pm
 
-    with patch.object(pm, "_findings", lambda h: []), \
+    with patch.object(pm, "_findings", lambda h, request=None: []), \
             patch.object(derive, "load_registry", lambda p: {"tools": []}):
         pm._cache.clear()
         resp = pm.evidence_snapshot(None, hours=168, download=True)
