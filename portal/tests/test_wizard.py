@@ -222,3 +222,15 @@ def test_the_page_carries_the_wizard():
                    "/api/registry-tools", "onboarding_done", "'wizard'",
                    "scanner-cronjob", "extension-policy"):
         assert needle in html, needle
+
+
+def test_the_register_carries_the_watchlist_decisions():
+    """The wizard's baseline table was the only place to record a decision
+    about a tool nothing has observed yet, and the wizard is a door you
+    walk through once. The register's watchlist section is the standing
+    version, and Settings can reopen the wizard."""
+    html = (main.STATIC / "index.html").read_text()
+    for needle in ("watchlistBlock", "wl-toggle", "open-wizard",
+                   "known, not observed",
+                   "run the setup wizard again"):
+        assert needle in html, needle

@@ -197,6 +197,10 @@ let REGTOOLS = null, GOVDECS = null, WIZOWNER = '', WIZREVIEW = '';
 // Which log-store shape the wizard's step 2 shows, and the last result of
 // each connection test, keyed by API name, so a result survives re-renders.
 let WIZSTORE = 'self', TESTS = {};
+// Whether the register's watchlist section is expanded. Tracked because a
+// decision re-renders the view, and a <details> that snaps shut under the
+// operator mid-triage would lose their place.
+let WLOPEN = false;
 let S = null, CFG = {}, loadError = '';
 // What /api/auth said: {mode, authenticated, username, setup_needed}.
 // The session itself is an HttpOnly cookie this script can never read -
@@ -224,7 +228,7 @@ function showLogin(msg) {
   // minted it: signing out and back in would show the plaintext again.
   MINTED = null; FLEET = null; TOKENS = null; SETTINGS = null;
   GOVEDIT = null; GOVPRE = null; GOVERR = ''; SETMSG = '';
-  REGTOOLS = null; GOVDECS = null; TESTS = {};
+  REGTOOLS = null; GOVDECS = null; TESTS = {}; WLOPEN = false;
   chrome(false);
   const create = AUTH && AUTH.setup_needed;
   app.innerHTML = `<div style="max-width:440px;margin:8vh auto 0">
@@ -732,11 +736,66 @@ function govForm(r) {
   </div>`;
 }
 
+// The watchlist as a decision surface: registry tools nothing has observed
+// yet, with the same approve / not-approved controls the wizard's baseline
+// had. This exists because the wizard was the only place to record a
+// decision about a tool BEFORE anyone uses it, and the wizard is a door
+// you walk through once. Collapsed, so the register's own rule holds: the
+// record is what is in use, and the watchlist stays secondary.
+function watchlistBlock(observedIds) {
+  if (!CFG.managed || !CFG.managed.enabled || !REGTOOLS) return '';
+  const decided = {};
+  (GOVDECS || []).forEach(d => { decided[d.tool_id] = d.status; });
+  const rows = REGTOOLS.filter(t => !observedIds.has(t.id));
+  if (!rows.length) return '';
+  const yearOut = new Date(Date.now() + 365 * 86400000).toISOString().slice(0, 10);
+  const LBL = {approved: ['approved', 'p-ok'],
+               not_approved: ['not approved', 'p-warn']};
+  const undecided = rows.filter(t => !decided[t.id]).length;
+  return `<details id="wl-details" style="margin-top:22px" ${WLOPEN ? 'open' : ''}>
+  <summary data-act="wl-toggle" style="cursor:pointer;font-size:14px">
+    Watchlist — known, not observed (${rows.length}${undecided
+      ? `, ${undecided} without a decision` : ''})</summary>
+  <p class="lede" style="margin-top:10px">Decisions recorded here apply the
+  moment a tool first appears. Approvals carry the review date below.</p>
+  ${GOVERR ? `<div class="note">${esc(GOVERR)}</div>` : ''}
+  <div style="margin-bottom:10px">
+    <input id="wiz-owner" class="mfield" value="${esc(WIZOWNER)}"
+      placeholder="owner for these decisions, e.g. Security">
+    <input id="wiz-review" class="mfield" style="min-width:170px"
+      value="${esc(WIZREVIEW || yearOut)}" title="review due date for approvals">
+  </div>
+  <table><tr><th>tool</th><th>vendor</th><th>decision</th><th></th></tr>
+  ${rows.map(t => {
+    const d = decided[t.id];
+    const state = d && LBL[d]
+      ? `<span class="pill ${LBL[d][1]}">${LBL[d][0]}</span>`
+      : d ? `<span class="pill p-acc">${esc(d)}</span>`
+      : '<span class="none">no decision</span>';
+    return `<tr><td>${esc(t.name)}</td>
+      <td style="color:var(--mut)">${esc(t.vendor)}</td>
+      <td>${state}</td>
+      <td><button class="mini" data-act="wiz-approve" data-key="${esc(t.id)}">approve</button>
+          <button class="mini" data-act="wiz-notapprove" data-key="${esc(t.id)}">not approved</button></td>
+    </tr>`;
+  }).join('')}</table></details>`;
+}
+
 async function register() {
   if (!REG) {
     try { REG = await (await fetch('/api/register')).json(); }
     catch (e) { return `<h2>AI register</h2><div class="note">Could not build
       the register: ${esc(String(e.message || e))}</div>`; }
+  }
+  if (CFG.managed && CFG.managed.enabled) {
+    if (!REGTOOLS) {
+      const r = await mfetch('/api/registry-tools');
+      REGTOOLS = r.ok ? (await r.json()).tools || [] : [];
+    }
+    if (!GOVDECS) {
+      const r = await mfetch('/api/governance-decisions');
+      GOVDECS = r.ok ? (await r.json()).decisions || [] : [];
+    }
   }
   const rows = (REG.rows || []).filter(r =>
     match(r.name) || match(r.id) || match(r.vendor) || match(r.category));
@@ -932,7 +991,8 @@ async function register() {
   </div>` : `<p class="lede">No AI tools observed in the last ${esc(win)}.
   That is a real answer for a small estate, and it is also what a fleet with no
   collectors deployed looks like: check Setup before reading it as a clean
-  one.</p>`}`;
+  one.</p>`}
+  ${watchlistBlock(new Set((REG.rows || []).map(r => r.id)))}`;
 }
 
 async function paste() {
@@ -1282,7 +1342,7 @@ async function wizard() {
       'warn findings page through this; empty means nothing pages.')}
     ${settingRow('grafana_url', 'Grafana URL',
       'the URL a BROWSER reaches Grafana on',
-      'For embedded panels; panels and dashboard UID live under Settings.')}
+      'Saving reloads the page (the frame permission is baked into each page load). Panels and dashboard UID live under Settings; Grafana must allow embedding.')}
   </dl></div>
 
   <div class="wcard" style="margin-bottom:10px"><h3>7 · Deployment downloads</h3>
@@ -1375,11 +1435,12 @@ function managedSettings() {
       'warn findings page through this. Empty means findings are logged and dashboarded but nothing pages.')}
     ${settingRow('grafana_url', 'Grafana URL',
       'the URL a BROWSER reaches Grafana on',
-      'For embedded panels; Grafana must allow embedding.')}
+      'Saving reloads the page: the frame permission lives in this page\u2019s own security policy, which is fixed per load. Grafana must also allow embedding.')}
     ${settingRow('grafana_panels', 'Grafana panels',
       'dashboardUid:panelId:Title; semicolon separated', '')}
     ${settingRow('grafana_dashboard_uid', 'Grafana dashboard UID',
-      'embed one whole dashboard instead of panels', '')}
+      'the /d/ segment of the dashboard URL',
+      'Embeds one whole dashboard instead of panels. Pasting the full dashboard URL works: it is trimmed to the UID.')}
     ${settingRow('overview_widgets', 'Overview widgets',
       'stat_row, top_tools, …  (empty = sensible default)', '')}
   </dl></div>
@@ -1394,7 +1455,12 @@ function managedSettings() {
       <button class="mini" data-act="change-password">change</button>
       <div class="src-note">Every other session is signed out with the old
       password; this one stays.</div></dd>
-  </dl></div>`;
+  </dl></div>
+
+  <p class="src-note" style="margin:4px 0 14px">
+    <button class="mini" data-act="open-wizard">run the setup wizard again</button>
+    — safe to repeat: every step is one of the settings above, prefilled
+    with what is saved.</p>`;
 }
 
 async function settings() {
@@ -1819,8 +1885,14 @@ async function managedAction(act, el) {
   }
   if (act === 'save-setting') {
     const key = el.getAttribute('data-key');
+    let val = _val('set-' + key);
+    // People paste the whole dashboard URL, reasonably. The UID is the
+    // segment after /d/, so accept the URL and trim it to the UID.
+    if (key === 'grafana_dashboard_uid' && val.indexOf('/d/') >= 0) {
+      val = val.split('/d/')[1].split('/')[0].split('?')[0];
+    }
     const body = {};
-    body[key] = _val('set-' + key);
+    body[key] = val;
     const r = await mfetch('/api/settings', {method: 'POST', body: JSON.stringify(body)});
     if (r.ok) {
       SETTINGS = await r.json(); SETMSG = 'Saved. It takes effect immediately.';
@@ -1834,6 +1906,12 @@ async function managedAction(act, el) {
       // load failed honestly while nothing was configured, and leaving
       // that error standing until a manual refresh reads as broken.
       if (key.indexOf('log_store') === 0) { await load(true); return; }
+      // A Grafana change needs a full page load: the CSP that lets the
+      // frames render is fixed per document, and this document was served
+      // before the change existed. Learned live - saving the URL and
+      // opening the Grafana tab showed only the browser's blocked-content
+      // message until a manual reload.
+      if (key.indexOf('grafana') === 0) { location.reload(); return; }
     } else {
       if (r.status === 401) { sessionLost(); return; }
       let d = r.statusText; try { d = (await r.json()).detail || d; } catch (e) {}
@@ -1855,6 +1933,22 @@ async function managedAction(act, el) {
   }
   if (act === 'wiz-store') {
     WIZSTORE = el.getAttribute('data-key'); render(); return;
+  }
+  if (act === 'wl-toggle') {
+    // Mirror the element rather than flip a flag: the browser applies its
+    // own toggle as the click's default action AFTER this handler, so read
+    // the settled state a tick later. Flipping blindly goes permanently
+    // out of sync the first time the two ever disagree.
+    setTimeout(() => {
+      const d = document.getElementById('wl-details');
+      if (d) WLOPEN = d.open;
+    }, 0);
+    return;
+  }
+  if (act === 'open-wizard') {
+    view = 'wizard'; detail = null;
+    history.replaceState(null, '', '#wizard');
+    drawNav(); render(); return;
   }
   if (act === 'save-domains' || act === 'clear-domains' || act === 'save-extid') {
     const body = act === 'save-domains'
