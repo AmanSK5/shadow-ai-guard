@@ -101,6 +101,21 @@ CREATE TABLE IF NOT EXISTS sessions (
   expires_at TEXT NOT NULL,
   revoked_at TEXT
 );
+CREATE TABLE IF NOT EXISTS settings (
+  key        TEXT PRIMARY KEY,
+  value      TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS governance_decisions (
+  tool_id    TEXT PRIMARY KEY,
+  status     TEXT NOT NULL,
+  owner      TEXT NOT NULL DEFAULT '',
+  review_due TEXT NOT NULL DEFAULT '',
+  reason     TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL DEFAULT ''
+);
 """
 
 # Columns added after the first release, applied to databases that predate
@@ -452,6 +467,94 @@ class State:
             )
             if cur.rowcount:
                 self._event("logout", {})
+            self._db.commit()
+        return bool(cur.rowcount)
+
+    # ------------------------------------------------ settings (managed) --
+    # Deployment configuration the portal edits and the receiver serves to
+    # the fleet at runtime. Values are stored as JSON so a key can be a
+    # list (corp domains) or a flag without a second schema. Precedence is
+    # the caller's business: a row here wins over the matching environment
+    # variable, and deleting the row falls back to it - main.py implements
+    # that, this just stores.
+
+    def get_setting(self, key: str):
+        """The parsed value, or None when no row exists. A stored null is
+        not a state this API can create - set_setting(None) deletes - so
+        None is unambiguous."""
+        with self._lock:
+            row = self._db.execute(
+                "SELECT value FROM settings WHERE key = ?", (key,)
+            ).fetchone()
+        return json.loads(row["value"]) if row else None
+
+    def get_settings(self) -> dict:
+        with self._lock:
+            rows = self._db.execute("SELECT key, value FROM settings").fetchall()
+        return {r["key"]: json.loads(r["value"]) for r in rows}
+
+    def set_setting(self, key: str, value, by: str = ""):
+        """Upsert one setting; value None deletes the row (fall back to
+        whatever the deployment's environment says)."""
+        with self._lock:
+            if value is None:
+                cur = self._db.execute(
+                    "DELETE FROM settings WHERE key = ?", (key,))
+                if cur.rowcount:
+                    self._event("setting_cleared", {"key": key, "by": by})
+            else:
+                self._db.execute(
+                    "INSERT INTO settings (key, value, updated_at, updated_by)"
+                    " VALUES (?, ?, ?, ?)"
+                    " ON CONFLICT(key) DO UPDATE SET value = excluded.value,"
+                    " updated_at = excluded.updated_at,"
+                    " updated_by = excluded.updated_by",
+                    (key, json.dumps(value), _now(), by),
+                )
+                # The key and who, never the value: corp domains are not a
+                # secret, but the event log's rule is ids only and one
+                # exception is how the second one happens.
+                self._event("setting_changed", {"key": key, "by": by})
+            self._db.commit()
+
+    # -------------------------------------- governance decisions (managed) --
+    # What the organisation decided about a tool, editable in the portal.
+    # The same record shape the governance file holds, minus exceptions -
+    # those stay file-only. The portal merges per tool: a row here wins,
+    # the file fills the gaps.
+
+    def list_decisions(self) -> list[dict]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT tool_id, status, owner, review_due, reason,"
+                " updated_at, updated_by FROM governance_decisions"
+                " ORDER BY tool_id"
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def upsert_decision(self, tool_id: str, status: str, owner: str,
+                        review_due: str, reason: str, by: str = ""):
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO governance_decisions"
+                " (tool_id, status, owner, review_due, reason, updated_at, updated_by)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)"
+                " ON CONFLICT(tool_id) DO UPDATE SET status = excluded.status,"
+                " owner = excluded.owner, review_due = excluded.review_due,"
+                " reason = excluded.reason, updated_at = excluded.updated_at,"
+                " updated_by = excluded.updated_by",
+                (tool_id, status, owner, review_due, reason, _now(), by),
+            )
+            self._event("decision_recorded", {"tool": tool_id, "status": status,
+                                              "by": by})
+            self._db.commit()
+
+    def delete_decision(self, tool_id: str, by: str = "") -> bool:
+        with self._lock:
+            cur = self._db.execute(
+                "DELETE FROM governance_decisions WHERE tool_id = ?", (tool_id,))
+            if cur.rowcount:
+                self._event("decision_cleared", {"tool": tool_id, "by": by})
             self._db.commit()
         return bool(cur.rowcount)
 

@@ -50,7 +50,7 @@ def receiver_request(base: str, method: str, path: str, admin_token: str,
     req = urllib.request.Request(
         base.rstrip("/") + path,
         method=method,
-        data=data if method == "POST" else None,
+        data=data if method in ("POST", "PUT") else None,
         headers={
             "Authorization": "Bearer " + admin_token,
             "Content-Type": "application/json",

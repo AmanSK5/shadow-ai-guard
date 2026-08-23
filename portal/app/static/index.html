@@ -139,7 +139,8 @@ h2{font-size:19px;margin:0 0 4px}
 /* No max-width here. main is already capped and centred, so a second
    constraint on the prose only makes it stop short of the table it
    introduces, which reads as a broken line rather than a measure. */
-input{background:var(--sf2);border:1px solid var(--bd);color:var(--fg);border-radius:6px;padding:6px 10px;font:inherit;min-width:220px}
+input,select{background:var(--sf2);border:1px solid var(--bd);color:var(--fg);border-radius:6px;padding:6px 10px;font:inherit;min-width:220px}
+select.mfield{min-width:160px}
 /* Managed views: small action buttons, the login fields, and the one-time
    pane a minted token appears in. */
 button.mini{font:inherit;font-size:12px;padding:3px 10px;border:1px solid var(--line,#8884);border-radius:6px;background:transparent;color:var(--pri);cursor:pointer}
@@ -181,6 +182,13 @@ let EV = null;
 let PG = null;
 let FLEET = null;
 let TOKENS = null;
+let SETTINGS = null;
+// Governance editing: which tool's card shows the form, prefill fetched
+// from the recorded decision (the row lacks the free-text reason, and an
+// owner edit must not silently blank it), and the last refusal to show.
+let GOVEDIT = null, GOVPRE = null, GOVERR = '';
+// One-line outcome of the last Settings action ("saved", or a refusal).
+let SETMSG = '';
 let S = null, CFG = {}, loadError = '';
 // What /api/auth said: {mode, authenticated, username, setup_needed}.
 // The session itself is an HttpOnly cookie this script can never read -
@@ -206,7 +214,8 @@ function chrome(on) {
 function showLogin(msg) {
   // A minted token's show-once pane must not outlive the session that
   // minted it: signing out and back in would show the plaintext again.
-  MINTED = null; FLEET = null; TOKENS = null;
+  MINTED = null; FLEET = null; TOKENS = null; SETTINGS = null;
+  GOVEDIT = null; GOVPRE = null; GOVERR = ''; SETMSG = '';
   chrome(false);
   const create = AUTH && AUTH.setup_needed;
   app.innerHTML = `<div style="max-width:440px;margin:8vh auto 0">
@@ -254,7 +263,7 @@ async function load(force) {
   const q = force ? '?refresh=true' : '';
   // Refresh must clear the views that read a second endpoint too, or the
   // button refreshes some of the page and silently not the rest.
-  if (force) { DIAG = null; REG = null; EV = null; PG = null; FLEET = null; TOKENS = null; }
+  if (force) { DIAG = null; REG = null; EV = null; PG = null; FLEET = null; TOKENS = null; SETTINGS = null; }
   try {
     const cr = await fetch('/api/config');
     if (cr.status === 401 && AUTH && AUTH.mode === 'login') { sessionLost(); return; }
@@ -672,6 +681,31 @@ function personal() {
 }
 
 
+// The inline decision editor on a register card. Prefilled from the
+// recorded decision when one exists (GOVPRE), else from what the row shows,
+// so editing one field does not silently rewrite the others.
+function govForm(r) {
+  const pre = GOVPRE || {};
+  const status = pre.status || r.stored_status || 'reviewing';
+  const opt = (v, lbl) => `<option value="${v}"${status === v ? ' selected' : ''}>${lbl}</option>`;
+  return `${GOVERR ? `<div class="note">${esc(GOVERR)}</div>` : ''}
+  <div style="display:flex;flex-direction:column;gap:6px">
+    <select id="gov-status" class="mfield">
+      ${opt('approved', 'approved')}${opt('not_approved', 'not approved')}${opt('reviewing', 'reviewing')}
+    </select>
+    <input id="gov-owner" class="mfield" placeholder="owner, e.g. Security"
+      value="${esc(pre.owner ?? r.owner ?? '')}">
+    <input id="gov-review" class="mfield" placeholder="review due (YYYY-MM-DD, required for approved)"
+      value="${esc(pre.review_due ?? r.review_due ?? '')}">
+    <input id="gov-reason" class="mfield" placeholder="reason (optional)"
+      value="${esc(pre.reason ?? '')}">
+    <div>
+      <button class="mini" data-act="gov-save" data-key="${esc(r.id)}">save decision</button>
+      <button class="mini" data-act="gov-cancel">cancel</button>
+    </div>
+  </div>`;
+}
+
 async function register() {
   if (!REG) {
     try { REG = await (await fetch('/api/register')).json(); }
@@ -742,10 +776,16 @@ async function register() {
       return wrap('<span class="pill p-warn">not in registry</span>');
     }
 
-    if (r.status_source === 'governance') {
+    if (r.status_source === 'governance' || r.status_source === 'portal') {
       let out = `<span class="pill ${PILL[r.status]||'p-mut'}">${LABEL[r.status]||esc(r.status)}</span>`;
       if (r.status_reason === 'approval_expired') {
         out += `<span class="gov-sub">was ${LABEL[r.stored_status]||''}</span>`;
+      }
+      // A decision recorded in the portal says so: a reader auditing the
+      // governance file should not go hunting for a record that lives in
+      // the receiver's database instead.
+      if (r.status_source === 'portal') {
+        out += `<span class="gov-sub">set in the portal</span>`;
       }
       return wrap(out);
     }
@@ -796,11 +836,17 @@ async function register() {
     <div><dt>${REG.known_not_observed}</dt><dd>watched for, not seen</dd></div>
   </dl>
 
-  ${!REG.governance_configured ? `<p class="lede">No governance file is
+  ${!REG.governance_configured ? (CFG.managed && CFG.managed.enabled
+    ? `<p class="lede">No decisions recorded yet, so status falls back to the
+    registry's own flag - a shipped default rather than a decision anyone
+    made. Record one with <b>edit</b> on any card; it is stored centrally
+    and a governance file (<span class="mono">GOVERNANCE_PATH</span>) still
+    works alongside.</p>`
+    : `<p class="lede">No governance file is
   configured, so status falls back to the registry's own flag and every tool
   reads as not approved. That is a shipped default rather than a decision
   anyone made. Set <span class="mono">GOVERNANCE_PATH</span> to record
-  approvals, owners and review dates.</p>` : ''}
+  approvals, owners and review dates.</p>`) : ''}
 
   ${((REG.governance_unmatched || []).length
      || (REG.exceptions_unmatched || []).length) ? `<div class="note">
@@ -847,10 +893,14 @@ async function register() {
     </dl>
     <hr>
     <div class="card-section">governance</div>
-    <dl class="card-kv">
+    ${GOVEDIT === r.id ? govForm(r) : `<dl class="card-kv">
       <dt>owner</dt><dd>${r.owner ? esc(r.owner) : dash}</dd>
       <dt>review</dt><dd>${review(r)}</dd>
     </dl>
+    ${CFG.managed && CFG.managed.enabled ? `<div style="margin-top:8px">
+      <button class="mini" data-act="gov-edit" data-key="${esc(r.id)}">edit</button>
+      ${r.status_source === 'portal' ? `<button class="mini" data-act="gov-clear"
+        data-key="${esc(r.id)}">clear decision</button>` : ''}</div>` : ''}`}
     ${exceptionBlock(r)}
   </div>`).join('')}
   </div>` : `<p class="lede">No AI tools observed in the last ${esc(win)}.
@@ -1025,11 +1075,69 @@ async function iso() {
   <a href="/api/evidence?download=true" style="color:var(--pri)">Download JSON</a></p>`;
 }
 
+// The editable deployment settings, managed mode only: what the receiver
+// stores centrally and serves to the fleet at runtime. Everything below it
+// in the Settings view stays the read-only diagnostics it always was.
+function managedSettings() {
+  if (!SETTINGS) return '';
+  const s = SETTINGS.settings || {};
+  const cd = s.corp_domains || {value: [], source: 'unset', env: []};
+  const srcNote = cd.source === 'db'
+    ? (cd.env || []).length
+      ? `Saved in the portal, shadowing the deployment's
+         <span class="mono">CORP_DOMAINS</span> (${esc(cd.env.join(', '))});
+         clearing falls back to it.`
+      : 'Saved in the portal.'
+    : cd.source === 'env'
+      ? `From the deployment's <span class="mono">CORP_DOMAINS</span>;
+         saving here overrides it without touching the deployment.`
+      : 'Not set anywhere yet.';
+  return `<div class="wcard" style="margin-bottom:10px"><h3>Central settings</h3>
+  <p class="lede" style="margin-bottom:10px">Stored in the receiver and served
+  to the fleet at runtime: collectors pick a change up on their next check-in,
+  no MDM re-push. A value saved here wins over the matching environment
+  variable.</p>
+  ${SETMSG ? `<div class="note">${esc(SETMSG)}</div>` : ''}
+  <dl class="kv">
+    <dt>Corporate domains</dt><dd>
+      <input id="set-domains" class="mfield" style="min-width:340px"
+        placeholder="example.com, example.co.uk"
+        value="${esc((cd.value || []).join(', '))}">
+      <button class="mini" data-act="save-domains">save</button>
+      ${cd.source === 'db' ? `<button class="mini" data-act="clear-domains">clear (fall back)</button>` : ''}
+      <div class="src-note">${srcNote}</div></dd>
+    <dt>Extension ID</dt><dd>
+      <input id="set-extid" class="mfield" style="min-width:340px"
+        placeholder="the browser extension's ID"
+        value="${esc((s.extension_id || {}).value || '')}">
+      <button class="mini" data-act="save-extid">save</button>
+      <div class="src-note">Used to generate the extension's managed-policy
+      artifact. Empty clears it.</div></dd>
+  </dl></div>
+
+  <div class="wcard" style="margin-bottom:10px"><h3>Admin account</h3>
+  <dl class="kv">
+    <dt>Change password</dt><dd>
+      <input id="set-curpass" class="mfield" type="password"
+        placeholder="current password" autocomplete="current-password">
+      <input id="set-newpass" class="mfield" type="password"
+        placeholder="new password (12+ characters)" autocomplete="new-password">
+      <button class="mini" data-act="change-password">change</button>
+      <div class="src-note">Every other session is signed out with the old
+      password; this one stays.</div></dd>
+  </dl></div>`;
+}
+
 async function settings() {
   if (!DIAG) {
     try { DIAG = await (await fetch('/api/diagnostics')).json(); }
     catch (e) { return `<h2>Settings</h2><div class="note">Could not read
       diagnostics: ${esc(String(e.message || e))}</div>`; }
+  }
+  if (CFG.managed && CFG.managed.enabled && !SETTINGS) {
+    const r = await mfetch('/api/settings');
+    if (r.ok) SETTINGS = await r.json();
+    else if (r.status === 401) { sessionLost(); return ''; }
   }
   const r = DIAG.runtime, d = DIAG.deployment;
   const yn = v => v ? '<span class="pill p-ok">yes</span>'
@@ -1040,10 +1148,16 @@ async function settings() {
     : Math.floor(sec/3600) + 'h ' + Math.round(sec%3600/60) + 'm';
 
   return `<h2>Settings and diagnostics</h2>
-  <p class="lede">Read only. Everything under the first four headings is
+  <p class="lede">${CFG.managed && CFG.managed.enabled
+    ? `Central settings are editable and reach the fleet at runtime.
+       Everything below them is read only: what the portal verified about
+       itself, and - labelled at the bottom - what it was merely told.`
+    : `Read only. Everything under the first four headings is
   something the portal verified about itself. Anything it was merely told is
   grouped at the bottom and labelled, so a value nobody updated cannot be
-  mistaken for one something checked.</p>
+  mistaken for one something checked.`}</p>
+
+  ${managedSettings()}
 
   <div class="wcard" style="margin-bottom:10px"><h3>Application</h3>
   <dl class="kv">
@@ -1355,6 +1469,82 @@ async function managedAction(act, el) {
       showLogin(String(d));
     }
     return;
+  }
+  if (act === 'gov-edit') {
+    const id = el.getAttribute('data-key');
+    GOVPRE = null; GOVERR = '';
+    const r = await mfetch('/api/governance-decisions');
+    if (r.ok) {
+      GOVPRE = ((await r.json()).decisions || []).find(d => d.tool_id === id) || null;
+    } else if (r.status === 401) { sessionLost(); return; }
+    GOVEDIT = id; render(); return;
+  }
+  if (act === 'gov-cancel') { GOVEDIT = null; GOVPRE = null; GOVERR = ''; render(); return; }
+  if (act === 'gov-save') {
+    const id = el.getAttribute('data-key');
+    const body = {decisions: [{
+      tool_id: id,
+      status: _val('gov-status'),
+      owner: _val('gov-owner'),
+      review_due: _val('gov-review'),
+      reason: _val('gov-reason'),
+    }]};
+    const r = await mfetch('/api/governance-decisions',
+      {method: 'POST', body: JSON.stringify(body)});
+    if (r.ok) { GOVEDIT = null; GOVPRE = null; GOVERR = ''; REG = null; EV = null; }
+    else {
+      if (r.status === 401) { sessionLost(); return; }
+      let d = r.statusText; try { d = (await r.json()).detail || d; } catch (e) {}
+      GOVERR = typeof d === 'string' ? d : 'Check the fields: dates are YYYY-MM-DD.';
+      // The redraw prefills from GOVPRE; without this a refusal would also
+      // throw away everything the operator just typed.
+      GOVPRE = body.decisions[0];
+    }
+    render(); return;
+  }
+  if (act === 'gov-clear') {
+    const id = el.getAttribute('data-key');
+    if (!confirm('Clear the recorded decision for ' + id + '? Status falls '
+                 + 'back to the governance file or the registry default.')) return;
+    const r = await mfetch('/api/governance-decisions',
+      {method: 'POST', body: JSON.stringify({delete: [id]})});
+    if (!r.ok) {
+      if (r.status === 401) { sessionLost(); return; }
+      let d = r.statusText; try { d = (await r.json()).detail || d; } catch (e) {}
+      alert('Could not clear the decision: ' + d);
+    }
+    REG = null; EV = null; render(); return;
+  }
+  if (act === 'save-domains' || act === 'clear-domains' || act === 'save-extid') {
+    const body = act === 'save-domains'
+      ? {corp_domains: _val('set-domains').split(',').map(s => s.trim()).filter(Boolean)}
+      : act === 'clear-domains' ? {corp_domains: null}
+      : {extension_id: _val('set-extid')};
+    const r = await mfetch('/api/settings',
+      {method: 'POST', body: JSON.stringify(body)});
+    if (r.ok) { SETTINGS = await r.json(); SETMSG = 'Saved. The fleet hears it on its next check-in.'; }
+    else {
+      if (r.status === 401) { sessionLost(); return; }
+      let d = r.statusText; try { d = (await r.json()).detail || d; } catch (e) {}
+      SETMSG = 'Not saved: ' + (typeof d === 'string' ? d : 'check the values.');
+    }
+    render(); return;
+  }
+  if (act === 'change-password') {
+    const r = await mfetch('/api/password', {method: 'POST', body: JSON.stringify(
+      {current: _val('set-curpass'), new: _val('set-newpass')})});
+    if (r.ok) SETMSG = 'Password changed. Every other session was signed out.';
+    else {
+      let d = r.statusText; try { d = (await r.json()).detail || d; } catch (e) {}
+      // A wrong current password is also a 401, from the receiver rather
+      // than the session gate; only the gate's refusal means signed out.
+      if (r.status === 401 && String(d).indexOf('current password') < 0) {
+        sessionLost(); return;
+      }
+      SETMSG = 'Password unchanged: ' + (typeof d === 'string' ? d
+        : 'the new password needs 12 characters or more.');
+    }
+    render(); return;
   }
   if (act === 'dismiss-minted') { MINTED = null; render(); return; }
   if (act === 'copy') {

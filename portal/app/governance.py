@@ -251,7 +251,11 @@ def decide(tool_id, governance, registry_approved, today=None, exceptions=None):
             "owner": rec.get("owner") or "",
             "review_due": rec["review_due"].isoformat() if rec.get("review_due") else "",
             "days_overdue": days_overdue(rec, today),
-            "source": "governance",
+            # Where the record came from. "governance" is the file, as it
+            # always was; a record the portal wrote in managed mode arrives
+            # with origin "portal" so the register can say which kind of
+            # decision it is showing.
+            "source": rec.get("origin") or "governance",
         })
 
     if registry_approved is None:

@@ -350,7 +350,7 @@ def test_an_unobserved_tool_is_not_in_the_endpoints_rows():
     with patch.object(pm, "_findings", lambda h: [_f()]), \
             patch.object(derive, "load_registry", lambda p: REGISTRY):
         pm._cache.clear()
-        body = json.loads(bytes(pm.register(hours=168).body))
+        body = json.loads(bytes(pm.register(None, hours=168).body))
 
     assert [r["id"] for r in body["rows"]] == ["claude"]
     # The watchlist is still reported, as a count.
