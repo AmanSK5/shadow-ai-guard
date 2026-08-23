@@ -262,10 +262,10 @@ def test_the_endpoint_returns_metadata_and_excludes_heartbeats():
                 _f(device="D2", tool="chatgpt")]
     reg = {"tools": [{"id": "chatgpt", "domains": ["chatgpt.com"]}]}
 
-    with patch.object(pm, "_findings", lambda h: findings), \
+    with patch.object(pm, "_findings", lambda h, request=None: findings), \
             patch.object(derive, "load_registry", lambda p: reg):
         pm._cache.clear()
-        body = _json.loads(bytes(pm.paste_guard_events(hours=168).body))
+        body = _json.loads(bytes(pm.paste_guard_events(None, hours=168).body))
 
     assert body["events"] == 2
     assert body["overridden"] == 1
