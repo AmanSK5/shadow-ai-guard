@@ -194,6 +194,9 @@ let SETMSG = '';
 // review date survive the re-render each decision causes, or the second
 // approval would silently carry an empty owner.
 let REGTOOLS = null, GOVDECS = null, WIZOWNER = '', WIZREVIEW = '';
+// Which log-store shape the wizard's step 2 shows, and the last result of
+// each connection test, keyed by API name, so a result survives re-renders.
+let WIZSTORE = 'self', TESTS = {};
 let S = null, CFG = {}, loadError = '';
 // What /api/auth said: {mode, authenticated, username, setup_needed}.
 // The session itself is an HttpOnly cookie this script can never read -
@@ -221,7 +224,7 @@ function showLogin(msg) {
   // minted it: signing out and back in would show the plaintext again.
   MINTED = null; FLEET = null; TOKENS = null; SETTINGS = null;
   GOVEDIT = null; GOVPRE = null; GOVERR = ''; SETMSG = '';
-  REGTOOLS = null; GOVDECS = null;
+  REGTOOLS = null; GOVDECS = null; TESTS = {};
   chrome(false);
   const create = AUTH && AUTH.setup_needed;
   app.innerHTML = `<div style="max-width:440px;margin:8vh auto 0">
@@ -1098,6 +1101,61 @@ async function iso() {
   <a href="/api/evidence?download=true" style="color:var(--pri)">Download JSON</a></p>`;
 }
 
+// One string setting as an editable row: input, save, and where the value
+// came from. The password key reports {set, source} rather than a value,
+// so its input is always blank and saving blank CLEARS it - said in the
+// note rather than discovered.
+function settingRow(key, label, placeholder, note) {
+  const s = (SETTINGS && SETTINGS.settings || {})[key] || {value: '', source: 'unset'};
+  const secret = !('value' in s);
+  const src = s.source === 'db'
+    ? (s.env ? `Saved in the portal, shadowing the deployment's value; clearing falls back to it.` : 'Saved in the portal.')
+    : s.source === 'env' ? `From the deployment; saving here overrides it without touching the deployment.` : '';
+  const secretNote = secret
+    ? (s.set ? 'A value is set (never shown). Leave blank and save to CLEAR it; type and save to replace it.' : 'Not set.')
+    : '';
+  return `<dt>${esc(label)}</dt><dd>
+    <input id="set-${esc(key)}" class="mfield" style="min-width:340px"
+      ${secret ? 'type="password" autocomplete="off"' : ''}
+      placeholder="${esc(placeholder)}"
+      value="${secret ? '' : esc(s.value || '')}">
+    <button class="mini" data-act="save-setting" data-key="${esc(key)}">save</button>
+    <div class="src-note">${esc(note)}${note ? ' ' : ''}${secretNote || src}</div></dd>`;
+}
+
+// The last result of a connection test, rendered where its button lives.
+function testNote(which) {
+  const t = TESTS[which];
+  if (!t) return '';
+  const bits = [];
+  if (t.ok) bits.push('<span class="pill p-ok">ok</span>');
+  else bits.push('<span class="pill p-warn">failed</span>');
+  if (t.version) bits.push('receiver ' + esc(t.version));
+  if (t.url) bits.push('<span class="mono">' + esc(t.url) + '</span>');
+  if (t.detail) bits.push(esc(t.detail));
+  if (t.hint) bits.push('<i>' + esc(t.hint) + '</i>');
+  (t.warnings || []).forEach(w => bits.push('<span style="color:var(--warn)">' + esc(w) + '</span>'));
+  return `<div class="src-note" style="margin-top:6px">${bits.join(' · ')}</div>`;
+}
+
+// The log-store step/card, shared by the wizard and the Settings view. The
+// wizard adds the self-hosted / cloud / none branch; Settings shows all
+// fields flat.
+function logStoreFields(withUsername) {
+  return settingRow('log_store_url', 'Log store base URL',
+    'http://loki.monitoring.svc.cluster.local:3100',
+    'The BASE URL. The receiver derives the push endpoint from it, so the push-vs-base mixup cannot happen here.')
+    + (withUsername ? settingRow('log_store_username', 'Log store username',
+        'numeric instance id on Grafana Cloud', '')
+      + settingRow('log_store_password', 'Log store password / token', 'paste to set', '')
+      : '');
+}
+
+const logStoreTests = () => `<div style="margin-top:8px">
+  <button class="mini" data-act="run-test" data-key="log-store-push">test: receiver can write</button>
+  <button class="mini" data-act="run-test" data-key="log-store-read">test: portal can read</button>
+</div>${testNote('log-store-push')}${testNote('log-store-read')}`;
+
 // The first-run wizard: everything a fresh managed install needs, in
 // order, on one page. Every step is skippable and everything here is
 // editable later (Settings, and the register's edit controls); Finish just
@@ -1137,13 +1195,54 @@ async function wizard() {
     </tr>`;
   };
 
+  const storeBtn = (k, lbl) => `<button class="mini"
+    ${WIZSTORE === k ? 'style="border-color:var(--pri)"' : ''}
+    data-act="wiz-store" data-key="${k}">${lbl}</button>`;
+
   return `<h2>Welcome — set up your deployment</h2>
-  <p class="lede">Four steps, all optional, all editable later. What you set
-  here is stored centrally and reaches the fleet at runtime; nothing needs a
-  redeploy afterwards.</p>
+  <p class="lede">Everything below is optional, editable later under
+  Settings, and stored centrally: it takes effect at runtime, so nothing
+  needs a redeploy afterwards.</p>
   ${SETMSG ? `<div class="note">${esc(SETMSG)}</div>` : ''}
 
-  <div class="wcard" style="margin-bottom:10px"><h3>1 · Corporate domains</h3>
+  <div class="wcard" style="margin-bottom:10px"><h3>1 · Where endpoints reach the receiver</h3>
+  <p class="lede" style="margin-bottom:10px">The public URL baked into every
+  downloaded artifact. It must resolve from the machines being enrolled -
+  not from inside the cluster, and not only from this one. Save, then probe.</p>
+  <dl class="kv">
+    ${settingRow('receiver_public_url', 'Public receiver URL',
+      'https://ai-guard.your-tailnet.ts.net', '')}
+  </dl>
+  <div style="margin-top:8px">
+    <button class="mini" data-act="run-test" data-key="receiver-url">probe the saved URL</button>
+  </div>${testNote('receiver-url')}</div>
+
+  <div class="wcard" style="margin-bottom:10px"><h3>2 · The log store</h3>
+  <p class="lede" style="margin-bottom:10px">Findings are JSON lines the
+  receiver pushes to a Loki-compatible store and the portal reads back.
+  Where is yours?</p>
+  <div style="margin-bottom:10px">
+    ${storeBtn('self', 'self-hosted / in-cluster')}
+    ${storeBtn('cloud', 'hosted (Grafana Cloud)')}
+    ${storeBtn('none', 'none yet')}
+  </div>
+  ${WIZSTORE === 'none' ? `<p class="lede">Fine: findings still land on the
+    receiver's stdout, so anything scraping container logs keeps them.
+    The estate views here stay empty until a store is configured - add one
+    later under Settings.</p>`
+  : `${WIZSTORE === 'self' ? `<p class="lede">Find the in-cluster service -
+    <span class="mono">kubectl get svc -A | grep -i loki</span> - and use
+    its base URL, typically
+    <span class="mono">http://loki.&lt;namespace&gt;.svc.cluster.local:3100</span>.
+    No credentials needed for a typical in-cluster Loki.</p>`
+  : `<p class="lede">From Grafana Cloud's Loki details page: the URL, the
+    numeric instance id as username, and an access-policy token with
+    <b>logs:write AND logs:read</b> - a write-only token stores nothing and
+    tells nobody, which is exactly what the tests below catch.</p>`}
+  <dl class="kv">${logStoreFields(WIZSTORE === 'cloud')}</dl>
+  ${logStoreTests()}`}</div>
+
+  <div class="wcard" style="margin-bottom:10px"><h3>3 · Corporate domains</h3>
   <p class="lede" style="margin-bottom:10px">Accounts on these domains are
   work accounts; everything else reads as personal. Served to the collectors
   on every check-in.</p>
@@ -1152,7 +1251,7 @@ async function wizard() {
     value="${esc((cd.value || []).join(', '))}">
   <button class="mini" data-act="save-domains">save</button></div>
 
-  <div class="wcard" style="margin-bottom:10px"><h3>2 · Governance baseline</h3>
+  <div class="wcard" style="margin-bottom:10px"><h3>4 · Governance baseline</h3>
   <p class="lede" style="margin-bottom:10px">What your organisation has
   decided about the tools the registry watches for. Touch only the ones you
   have a position on - the rest stay undecided, which is the honest state.
@@ -1168,7 +1267,7 @@ async function wizard() {
   <table><tr><th>tool</th><th>vendor</th><th>decision</th><th></th></tr>
   ${REGTOOLS.map(toolRow).join('')}</table></div>
 
-  <div class="wcard" style="margin-bottom:10px"><h3>3 · Browser extension ID</h3>
+  <div class="wcard" style="margin-bottom:10px"><h3>5 · Browser extension ID</h3>
   <p class="lede" style="margin-bottom:10px">The packed extension's 32-letter
   id (extension/README.md shows how to derive it). It unlocks the
   pre-configured policy download below.</p>
@@ -1176,19 +1275,29 @@ async function wizard() {
     placeholder="the browser extension's ID" value="${esc(eid)}">
   <button class="mini" data-act="save-extid">save</button></div>
 
-  <div class="wcard" style="margin-bottom:10px"><h3>4 · Deployment downloads</h3>
+  <div class="wcard" style="margin-bottom:10px"><h3>6 · Alerting and Grafana (optional)</h3>
+  <dl class="kv">
+    ${settingRow('alertmanager_url', 'Alertmanager URL',
+      'http://alertmanager.monitoring.svc:9093',
+      'warn findings page through this; empty means nothing pages.')}
+    ${settingRow('grafana_url', 'Grafana URL',
+      'the URL a BROWSER reaches Grafana on',
+      'For embedded panels; panels and dashboard UID live under Settings.')}
+  </dl></div>
+
+  <div class="wcard" style="margin-bottom:10px"><h3>7 · Deployment downloads</h3>
   <p class="lede" style="margin-bottom:10px">Each download mints its own
   enrollment token (revocable on its own under Enrollment tokens) and bakes
   the receiver URL, so what you upload to the MDM works as-is. Machines
   enroll themselves and appear under Fleet.</p>
-  ${CFG.managed.artifacts_ready ? `<div style="display:flex;gap:8px;flex-wrap:wrap">
+  ${CFG.managed && CFG.managed.artifacts_ready ? `<div style="display:flex;gap:8px;flex-wrap:wrap">
     <button class="mini" data-act="artifact" data-key="collector-macos">macOS collector</button>
     <button class="mini" data-act="artifact" data-key="collector-linux">Linux collector</button>
     <button class="mini" data-act="artifact" data-key="collector-windows">Windows collector</button>
-    <button class="mini" data-act="artifact" data-key="extension-policy">extension policy${eid ? '' : ' (needs step 3)'}</button>
+    <button class="mini" data-act="artifact" data-key="extension-policy">extension policy${eid ? '' : ' (needs step 5)'}</button>
     <button class="mini" data-act="artifact" data-key="scanner-cronjob">scanner CronJob</button>
-  </div>` : `<div class="note">RECEIVER_PUBLIC_URL is not set, so downloads
-  cannot bake a URL agents can reach; set it and these appear.</div>`}</div>
+  </div>` : `<div class="note">No public receiver URL yet, so downloads cannot
+  bake a URL agents can reach - save one in step 1 and these appear.</div>`}</div>
 
   <div style="margin:18px 0">
     <button class="mini" style="padding:8px 18px" data-act="wiz-finish">Finish setup</button>
@@ -1235,6 +1344,44 @@ function managedSettings() {
       <button class="mini" data-act="save-extid">save</button>
       <div class="src-note">Used to generate the extension's managed-policy
       artifact. Empty clears it.</div></dd>
+  </dl></div>
+
+  <div class="wcard" style="margin-bottom:10px"><h3>Receiver</h3>
+  <dl class="kv">
+    ${settingRow('receiver_public_url', 'Public receiver URL',
+      'https://ai-guard.your-tailnet.ts.net',
+      'The URL endpoints reach from OUTSIDE - it gets baked into every downloaded artifact. Not the internal receiver address the portal proxies to.')}
+  </dl>
+  <div style="margin-top:8px">
+    <button class="mini" data-act="run-test" data-key="receiver-url">probe the saved URL</button>
+  </div>${testNote('receiver-url')}</div>
+
+  <div class="wcard" style="margin-bottom:10px"><h3>Log store</h3>
+  <p class="lede" style="margin-bottom:10px">Where findings are stored and
+  read back. The receiver starts pushing and the portal starts reading the
+  moment this is saved - no restart. Credentials follow the URL: a store
+  saved here uses only the credentials saved here.</p>
+  <dl class="kv">
+    ${logStoreFields(true)}
+    ${settingRow('log_store_push_url', 'Push endpoint override',
+      'only for gateways with a non-standard push path',
+      'Advanced. Leave empty to derive it from the base URL, which is almost always right.')}
+  </dl>${logStoreTests()}</div>
+
+  <div class="wcard" style="margin-bottom:10px"><h3>Alerting and Grafana</h3>
+  <dl class="kv">
+    ${settingRow('alertmanager_url', 'Alertmanager URL',
+      'http://alertmanager.monitoring.svc:9093',
+      'warn findings page through this. Empty means findings are logged and dashboarded but nothing pages.')}
+    ${settingRow('grafana_url', 'Grafana URL',
+      'the URL a BROWSER reaches Grafana on',
+      'For embedded panels; Grafana must allow embedding.')}
+    ${settingRow('grafana_panels', 'Grafana panels',
+      'dashboardUid:panelId:Title; semicolon separated', '')}
+    ${settingRow('grafana_dashboard_uid', 'Grafana dashboard UID',
+      'embed one whole dashboard instead of panels', '')}
+    ${settingRow('overview_widgets', 'Overview widgets',
+      'stat_row, top_tools, …  (empty = sensible default)', '')}
   </dl></div>
 
   <div class="wcard" style="margin-bottom:10px"><h3>Admin account</h3>
@@ -1669,6 +1816,45 @@ async function managedAction(act, el) {
       alert('Could not clear the decision: ' + d);
     }
     REG = null; EV = null; render(); return;
+  }
+  if (act === 'save-setting') {
+    const key = el.getAttribute('data-key');
+    const body = {};
+    body[key] = _val('set-' + key);
+    const r = await mfetch('/api/settings', {method: 'POST', body: JSON.stringify(body)});
+    if (r.ok) {
+      SETTINGS = await r.json(); SETMSG = 'Saved. It takes effect immediately.';
+      // The public URL gates the download buttons through CFG; refresh it
+      // so saving in step 1 unlocks step 7 without a reload.
+      if (key === 'receiver_public_url') {
+        const cr = await fetch('/api/config');
+        if (cr.ok) CFG = await cr.json();
+      }
+      // A newly saved log store should be read from NOW: the boot-time
+      // load failed honestly while nothing was configured, and leaving
+      // that error standing until a manual refresh reads as broken.
+      if (key.indexOf('log_store') === 0) { await load(true); return; }
+    } else {
+      if (r.status === 401) { sessionLost(); return; }
+      let d = r.statusText; try { d = (await r.json()).detail || d; } catch (e) {}
+      SETMSG = 'Not saved: ' + (typeof d === 'string' ? d : 'check the value.');
+    }
+    render(); return;
+  }
+  if (act === 'run-test') {
+    const which = el.getAttribute('data-key');
+    const r = await mfetch('/api/test/' + which, {method: 'POST'});
+    if (r.status === 401) { sessionLost(); return; }
+    let out;
+    try { out = await r.json(); } catch (e) { out = {ok: false, detail: r.statusText}; }
+    // A 400 ("nothing configured to test") arrives as {detail}; shape it
+    // like a result so the note renders it rather than a blank.
+    if (out.detail && out.ok === undefined) out = {ok: false, detail: String(out.detail)};
+    TESTS[which] = out;
+    render(); return;
+  }
+  if (act === 'wiz-store') {
+    WIZSTORE = el.getAttribute('data-key'); render(); return;
   }
   if (act === 'save-domains' || act === 'clear-domains' || act === 'save-extid') {
     const body = act === 'save-domains'

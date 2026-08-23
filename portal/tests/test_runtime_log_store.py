@@ -265,3 +265,35 @@ def test_the_push_test_is_a_proxy(login_mode):
     assert login_mode[-1] == {"method": "POST",
                               "path": "/admin/test/log-store-push",
                               "token": "aigt_s", "body": None}
+
+
+def test_the_page_carries_the_new_settings_ui():
+    html = (main.STATIC / "index.html").read_text()
+    for needle in ("save-setting", "run-test", "log-store-push",
+                   "log-store-read", "receiver-url", "wiz-store",
+                   "settingRow('log_store_url'",
+                   "settingRow('receiver_public_url'",
+                   "settingRow('alertmanager_url'",
+                   "settingRow('grafana_url'",
+                   "settingRow('log_store_password'",
+                   "logs:write AND logs:read", "kubectl get svc"):
+        assert needle in html, needle
+
+
+def test_the_inline_script_parses():
+    """The whole UI is one inline script: a single syntax error renders a
+    blank page with an empty nav and no error anywhere but the console.
+    Parse it with node when node is around (it is in CI's extension job and
+    on dev machines); skip, not pass, when it is not."""
+    import re
+    import shutil
+    import subprocess
+
+    if not shutil.which("node"):
+        pytest.skip("node not available")
+    html = (main.STATIC / "index.html").read_text()
+    script = re.search(r"<script>([\s\S]*)</script>", html).group(1)
+    proc = subprocess.run(
+        ["node", "-e", "new Function(require('fs').readFileSync(0,'utf8'))"],
+        input=script, capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr[-800:]
