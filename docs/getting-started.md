@@ -37,6 +37,13 @@ get started. Add those once the basic thread works.
 You also need the **bearer token** your receiver was deployed with. Every
 source authenticates with it. The route you followed says where to find it.
 
+**Managed mode shortcut:** if you deployed with `managed.enabled`, the
+portal's first-run wizard replaces most of this page - it configures the log
+store and corporate domains centrally, and its deployment downloads are the
+collector scripts below with the receiver URL and a fresh enrollment token
+already baked in, so there is no token to find and nothing to edit. Download,
+run as root/admin (or push through your MDM), and skip to step 2.
+
 ## 1. Roll out one collector
 
 Pick the OS of your test machine and follow its README:
