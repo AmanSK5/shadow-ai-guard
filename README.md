@@ -268,16 +268,39 @@ Prebuilt multi-arch images are published to GHCR by CI, so nothing needs
 building. Scanners run as scheduled jobs: CronJobs on Kubernetes, or anything
 that can run a container on a schedule.
 
+## Two ways to run it
+
+**Managed (the default).** Zero-touch: one install command, a setup code,
+and everything else in the portal - the log store, corporate domains,
+governance decisions, registry additions for tools upstream does not know,
+per-device credentials with one-click revocation, and pre-configured
+deployment downloads for every surface. Configuration lives in the
+receiver's small state database and reaches the fleet at runtime; nobody
+needs this repository for anything but reading.
+
+**Classic (`managed.enabled=false`, or the compose classic overlay).** The
+file-and-environment deployment for teams that want full edit control and
+a review trail in their own repo: clone, and everything is a file or an
+env var - `governance.yaml` for decisions, `registry/registry.yaml` for
+detection identifiers, `CORP_DOMAINS` and friends for config, basic auth
+(or your reverse proxy's SSO) on the portal, one shared token, and **no
+server-side state at all** - losing any component loses nothing. Every
+managed feature has a file or env equivalent, and a merge request is a
+signed, reviewable audit log that most governance portals only imitate.
+
+The two share one codebase and one finding schema; managed is classic plus
+a state file, not a fork.
+
 ## Deployment order
 
-In managed mode the order is one step and then the portal: `helm install`
-from the published OCI chart with `managed.enabled=true` (plus ingress
-values), create the admin account from the boot-printed setup code, and the
-first-run wizard handles the rest - log store, domains, governance, and
-pre-configured downloads for every surface. See
+Managed mode is the default, and the order is one step and then the portal:
+`helm install` from the published OCI chart (plus ingress values), create
+the admin account from the boot-printed setup code, and the first-run
+wizard handles the rest - log store, domains, governance, registry
+additions, and pre-configured downloads for every surface. See
 [Kubernetes](docs/deployment/kubernetes.md).
 
-Classically, or by hand:
+In classic mode, or by hand:
 
 1. Deploy the receiver and publish the registry:
    [Docker Compose](deploy/compose/README.md) or

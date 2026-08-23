@@ -15,12 +15,23 @@
 # decision you make with a reverse proxy in front that terminates TLS, not
 # something a compose file makes for you by binding 0.0.0.0. See README.md.
 #
+# MANAGED MODE IS THE DEFAULT: the portal gets a real login (the receiver
+# prints a one-time setup code to its log until an admin account exists),
+# and everything else - log store, corporate domains, governance, registry
+# additions, deployment downloads - happens in the portal at runtime.
+#
 #     cp .env.example .env          # then edit it
 #     mkdir -p secrets
 #     openssl rand -hex 32 > secrets/auth_token
-#     openssl rand -hex 24 > secrets/portal_password
 #     chmod 600 secrets/*
 #     docker compose up -d
+#     docker compose logs receiver | grep setup_code
+#
+# Prefer the file-driven classic mode (env config, governance.yaml, basic
+# auth, no server-side state)? Layer the classic overlay:
+#
+#     openssl rand -hex 24 > secrets/portal_password
+#     docker compose -f docker-compose.yml -f docker-compose.classic.yml up -d
 
 name: ai-guard
 
@@ -62,9 +73,23 @@ services:
       COLLECTOR_REGISTRY_PATH: /etc/ai-guard/collector.json
       DISPLAY_TZ: ${DISPLAY_TZ:-UTC}
       CORP_DOMAINS: ${CORP_DOMAINS:-}
+      # Managed mode, the default: enrollment, per-device credentials, the
+      # portal login and central settings, backed by one SQLite file on the
+      # named volume below - the one non-disposable thing here. The classic
+      # overlay turns this off.
+      MANAGED_MODE: ${MANAGED_MODE:-true}
+      STATE_DB_PATH: /var/lib/ai-guard/state.db
+      # OPTIONAL: an API credential for /admin/* - automation, and
+      # break-glass recovery when the portal password is lost. Humans use
+      # the portal login. Empty means it does not exist.
+      ADMIN_TOKEN: ${AIGUARD_ADMIN_TOKEN:-}
+      # Once every collector, browser profile and scanner has enrolled, set
+      # this true in .env: the shared token is then refused for ingest.
+      REQUIRE_DEVICE_CREDENTIALS: ${REQUIRE_DEVICE_CREDENTIALS:-false}
     volumes:
       - registry-dist:/etc/ai-guard:ro
       - ./secrets/auth_token:/run/secrets/auth_token:ro
+      - managed-state:/var/lib/ai-guard
     depends_on:
       registry-builder:
         condition: service_completed_successfully
@@ -85,7 +110,10 @@ services:
     image: ghcr.io/amansk5/shadow-ai-guard/portal:${IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
-      LOKI_URL: ${LOKI_URL:?set LOKI_URL in .env - the portal reads findings from your log store}
+      # Optional since managed mode can configure the log store in the
+      # portal at runtime; set it here for classic mode, or as the env
+      # fallback the portal uses until one is saved.
+      LOKI_URL: ${LOKI_URL:-}
       LOKI_TOKEN_FILE: ${LOKI_TOKEN_FILE:-}
       # The same credentials the receiver writes with. Grafana Cloud wants
       # basic auth in both directions, and the portal having only a bearer
@@ -93,8 +121,13 @@ services:
       # reading back.
       LOKI_USERNAME: ${LOKI_USERNAME:-}
       LOKI_PASSWORD: ${LOKI_PASSWORD:-}
-      PORTAL_USER: ${PORTAL_USER:-admin}
-      PORTAL_PASSWORD_FILE: /run/secrets/portal_password
+      # Managed mode: admin actions proxy to the receiver, and the portal
+      # login replaces basic auth (the classic overlay restores the
+      # PORTAL_USER/PORTAL_PASSWORD pair). RECEIVER_PUBLIC_URL is the env
+      # fallback for the URL baked into downloaded artifacts; the wizard
+      # can set it at runtime instead.
+      RECEIVER_URL: ${RECEIVER_URL-http://receiver:8080}
+      RECEIVER_PUBLIC_URL: ${RECEIVER_PUBLIC_URL:-}
       REGISTRY_PATH: /etc/ai-guard/registry.json
       LOOKBACK_HOURS: ${LOOKBACK_HOURS:-168}
       CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-300}
@@ -116,7 +149,6 @@ services:
       DEPLOY_CHART_VERSION: ${DEPLOY_CHART_VERSION:-compose}
     volumes:
       - registry-dist:/etc/ai-guard:ro
-      - ./secrets/portal_password:/run/secrets/portal_password:ro
     depends_on:
       registry-builder:
         condition: service_completed_successfully
@@ -187,5 +219,6 @@ services:
 
 volumes:
   registry-dist:
+  managed-state:
   loki-data:
   grafana-data:

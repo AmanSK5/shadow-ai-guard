@@ -79,8 +79,14 @@ corpDomains: []
 #   kubectl patch deployment <release>-ai-guard --type=json -p='[
 #     {"op":"remove","path":"/spec/strategy/rollingUpdate"},
 #     {"op":"replace","path":"/spec/strategy/type","value":"Recreate"}]'
+# ON BY DEFAULT since 0.9.9: a fresh install is the zero-touch path - one
+# helm install, a setup code from the receiver's log, and everything else
+# in the portal. Set enabled: false for classic mode: file-and-env driven,
+# GitOps-reviewable, no server-side state - every managed feature has a
+# file or env equivalent (governance.yaml, CORP_DOMAINS, the registry from
+# a checkout, basic auth).
 managed:
-  enabled: false
+  enabled: true
   # OPTIONAL since 0.8.12: an API credential for /admin/* - automation, and
   # break-glass recovery when the portal password is lost. Humans need
   # nothing here: the receiver's first boot prints a one-time setup code to

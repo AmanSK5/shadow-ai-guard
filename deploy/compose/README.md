@@ -41,18 +41,26 @@ else.
 
     mkdir -p secrets
     openssl rand -hex 32 > secrets/auth_token
-    openssl rand -hex 24 > secrets/portal_password
     chmod 700 secrets
     chmod 640 secrets/*
     sudo chown :65532 secrets/*
 
-Edit `.env`. At minimum, set `LOKI_URL` if you are running the portal, and pin
-`IMAGE_TAG` to a released version rather than leaving it at `latest`.
+Edit `.env`: pin `IMAGE_TAG` to a released version rather than leaving it at
+`latest`. Everything else can wait for the portal.
 
     docker compose up -d
-    docker compose ps
+    docker compose logs receiver | grep setup_code
 
-The receiver is on `127.0.0.1:8080` and the portal on `127.0.0.1:8091`.
+The receiver is on `127.0.0.1:8080` and the portal on `127.0.0.1:8091`. Open
+the portal, enter the setup code, create the admin account, and the first-run
+wizard configures the rest - the log store included.
+
+**Classic mode instead** (file-and-env config, basic auth, no server-side
+state): create `secrets/portal_password` too, set `LOKI_URL` and
+`LOKI_PUSH_URL` in `.env`, and layer the overlay:
+
+    openssl rand -hex 24 > secrets/portal_password
+    docker compose -f docker-compose.yml -f docker-compose.classic.yml up -d
 
 ### A hosted log store
 
@@ -208,25 +216,27 @@ traffic before it arrives is what protects everything else on the host.
 
 The receiver authenticates reporting sources with a shared bearer token, the one
 in `secrets/auth_token`. That token goes into your MDM script parameters, your
-managed browser configuration, and your scanner environment. With the managed
-overlay, an enrollment token minted in the portal goes in those same places
-instead, and each collector, browser profile and scanner exchanges it once for a
-credential of its own; `REQUIRE_DEVICE_CREDENTIALS=true` in `.env` then turns
-the shared token off for ingest once everything has enrolled.
+managed browser configuration, and your scanner environment. In managed mode -
+the default - an enrollment token minted in the portal goes in those same
+places instead (the pre-configured downloads carry one already), and each
+collector, browser profile and scanner exchanges it once for a credential of
+its own; `REQUIRE_DEVICE_CREDENTIALS=true` in `.env` then turns the shared
+token off for ingest once everything has enrolled.
 
 The portal authenticates separately, and **refuses to start without it**. It
 names who runs what on which machine, so coming up open because a variable
 was missed is the failure that matters.
 
-With the managed overlay the portal has a real login: the receiver prints a
-one-time setup code to its log on first boot (`docker compose logs receiver
-| grep setup_code`), and the portal's first screen turns it into the admin
-account. Without the overlay it is HTTP basic auth - one shared credential
-with no per-user trail. If you already run a reverse proxy, authenticate
-there instead - it can do OIDC, mTLS or an allowlist against whatever you
-already have - and run the portal with `PORTAL_AUTH=none` behind it. That
-opt-out logs a warning on every start, so an unauthenticated deployment is
-never something nobody noticed.
+In managed mode - the default - the portal has a real login: the receiver
+prints a one-time setup code to its log on first boot (`docker compose logs
+receiver | grep setup_code`), and the portal's first screen turns it into
+the admin account. With the classic overlay
+(`docker-compose.classic.yml`) it is HTTP basic auth - one shared
+credential with no per-user trail. If you already run a reverse proxy,
+authenticate there instead - it can do OIDC, mTLS or an allowlist against
+whatever you already have - and run the portal with `PORTAL_AUTH=none`
+behind it. That opt-out logs a warning on every start, so an
+unauthenticated deployment is never something nobody noticed.
 
 ## The registry
 
@@ -253,7 +263,9 @@ point of pinning it.
 ## Checking it works
 
     curl -s localhost:8080/healthz
-    curl -s -u admin:"$(cat secrets/portal_password)" localhost:8091/api/status
+
+Then sign into the portal and open Setup (in classic mode:
+`curl -s -u admin:"$(cat secrets/portal_password)" localhost:8091/api/status`).
 
 Then open the portal. It lands on a setup view showing which sources are
 reporting and which are silent, derived from the findings themselves rather than

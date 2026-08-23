@@ -22,6 +22,15 @@ COPY requirements.lock .
 RUN pip install --no-cache-dir --require-hashes -r requirements.lock
 COPY app/ app/
 
+# The managed-mode state directory, owned by the uid the process runs as.
+# Docker initializes a fresh named volume from the image's directory,
+# ownership included, so this is what makes `docker compose up` work with
+# managed mode on: without it the volume arrives root-owned and the
+# receiver dies at boot with "unable to open database file". Kubernetes
+# never sees the problem (fsGroup fixes ownership), which is exactly how
+# the compose path stayed broken until it became the default.
+RUN mkdir -p /var/lib/ai-guard && chown 65532:65532 /var/lib/ai-guard
+
 # Passed by CI from the release tag, or the commit for a build off main. A
 # local build leaves it as "dev", which is honest: a hardcoded version drifts,
 # and /healthz is the one place an operator looks to answer "am I running what
