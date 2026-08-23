@@ -37,6 +37,7 @@ from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import httpx
+import jsonschema
 from fastapi import FastAPI, Header, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from prometheus_client import (
@@ -574,11 +575,58 @@ async def authenticate_before_reading(request: Request, call_next):
 def _load_registry() -> dict | None:
     try:
         with open(REGISTRY_PATH) as f:
-            reg = json.load(f)
-        REGISTRY_TOOLS.set(len(reg.get("tools", [])))
-        return reg
+            return json.load(f)
     except (OSError, json.JSONDecodeError):
         return None
+
+
+def _merged_registry() -> dict | None:
+    """The shipped registry with the portal-defined entries appended.
+
+    Shipped wins on an id collision: a release that starts shipping a tool
+    an operator defined earlier should supersede the local copy, and the
+    admin listing marks the local one as shadowed so it gets deleted
+    rather than silently ignored. Classic mode has no STATE and this is
+    exactly the file, as ever.
+    """
+    reg = _load_registry()
+    if reg is None:
+        return None
+    if STATE is not None:
+        custom = STATE.registry_entry_values()
+        if custom and isinstance(reg, dict):
+            reg = dict(reg)
+            shipped_ids = {t.get("id") for t in reg.get("tools", [])}
+            reg["tools"] = list(reg.get("tools", [])) + [
+                e for e in custom if e.get("id") not in shipped_ids]
+    if isinstance(reg, dict):
+        REGISTRY_TOOLS.set(len(reg.get("tools", [])))
+    return reg
+
+
+def _collector_rows(tools: list[dict]) -> dict:
+    """The per-surface collector view of a list of tool entries.
+
+    A reimplementation of registry/build.py's emit() transform, because
+    the receiver cannot import a module from a tree that is not in its
+    image. A test asserts parity against the real build.py, so the two
+    cannot drift silently.
+    """
+    return {
+        "cli": [{"tool": t["id"], **t["cli"]} for t in tools if t.get("cli")],
+        "desktop": [{"tool": t["id"], "app_names": t["app_names"],
+                     "bundle_ids": t.get("bundle_ids", [])}
+                    for t in tools if t.get("app_names")],
+        "ide": [{"tool": t["id"], "extension_ids": t["extension_ids"]}
+                for t in tools if t.get("extension_ids")],
+        "mcp": [{"tool": t["id"], "path": p, "os": os_}
+                for t in tools
+                for key, os_ in (("mcp_config_paths", "any"),
+                                 ("mcp_config_paths_macos", "macos"),
+                                 ("mcp_config_paths_windows", "windows"),
+                                 ("mcp_config_paths_linux", "linux"))
+                for p in t.get(key, [])],
+    }
 
 
 # domain -> tool id. The browser extension reports the hostname it saw,
@@ -607,7 +655,16 @@ def _build_domain_map(reg: dict | None) -> dict[str, str]:
     return out
 
 
-_DOMAIN_TO_TOOL = _build_domain_map(_load_registry())  # prime the gauge at boot
+def _refresh_domain_map():
+    """Rebuild the domain→tool map from the merged registry. Called at boot
+    and after every custom-entries write, so a domain defined in the portal
+    normalizes findings from that moment."""
+    global _DOMAIN_TO_TOOL
+    _DOMAIN_TO_TOOL = _build_domain_map(_merged_registry())
+
+
+_DOMAIN_TO_TOOL: dict[str, str] = {}
+_refresh_domain_map()  # also primes the tools gauge at boot
 
 
 @app.get("/healthz")
@@ -624,7 +681,7 @@ def metrics():
 def registry(request: Request, authorization: str = Header(default="")):
     _auth(authorization)
     _touch_device(request)
-    reg = _load_registry()
+    reg = _merged_registry()
     if reg is None:
         raise HTTPException(503, "registry not available")
     return reg
@@ -649,6 +706,16 @@ def registry_collector(request: Request, authorization: str = Header(default="")
             reg = json.load(f)
     except (OSError, json.JSONDecodeError):
         raise HTTPException(503, "collector registry not available")
+    if STATE is not None and isinstance(reg, dict):
+        # Portal-defined tools join every surface's identifier list, so a
+        # tool defined in the Registry view is detected on the fleet's
+        # next check-in - the whole point of defining it there.
+        custom = STATE.registry_entry_values()
+        if custom:
+            for section, rows in _collector_rows(custom).items():
+                if rows:
+                    reg.setdefault(section, [])
+                    reg[section] = list(reg[section]) + rows
     domains = _effective_corp_domains()
     if domains and isinstance(reg, dict):
         reg.setdefault("config", {})["corp_domains"] = domains
@@ -1132,6 +1199,133 @@ class GovernanceUpdate(BaseModel):
     model_config = {"extra": "forbid"}
     decisions: list[DecisionWrite] = Field(default_factory=list, max_length=200)
     delete: list[str] = Field(default_factory=list, max_length=200)
+
+
+# ------------------------------------------------- custom registry entries --
+# Portal-defined tools: the same shape as a shipped registry entry, held to
+# the same rules. The schema is a byte-verified copy of registry/schema.json
+# (a test asserts equality - the receiver's image cannot see registry/), and
+# the extra rules below are the ones registry/build.py enforces beyond it.
+
+with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                       "registry-schema.json")) as _f:
+    _REGISTRY_SCHEMA = json.load(_f)
+# The per-tool subschema, with the root's $defs carried along: its $ref
+# pointers ("#/$defs/relativePath") resolve against the document root, so
+# slicing the subschema out alone would break every reference.
+_TOOL_VALIDATOR = jsonschema.Draft202012Validator(
+    {"$defs": _REGISTRY_SCHEMA.get("$defs", {}),
+     **_REGISTRY_SCHEMA["properties"]["tools"]["items"]})
+
+# One entry is a page of identifiers at most; a megabyte of "entry" is not
+# a tool, it is a payload.
+MAX_REGISTRY_ENTRY_BYTES = 16384
+
+
+class RegistryEntriesUpdate(BaseModel):
+    model_config = {"extra": "forbid"}
+    entries: list[dict] = Field(default_factory=list, max_length=100)
+    delete: list[str] = Field(default_factory=list, max_length=100)
+
+
+def _validated_entry(raw: dict, shipped_ids: set, domain_owner: dict) -> dict:
+    """One entry, normalized and held to the registry's own rules, or the
+    422 that names what is wrong. domain_owner maps each already-claimed
+    domain to its tool id and is updated as the batch validates, so two
+    entries in one batch cannot claim the same domain either."""
+    if not isinstance(raw, dict):
+        raise HTTPException(422, "each entry must be an object")
+    entry = dict(raw)
+    # Forced, not trusted: provenance says where the entry came from, and
+    # approval is a governance decision that lives in governance_decisions,
+    # never inside a registry entry.
+    entry["added_by"] = "portal"
+    entry["approved"] = False
+    if len(json.dumps(entry)) > MAX_REGISTRY_ENTRY_BYTES:
+        raise HTTPException(422, "entry too large: %s"
+                            % str(entry.get("id", "?"))[:60])
+    errors = sorted(_TOOL_VALIDATOR.iter_errors(entry), key=lambda e: list(e.path))
+    if errors:
+        e = errors[0]
+        where = "/".join(str(p) for p in e.path) or "entry"
+        raise HTTPException(422, "%s: %s: %s"
+                            % (str(entry.get("id", "?"))[:60], where,
+                               e.message[:200]))
+    tid = entry["id"]
+    if tid in shipped_ids:
+        raise HTTPException(
+            422, "%s collides with the shipped registry: that tool is "
+                 "already defined upstream - use it (and delete any local "
+                 "copy) rather than redefining it" % tid)
+    for d in entry.get("domains", []):
+        if d != d.lower():
+            raise HTTPException(422, "%s: domain not lowercase: %s" % (tid, d))
+        if d in domain_owner and domain_owner[d] != tid:
+            raise HTTPException(
+                422, "%s: domain %s is already claimed by %s"
+                     % (tid, d, domain_owner[d]))
+        domain_owner[d] = tid
+    return entry
+
+
+@app.get("/admin/registry-entries")
+def get_registry_entries(authorization: str = Header(default="")):
+    """The portal-defined entries, each flagged if a later release started
+    shipping the same id - shipped wins at serve time, and a shadowed local
+    copy is a row to delete, not silently ignore."""
+    _admin_auth(authorization)
+    shipped = {t.get("id")
+               for t in (_load_registry() or {}).get("tools", [])}
+    out = STATE.list_registry_entries()
+    for e in out:
+        e["shadowed"] = e["tool_id"] in shipped
+    return {"entries": out}
+
+
+@app.put("/admin/registry-entries")
+def put_registry_entries(req: RegistryEntriesUpdate,
+                         authorization: str = Header(default="")):
+    """Upsert and delete portal-defined tools. The whole batch validates
+    before anything is written, and the domain map refreshes on the way
+    out, so a defined tool normalizes findings immediately and reaches
+    collectors on their next check-in."""
+    _admin_auth(authorization)
+    by = _admin_actor(authorization)
+
+    shipped = _load_registry() or {"tools": []}
+    shipped_ids = {t.get("id") for t in shipped.get("tools", [])}
+    deleting = set(req.delete)
+    batch_ids = set()
+    # Every domain already claimed - by the shipped registry, or by a
+    # custom entry that this batch neither replaces nor deletes.
+    replaced = {e.get("id") for e in req.entries if isinstance(e, dict)}
+    domain_owner: dict[str, str] = {}
+    for t in shipped.get("tools", []):
+        for d in t.get("domains", []):
+            domain_owner[d] = t.get("id")
+    for e in STATE.list_registry_entries():
+        if e["tool_id"] in deleting or e["tool_id"] in replaced:
+            continue
+        for d in e["entry"].get("domains", []):
+            domain_owner[d] = e["tool_id"]
+
+    validated = []
+    for raw in req.entries:
+        entry = _validated_entry(raw, shipped_ids, domain_owner)
+        if entry["id"] in batch_ids:
+            raise HTTPException(422, "duplicate id in batch: %s" % entry["id"])
+        batch_ids.add(entry["id"])
+        validated.append(entry)
+    for tid in deleting:
+        if not re.fullmatch(r"[A-Za-z0-9._:-]{1,100}", tid):
+            raise HTTPException(422, "malformed tool id: %s" % tid[:60])
+
+    for entry in validated:
+        STATE.upsert_registry_entry(entry["id"], entry, by)
+    for tid in deleting:
+        STATE.delete_registry_entry(tid, by)
+    _refresh_domain_map()
+    return get_registry_entries(authorization)
 
 
 @app.get("/admin/governance")
