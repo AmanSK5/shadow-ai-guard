@@ -68,58 +68,93 @@ COLLECTOR_SOURCES = {"collector-macos", "collector-linux", "collector-windows"}
 COLLECTOR_SURFACES = {"cli", "ide", "mcp", "endpoint"}
 
 
+class Findings(list):
+    """A list of findings that also says whether it is the WHOLE window.
+
+    truncated=True means the read stopped at the safety cap and older
+    findings in the window were not fetched - every count derived from it
+    is a floor, not a total, and the pages say so. A plain list (a test
+    double, say) reads as complete, which getattr callers get for free.
+    """
+
+    truncated = False
+
+
 def fetch_from_loki(base, hours, token=None, limit=5000, username=None,
-                    password=None):
-    """Pull findings from Loki. Returns a list of parsed finding dicts.
+                    password=None, max_findings=100_000):
+    """Pull findings from Loki, paginating until the window is exhausted.
+
+    Loki caps one query_range response at `limit` entries. The old single
+    request silently returned the newest 5,000 of a larger window, and
+    every portal number - the register, the status page, the evidence
+    manifest with its checksum - was then computed over a sample presented
+    as the whole (issue #104). Now the read walks backward page by page
+    until a page comes back short, or max_findings is hit - and hitting
+    the cap is REPORTED, not swallowed: the result's truncated flag rides
+    into the API responses and the evidence manifest.
+
+    The boundary between pages is oldest-seen minus one nanosecond, so a
+    finding sharing that exact nanosecond with the boundary entry could be
+    skipped; receiver timestamps are time_ns() at ingest, which makes that
+    collision effectively impossible.
 
     Two authentication shapes, because log stores disagree about which they
-    want. A bearer token covers self-hosted Loki behind a gateway; basic auth
-    is what Grafana Cloud and most hosted offerings use, where the username is
-    a numeric instance id.
-
-    Basic auth was missing here while the receiver already had it, and the
-    asymmetry was invisible until both ran against the same hosted Loki: the
-    receiver wrote successfully and the portal got a 401 reading back the
-    findings it had just stored. A deployment where writes work and reads do
-    not is not a working deployment, and nothing in the config named the gap.
-
-    Both may be set. They are not alternatives to each other in any protocol
-    sense, and a gateway that wants a bearer token in front of a Loki that
-    wants basic auth is a real arrangement.
+    want. A bearer token covers self-hosted Loki behind a gateway; basic
+    auth is what Grafana Cloud and most hosted offerings use, where the
+    username is a numeric instance id. Both may be set: a gateway that
+    wants a bearer in front of a Loki that wants basic auth is a real
+    arrangement. Built by hand rather than with HTTPBasicAuthHandler,
+    which only sends credentials after a 401 with a realm it recognises -
+    Grafana Cloud answers 401 without one, so the retry never carried the
+    header.
     """
     import base64
 
     end = int(time.time() * 1e9)
     start = end - int(hours * 3600 * 1e9)
-    params = urllib.parse.urlencode({
-        "query": '{app="ai-guard-receiver", kind="finding"}',
-        "start": start,
-        "end": end,
-        "limit": limit,
-        "direction": "backward",
-    })
-    req = urllib.request.Request(base.rstrip("/") + "/loki/api/v1/query_range?" + params)
-    if username:
-        # Built by hand rather than with HTTPBasicAuthHandler, which only
-        # sends credentials after a 401 and a realm it recognises. Grafana
-        # Cloud answers 401 without a realm the handler will act on, so the
-        # retry never carries the header and the request fails a second time.
-        creds = base64.b64encode(
-            ("%s:%s" % (username, password or "")).encode()).decode()
-        req.add_header("Authorization", "Basic " + creds)
-    elif token:
-        req.add_header("Authorization", "Bearer " + token)
 
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        payload = json.load(resp)
+    def page(page_end):
+        params = urllib.parse.urlencode({
+            "query": '{app="ai-guard-receiver", kind="finding"}',
+            "start": start,
+            "end": page_end,
+            "limit": limit,
+            "direction": "backward",
+        })
+        req = urllib.request.Request(
+            base.rstrip("/") + "/loki/api/v1/query_range?" + params)
+        if username:
+            creds = base64.b64encode(
+                ("%s:%s" % (username, password or "")).encode()).decode()
+            req.add_header("Authorization", "Basic " + creds)
+        elif token:
+            req.add_header("Authorization", "Bearer " + token)
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            payload = json.load(resp)
+        entries, raw = [], 0
+        for stream in payload.get("data", {}).get("result", []):
+            for ts, line in stream.get("values", []):
+                raw += 1
+                try:
+                    entries.append((int(ts), json.loads(line)))
+                except (json.JSONDecodeError, ValueError):
+                    continue
+        return entries, raw
 
-    out = []
-    for stream in payload.get("data", {}).get("result", []):
-        for _ts, line in stream.get("values", []):
-            try:
-                out.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
+    out = Findings()
+    page_end = end
+    while True:
+        entries, raw = page(page_end)
+        out.extend(e for _, e in entries)
+        if raw < limit:
+            break  # a short page: the window is exhausted
+        if len(out) >= max_findings:
+            out.truncated = True
+            break
+        oldest = min((ts for ts, _ in entries), default=None)
+        if oldest is None or oldest <= start:
+            break
+        page_end = oldest - 1
     return out
 
 

@@ -117,7 +117,7 @@ def test_findings_only_sends_the_env_bearer_to_the_env_store(login_mode,
     seen = {}
 
     def fake_fetch(url, hours, token=None, limit=5000, username=None,
-                   password=None):
+                   password=None, max_findings=100_000):
         seen.update(url=url, token=token, username=username)
         return []
     monkeypatch.setattr(main.derive, "fetch_from_loki", fake_fetch)

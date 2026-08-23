@@ -45,6 +45,15 @@ RECEIVER_BASE="${4:-}"
 ENDPOINT=""
 [ -n "$RECEIVER_BASE" ] && ENDPOINT="${RECEIVER_BASE%/}/report"
 TOKEN="${5:-}"
+
+# Every authenticated request goes through this: the Authorization header
+# travels to curl on stdin (-H @-), never in argv. `ps` shows every
+# process's arguments to every local user for the life of the request, so
+# a bearer token in a command line is a bearer token published to the
+# machine (issue #106). Requires curl 7.55+ (2017); macOS ships far newer.
+auth_curl() {
+  /usr/bin/printf 'Authorization: Bearer %s\n' "$TOKEN" | /usr/bin/curl -H @- "$@"
+}
 CORP_DOMAINS="${6:-}"
 
 SUMMARY_DIR="/Library/Application Support/ai-guard"
@@ -217,8 +226,7 @@ report() {
   local delivered=false
   if [ -n "$ENDPOINT" ]; then
     local http_code
-    http_code=$(/usr/bin/curl -s -m 10 -o /dev/null -w '%{http_code}' -X POST "$ENDPOINT" \
-      -H "Authorization: Bearer $TOKEN" \
+    http_code=$(auth_curl -s -m 10 -o /dev/null -w '%{http_code}' -X POST "$ENDPOINT" \
       -H "X-AiGuard-Agent-Version: $COLLECTOR_VERSION" \
       -H "Content-Type: application/json" \
       -d "$payload" || echo "000")
@@ -288,8 +296,7 @@ fetch_registry() {
   REG_TMP=$(/usr/bin/mktemp /tmp/ai-guard-reg.XXXXXX) || return 1
   REG_FILE="$REG_TMP"
   local code
-  code=$(/usr/bin/curl -s -m 15 -o "$REG_FILE" -w '%{http_code}' \
-    -H "Authorization: Bearer $TOKEN" \
+  code=$(auth_curl -s -m 15 -o "$REG_FILE" -w '%{http_code}' \
     "${RECEIVER_BASE%/}/registry/collector" 2>/dev/null || echo "000")
   [ "$code" = "200" ]
 }
@@ -346,8 +353,8 @@ case "$TOKEN" in
       ENROLL_BODY=$(/usr/bin/printf '{"platform":"macos","serial":"%s","hostname":"%s","agent_version":"%s"}' \
         "$(json_escape "$SERIAL")" "$(json_escape "$DEVICE_NAME")" "$COLLECTOR_VERSION")
       ENROLL_RESP=$(/usr/bin/mktemp /tmp/ai-guard-enroll.XXXXXX)
-      ENROLL_CODE=$(/usr/bin/curl -s -m 15 -o "$ENROLL_RESP" -w '%{http_code}' \
-        -X POST -H "Authorization: Bearer $TOKEN" \
+      ENROLL_CODE=$(auth_curl -s -m 15 -o "$ENROLL_RESP" -w '%{http_code}' \
+        -X POST \
         -H "Content-Type: application/json" \
         -d "$ENROLL_BODY" "${RECEIVER_BASE%/}/enroll" 2>/dev/null || echo "000")
       if [ "$ENROLL_CODE" = "200" ]; then
