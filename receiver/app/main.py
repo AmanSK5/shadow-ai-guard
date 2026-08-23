@@ -656,14 +656,20 @@ def _build_domain_map(reg: dict | None) -> dict[str, str]:
 
 
 def _refresh_domain_map():
-    """Rebuild the domain→tool map from the merged registry. Called at boot
-    and after every custom-entries write, so a domain defined in the portal
-    normalizes findings from that moment."""
-    global _DOMAIN_TO_TOOL
-    _DOMAIN_TO_TOOL = _build_domain_map(_merged_registry())
+    """Rebuild the domain→tool map (and the id set) from the merged
+    registry. Called at boot and after every custom-entries write, so a
+    domain defined in the portal normalizes findings from that moment and
+    an id defined in the portal stops its MCP namesake becoming a
+    candidate."""
+    global _DOMAIN_TO_TOOL, _REGISTRY_IDS
+    reg = _merged_registry()
+    _DOMAIN_TO_TOOL = _build_domain_map(reg)
+    _REGISTRY_IDS = {t.get("id") for t in (reg or {}).get("tools", [])
+                     if t.get("id")}
 
 
 _DOMAIN_TO_TOOL: dict[str, str] = {}
+_REGISTRY_IDS: set[str] = set()
 _refresh_domain_map()  # also primes the tools gauge at boot
 
 
@@ -1403,6 +1409,39 @@ def post_candidates(req: CandidatesPost, request: Request,
     return {"accepted": accepted}
 
 
+def _note_mcp_candidates(f: Finding):
+    """MCP server names from an endpoint finding, into the queue.
+
+    The collectors are registry-driven and cannot report a tool the
+    registry does not name - except here: the MCP scan reports the raw
+    server names from a machine's config files as evidence. Those names
+    are the one place a genuinely unknown integration already leaves the
+    machine, so they feed the candidates queue: a server whose slug is a
+    registry id is a known tool doing MCP (not a discovery), anything
+    else waits for a human. Names that fail the candidate text rule are
+    skipped, not refused - they are evidence on a valid finding, and a
+    finding must never bounce because one server has an odd name."""
+    if STATE is None or f.surface != "mcp":
+        return
+    ev = f.evidence or ""
+    if "mcpServers:" in ev:
+        names = [x.strip() for x in ev.split("mcpServers:", 1)[1].split(",")]
+    elif "-mcp:" in f.tool:
+        names = [x.strip() for x in f.tool.split("-mcp:", 1)[1].split(",")]
+    else:
+        return
+    for name in names:
+        if not name or not _CANDIDATE_TEXT.match(name):
+            continue
+        key = _candidate_key("mcp_server", name)
+        if key.split(":", 1)[1] in _REGISTRY_IDS:
+            continue
+        STATE.observe_candidate(
+            key, "mcp_server", name,
+            "MCP server defined in %s config" % f.tool, "endpoint",
+            f.device if f.device != "unknown" else "")
+
+
 @app.get("/admin/candidates")
 def get_candidates(authorization: str = Header(default="")):
     """Every candidate, each flagged resolved once the merged registry
@@ -1415,9 +1454,16 @@ def get_candidates(authorization: str = Header(default="")):
     reg = _merged_registry()
     tools = reg.get("tools", []) if reg else STATE.registry_entry_values()
     claimed = {d for t in tools for d in t.get("domains", [])}
+    ids = {t.get("id") for t in tools if t.get("id")}
     out = STATE.list_candidates()
     for c in out:
-        c["resolved"] = any(d in claimed for d in c["domains"])
+        # A domain candidate is answered by an entry claiming its domain;
+        # an MCP-server candidate by an entry whose id is the server's
+        # slug - servers have no domain to claim.
+        if c["kind"] == "mcp_server":
+            c["resolved"] = c["key"].split(":", 1)[1] in ids
+        else:
+            c["resolved"] = any(d in claimed for d in c["domains"])
     return {"candidates": out}
 
 
@@ -1674,6 +1720,10 @@ async def report(f: Finding, request: Request, authorization: str = Header(defau
             f.evidence = "site: %s" % f.tool
         TOOL_NORMALISED.labels(surface=f.surface).inc()
         f.tool = canonical
+
+    # MCP server names ride in as evidence; unknown ones join the
+    # candidates queue (managed mode only - the function gates itself).
+    _note_mcp_candidates(f)
 
     # Loki: every finding, warn and info alike. Stdout always; direct push
     # when a push target is configured - the portal-saved log store when
