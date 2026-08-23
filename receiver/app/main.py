@@ -27,6 +27,7 @@ import hmac
 import json
 import logging
 import os
+import secrets
 import sys
 import threading
 import time
@@ -242,13 +243,28 @@ MANAGED_MODE = os.environ.get("MANAGED_MODE", "").lower() in ("1", "true", "yes"
 STATE = None
 _EXPECTED_ADMIN = b""
 if MANAGED_MODE:
-    # Required, not defaulted: managed mode without an admin credential is a
-    # deployment that can never mint an enrollment token, which nobody means.
-    # Deliberately a separate secret from AUTH_TOKEN - the shared token is on
-    # every machine in the fleet, which is exactly why it must not be able to
-    # mint credentials.
-    _EXPECTED_ADMIN = b"Bearer " + _secret("ADMIN_TOKEN").encode()
+    # Optional since 0.9.7: the admin API credential for automation and for
+    # break-glass (locked out of the portal: set this, call the API, reset
+    # the password). Humans authenticate with an account and a session
+    # instead - see /admin/setup below - so a fresh deployment needs no
+    # pre-provisioned admin secret at all. Still deliberately separate from
+    # AUTH_TOKEN: the shared token is on every machine in the fleet, which
+    # is exactly why it must not be able to mint credentials.
+    _admin_api_token = _secret("ADMIN_TOKEN", "")
+    if _admin_api_token:
+        _EXPECTED_ADMIN = b"Bearer " + _admin_api_token.encode()
     STATE = _state.State(os.environ.get("STATE_DB_PATH", "/var/lib/ai-guard/state.db"))
+
+# How long a portal login lasts. Sessions stand in for a person at a
+# keyboard, so they expire on their own; 24 hours means logging in about
+# once a working day.
+SESSION_TTL_HOURS = int(os.environ.get("SESSION_TTL_HOURS", "24"))
+
+# What a failed login costs, beyond the scrypt derivation itself. A flat
+# pause rather than progressive lockout: this credential is behind the
+# operator's ingress, and a counter that can lock the real admin out is a
+# denial-of-service lever pointed at the person who would respond.
+LOGIN_FAILURE_DELAY_SECONDS = 0.5
 
 # The off-switch for the shared token, once every surface has enrolled: with
 # this set, /report and /registry accept device credentials only and the
@@ -277,6 +293,22 @@ VALID_OS = {"macos", "windows", "linux", "unknown"}
 
 logging.basicConfig(stream=sys.stdout, level=logging.INFO, format="%(message)s")
 log = logging.getLogger("ai-guard")
+
+# The first-boot door. While no admin account exists, every boot mints a
+# fresh one-time setup code and prints it to the log - the one channel an
+# operator who has just run `helm install` provably has. It lives only in
+# this process (never the database), dies when claimed, and once an account
+# exists boots print nothing. kubectl logs deploy/ai-guard-receiver | grep
+# setup_code is the whole retrieval story, and NOTES.txt says so.
+_SETUP_CODE = None
+if STATE is not None and not STATE.has_admin():
+    _SETUP_CODE = _state.SETUP_PREFIX + secrets.token_urlsafe(24)
+    log.info(json.dumps({
+        "app": "ai-guard-receiver", "kind": "setup_code",
+        "setup_code": _SETUP_CODE,
+        "hint": "no admin account exists yet; enter this code in the portal"
+                " to create one",
+    }))
 
 # ----------------------------------------------------------------- metrics --
 
@@ -435,6 +467,29 @@ app = FastAPI(title="ai-guard-receiver", version=APP_VERSION)
 _PROTECTED = ("/report", "/flag", "/registry")
 _MANAGED = ("/enroll", "/admin")
 
+# The two doors into admin auth. Exempt from the admin gate - they are how a
+# session comes to exist - but not from the body-size gate, and they answer
+# 404 like everything managed when managed mode is off.
+_ADMIN_OPEN = ("/admin/setup", "/admin/login")
+
+
+def _admin_header_ok(header: str) -> bool:
+    """Is this Authorization header an admin?
+
+    Two shapes: the optional API credential (ADMIN_TOKEN, for automation and
+    break-glass), or a live portal session minted by /admin/login. The
+    emptiness guard is not redundant: compare_digest holds two empty strings
+    equal, so without it a deployment with no ADMIN_TOKEN would let an empty
+    header in.
+    """
+    if _EXPECTED_ADMIN and hmac.compare_digest(
+        header.encode("latin-1"), _EXPECTED_ADMIN
+    ):
+        return True
+    if STATE is not None and header.startswith("Bearer " + _state.SESSION_PREFIX):
+        return STATE.session_user(header[len("Bearer "):]) is not None
+    return False
+
 
 def _body_size_response(request: Request):
     """The 4xx a too-large or unsized POST body earns, or None if fine."""
@@ -495,12 +550,7 @@ async def authenticate_before_reading(request: Request, call_next):
             return JSONResponse({"detail": "Not Found"}, status_code=404)
         auth = request.headers.get("authorization", "")
         if path.startswith("/admin"):
-            # The emptiness guard is not redundant: compare_digest holds two
-            # empty strings equal, so without it a deployment that somehow
-            # had state but no admin credential would let an empty header in.
-            if not _EXPECTED_ADMIN or not hmac.compare_digest(
-                auth.encode("latin-1"), _EXPECTED_ADMIN
-            ):
+            if path not in _ADMIN_OPEN and not _admin_header_ok(auth):
                 return JSONResponse({"detail": "bad token"}, status_code=401)
         else:
             # /enroll authenticates against the DB inside the handler; here
@@ -630,9 +680,7 @@ def _admin_auth(authorization: str):
     # mode is off: routes that do not exist should not confirm they exist.
     if STATE is None:
         raise HTTPException(404, "Not Found")
-    if not _EXPECTED_ADMIN or not hmac.compare_digest(
-        authorization.encode("latin-1"), _EXPECTED_ADMIN
-    ):
+    if not _admin_header_ok(authorization):
         raise HTTPException(401, "bad token")
 
 
@@ -716,6 +764,131 @@ def revoke_device(did: str, authorization: str = Header(default="")):
     _admin_auth(authorization)
     if not STATE.revoke_device(did):
         raise HTTPException(404, "no such active device")
+    return {"ok": True}
+
+
+# ------------------------------------------------------- admin accounts --
+
+
+def _bearer(authorization: str) -> str:
+    return (authorization[len("Bearer "):]
+            if authorization.startswith("Bearer ") else "")
+
+
+class SetupRequest(BaseModel):
+    setup_code: str = Field(min_length=1, max_length=128)
+    username: str = Field(min_length=1, max_length=64)
+    # Length is the whole policy. Composition rules produce Password1! and
+    # a false sense of review; twelve characters of anything does better.
+    password: str = Field(min_length=12, max_length=256)
+
+
+class LoginRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=1, max_length=256)
+
+
+class PasswordChangeRequest(BaseModel):
+    current: str = Field(default="", max_length=256)
+    new: str = Field(min_length=12, max_length=256)
+
+
+@app.get("/admin/setup")
+def setup_needed():
+    """Whether the create-account door is open. Unauthenticated by design:
+    it says one bit, and the portal needs that bit to choose between the
+    sign-in form and the create-account form honestly."""
+    if STATE is None:
+        raise HTTPException(404, "Not Found")
+    return {"needed": not STATE.has_admin()}
+
+
+@app.post("/admin/setup")
+def setup(req: SetupRequest):
+    """Claim the boot-printed setup code and become the admin.
+
+    Returns a session directly: the operator who just chose this password
+    proving it again at a login screen is a step with no security content.
+    The code dies here whether or not it ever leaked - a fresh boot mints a
+    fresh one, and once the account exists boots mint none at all.
+    """
+    global _SETUP_CODE
+    if STATE is None:
+        raise HTTPException(404, "Not Found")
+    if STATE.has_admin():
+        raise HTTPException(409, "an admin account already exists")
+    # Compared as bytes: compare_digest raises on a non-ASCII str, and the
+    # submitted code is arbitrary JSON - same trap _token_ok documents.
+    if _SETUP_CODE is None or not hmac.compare_digest(
+        req.setup_code.encode(), _SETUP_CODE.encode()
+    ):
+        time.sleep(LOGIN_FAILURE_DELAY_SECONDS)
+        raise HTTPException(401, "bad setup code")
+    STATE.create_admin(req.username, req.password)
+    _SETUP_CODE = None
+    log.info(json.dumps({"app": "ai-guard-receiver", "kind": "admin_created",
+                         "username": req.username}))
+    return STATE.login(req.username, req.password, SESSION_TTL_HOURS)
+
+
+@app.post("/admin/login")
+def login(req: LoginRequest):
+    if STATE is None:
+        raise HTTPException(404, "Not Found")
+    try:
+        return STATE.login(req.username, req.password, SESSION_TTL_HOURS)
+    except _state.AuthError as e:
+        time.sleep(LOGIN_FAILURE_DELAY_SECONDS)
+        raise HTTPException(e.status, e.detail)
+
+
+@app.post("/admin/logout")
+def logout(authorization: str = Header(default="")):
+    _admin_auth(authorization)
+    token = _bearer(authorization)
+    if token.startswith(_state.SESSION_PREFIX):
+        STATE.logout(token)
+    # The API credential cannot log out - it is configuration, not a
+    # session - and saying ok either way keeps the portal's logout simple.
+    return {"ok": True}
+
+
+@app.get("/admin/session")
+def session_info(authorization: str = Header(default="")):
+    """The portal's validity probe: who is this session, until when.
+
+    The API credential answers too (it passed the gate), with an empty
+    username - it is a credential, not a person.
+    """
+    _admin_auth(authorization)
+    token = _bearer(authorization)
+    if token.startswith(_state.SESSION_PREFIX):
+        u = STATE.session_user(token)
+        if u is not None:
+            return {"username": u["username"], "expires_at": u["expires_at"]}
+    return {"username": "", "expires_at": None}
+
+
+@app.post("/admin/password")
+def change_password(req: PasswordChangeRequest,
+                    authorization: str = Header(default="")):
+    """Change the admin password, proving the current one.
+
+    With the API credential the current password is not required: that is
+    the break-glass path, and whoever can set the receiver's environment
+    already owns the box. Every other session dies with the old password.
+    """
+    _admin_auth(authorization)
+    token = _bearer(authorization)
+    is_session = token.startswith(_state.SESSION_PREFIX)
+    try:
+        STATE.change_password(
+            req.new,
+            current=req.current if is_session else None,
+            keep_session=token if is_session else None,
+        )
+    except _state.AuthError as e:
+        raise HTTPException(e.status, e.detail)
     return {"ok": True}
 
 
