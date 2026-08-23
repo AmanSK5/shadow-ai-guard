@@ -243,11 +243,11 @@ function showLogin(msg) {
     <h2>${create ? 'Create the admin account' : 'Sign in'}</h2>
     <p class="lede">${create
       ? `No admin account exists yet. The receiver printed a one-time setup
-         code to its log at boot — <code>kubectl logs deploy/&lt;release&gt;-ai-guard
-         | grep setup_code</code>, or <code>docker compose logs receiver</code>.
-         Enter it here; it is consumed on use and a restart mints a fresh one.`
-      : `The portal signs in against the receiver's admin account. The session
-         is an HttpOnly cookie: nothing is stored where page script can read it.`}</p>
+         code to its log when it started - find it with
+         <code>kubectl logs deploy/&lt;release&gt;-ai-guard | grep setup_code</code>
+         or <code>docker compose logs receiver</code>. The code works once;
+         if you lose it, restart the receiver for a fresh one.`
+      : `Sign in with the admin account you created during setup.`}</p>
     ${msg ? `<div class="note">${esc(msg)}</div>` : ''}
     ${create ? `<p><input id="li-code" class="mfield" style="width:100%"
       placeholder="setup code (aigs_…)" autocomplete="off"></p>` : ''}
@@ -487,11 +487,11 @@ const WIDGETS = {
         <div><dt${over ? ' style="color:var(--dstr)"' : ''}>${over}</dt><dd>overridden</dd></div>
       </dl>
       <p class="src-note">${live
-        ? `Checked in from ${live} device${live === 1 ? '' : 's'}${
-             versions > 1 ? ` across ${versions} versions` : ''}, so a low
-           count of stopped pastes means what it says.`
-        : `No device checked in, so nothing here can be read as an estate that
-           pasted nothing.`}</p></div>`;
+        ? `The guard is running on ${live} device${live === 1 ? '' : 's'}${
+             versions > 1 ? ` (${versions} versions)` : ''}, so low numbers
+           here genuinely mean few risky pastes.`
+        : `No device has checked in yet, so zero here means "not deployed",
+           not "nobody pasted anything".`}</p></div>`;
   },
 
   review_queue: () => {
@@ -537,7 +537,7 @@ const WIDGETS = {
         .slice(0, 2);
       return `<div class="wcard w6"><h3>Awaiting a decision</h3>
         <p class="lede">No new AI tools awaiting a decision.${srcs.length
-          ? ' Newest source data: ' + srcs.map(x =>
+          ? ' Latest data: ' + srcs.map(x =>
               esc(x.label) + ' ' + ago(x.last_seen)).join(', ') + '.' : ''}</p></div>`;
     }
     return `<div class="wcard w6"><h3>Awaiting a decision
@@ -552,8 +552,8 @@ const WIDGETS = {
       <td style="color:var(--mut)">${esc((r.first_seen || '').slice(0, 10))}</td>
     </tr>`).join('')}</table>`}
     <p class="src-note"><a href="#register" style="color:var(--pri)">Decide on
-    the AI register</a> - a decision is the acknowledgment, so deciding
-    clears the queue.</p></div>`;
+    the AI register</a> - recording a decision clears the tool from this
+    queue.</p></div>`;
   },
 
   grafana: (w) => {
@@ -578,9 +578,8 @@ const WIDGETS = {
 
   error: (w) => `<div class="wcard w12"><h3>Widget not drawn</h3>
     <div class="note" style="margin:0">${esc(w.error)}</div>
-    <p class="src-note">Said out loud rather than skipped: a widget that
-    silently does not appear looks identical to one that appeared with nothing
-    to show.</p></div>`,
+    <p class="src-note">Shown so you know this widget failed, instead of it
+    quietly not appearing.</p></div>`,
 };
 
 // The truncation banner (issue #104): a Loki read that stopped at the
@@ -598,9 +597,8 @@ function overview() {
   const rest = ws.filter(w => w.kind !== 'stat_row');
   return `<h2>Overview</h2>
   ${truncNote(G.findings_truncated)}
-  <p class="lede">Which widgets appear is a deployment decision, set in
-  <code>OVERVIEW_WIDGETS</code>, so an organisation shapes its own landing page
-  and the portal keeps no state and needs no accounts.</p>
+  <p class="lede">You can choose which widgets appear here: the overview
+  widgets setting takes a comma-separated list.</p>
   ${stat.map(w => WIDGETS.stat_row(w)).join('')}
   <div class="grid">${rest.map(w =>
     (WIDGETS[w.kind] ? WIDGETS[w.kind](w) : WIDGETS.error({error:'no renderer for '+w.kind}))
@@ -663,10 +661,9 @@ function tools() {
 
 function coverage() {
   const gaps = ents(G.devices).filter(([,d]) => d.scanner_seen && !d.collector_seen);
-  return `<h2>Coverage</h2><p class="lede">An inventory or telemetry source knows
-  these machines, but no endpoint collector reports from them. An empty collector
-  result and an undeployed collector look identical on a dashboard, which is why
-  they are listed rather than counted.</p>
+  return `<h2>Coverage</h2><p class="lede">These machines are known to an inventory or
+  telemetry source, but no endpoint collector has reported from them. Usually
+  that means the collector isn't installed there yet.</p>
   ${gaps.length ? `<table><tr><th>device</th><th>sources</th><th>tools seen</th></tr>
   ${gaps.map(([k,d])=>`<tr><td>${esc(label(k,d))}</td>
     <td>${(d.sources||[]).map(s=>`<span class="pill p-mut">${esc(s)}</span>`).join('')}</td>
@@ -718,10 +715,10 @@ function mcp() {
   const tools = ents(G.tools).filter(([,t]) => (t.surfaces||[]).includes('mcp'));
   const devs = new Set(rows.flatMap(r => r.devices || []));
   return `<h2>MCP servers</h2>
-  <p class="lede">An MCP server is a standing integration rather than an
-  application someone opens. It holds its own credentials and can reach
-  whatever it was pointed at whether or not the tool that configured it is in
-  use, which makes the server the thing worth counting rather than the tool.</p>
+  <p class="lede">MCP servers are integrations AI tools are configured to use.
+  They hold their own credentials and can reach whatever they were pointed at,
+  even when the tool that configured them isn't open. That's why they get
+  their own page.</p>
 
   <dl class="stats">
     <div><dt>${rows.length}</dt><dd>servers</dd></div>
@@ -739,15 +736,11 @@ function mcp() {
     <td style="color:var(--mut)">${esc((r.first_seen||'').slice(0,10) || '—')}</td>
     <td style="color:var(--mut)">${esc((r.last_seen||'').slice(0,10) || '—')}</td>
   </tr>`).join('')}</table>
-  <p class="src-note">Click a server for the machines it is configured on. A
-  server on twenty machines is a different problem from one on a single laptop,
-  so the widest reach is listed first. The server names
-  come from the finding evidence rather than the tool name: folding the list
-  into the name made every distinct combination look like a separate tool.</p>`
-  : `<p class="lede">No MCP servers found. That is only meaningful if the
-  endpoint collectors are reporting, which the Setup page will tell you: the
-  MCP scan is produced by them reading AI tool config files, so a silent
-  collector and an estate with no MCP servers look identical from here.</p>`}`;
+  <p class="src-note">Click a server to see which machines it's configured on.
+  Widest reach is listed first.</p>`
+  : `<p class="lede">No MCP servers found. Check the Setup page first: MCP
+  findings come from the endpoint collectors, so if no collector is reporting,
+  this page can't see anything either.</p>`}`;
 }
 
 function mcpDetail(k) {
@@ -776,11 +769,11 @@ function personal() {
     match(r.user) || match(r.account_domain) || match(r.tool) ||
     match(r.device) || match(r.device_name));
   return `<h2>Personal accounts</h2>
-  <p class="lede">An approved tool signed into a personal account is still
-  unmanaged data flow and an offboarding gap, so this is its own section rather
-  than a number on a summary page. Personal means the reporting source judged
-  the account domain to be outside your corporate list, decided where that list
-  actually lives. These are leads to follow up, not verdicts.</p>
+  <p class="lede">AI tools signed into personal accounts. Even an approved
+  tool on a personal account means company data flowing somewhere you don't
+  manage, and access that survives offboarding. "Personal" means the account
+  domain isn't in your corporate domains list. Treat these as leads to follow
+  up, not verdicts.</p>
   ${rows.length ? `<table>
   <tr><th>who</th><th>account domain</th><th>tool</th><th>device</th>
   <th>surface</th><th>first seen</th><th>last seen</th><th>source</th></tr>
@@ -795,8 +788,7 @@ function personal() {
     <td style="color:var(--mut)">${esc((r.sources||[]).join(', ')) || '—'}</td>
   </tr>`).join('')}</table>`
   : `<p class="lede">None seen in the last ${CFG.lookback_hours || '?'} hours.
-  That is a result rather than an absence of one, provided the sources on the
-  Setup page are reporting.</p>`}`;
+  Worth trusting only if the sources on the Setup page are reporting.</p>`}`;
 }
 
 
@@ -1172,10 +1164,9 @@ async function register() {
   return `<h2>AI register</h2>
   ${truncNote(REG.findings_truncated)}
   <p class="lede">The AI tools actually in use, from findings in the last
-  ${esc(win)}. The registry is a watchlist rather than an inventory, so a tool
-  it knows about and nothing has reported is counted below rather than listed.
-  A tool observed and absent from the registry is the row worth acting on, and
-  is flagged as such.</p>
+  ${esc(win)}. Tools the registry watches for but nobody uses are counted
+  below, not listed. Tools in use that the registry doesn't know are flagged -
+  those are the ones to act on.</p>
 
   <dl class="stats">
     <div><dt>${REG.tools_observed}</dt><dd>in use</dd></div>
@@ -1185,16 +1176,14 @@ async function register() {
   </dl>
 
   ${!REG.governance_configured ? (CFG.managed && CFG.managed.enabled
-    ? `<p class="lede">No decisions recorded yet, so status falls back to the
-    registry's own flag - a shipped default rather than a decision anyone
-    made. Record one with <b>edit</b> on any card; it is stored centrally
-    and a governance file (<span class="mono">GOVERNANCE_PATH</span>) still
-    works alongside.</p>`
-    : `<p class="lede">No governance file is
-  configured, so status falls back to the registry's own flag and every tool
-  reads as not approved. That is a shipped default rather than a decision
-  anyone made. Set <span class="mono">GOVERNANCE_PATH</span> to record
-  approvals, owners and review dates.</p>`) : ''}
+    ? `<p class="lede">No decisions recorded yet, so every tool shows the
+    registry's shipped default (not approved). That's a default, not a
+    decision anyone made. Click <b>edit</b> on any card to record a real
+    one.</p>`
+    : `<p class="lede">No governance file is configured, so every tool
+  shows the registry's shipped default (not approved). That's a default, not
+  a decision anyone made. Set <span class="mono">GOVERNANCE_PATH</span> to
+  record approvals, owners and review dates.</p>`) : ''}
 
   ${((REG.governance_unmatched || []).length
      || (REG.exceptions_unmatched || []).length) ? `<div class="note">
@@ -1207,16 +1196,13 @@ async function register() {
         the registry does not know:</b>
         ${names.map(t => `<span class="pill p-warn">${esc(t)}</span>`).join('')}`;
     })()}
-    <div style="margin-top:6px">That is fine for a deliberate record about
-    something not yet registered, and it is also what a typo looks like. Either
-    way it is not being applied to anything, so it is shown rather than
-    dropped.</div>
+    <div style="margin-top:6px">This is fine if you recorded a decision
+    ahead of registering the tool - but it's also what a typo looks like.
+    Either way the record isn't being applied to anything right now.</div>
   </div>` : ''}
 
-  <p class="lede">One card per tool: what it is, how it is used, and what was
-  decided about it. First seen is in the CSV rather than here, because inside a
-  lookback window it is usually the same as last seen and Overview already
-  answers what is new this week.
+  <p class="lede">One card per tool: what it is, how it's used, and what was
+  decided about it.
   <a href="/api/register?fmt=csv" style="color:var(--pri)">Download CSV</a></p>
 
   ${rows.length ? `<div class="cards">
@@ -1390,11 +1376,11 @@ async function iso() {
   ].filter(([count]) => count > 0);
 
   return `<h2>ISO/IEC 42001 evidence</h2>
-  <p class="lede">Evidence Shadow AI Guard can provide to support an AI
-  management system. An index of what the platform can currently say and where
-  each record lives, not an assessment: nothing here is a compliance score, a
-  clause mapping, or a claim that a control is satisfied. The gaps are shown
-  beside the totals because a gap is the more useful finding.</p>
+  <p class="lede">What Shadow AI Guard can currently say, and where each
+  record lives, as evidence for an AI management system. This is an index,
+  not an assessment: no compliance score, no clause mapping, no claim that a
+  control is satisfied. Gaps are shown next to totals on purpose - the gap is
+  usually the useful part.</p>
 
   <table>
   <tr><th>Theme</th><th>What Shadow AI Guard can say</th><th>Evidence source</th></tr>
@@ -1407,23 +1393,21 @@ async function iso() {
   </table>
 
   <h3 style="margin-top:26px;font-size:14px">Review inputs</h3>
-  <p class="lede">Things a person may need to look at. These are inputs to a
-  review rather than conclusions: the platform can say a tool has no recorded
-  decision, and cannot say whether that is a problem.</p>
+  <p class="lede">Things a person may need to look at. The platform can tell
+  you a tool has no recorded decision; whether that matters is your call.</p>
   ${inputs.length ? `<ul class="inputs">
     ${inputs.map(([, text, target]) =>
       `<li><a href="#${target}">${esc(text)}</a></li>`).join('')}
-  </ul>` : `<p class="lede">Nothing outstanding in this window. That is a real
-  answer for a small estate, and it is also what an estate with no collectors
-  reporting looks like: ${e.sources_reporting} of ${e.sources_known} expected
-  sources are reporting.</p>`}
+  </ul>` : `<p class="lede">Nothing outstanding in this window. Sanity check:
+  ${e.sources_reporting} of ${e.sources_known} expected sources are reporting -
+  an estate with nothing reporting looks "clean" too.</p>`}
 
   <h3 style="margin-top:26px;font-size:14px">Evidence snapshot</h3>
-  <p class="lede">A checksummed statement of the counts above, for the stated
-  window, with the registry and governance files identified by hash. Generated
-  on demand and not stored. Not reproducible, because log retention may mean
-  the same window returns less later; tamper-evident, because the manifest
-  carries a digest of itself with that field omitted.
+  <p class="lede">A checksummed JSON file of the counts above for this window,
+  with the registry and governance files identified by hash. Generated on
+  demand, not stored. Note it can't be regenerated identically later (log
+  retention), and the checksum detects accidental changes, not deliberate
+  ones.
   <a href="/api/evidence?download=true" style="color:var(--pri)">Download JSON</a></p>`;
 }
 
@@ -1435,8 +1419,8 @@ function settingRow(key, label, placeholder, note) {
   const s = (SETTINGS && SETTINGS.settings || {})[key] || {value: '', source: 'unset'};
   const secret = !('value' in s);
   const src = s.source === 'db'
-    ? (s.env ? `Saved in the portal, shadowing the deployment's value; clearing falls back to it.` : 'Saved in the portal.')
-    : s.source === 'env' ? `From the deployment; saving here overrides it without touching the deployment.` : '';
+    ? (s.env ? `Saved in the portal (overriding the deployment's value; clear to fall back to it).` : 'Saved in the portal.')
+    : s.source === 'env' ? `Currently from the deployment's environment; saving here overrides it.` : '';
   const secretNote = secret
     ? (s.set ? 'A value is set (never shown). Leave blank and save to CLEAR it; type and save to replace it.' : 'Not set.')
     : '';
@@ -1466,33 +1450,34 @@ function pasteGuardFields() {
         ${opt('off', 'off')}${opt('warn', 'warn')}${opt('block', 'block')}
       </select>
       <button class="mini" data-act="save-setting" data-key="paste_guard_mode">save</button>
-      <div class="src-note">What the guard does when a paste into an AI tool
-      matches a marking or detector: warn asks the person, block stops it.
-      Baked into every extension policy artifact below.</div></dd>
+      <div class="src-note">What happens when someone pastes marked content
+      into an AI tool: warn asks them first, block stops it. Baked into the
+      policy downloads.</div></dd>
     <dt>Classification markings</dt><dd>
       <textarea id="set-classification_markings" class="mfield" rows="4"
         style="min-width:340px;resize:vertical;font-family:inherit"
         placeholder="one marking per line (empty = the default set)">${marks === null ? '' : esc(marks.join('\n'))}</textarea>
       <button class="mini" data-act="save-markings">save</button>
       ${marksSet ? '<button class="mini" data-act="clear-markings">clear (default set)</button>' : ''}
-      <div class="src-note">Document phrases the guard scans pastes for, one
-      per line. Saving an empty box records "no markings" as a real choice;
-      clear falls back to the default five. Content never leaves the device -
-      the guard reports detector ids only.</div></dd>
+      <div class="src-note">Document phrases the guard looks for in pastes,
+      one per line. Save an empty box to use no markings; clear to go back
+      to the default five. What people paste never leaves their device -
+      only which detector matched gets reported.</div></dd>
     ${settingRow('firefox_extension_id', 'Firefox extension ID (gecko id)',
       'ai-guard@your-org.example',
-      'From browser_specific_settings.gecko.id in the manifest - a different'
-      + ' string from the Chromium id, for the same extension. Unlocks the'
-      + ' Firefox artifacts.')}
+      'The id you set in the manifest (browser_specific_settings.gecko.id).'
+      + ' Not the same as the Chromium id. Needed for the Firefox'
+      + ' downloads.')}
     ${settingRow('extension_update_url', 'Chromium update manifest URL',
       'https://files.example.com/updates.xml',
-      'Where the packed extension update manifest is hosted. Unlocks the'
-      + ' Windows Chromium deploy script.')}
+      'Where you host the packed extension update manifest (updates.xml).'
+      + ' Needed for the Windows Chromium deploy script.')}
     ${settingRow('extension_xpi_url', 'Signed .xpi URL (Firefox)',
       'https://files.example.com/ai-guard-1.0.0.xpi',
-      'The Mozilla-SIGNED file (addons.mozilla.org self-distribution) -'
-      + ' Firefox refuses unsigned extensions on release builds, and no'
-      + ' enterprise policy changes that. Unlocks the Firefox artifacts.')}`;
+      'Where you host the SIGNED .xpi from addons.mozilla.org'
+      + ' (self-distribution). Firefox only installs Mozilla-signed'
+      + ' extensions - extension/README.md explains the one-time signing'
+      + ' step. Needed for the Firefox downloads.')}`;
 }
 
 // The last result of a connection test, rendered where its button lives.
@@ -1572,15 +1557,16 @@ async function wizard() {
     data-act="wiz-store" data-key="${k}">${lbl}</button>`;
 
   return `<h2>Welcome — set up your deployment</h2>
-  <p class="lede">Everything below is optional, editable later under
-  Settings, and stored centrally: it takes effect at runtime, so nothing
-  needs a redeploy afterwards.</p>
+  <p class="lede">Work through the steps top to bottom. Everything here can
+  be changed later under Settings, and changes take effect immediately - no
+  redeploys.</p>
   ${SETMSG ? `<div class="note">${esc(SETMSG)}</div>` : ''}
 
-  <div class="wcard" style="margin-bottom:10px"><h3>1 · Where endpoints reach the receiver</h3>
-  <p class="lede" style="margin-bottom:10px">The public URL baked into every
-  downloaded artifact. It must resolve from the machines being enrolled -
-  not from inside the cluster, and not only from this one. Save, then probe.</p>
+  <div class="wcard" style="margin-bottom:10px"><h3>1 · Where your machines reach the receiver</h3>
+  <p class="lede" style="margin-bottom:10px">The URL your laptops and servers
+  will send findings to. It gets baked into every download below, so it has
+  to work from those machines - not just from inside the cluster. Save it,
+  then hit probe to check.</p>
   <dl class="kv">
     ${settingRow('receiver_public_url', 'Public receiver URL',
       'https://ai-guard.your-tailnet.ts.net', '')}
@@ -1590,45 +1576,45 @@ async function wizard() {
   </div>${testNote('receiver-url')}</div>
 
   <div class="wcard" style="margin-bottom:10px"><h3>2 · The log store</h3>
-  <p class="lede" style="margin-bottom:10px">Findings are JSON lines the
-  receiver pushes to a Loki-compatible store and the portal reads back.
-  Where is yours?</p>
+  <p class="lede" style="margin-bottom:10px">Findings are stored in a
+  Loki-compatible log store: the receiver writes to it, this portal reads
+  from it. Where is yours?</p>
   <div style="margin-bottom:10px">
     ${storeBtn('self', 'self-hosted / in-cluster')}
     ${storeBtn('cloud', 'hosted (Grafana Cloud)')}
     ${storeBtn('none', 'none yet')}
   </div>
-  ${WIZSTORE === 'none' ? `<p class="lede">Fine: findings still land on the
-    receiver's stdout, so anything scraping container logs keeps them.
-    The estate views here stay empty until a store is configured - add one
-    later under Settings.</p>`
-  : `${WIZSTORE === 'self' ? `<p class="lede">Find the in-cluster service -
-    <span class="mono">kubectl get svc -A | grep -i loki</span> - and use
-    its base URL, typically
+  ${WIZSTORE === 'none' ? `<p class="lede">That's fine - findings still land
+    in the receiver's container logs, so nothing is lost. The pages here
+    stay empty until you add a store later under Settings.</p>`
+  : `${WIZSTORE === 'self' ? `<p class="lede">Find your Loki service -
+    <span class="mono">kubectl get svc -A | grep -i loki</span> - and paste
+    its base URL, usually
     <span class="mono">http://loki.&lt;namespace&gt;.svc.cluster.local:3100</span>.
-    No credentials needed for a typical in-cluster Loki.</p>`
-  : `<p class="lede">From Grafana Cloud's Loki details page: the URL, the
-    numeric instance id as username, and an access-policy token with
-    <b>logs:write AND logs:read</b> - a write-only token stores nothing and
-    tells nobody, which is exactly what the tests below catch.</p>`}
+    An in-cluster Loki normally needs no credentials.</p>`
+  : `<p class="lede">From Grafana Cloud's Loki details page you need three
+    things: the URL, your numeric instance ID (that's the username), and an
+    access-policy token with <b>both logs:write and logs:read</b>. A
+    write-only token is the classic mistake - the test buttons below will
+    catch it.</p>`}
   <dl class="kv">${logStoreFields(WIZSTORE === 'cloud')}</dl>
   ${logStoreTests()}`}</div>
 
   <div class="wcard" style="margin-bottom:10px"><h3>3 · Corporate domains</h3>
-  <p class="lede" style="margin-bottom:10px">Accounts on these domains are
-  work accounts; everything else reads as personal. Served to the collectors
-  on every check-in.</p>
+  <p class="lede" style="margin-bottom:10px">Your work email domains. An AI
+  tool signed into one of these counts as a work account; anything else gets
+  flagged as personal. Collectors pick this up automatically on their next
+  run.</p>
   <input id="set-domains" class="mfield" style="min-width:340px"
     placeholder="example.com, example.co.uk"
     value="${esc((cd.value || []).join(', '))}">
   <button class="mini" data-act="save-domains">save</button></div>
 
   <div class="wcard" style="margin-bottom:10px"><h3>4 · Governance baseline</h3>
-  <p class="lede" style="margin-bottom:10px">What your organisation has
-  decided about the tools the registry watches for. Touch only the ones you
-  have a position on - the rest stay undecided, which is the honest state.
-  Approvals carry the review date below; refine any decision later on the
-  AI register.</p>
+  <p class="lede" style="margin-bottom:10px">Which AI tools your organisation
+  has approved or banned. Only set the ones you actually have a position on -
+  leaving the rest undecided is fine. You can refine any of this later on
+  the AI register.</p>
   ${GOVERR ? `<div class="note">${esc(GOVERR)}</div>` : ''}
   <div style="margin-bottom:10px">
     <input id="wiz-owner" class="mfield" value="${esc(WIZOWNER)}"
@@ -1641,19 +1627,18 @@ async function wizard() {
 
   <div class="wcard" style="margin-bottom:10px"><h3>5 · Browser extension &amp; paste guard</h3>
   <p class="lede" style="margin-bottom:10px">One extension does both jobs:
-  reporting which account is signed into an AI tool, and the paste guard
-  that warns or blocks when marked content is pasted into one. Chrome, Edge
-  and Brave install it by Chromium policy; Firefox by Mozilla policy from a
-  signed .xpi. Everything here is baked into the policy downloads in
-  step 7.</p>
+  it reports which account is signed into each AI site, and its paste guard
+  warns or blocks risky pastes. You pack it once (extension/README.md), then
+  everything you set here gets baked into the ready-made policy downloads in
+  step 7. Fine to skip on a first pass and come back.</p>
   <dl class="kv">
     <dt>Chromium extension ID</dt><dd>
       <input id="set-extid" class="mfield" style="min-width:340px"
         placeholder="the 32-letter id from chrome://extensions" value="${esc(eid)}">
       <button class="mini" data-act="save-extid">save</button>
-      <div class="src-note">The packed extension's 32-letter id
-      (extension/README.md shows how to derive it). Unlocks the Chromium
-      policy downloads.</div></dd>
+      <div class="src-note">The 32-letter id Chrome gives the packed
+      extension - read it from chrome://extensions on a machine that has it.
+      Needed for the Chromium downloads.</div></dd>
     ${pasteGuardFields()}
   </dl></div>
 
@@ -1668,10 +1653,11 @@ async function wizard() {
   </dl></div>
 
   <div class="wcard" style="margin-bottom:10px"><h3>7 · Deployment downloads</h3>
-  <p class="lede" style="margin-bottom:10px">Each download mints its own
-  enrollment token (revocable on its own under Enrollment tokens) and bakes
-  the receiver URL, so what you upload to the MDM works as-is. Machines
-  enroll themselves and appear under Fleet.</p>
+  <p class="lede" style="margin-bottom:10px">Ready-to-deploy files with the
+  receiver URL and a fresh enrollment token already inside - push them
+  through your MDM or run them as-is. Machines enroll themselves and appear
+  under Fleet. Each download gets its own token, so you can revoke one
+  rollout without touching the others.</p>
   ${CFG.managed && CFG.managed.artifacts_ready ? `<div style="display:flex;gap:8px;flex-wrap:wrap">
     <button class="mini" data-act="artifact" data-key="collector-macos">macOS collector</button>
     <button class="mini" data-act="artifact" data-key="collector-linux">Linux collector</button>
@@ -1687,8 +1673,9 @@ async function wizard() {
 
   <div style="margin:18px 0">
     <button class="mini" style="padding:8px 18px" data-act="wiz-finish">Finish setup</button>
-    <span class="src-note" style="margin-left:10px">Opens the Setup view;
-    everything above stays editable under Settings and the AI register.</span>
+    <span class="src-note" style="margin-left:10px">You can come back:
+    everything above stays editable under Settings, and Settings can reopen
+    this wizard.</span>
   </div>`;
 }
 
@@ -1710,10 +1697,10 @@ function managedSettings() {
          saving here overrides it without touching the deployment.`
       : 'Not set anywhere yet.';
   return `<div class="wcard" style="margin-bottom:10px"><h3>Central settings</h3>
-  <p class="lede" style="margin-bottom:10px">Stored in the receiver and served
-  to the fleet at runtime: collectors pick a change up on their next check-in,
-  no MDM re-push. A value saved here wins over the matching environment
-  variable.</p>
+  <p class="lede" style="margin-bottom:10px">Saved in the receiver and picked
+  up by the fleet automatically - collectors get changes on their next
+  check-in, nothing needs re-pushing through the MDM. A value saved here
+  overrides the matching environment variable.</p>
   ${SETMSG ? `<div class="note">${esc(SETMSG)}</div>` : ''}
   <dl class="kv">
     <dt>Corporate domains</dt><dd>
@@ -1885,18 +1872,17 @@ function setup() {
 
   const g = S.groups || [];
   return `<h2>Setup</h2>
-  <p class="lede">What is reporting, derived from findings rather than from
-  configuration being present. A source that has never reported is either not
-  set up or genuinely has nothing to say, and those look identical from a
-  dashboard — so they are listed rather than counted.</p>
+  <p class="lede">What's reporting and what isn't, worked out from actual
+  findings - not from whether something is configured. Each silent source
+  below tells you what it needs to start reporting.</p>
 
   <dl class="stats">
     ${g.map(x => `<div><dt>${x.reporting}/${x.total}</dt><dd>${esc(x.group)}</dd></div>`).join('')}
   </dl>
 
   ${S.reporting === 0 ? `<div class="note">Nothing has reported in the last
-  ${esc(S.hours)} hours. If you have just deployed the receiver that is
-  expected: roll one collector or enable one scanner and it appears here.</div>` : ''}
+  ${esc(S.hours)} hours. If you've just installed, that's expected - run one
+  collector (Getting started walks through it) and it will appear here.</div>` : ''}
 
   ${g.map(x => `
     <h2 style="margin-top:22px;font-size:16px">${esc(x.group)}
@@ -1920,37 +1906,34 @@ function setup() {
   <h2 style="margin-top:28px;font-size:16px">Attaching people to devices
     <span class="pill ${CFG.identity_map_configured ? 'p-ok' : 'p-mut'}">${
       CFG.identity_map_configured ? 'map configured' : 'no map'}</span></h2>
-  <p class="lede">This platform does not resolve identity itself. Endpoint
-  findings carry a device and a local username, and that username is a hint
-  rather than a key: it is firstname.lastname on one enrolment, a local account
-  on another, and whatever the person chose on an unmanaged machine. Cloud
-  findings carry an identity and no device. The two meet at the person, and
-  that join is a lookup you own against whatever you run — an MDM, an RMM, a
-  CMDB, or a spreadsheet.</p>
+  <p class="lede">Endpoint findings know the machine but only a local
+  username; cloud findings know the person but not the machine. Joining the
+  two - "this laptop belongs to this person" - needs a lookup only you have:
+  your MDM, RMM, CMDB, or a spreadsheet. The portal helps you build that
+  file below.</p>
   ${CFG.identity_map_configured ? `<p class="lede">A map is configured.
-  Devices it does not cover stay unattributed, which is a legitimate answer.</p>`
+  Devices it doesn't cover show as unattributed, which is fine.</p>`
   : `<ol class="lede" style="padding-left:18px;line-height:2">
     <li><a href="/api/suggest-identities?fmt=csv" style="color:var(--pri)">Download
-      a proposed map</a>. It matches local usernames against the identities your
-      cloud sources report, and lists everything it could not match for you to
-      fill in.</li>
-    <li>Review every line. These are string matches, not authoritative: a wrong
-      line puts the wrong person's name against someone else's activity.</li>
-    <li>Save it outside this repository. It associates named people with
-      machines, so it is personal data and belongs wherever you keep deployment
-      configuration, not in git.</li>
+      a proposed map</a>. It matches local usernames against identities from
+      your cloud sources, and lists what it couldn't match for you to fill
+      in.</li>
+    <li>Check every line. These are string matches, and a wrong one puts the
+      wrong person's name against someone else's activity.</li>
+    <li>Keep the file outside this repository. It links named people to
+      machines, so it's personal data - store it with your deployment
+      config, not in git.</li>
     <li>Set <code>IDENTITY_MAP</code> to its path. In Docker, mount it read-only;
       in Kubernetes, a ConfigMap or Secret mounted as a file.</li>
   </ol>
-  <p class="lede">The file is re-read whenever the graph rebuilds, so an edit
-  takes effect within ${esc(CFG.cache_ttl_seconds || 300)} seconds without a
-  restart. Devices with no mapping stay unattributed and everything else keeps
-  working.</p>`}
+  <p class="lede">The file is re-read automatically, so edits take effect
+  within ${esc(CFG.cache_ttl_seconds || 300)} seconds, no restart needed.
+  Devices with no mapping just show as unattributed.</p>`}
 
   ${(S.unexpected || []).length ? `<h2 style="margin-top:26px;font-size:16px">Unrecognised sources</h2>
-  <p class="lede">Reporting, but not a source this build knows about. Either
-  something newer than this portal, or a source string that does not match what
-  the scanners emit — both worth chasing rather than ignoring.</p>
+  <p class="lede">These are reporting, but this portal build doesn't know
+  them. Either something newer than this portal, or a custom scanner with its
+  own source name. Worth checking either way.</p>
   <table><tr><th>source</th></tr>${S.unexpected.map(u =>
     `<tr><td>${esc(u)}</td></tr>`).join('')}</table>` : ''}`;
 }
@@ -1977,9 +1960,8 @@ function dashboard() {
     about how the frame authenticates — anonymous access on a locked-down
     Grafana, or an auth proxy. Those are yours to make; the portal cannot make
     them for you.</div>
-    <p class="lede">Nothing else here depends on this. Grafana is better at
-    graphs and this is better at relationships, so charts are enrichment rather
-    than a dependency.</p>`;
+    <p class="lede">Everything else in the portal works without Grafana -
+    this page just adds charts and history.</p>`;
 
   const base = CFG.grafana_url, panels = CFG.grafana_panels || [];
   const q = 'orgId=1&theme=dark&from=now-7d&to=now&kiosk';
@@ -2003,8 +1985,8 @@ function dashboard() {
   return `<h2>Grafana</h2>
   ${openIn(base)}
   <p class="lede">Panels embedded from ${esc(base)}. If a frame stays blank,
-  Grafana is refusing to be framed rather than the panel being wrong — check
-  <code>allow_embedding</code> and the cookie <code>SameSite</code> setting.</p>
+  Grafana is refusing to be embedded - check <code>allow_embedding</code> and
+  the cookie <code>SameSite</code> setting on the Grafana side.</p>
   ${bad.length ? `<div class="note">${bad.map(b => esc(b.error)).join('<br>')}</div>` : ''}
   <div style="display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(420px,1fr))">
   ${panels.filter(p => !p.error).map(p => `
@@ -2053,12 +2035,11 @@ async function fleet() {
   }
   const ds = FLEET.devices || [];
   return `<h2>Fleet</h2>
-  <p class="lede">Enrolled devices, from the receiver's registry — who holds a
-  credential, rather than who has reported lately (the Devices view derives
-  that from findings). Revoking stops that one credential on its next
-  request and touches nothing else. A device that re-enrolled (a reimaged
-  laptop, a scanner that enrolls every run — or a serial someone else
-  enrolled while it was silent) keeps its row and says so under "enrolled".</p>
+  <p class="lede">Every device holding a credential. (The Devices view is
+  different: it shows who has actually reported findings.) Revoke cuts off
+  that one device and nothing else. Re-enrollments - a reimaged laptop, a
+  scanner that enrolls every run - keep their row and are noted under
+  "enrolled".</p>
   ${ds.length ? `<table><tr><th>device</th><th>platform</th><th>serial</th>
     <th>enrolled</th><th>last seen</th><th>agent</th><th>status</th><th></th></tr>
   ${ds.map(d => `<tr>
@@ -2087,11 +2068,11 @@ async function tokens() {
   const state = t => t.revoked_at ? ['revoked', 'p-mut']
     : t.expires_at <= nowIso ? ['expired', 'p-mut'] : ['active', 'p-ok'];
   return `<h2>Enrollment tokens</h2>
-  <p class="lede">An enrollment token goes where the shared token goes today —
-  a Jamf parameter, the Intune script, an RMM variable — and machines exchange
-  it once for their own credential. It can create auditable device records and
-  nothing else, which is why a long life inside an MDM artifact is
-  acceptable; revoke it here the moment it is not.</p>
+  <p class="lede">An enrollment token goes into your MDM or RMM (a Jamf
+  parameter, the Intune script, an RMM variable). Each machine exchanges it
+  once for its own credential. The token itself can only enroll devices - it
+  can't submit findings - so a long expiry inside an MDM artifact is fine.
+  Revoke it here when a rollout is done or a token leaks.</p>
   ${MINTED ? (MINTED.error
     ? `<div class="note">${esc(MINTED.error)}
        <button class="mini" data-act="dismiss-minted">dismiss</button></div>`
@@ -2099,7 +2080,7 @@ async function tokens() {
        This is the only time it is shown — the receiver stores a hash.
        <br><code>${esc(MINTED.token)}</code><br>
        <button class="mini" data-act="copy" data-copy="${esc(MINTED.token)}">copy</button>
-       <button class="mini" data-act="dismiss-minted">done, it is saved</button>
+       <button class="mini" data-act="dismiss-minted">done, I've saved it</button>
        </div>`) : ''}
   <div style="margin:10px 0 16px">
     <input id="mint-note" class="mfield" placeholder="note, e.g. macOS Jamf rollout">
