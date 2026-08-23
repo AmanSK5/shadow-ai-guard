@@ -814,60 +814,57 @@ def status_from(findings):
     # where they were.
     expected = [
         ("endpoint", "collector-macos", "macOS collector", "endpoint/macos/README.md",
-         "Deploy ai-guard-collector.sh as a Jamf policy running as root on a "
-         "recurring check-in. In managed mode, download the pre-configured "
-         "script below - receiver URL and enrollment token already baked. "
-         "Classically, set AIGUARD_RECEIVER_BASE, AIGUARD_TOKEN and "
-         "AIGUARD_CORP_DOMAINS as script parameters."),
+         "Download the pre-configured script below and run it as a Jamf "
+         "policy (root, recurring check-in) - the receiver URL and an "
+         "enrollment token are already inside it. In classic mode, pass "
+         "AIGUARD_RECEIVER_BASE, AIGUARD_TOKEN and AIGUARD_CORP_DOMAINS as "
+         "script parameters instead."),
         ("endpoint", "collector-linux", "Linux collector", "endpoint/linux/README.md",
-         "Run ai-guard-collector.sh as root on a schedule: an RMM scheduled "
-         "job, cron, or a systemd timer. In managed mode the download below "
-         "is ready to paste in as-is; classically, same three environment "
-         "variables as macOS."),
+         "Download the script below and run it as root on a schedule - an "
+         "RMM job, cron, or a systemd timer. It's ready to run as-is. In "
+         "classic mode, set the same three environment variables as macOS."),
         ("endpoint", "collector-windows", "Windows collector", "endpoint/windows/README.md",
-         "Deploy ai-guard-collector.ps1 as an Intune platform script. In "
-         "managed mode the download below is upload-ready; classically, set "
-         "the same three variables at the top of the script."),
+         "Download the script below and upload it as an Intune platform "
+         "script - it's ready as-is. In classic mode, set the same three "
+         "values at the top of the script first."),
         ("browser", "browser_extension", "Browser extension: accounts",
          "extension/README.md",
-         "Push the extension by managed policy. In managed mode the portal "
-         "generates the full matrix pre-configured - Chromium policy for "
-         "macOS, deploy scripts for Windows, and Firefox equivalents (keyed "
-         "on the gecko id, installing the Mozilla-signed .xpi) - URL, "
-         "enrollment token, corporate domains and paste guard settings "
-         "baked; each browser profile exchanges the token once for its own "
-         "credential. Reports which account is signed into an AI tool in "
-         "the browser."),
+         "Shows which account is signed into each AI site in the browser. "
+         "Pack the extension once (extension/README.md), then download the "
+         "pre-configured policy for your platform below: Chromium policy "
+         "for macOS, deploy scripts for Windows, and Firefox versions of "
+         "both. Everything is baked in - URL, enrollment token, your "
+         "domains, paste guard settings."),
         ("browser", "paste_guard", "Browser extension: paste guard",
          "extension/README.md",
-         "The same extension, not a second install: its mode (off/warn/"
-         "block) and the classification markings it scans for are Settings "
-         "here, baked into the same policy artifacts. Reports pastes it "
-         "stopped or flagged, and a daily heartbeat proving the whole chain "
-         "works on that device. Silent while the accounts row reports means "
-         "nobody has pasted anything matching a detector, which is a "
-         "different thing from not being deployed."),
+         "Part of the same extension - no second install. It warns or "
+         "blocks when marked documents are pasted into AI tools; set the "
+         "mode and markings under Settings. If the accounts row above is "
+         "reporting but this one is quiet, the guard is working and nobody "
+         "has pasted anything risky."),
         ("cloud", "entra_sign_in", "Entra sign-ins", "scanner/README.md",
-         "Register an app in Entra with AuditLog.Read.All and Directory.Read.All, "
-         "then set AIGUARD_ENTRA_TENANT_ID, _CLIENT_ID and _CLIENT_SECRET."),
+         "Register an app in Entra with AuditLog.Read.All and "
+         "Directory.Read.All, then give the scanner AIGUARD_ENTRA_TENANT_ID, "
+         "_CLIENT_ID and _CLIENT_SECRET."),
         ("cloud", "entra_delegated_access", "Entra delegated access", "scanner/README.md",
-         "Same app registration as sign-ins. Covers non-interactive use that "
-         "sign-in logs miss."),
+         "Same Entra app as sign-ins. Catches background/API use that "
+         "interactive sign-in logs miss."),
         ("cloud", "entra_consent_grant", "Entra consent grants", "scanner/README.md",
          "Same app registration. Reports OAuth grants users have given to "
          "third-party applications."),
         ("cloud", "entra_service_principal", "Entra service principals", "scanner/README.md",
-         "Same app registration. Reports non-human identities, which are how "
-         "hidden agents usually appear."),
+         "Same Entra app. Reports non-human identities - service accounts "
+         "and app registrations, which is where hidden AI agents tend to "
+         "live."),
         ("cloud", "exchange_email", "Exchange signup evidence", "scanner/README.md",
-         "Add Mail.Read to the Entra app registration. Finds accounts created "
-         "with a work email outside SSO, which disabling Entra does not close."),
+         "Add Mail.Read to the Entra app. Finds AI accounts people created "
+         "with their work email directly (outside SSO) - blocking sign-in "
+         "in Entra doesn't close that path."),
         ("fleet", "jamf_app", "Jamf applications", "scanner/README.md",
          "A Jamf Pro API client with read access to computer inventory. Set "
-         "AIGUARD_JAMF_URL, _CLIENT_ID and _CLIENT_SECRET. Jamf is the "
-         "reference implementation of this surface - on Kandji, Addigy or "
-         "another MDM, any source that emits the finding shape fills this "
-         "row; see docs/writing-a-scanner.md."),
+         "AIGUARD_JAMF_URL, _CLIENT_ID and _CLIENT_SECRET. On Kandji, "
+         "Addigy or another MDM: anything that emits the finding shape "
+         "fills this row - see docs/writing-a-scanner.md."),
         ("fleet", "jamf_extension", "Jamf browser extensions", "scanner/README.md",
          "Same Jamf credentials. Reports AI browser extensions from inventory."),
         ("fleet", "intune_app", "Intune applications", "scanner/README.md",
@@ -878,20 +875,19 @@ def status_from(findings):
          "Same Intune permissions. Not yet emitted by any scanner."),
         ("network", "sentinelone_dns", "SentinelOne DNS", "scanner/README.md",
          "A SentinelOne API token with Deep Visibility read access. Set "
-         "AIGUARD_S1_URL and AIGUARD_S1_TOKEN. SentinelOne is the reference "
-         "implementation of the network surface - a dedicated DNS or "
-         "network-security service works the same way: any source emitting "
-         "the finding shape fills this row; see docs/writing-a-scanner.md."),
+         "AIGUARD_S1_URL and AIGUARD_S1_TOKEN. Using a different DNS or "
+         "network-security product? Anything that emits the finding shape "
+         "fills this row - see docs/writing-a-scanner.md."),
         ("network", "sentinelone_network", "SentinelOne network", "scanner/README.md",
-         "Same SentinelOne token. Catches local process bridges that never "
-         "touch a browser."),
+         "Same SentinelOne token. Catches AI traffic from local processes "
+         "that never touch a browser."),
         ("network", "sentinelone_bridge", "SentinelOne bridge targets", "scanner/README.md",
-         "Same SentinelOne token. Reports where an AI tool reached, not tools "
-         "someone installed."),
+         "Same SentinelOne token. Shows where AI tools connected to - "
+         "destinations, not installed software."),
         ("mcp", "mcp_scan", "MCP integration scan", "scanner/README.md",
-         "Produced by the endpoint collectors reading AI tool config files. If "
-         "a collector is reporting and this is not, nobody has wired up an MCP "
-         "server yet."),
+         "Comes from the endpoint collectors reading AI tool config files - "
+         "no separate setup. If a collector is reporting and this is quiet, "
+         "nobody has configured an MCP server yet."),
     ]
     # Sources the portal can generate a pre-configured deployment artifact
     # for, when managed mode is on. The value is the API path segment
