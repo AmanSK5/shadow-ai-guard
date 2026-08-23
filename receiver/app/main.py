@@ -910,6 +910,24 @@ def _admin_actor(authorization: str) -> str:
     return "api"
 
 
+# Central settings that are plain strings, written through the generic loop
+# in put_settings: (key, must_be_http_url, max_length). Secret keys are the
+# same shape to write but are never echoed by GET /admin/settings.
+_STR_SETTINGS = (
+    ("receiver_public_url", True, 500),
+    ("log_store_url", True, 500),
+    ("log_store_push_url", True, 500),
+    ("log_store_username", False, 256),
+    ("log_store_password", False, 512),
+    ("alertmanager_url", True, 500),
+    ("grafana_url", True, 500),
+    ("grafana_panels", False, 2000),
+    ("grafana_dashboard_uid", False, 128),
+    ("overview_widgets", False, 500),
+)
+SECRET_SETTINGS = ("log_store_password",)
+
+
 class SettingsUpdate(BaseModel):
     # extra=forbid: an unknown key is a typo or a version mismatch, and
     # accepting it silently is how someone believes a setting is in effect.
@@ -917,6 +935,16 @@ class SettingsUpdate(BaseModel):
     corp_domains: list[str] | None = Field(default=None, max_length=200)
     extension_id: str | None = Field(default=None, max_length=128)
     onboarding_done: bool | None = None
+    receiver_public_url: str | None = Field(default=None, max_length=500)
+    log_store_url: str | None = Field(default=None, max_length=500)
+    log_store_push_url: str | None = Field(default=None, max_length=500)
+    log_store_username: str | None = Field(default=None, max_length=256)
+    log_store_password: str | None = Field(default=None, max_length=512)
+    alertmanager_url: str | None = Field(default=None, max_length=500)
+    grafana_url: str | None = Field(default=None, max_length=500)
+    grafana_panels: str | None = Field(default=None, max_length=2000)
+    grafana_dashboard_uid: str | None = Field(default=None, max_length=128)
+    overview_widgets: str | None = Field(default=None, max_length=500)
 
 
 @app.get("/admin/settings")
@@ -927,6 +955,18 @@ def get_settings(authorization: str = Header(default="")):
     _admin_auth(authorization)
     stored = STATE.get_settings()
     corp = stored.get("corp_domains")
+
+    def plain(key, env=""):
+        """One string setting with its effective value and source. env is
+        this component's fallback; keys whose env lives on the portal
+        report db|unset here and the portal overlays its own."""
+        v = stored.get(key)
+        out = {"value": v if v is not None else env,
+               "source": "db" if v is not None else ("env" if env else "unset")}
+        if env:
+            out["env"] = env
+        return out
+
     return {"settings": {
         "corp_domains": {
             "value": corp if corp is not None else CORP_DOMAINS,
@@ -944,7 +984,43 @@ def get_settings(authorization: str = Header(default="")):
             "value": bool(stored.get("onboarding_done")),
             "source": "db" if stored.get("onboarding_done") is not None else "unset",
         },
+        "receiver_public_url": plain("receiver_public_url"),
+        "log_store_url": plain("log_store_url"),
+        "log_store_push_url": plain("log_store_push_url", LOKI_PUSH_URL),
+        "log_store_username": plain("log_store_username", LOKI_USERNAME),
+        # The one secret: set-ness and source, never the value. The
+        # plaintext exists for exactly one caller, /admin/settings/secrets.
+        "log_store_password": {
+            "set": stored.get("log_store_password") is not None
+                   or bool(LOKI_PASSWORD),
+            "source": ("db" if stored.get("log_store_password") is not None
+                       else "env" if LOKI_PASSWORD else "unset"),
+        },
+        "alertmanager_url": plain("alertmanager_url", ALERTMANAGER_URL),
+        "grafana_url": plain("grafana_url"),
+        "grafana_panels": plain("grafana_panels"),
+        "grafana_dashboard_uid": plain("grafana_dashboard_uid"),
+        "overview_widgets": plain("overview_widgets"),
     }}
+
+
+@app.get("/admin/settings/secrets")
+def get_settings_secrets(authorization: str = Header(default="")):
+    """The stored log-store configuration with the password in plaintext.
+
+    Exists for the portal's server-side Loki reads and nothing else: the
+    portal exposes no route that relays it, so the browser never sees the
+    value the Settings view masks. An admin who can call this could also
+    have SET the password, so it grants nothing they lack - but it is the
+    honest statement of the property: integration secrets are recoverable
+    by the admin API, unlike fleet credentials, which are hashes.
+    """
+    _admin_auth(authorization)
+    s = STATE.get_settings()
+    return {"log_store_url": s.get("log_store_url") or "",
+            "log_store_push_url": s.get("log_store_push_url") or "",
+            "log_store_username": s.get("log_store_username") or "",
+            "log_store_password": s.get("log_store_password") or ""}
 
 
 @app.put("/admin/settings")
@@ -980,7 +1056,59 @@ def put_settings(req: SettingsUpdate, authorization: str = Header(default="")):
     if "onboarding_done" in req.model_fields_set:
         STATE.set_setting("onboarding_done", req.onboarding_done, by)
 
+    for key, is_url, _max in _STR_SETTINGS:
+        if key not in req.model_fields_set:
+            continue
+        val = (getattr(req, key) or "").strip()
+        if not val:
+            # Empty and null both delete: an empty URL is not a URL, and
+            # "cleared" falling back to env is the documented shape.
+            STATE.set_setting(key, None, by)
+        else:
+            if is_url and not val.startswith(("http://", "https://")):
+                raise HTTPException(
+                    422, "%s must be http:// or https://" % key)
+            STATE.set_setting(key, val, by)
+
     return get_settings(authorization)
+
+
+@app.post("/admin/test/log-store-push")
+async def test_log_store_push(authorization: str = Header(default="")):
+    """Push one synthetic line with the effective configuration and say
+    what happened, hints included.
+
+    The failure this exists for: a token with logs:write missing (or
+    read-only), where every real finding is accepted with a 200 to the
+    collector and never stored. That is invisible until someone looks at a
+    dashboard; here it is one button during setup.
+    """
+    _admin_auth(authorization)
+    url, username, password = _effective_log_push()
+    if not url:
+        raise HTTPException(
+            400, "no log store is configured: save a base URL in Settings,"
+                 " or set LOKI_PUSH_URL on the receiver")
+    payload = {"streams": [{
+        "stream": {"app": "ai-guard-receiver", "kind": "test"},
+        "values": [[str(time.time_ns()),
+                    json.dumps({"app": "ai-guard-receiver", "kind": "test",
+                                "note": "settings connection test"})]],
+    }]}
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            r = await client.post(url, json=payload,
+                                  auth=(username, password) if username else None)
+    except httpx.HTTPError as e:
+        return {"ok": False, "url": _redact_url(url),
+                "detail": "could not reach the log store (%s)" % type(e).__name__}
+    if r.status_code >= 300:
+        out = {"ok": False, "url": _redact_url(url),
+               "detail": "the log store answered HTTP %d" % r.status_code}
+        if r.status_code in _LOKI_HINTS:
+            out["hint"] = _LOKI_HINTS[r.status_code]
+        return out
+    return {"ok": True, "url": _redact_url(url)}
 
 
 # What a portal-recorded decision may look like. Same three states and the
@@ -1082,7 +1210,49 @@ def change_password(req: PasswordChangeRequest,
 LOKI_FINDING_LABELS = {"surface", "severity", "os"}
 
 
-async def _push_loki(f: Finding, line: str):
+def _effective_log_push() -> tuple[str, str, str]:
+    """(push URL, username, password) the receiver should push with.
+
+    The portal-saved configuration wins: an explicit push override, else
+    the push endpoint derived from the saved base URL - deriving is the
+    point, it makes the base-vs-push mixup impossible to make in the
+    portal. Whichever source supplies the URL supplies the credentials
+    too: pairing a portal-saved URL with environment credentials would
+    send the old store's password to the new store.
+    """
+    if STATE is not None:
+        s = STATE.get_settings()
+        push = s.get("log_store_push_url") or ""
+        base = s.get("log_store_url") or ""
+        if not push and base:
+            push = base.rstrip("/") + "/loki/api/v1/push"
+        if push:
+            return (push, s.get("log_store_username") or "",
+                    s.get("log_store_password") or "")
+    return (LOKI_PUSH_URL, LOKI_USERNAME, LOKI_PASSWORD)
+
+
+def _effective_alertmanager() -> str:
+    if STATE is not None:
+        v = STATE.get_setting("alertmanager_url")
+        if v:
+            return v
+    return ALERTMANAGER_URL
+
+
+# The two status codes behind almost every log-store misconfiguration,
+# shared by the per-finding push and the settings test button so both name
+# the same likely cause.
+_LOKI_HINTS = {
+    404: ("the push URL is probably the base URL rather than the "
+          "push endpoint, which is /loki/api/v1/push"),
+    401: "a username and password are needed, or are wrong",
+    403: "the username and password are wrong, or lack write access",
+}
+
+
+async def _push_loki(f: Finding, line: str, url: str, username: str,
+                     password: str):
     """Fire-and-forget push to Loki. Bounded labels only (no tool/device:
     unbounded values stay inside the JSON line, parsed at query time)."""
     payload = {
@@ -1097,10 +1267,10 @@ async def _push_loki(f: Finding, line: str):
             }
         ]
     }
-    auth = (LOKI_USERNAME, LOKI_PASSWORD) if LOKI_USERNAME else None
+    auth = (username, password) if username else None
     try:
         async with httpx.AsyncClient(timeout=5) as client:
-            r = await client.post(LOKI_PUSH_URL, json=payload, auth=auth)
+            r = await client.post(url, json=payload, auth=auth)
             r.raise_for_status()
     except httpx.HTTPStatusError as e:
         # Logged at error, not info. This was info, and a wrong push URL
@@ -1110,22 +1280,15 @@ async def _push_loki(f: Finding, line: str):
         # from the outside that is indistinguishable from a quiet estate.
         code = e.response.status_code
         LOKI_PUSH_FAILURES.labels(reason=f"http_{code}").inc()
-        # A status code alone sends people to the wrong place. These two
-        # account for almost every misconfiguration, and naming the likely
-        # cause turns a wrong variable into a one-line fix.
-        hints = {
-            404: ("LOKI_PUSH_URL is probably the base URL rather than the "
-                  "push endpoint, which is /loki/api/v1/push"),
-            401: "LOKI_USERNAME and LOKI_PASSWORD are needed, or are wrong",
-            403: "LOKI_USERNAME and LOKI_PASSWORD are wrong, or lack write access",
-        }
+        # A status code alone sends people to the wrong place. _LOKI_HINTS
+        # names the likely cause and turns a wrong value into a one-line fix.
         entry = {
             "app": "ai-guard-receiver", "kind": "error",
             "error": f"loki push rejected with HTTP {code}",
-            "url": _redact_url(LOKI_PUSH_URL),
+            "url": _redact_url(url),
         }
-        if code in hints:
-            entry["hint"] = hints[code]
+        if code in _LOKI_HINTS:
+            entry["hint"] = _LOKI_HINTS[code]
         log.error(json.dumps(entry))
     except httpx.HTTPError as e:
         LOKI_PUSH_FAILURES.labels(reason=type(e).__name__).inc()
@@ -1135,18 +1298,18 @@ async def _push_loki(f: Finding, line: str):
             # the message, which would carry userinfo straight past the
             # redaction above.
             "error": "loki push failed: %s" % type(e).__name__,
-            "url": _redact_url(LOKI_PUSH_URL),
+            "url": _redact_url(url),
         }))
     else:
         LOKI_PUSH_OK.inc()
         LOKI_PUSH_LAST_SUCCESS.set(time.time())
 
 
-async def _fire_alert(f: Finding):
-    if not ALERTMANAGER_URL:
-        # Alerting is opt-in: no ALERTMANAGER_URL set means findings are
-        # logged and dashboarded but nothing pages. Deliberate for adopters
-        # without Alertmanager; set the env var to enable alerts.
+async def _fire_alert(f: Finding, alertmanager_url: str):
+    if not alertmanager_url:
+        # Alerting is opt-in: nothing configured means findings are logged
+        # and dashboarded but nothing pages. Deliberate for adopters
+        # without Alertmanager; set it in the portal (or the env var).
         return
     now = datetime.now(timezone.utc)
     # Alert identity = who + which tool + which account. Deliberately NOT
@@ -1185,7 +1348,7 @@ async def _fire_alert(f: Finding):
         }
     ]
     async with httpx.AsyncClient(timeout=10) as client:
-        r = await client.post(f"{ALERTMANAGER_URL}/api/v2/alerts", json=alert)
+        r = await client.post(f"{alertmanager_url}/api/v2/alerts", json=alert)
         r.raise_for_status()
 
 
@@ -1216,11 +1379,14 @@ async def report(f: Finding, request: Request, authorization: str = Header(defau
         f.tool = canonical
 
     # Loki: every finding, warn and info alike. Stdout always; direct push
-    # when LOKI_PUSH_URL is set (parity with receiver v0.1.1).
+    # when a push target is configured - the portal-saved log store when
+    # one exists, LOKI_PUSH_URL otherwise. Resolved per finding, so a
+    # store configured in the wizard takes effect with no restart.
     line = json.dumps({"app": "ai-guard-receiver", "kind": "finding", **f.model_dump()})
     log.info(line)
-    if LOKI_PUSH_URL:
-        await _push_loki(f, line)
+    push_url, push_user, push_pass = _effective_log_push()
+    if push_url:
+        await _push_loki(f, line, push_url, push_user, push_pass)
 
     FINDINGS.labels(
         surface=f.surface, severity=f.severity, os=f.os
@@ -1247,15 +1413,16 @@ async def report(f: Finding, request: Request, authorization: str = Header(defau
         suppress = (f.source == "sentinelone_bridge")
         # Always refresh Alertmanager so endsAt extends; dedup of Slack pings
         # is governed by the route's repeat_interval, as in 0.1.2.
+        am_url = _effective_alertmanager()
         try:
-            if not suppress:
-                await _fire_alert(f)
+            if not suppress and am_url:
+                await _fire_alert(f, am_url)
                 alert_fired = True
         except httpx.HTTPError as e:
             log.error(json.dumps({
                 "app": "ai-guard-receiver", "kind": "error",
                 "error": "alertmanager: %s" % type(e).__name__,
-                "url": _redact_url(ALERTMANAGER_URL),
+                "url": _redact_url(am_url),
             }))
 
     return {"ok": True, "severity": f.severity, "alerted": alert_fired}

@@ -5,10 +5,13 @@ single SQLite file. Everything else stays disposable, and with MANAGED_MODE
 unset State() is never instantiated and no file is created, so classic
 deployments keep the property that losing any component loses nothing.
 
-Only credential hashes are stored. The plaintext of an enrollment token or a
-device credential exists exactly once, in the response that minted it, and
-cannot be recovered from here - a copied database file is a list of devices,
-not a bag of credentials.
+Fleet credentials are stored as hashes only. The plaintext of an enrollment
+token or a device credential exists exactly once, in the response that
+minted it, and cannot be recovered from here - a copied database file
+cannot impersonate a device or an admin. Integration secrets (a log store
+password saved in the portal, in the settings table) are the stated
+exception: recoverable by design, because the receiver must present them
+outward. SECURITY.md carries the trade.
 
 Two credential kinds, distinguishable by prefix so the receiver can route a
 presented bearer without trying every table, and so a leaked string is

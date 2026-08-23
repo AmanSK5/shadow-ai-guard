@@ -249,6 +249,19 @@ SESSION_COOKIE = "aiguard_session"
 SESSION_CACHE_TTL = 60
 _session_cache: dict[str, tuple[float, str]] = {}  # token -> (until, username)
 
+# The receiver-stored settings, cached briefly so a page of API calls does
+# not re-fetch them. Two caches because they answer different callers: the
+# masked view (display preferences, receiver public URL) and the log-store
+# secrets, which only _log_store below ever touches and no route relays.
+SETTINGS_CACHE_TTL = 30
+_remote_settings_cache: dict = {"at": 0.0, "data": None}
+_log_store_cache: dict = {"at": 0.0, "data": None}
+
+
+def _invalidate_settings_caches():
+    _remote_settings_cache.update(at=0.0, data=None)
+    _log_store_cache.update(at=0.0, data=None)
+
 # Fail closed. Coming up open because a variable was missed is the failure
 # that matters here: the portal is reachable, it looks like it works, and
 # nothing says the door is off. Refusing to start is loud and immediate.
@@ -295,6 +308,25 @@ app = FastAPI(title="ai-guard portal", version=APP_VERSION,
               docs_url=None, redoc_url=None)
 
 
+def _frame_src() -> str:
+    """The Grafana origin frames may load from: env, else the portal-saved
+    setting as last seen in the settings cache.
+
+    The cache only, deliberately: this runs on every response with no
+    session to fetch with. The consequence is one page-load of lag after
+    saving a Grafana URL before frames unblock - the next /api/config call
+    warms the cache - which beats either fetching per response or leaving
+    settings-configured Grafana permanently unframeable.
+    """
+    if GRAFANA_URL:
+        return GRAFANA_URL
+    rs = _remote_settings_cache["data"] or {}
+    entry = rs.get("grafana_url")
+    if isinstance(entry, dict):
+        return (entry.get("value") or "").rstrip("/")
+    return ""
+
+
 @app.middleware("http")
 async def security_headers(request, call_next):
     """Headers that limit what a rendering bug can do.
@@ -337,7 +369,7 @@ async def security_headers(request, call_next):
         "style-src 'self' 'unsafe-inline'; "
         "img-src 'self' data:; "
         "connect-src 'self'; "
-        "frame-src " + (GRAFANA_URL or "'none'") + "; "
+        "frame-src " + (_frame_src() or "'none'") + "; "
         "frame-ancestors 'none'; "
         "form-action 'none'; "
         "base-uri 'none'; "
@@ -413,6 +445,68 @@ def _redact_url(url):
     )
 
 
+def _remote_settings(request) -> dict:
+    """The receiver's stored settings (masked view), or {} outside login
+    mode. Quiet on failure: the callers are display preferences and
+    prefills, and a page that falls back to its env values beats a page
+    that refuses to render because a settings fetch hiccuped. Anything
+    correctness-critical (the log store, artifacts) fetches loudly itself.
+    """
+    if not LOGIN_MODE or request is None:
+        return {}
+    now = time.time()
+    if (_remote_settings_cache["data"] is not None
+            and now - _remote_settings_cache["at"] < SETTINGS_CACHE_TTL):
+        return _remote_settings_cache["data"]
+    token = request.cookies.get(SESSION_COOKIE, "")
+    try:
+        out = managed.receiver_request(
+            RECEIVER_URL, "GET", "/admin/settings", token).get("settings", {})
+    except managed.ReceiverError:
+        return {}
+    _remote_settings_cache.update(at=now, data=out)
+    return out
+
+
+def _remote_value(settings: dict, key: str, env: str = "") -> str:
+    """One effective string from the masked settings view, env fallback."""
+    entry = settings.get(key)
+    v = entry.get("value") if isinstance(entry, dict) else None
+    return v if v else env
+
+
+def _log_store(request):
+    """(url, username, password, source) for reading findings back.
+
+    The portal-saved log store wins; the portal's own env is the fallback,
+    exactly the rule every setting follows. The password crosses only this
+    server-side hop - no route relays it - and a receiver that cannot
+    answer is a loud error, because silently falling back to env here
+    could read a different store than the receiver is writing to.
+    """
+    if LOGIN_MODE and request is not None:
+        now = time.time()
+        if (_log_store_cache["data"] is None
+                or now - _log_store_cache["at"] >= SETTINGS_CACHE_TTL):
+            token = request.cookies.get(SESSION_COOKIE, "")
+            try:
+                _log_store_cache["data"] = managed.receiver_request(
+                    RECEIVER_URL, "GET", "/admin/settings/secrets", token)
+                _log_store_cache["at"] = now
+            except managed.ReceiverError as e:
+                if e.status == 502:
+                    log.warning("receiver call failed for %s: %s",
+                                _redact_url(RECEIVER_URL), e.detail)
+                raise HTTPException(
+                    e.status, "could not read the log-store configuration "
+                              "from the receiver (%s)" % e.detail)
+        s = _log_store_cache["data"]
+        if s.get("log_store_url"):
+            return (s["log_store_url"], s.get("log_store_username") or "",
+                    s.get("log_store_password") or "", "portal")
+    return (LOKI_URL, LOKI_USERNAME or "", LOKI_PASSWORD or "", "env")
+
+
 def _cached(key, hours, builder):
     now = time.time()
     hit = _cache.get(key)
@@ -423,18 +517,22 @@ def _cached(key, hours, builder):
     return value, now
 
 
-def _findings(hours):
-    if not LOKI_URL:
+def _findings(hours, request=None):
+    url, username, password, source = _log_store(request)
+    if not url:
         raise HTTPException(
             status_code=503,
-            detail="LOKI_URL is not set. The portal reads findings from Loki; "
-                   "point it at the same Loki the receiver writes to.",
+            detail="No log store is configured. Save its base URL in "
+                   "Settings (managed mode), or set LOKI_URL - the same "
+                   "store the receiver writes to.",
         )
     global _last_loki_ok, _last_loki_error
     try:
         out = derive.fetch_from_loki(
-            LOKI_URL, hours, LOKI_TOKEN,
-            username=LOKI_USERNAME, password=LOKI_PASSWORD)
+            # The bearer token is env configuration and belongs to the env
+            # store; a portal-saved store authenticates with its own pair.
+            url, hours, LOKI_TOKEN if source == "env" else None,
+            username=username or None, password=password or None)
         _last_loki_ok = time.time()
         _last_loki_error = ""
         return out
@@ -443,7 +541,7 @@ def _findings(hours):
         # is written for an operator reading a stack trace, not for an HTTP
         # body, and LOKI_URL may carry credentials in its userinfo.
         log.warning(
-            "Loki read failed for %s: %s", _redact_url(LOKI_URL), e,
+            "Loki read failed for %s: %s", _redact_url(url), e,
             exc_info=True,
         )
         _last_loki_error = type(e).__name__
@@ -456,7 +554,7 @@ def _findings(hours):
             status_code=502,
             detail="Could not read findings from Loki at %s (%s). "
                    "See the portal logs for detail."
-                   % (_redact_url(LOKI_URL), type(e).__name__),
+                   % (_redact_url(url), type(e).__name__),
         )
 
 
@@ -468,10 +566,23 @@ def healthz():
 
 
 @app.get("/api/config")
-def config(_=Depends(require_auth)):
-    """What the browser needs to know about this deployment."""
+def config(request: Request, _=Depends(require_auth)):
+    """What the browser needs to know about this deployment.
+
+    In login mode the display preferences (Grafana embedding, overview
+    widgets) and the receiver public URL resolve settings-first with env
+    as fallback, so the wizard's answers take effect with no redeploy.
+    """
+    rs = _remote_settings(request)
+    grafana_url = _remote_value(rs, "grafana_url", GRAFANA_URL).rstrip("/")
+    panels_raw = _remote_value(rs, "grafana_panels", GRAFANA_PANELS)
+    dashboard_uid = _remote_value(rs, "grafana_dashboard_uid",
+                                  GRAFANA_DASHBOARD_UID)
+    public_url = _remote_value(rs, "receiver_public_url", RECEIVER_PUBLIC_URL)
+    log_store = _remote_value(rs, "log_store_url", LOKI_URL)
+
     panels = []
-    for spec in GRAFANA_PANELS.split(";"):
+    for spec in panels_raw.split(";"):
         spec = spec.strip()
         if not spec:
             continue
@@ -480,7 +591,7 @@ def config(_=Depends(require_auth)):
             # Said out loud rather than skipped: a panel that silently does not
             # appear looks like Grafana refusing the frame, which sends someone
             # off debugging headers for a typo in an environment variable.
-            panels.append({"error": "malformed GRAFANA_PANELS entry: %s" % spec})
+            panels.append({"error": "malformed grafana panels entry: %s" % spec})
             continue
         panels.append({
             "uid": parts[0],
@@ -489,22 +600,26 @@ def config(_=Depends(require_auth)):
         })
 
     return {
-        "loki_configured": bool(LOKI_URL),
-        "grafana_url": GRAFANA_URL,
+        "loki_configured": bool(log_store),
+        "grafana_url": grafana_url,
         "grafana_panels": panels,
-        "grafana_dashboard_uid": GRAFANA_DASHBOARD_UID,
+        "grafana_dashboard_uid": dashboard_uid,
         "lookback_hours": LOOKBACK_HOURS,
         "identity_map_configured": bool(IDENTITY_MAP and Path(IDENTITY_MAP).exists()),
         "cache_ttl_seconds": CACHE_TTL,
         "version": APP_VERSION,
-        "overview_widgets": _widgets(),
+        "overview_widgets": _widgets(_remote_value(rs, "overview_widgets",
+                                                   OVERVIEW_WIDGETS)),
         # enabled says the portal can reach an admin API; artifacts_ready
         # says downloads can bake a URL agents can reach. Separate flags,
         # because a deployment can sensibly have the first without the
         # second and the UI should name which one is missing.
+        # receiver_public_url_default is the wizard's prefill: the effective
+        # value today, whichever source supplies it.
         "managed": {
             "enabled": bool(RECEIVER_URL),
-            "artifacts_ready": bool(RECEIVER_URL and RECEIVER_PUBLIC_URL),
+            "artifacts_ready": bool(RECEIVER_URL and public_url),
+            "receiver_public_url_default": public_url,
         },
     }
 
@@ -527,13 +642,16 @@ DEFAULT_WIDGETS = ["stat_row", "top_tools", "recent_personal_accounts",
                    "detection_coverage"]
 
 
-def _widgets():
-    """Parse OVERVIEW_WIDGETS into what the browser should draw.
+def _widgets(spec=None):
+    """Parse an overview-widgets string into what the browser should draw.
 
-    grafana:<panel-title> entries are resolved against GRAFANA_PANELS rather
-    than repeating panel ids in two places.
+    grafana:<panel-title> entries are resolved against the panels list
+    rather than repeating panel ids in two places. spec defaults to the
+    env value; login mode passes the effective setting through.
     """
-    raw = [w.strip() for w in OVERVIEW_WIDGETS.split(",") if w.strip()]
+    raw = [w.strip() for w in
+           (OVERVIEW_WIDGETS if spec is None else spec).split(",")
+           if w.strip()]
     if not raw:
         return [{"kind": w} for w in DEFAULT_WIDGETS]
     out = []
@@ -613,7 +731,8 @@ def diagnostics(_=Depends(require_auth)):
 
 
 @app.get("/api/graph")
-def graph(hours: float = Query(default=None, gt=0, le=24 * 90),
+def graph(request: Request,
+          hours: float = Query(default=None, gt=0, le=24 * 90),
           refresh: bool = Query(default=False),
           _=Depends(require_auth)):
     """refresh=true skips the cache. A cache you cannot see past is
@@ -622,7 +741,7 @@ def graph(hours: float = Query(default=None, gt=0, le=24 * 90),
     if refresh:
         _cache.pop("graph", None)
     def build():
-        findings = _findings(hours)
+        findings = _findings(hours, request)
         domain_map = derive.load_domain_map(REGISTRY_PATH)
         identity_map = derive.load_identity_map(IDENTITY_MAP) if IDENTITY_MAP else {}
         return derive.graph_from(findings, domain_map, identity_map)
@@ -632,14 +751,15 @@ def graph(hours: float = Query(default=None, gt=0, le=24 * 90),
 
 
 @app.get("/api/status")
-def status(hours: float = Query(default=None, gt=0, le=24 * 90),
+def status(request: Request,
+           hours: float = Query(default=None, gt=0, le=24 * 90),
            refresh: bool = Query(default=False),
            _=Depends(require_auth)):
     hours = hours or LOOKBACK_HOURS
     if refresh:
         _cache.pop("status", None)
     def build():
-        return derive.status_from(_findings(hours))
+        return derive.status_from(_findings(hours, request))
 
     value, at = _cached("status", hours, build)
     return JSONResponse(dict(value, derived_at=at, hours=hours))
@@ -661,7 +781,7 @@ def evidence_snapshot(request: Request,
     were taken.
     """
     hours = hours or LOOKBACK_HOURS
-    findings = _findings(hours)
+    findings = _findings(hours, request)
     reg = derive.load_registry(REGISTRY_PATH)
     domain_map = derive.load_domain_map_from(reg)
     gov, exceptions, _portal = _merged_governance(request)
@@ -691,7 +811,8 @@ def evidence_snapshot(request: Request,
 
 
 @app.get("/api/paste-guard")
-def paste_guard_events(hours: float = Query(default=None, gt=0, le=24 * 90),
+def paste_guard_events(request: Request,
+                       hours: float = Query(default=None, gt=0, le=24 * 90),
                        refresh: bool = Query(default=False),
                        _=Depends(require_auth)):
     """Paste guard activity: what was stopped, on which tool, how often.
@@ -711,7 +832,7 @@ def paste_guard_events(hours: float = Query(default=None, gt=0, le=24 * 90),
         _cache.pop("paste_guard", None)
 
     def build():
-        findings = _findings(hours)
+        findings = _findings(hours, request)
         reg = derive.load_registry(REGISTRY_PATH)
         return paste_guard.paste_guard_from(
             findings, derive.load_domain_map_from(reg))
@@ -756,7 +877,7 @@ def register(request: Request,
     gov, exceptions, portal_decisions = _merged_governance(request)
 
     def build():
-        findings = _findings(hours)
+        findings = _findings(hours, request)
         reg = derive.load_registry(REGISTRY_PATH)
         return derive.register_from(findings, reg,
                                     derive.load_domain_map_from(reg), gov,
@@ -812,7 +933,8 @@ def register(request: Request,
 
 
 @app.get("/api/suggest-identities")
-def suggest_identities(hours: float = Query(default=None, gt=0, le=24 * 90),
+def suggest_identities(request: Request,
+                       hours: float = Query(default=None, gt=0, le=24 * 90),
                        fmt: str = Query(default="json", pattern="^(json|csv)$"),
                        _=Depends(require_auth)):
     """Proposed device -> identity mappings, for review.
@@ -823,7 +945,7 @@ def suggest_identities(hours: float = Query(default=None, gt=0, le=24 * 90),
     correct it, and point IDENTITY_MAP at it.
     """
     hours = hours or LOOKBACK_HOURS
-    findings = _findings(hours)
+    findings = _findings(hours, request)
     domain_map = derive.load_domain_map(REGISTRY_PATH)
     devices, identities, _t, _b, _u = derive.build(findings, domain_map, {})
     matched, unmatched = derive.suggest_identity_rows(devices, identities)
@@ -1122,11 +1244,22 @@ def revoke_device(did: str, _=Depends(require_auth),
 class SettingsWrite(BaseModel):
     # extra=forbid, same as the receiver: an unknown key here would be
     # silently dropped from model_fields_set and someone would believe a
-    # setting took effect.
+    # setting took effect. The receiver revalidates (URL shapes included);
+    # this model only mirrors the keys and bounds.
     model_config = {"extra": "forbid"}
     corp_domains: list[str] | None = Field(default=None, max_length=200)
     extension_id: str | None = Field(default=None, max_length=128)
     onboarding_done: bool | None = None
+    receiver_public_url: str | None = Field(default=None, max_length=500)
+    log_store_url: str | None = Field(default=None, max_length=500)
+    log_store_push_url: str | None = Field(default=None, max_length=500)
+    log_store_username: str | None = Field(default=None, max_length=256)
+    log_store_password: str | None = Field(default=None, max_length=512)
+    alertmanager_url: str | None = Field(default=None, max_length=500)
+    grafana_url: str | None = Field(default=None, max_length=500)
+    grafana_panels: str | None = Field(default=None, max_length=2000)
+    grafana_dashboard_uid: str | None = Field(default=None, max_length=128)
+    overview_widgets: str | None = Field(default=None, max_length=500)
 
 
 class DecisionWrite(BaseModel):
@@ -1161,7 +1294,11 @@ def api_settings_write(req: SettingsWrite, _=Depends(require_auth),
     to env), an absent key is untouched - and the receiver validates and
     answers with the fresh effective view."""
     body = {k: getattr(req, k) for k in req.model_fields_set}
-    return _receiver("PUT", "/admin/settings", token, body)
+    out = _receiver("PUT", "/admin/settings", token, body)
+    # The portal's cached views of these settings are now stale - a saved
+    # log store must be read from on the very next page, not in 30s.
+    _invalidate_settings_caches()
+    return out
 
 
 @app.get("/api/governance-decisions")
@@ -1178,6 +1315,87 @@ def api_governance_write(req: GovernanceWrite, _=Depends(require_auth),
     # the world before the operator acted.
     _cache.pop("register", None)
     return out
+
+
+@app.post("/api/test/receiver-url")
+def test_receiver_url(_=Depends(require_auth),
+                      token: str = Depends(_admin_forward)):
+    """Probe the EFFECTIVE public receiver URL - the saved setting, else
+    the deployment's env value - before an artifact bakes it.
+
+    Server-side on purpose: the browser's CSP keeps it on 'self', and the
+    point is to catch the URL that LOOKS right in a browser on this machine
+    and resolves nowhere else. Deliberately not a requester-supplied URL,
+    matching the log-store tests: save first, then probe what was saved.
+    That is one more click in the wizard and one fewer route that fetches
+    whatever the request names.
+    """
+    import urllib.request as _urlreq
+
+    stored = _receiver("GET", "/admin/settings", token).get("settings", {})
+    url = (((stored.get("receiver_public_url") or {}).get("value")
+            or RECEIVER_PUBLIC_URL) or "").strip().rstrip("/")
+    if not url:
+        raise HTTPException(
+            400, "no public receiver URL to probe: save one in Settings "
+                 "first (or set RECEIVER_PUBLIC_URL)")
+    if not url.startswith(("http://", "https://")):
+        raise HTTPException(422, "the URL must be http:// or https://")
+    warnings = []
+    host = urllib.parse.urlsplit(url).hostname or ""
+    if "." not in host:
+        warnings.append(
+            "the host has no dot: machines other than this one cannot "
+            "resolve a short name. On Tailscale use the full .ts.net "
+            "address, not the ingress short name.")
+    try:
+        with _urlreq.urlopen(url + "/healthz", timeout=5) as resp:
+            body = json.loads(resp.read() or b"{}")
+    except Exception as e:
+        return {"ok": False, "warnings": warnings,
+                "detail": "could not reach %s/healthz (%s)"
+                          % (_redact_url(url), type(e).__name__)}
+    if not body.get("ok"):
+        return {"ok": False, "warnings": warnings,
+                "detail": "%s answered, but not like an ai-guard receiver"
+                          % _redact_url(url)}
+    return {"ok": True, "warnings": warnings,
+            "version": str(body.get("version", ""))}
+
+
+@app.post("/api/test/log-store-read")
+def test_log_store_read(request: Request, _=Depends(require_auth)):
+    """One tiny query with the effective read configuration: can the portal
+    get findings back out? The other half of the receiver's push test -
+    together they catch the write-only-token trap during setup instead of
+    on the first quiet dashboard."""
+    url, username, password, source = _log_store(request)
+    if not url:
+        raise HTTPException(
+            400, "no log store is configured: save its base URL in "
+                 "Settings, or set LOKI_URL")
+    try:
+        derive.fetch_from_loki(url, 1, LOKI_TOKEN if source == "env" else None,
+                               limit=1, username=username or None,
+                               password=password or None)
+    except Exception as e:
+        out = {"ok": False, "url": _redact_url(url),
+               "detail": "read failed (%s)" % type(e).__name__}
+        code = getattr(e, "code", None)
+        if code in (401, 403):
+            out["hint"] = ("the credentials are wrong or lack read access; "
+                           "on Grafana Cloud the token needs logs:read as "
+                           "well as logs:write")
+        return out
+    return {"ok": True, "url": _redact_url(url)}
+
+
+@app.post("/api/test/log-store-push")
+def test_log_store_push(_=Depends(require_auth),
+                        token: str = Depends(_admin_forward)):
+    """The receiver pushes one synthetic line with ITS effective config
+    and reports what happened, hints included."""
+    return _receiver("POST", "/admin/test/log-store-push", token)
 
 
 @app.post("/api/password")
@@ -1212,18 +1430,23 @@ def artifact(kind: str, _=Depends(require_auth),
     """
     if kind not in managed.ARTIFACTS and kind not in GENERATED_ARTIFACTS:
         raise HTTPException(404, "no such artifact")
-    if not RECEIVER_PUBLIC_URL:
-        raise HTTPException(
-            503, "RECEIVER_PUBLIC_URL is not set. Artifacts bake the ingest "
-                 "URL agents reach from outside, which is not the portal's "
-                 "internal RECEIVER_URL; see the portal README.")
 
-    # The extension policy's preconditions are checked before minting, so a
-    # refusal does not leave a token dangling behind an artifact that never
-    # existed.
+    # Settings first: the wizard-saved receiver public URL wins over the
+    # deployment's env value, same as every setting. Fetched before minting,
+    # so a refusal does not leave a token dangling behind an artifact that
+    # never existed.
+    stored = _receiver("GET", "/admin/settings", token).get("settings", {})
+    public_url = ((stored.get("receiver_public_url") or {}).get("value")
+                  or RECEIVER_PUBLIC_URL)
+    if not public_url:
+        raise HTTPException(
+            503, "no public receiver URL is set. Artifacts bake the ingest "
+                 "URL agents reach from outside; save it in Settings (or "
+                 "set RECEIVER_PUBLIC_URL). It is not the portal's internal "
+                 "RECEIVER_URL; see the portal README.")
+
     extension_id, corp_domains = "", []
     if kind == "extension-policy":
-        stored = _receiver("GET", "/admin/settings", token).get("settings", {})
         extension_id = (stored.get("extension_id") or {}).get("value") or ""
         corp_domains = (stored.get("corp_domains") or {}).get("value") or []
         if not extension_id:
@@ -1236,7 +1459,7 @@ def artifact(kind: str, _=Depends(require_auth),
     try:
         if kind == "extension-policy":
             filename, content = managed.generate_extension_policy(
-                extension_id, RECEIVER_PUBLIC_URL, minted["token"],
+                extension_id, public_url, minted["token"],
                 corp_domains)
         elif kind == "scanner-cronjob":
             # A release build's version is the image tag on ghcr; a dev
@@ -1244,10 +1467,10 @@ def artifact(kind: str, _=Depends(require_auth),
             # nearest thing.
             tag = APP_VERSION if APP_VERSION[:1].isdigit() else "latest"
             filename, content = managed.generate_scanner_cronjob(
-                RECEIVER_PUBLIC_URL, minted["token"], tag)
+                public_url, minted["token"], tag)
         else:
             filename, content = managed.generate(
-                kind, COLLECTOR_SCRIPTS_DIR, RECEIVER_PUBLIC_URL,
+                kind, COLLECTOR_SCRIPTS_DIR, public_url,
                 minted["token"])
     except managed.ArtifactError as e:
         # The token is already minted; say which one so it can be revoked

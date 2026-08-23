@@ -59,6 +59,18 @@ In managed mode it is a real login: an admin account in the receiver's state
 DB (scrypt-hashed password, created on first boot with a one-time setup code
 the receiver prints to its log), a session carried as an HttpOnly
 SameSite=Strict cookie, validated against the receiver per request.
+
+A word on what the state DB holds, because it changed in 0.9.8. **Fleet
+credentials** - enrollment tokens, device credentials, sessions, the admin
+password - are stored as hashes only; a copied database file cannot
+impersonate anything. **Integration secrets** are different: a log store
+password saved in the portal is stored recoverable, because the receiver
+must present it to push findings. It is masked everywhere in the UI and in
+the ordinary settings API, and the plaintext exists on exactly one admin
+route the portal uses server-side - but an admin who can set it can read it
+back, and a copied database file now contains it. If that trade is
+unacceptable, leave the log store configured by environment/Secret as
+before; the wizard step is optional and the env path is unchanged.
 Classically it is HTTP basic auth: one shared credential, no per-user trail,
 and plaintext without TLS in front of it. That is a floor, not a ceiling.
 

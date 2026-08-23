@@ -347,7 +347,7 @@ def test_an_unobserved_tool_is_not_in_the_endpoints_rows():
     from app import derive
     from app import main as pm
 
-    with patch.object(pm, "_findings", lambda h: [_f()]), \
+    with patch.object(pm, "_findings", lambda h, request=None: [_f()]), \
             patch.object(derive, "load_registry", lambda p: REGISTRY):
         pm._cache.clear()
         body = json.loads(bytes(pm.register(None, hours=168).body))
