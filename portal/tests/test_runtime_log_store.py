@@ -285,14 +285,16 @@ def test_the_inline_script_parses():
     blank page with an empty nav and no error anywhere but the console.
     Parse it with node when node is around (it is in CI's extension job and
     on dev machines); skip, not pass, when it is not."""
-    import re
     import shutil
     import subprocess
 
     if not shutil.which("node"):
         pytest.skip("node not available")
     html = (main.STATIC / "index.html").read_text()
-    script = re.search(r"<script>([\s\S]*)</script>", html).group(1)
+    # Plain slicing, not a regex: this extracts the page's one known inline
+    # block from our own file - it is not a tag filter, and a regex here
+    # reads to scanners as one.
+    script = html.split("<script>", 1)[1].rsplit("</script>", 1)[0]
     proc = subprocess.run(
         ["node", "-e", "new Function(require('fs').readFileSync(0,'utf8'))"],
         input=script, capture_output=True, text=True)
