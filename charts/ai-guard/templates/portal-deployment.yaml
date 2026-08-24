@@ -141,11 +141,17 @@ spec:
             - name: GRAFANA_DASHBOARD_UID
               value: {{ . | quote }}
             {{- end }}
-            {{- with .Values.portal.digest.webhookUrl }}
+            {{- /* default dict, because `helm upgrade --reuse-values`
+                 renders old values against this new template and the digest
+                 key does not exist there. Chained access on the missing key
+                 is a nil-pointer render error, which turned every
+                 reuse-values upgrade into a failure (v0.11.0). */}}
+            {{- $digest := .Values.portal.digest | default dict }}
+            {{- with $digest.webhookUrl }}
             - name: DIGEST_WEBHOOK_URL
               value: {{ . | quote }}
             {{- end }}
-            {{- if and .Values.portal.digest.webhookUrl .Values.managed.enabled
+            {{- if and $digest.webhookUrl .Values.managed.enabled
                        (or .Values.managed.adminToken.value .Values.managed.adminToken.existingSecret) }}
             # The digest task runs with no operator session; the receiver's
             # admin credential is how it reads the log store saved through
@@ -157,11 +163,11 @@ spec:
                   name: {{ .Values.managed.adminToken.existingSecret | default (printf "%s-admin" (include "ai-guard.fullname" .)) }}
                   key: adminToken
             {{- end }}
-            {{- with .Values.portal.digest.day }}
+            {{- with $digest.day }}
             - name: DIGEST_DAY
               value: {{ . | quote }}
             {{- end }}
-            {{- with .Values.portal.digest.hour }}
+            {{- with $digest.hour }}
             - name: DIGEST_HOUR
               value: {{ . | quote }}
             {{- end }}
