@@ -226,7 +226,7 @@ def test_the_api_credential_is_break_glass(managed, monkeypatch):
     assert _login(password="recovered-long-password").status_code == 200
     # The credential is not a person: the probe says so.
     who = client.get("/admin/session", headers=API_ADMIN).json()
-    assert who == {"username": "", "expires_at": None}
+    assert who == {"username": "", "expires_at": None, "role": "admin"}
 
 
 def test_password_change_with_no_account_is_409(managed, monkeypatch):

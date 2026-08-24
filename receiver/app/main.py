@@ -475,22 +475,29 @@ _MANAGED = ("/enroll", "/admin")
 _ADMIN_OPEN = ("/admin/setup", "/admin/login")
 
 
-def _admin_header_ok(header: str) -> bool:
-    """Is this Authorization header an admin?
+def _admin_role(header: str) -> str | None:
+    """Which trust level this Authorization header carries, or None.
 
     Two shapes: the optional API credential (ADMIN_TOKEN, for automation and
-    break-glass), or a live portal session minted by /admin/login. The
-    emptiness guard is not redundant: compare_digest holds two empty strings
-    equal, so without it a deployment with no ADMIN_TOKEN would let an empty
-    header in.
+    break-glass), which is always an admin because both of those are
+    operator acts; or a live portal session minted by /admin/login, which
+    carries its account's role. The emptiness guard is not redundant:
+    compare_digest holds two empty strings equal, so without it a
+    deployment with no ADMIN_TOKEN would let an empty header in.
     """
     if _EXPECTED_ADMIN and hmac.compare_digest(
         header.encode("latin-1"), _EXPECTED_ADMIN
     ):
-        return True
+        return "admin"
     if STATE is not None and header.startswith("Bearer " + _state.SESSION_PREFIX):
-        return STATE.session_user(header[len("Bearer "):]) is not None
-    return False
+        u = STATE.session_user(header[len("Bearer "):])
+        if u is not None:
+            return u.get("role") or "admin"
+    return None
+
+
+def _admin_header_ok(header: str) -> bool:
+    return _admin_role(header) is not None
 
 
 def _body_size_response(request: Request):
@@ -771,13 +778,20 @@ def _touch_device(request: Request):
         )
 
 
-def _admin_auth(authorization: str):
+def _admin_auth(authorization: str, write: bool = False):
     # Defence in depth for /admin/*, like _auth for ingest. 404 when managed
     # mode is off: routes that do not exist should not confirm they exist.
+    # write=True is the role gate: a viewer account reads everything and
+    # changes nothing, and the refusal names the reason rather than lying
+    # with a generic 401 to someone who IS authenticated.
     if STATE is None:
         raise HTTPException(404, "Not Found")
-    if not _admin_header_ok(authorization):
+    role = _admin_role(authorization)
+    if role is None:
         raise HTTPException(401, "bad token")
+    if write and role != "admin":
+        raise HTTPException(403, "this account is read-only: an admin "
+                                 "account has to make this change")
 
 
 # What can enroll. The three collector platforms, one browser profile
@@ -829,7 +843,7 @@ def enroll(req: EnrollRequest, authorization: str = Header(default="")):
 
 @app.post("/admin/enrollment-tokens")
 def mint_enrollment_token(req: MintRequest, authorization: str = Header(default="")):
-    _admin_auth(authorization)
+    _admin_auth(authorization, write=True)
     return STATE.mint_token(req.note, req.ttl_days)
 
 
@@ -843,7 +857,7 @@ def list_enrollment_tokens(authorization: str = Header(default="")):
 
 @app.post("/admin/enrollment-tokens/{tid}/revoke")
 def revoke_enrollment_token(tid: str, authorization: str = Header(default="")):
-    _admin_auth(authorization)
+    _admin_auth(authorization, write=True)
     if not STATE.revoke_token(tid):
         raise HTTPException(404, "no such active token")
     return {"ok": True}
@@ -857,7 +871,7 @@ def list_devices(authorization: str = Header(default="")):
 
 @app.post("/admin/devices/{did}/revoke")
 def revoke_device(did: str, authorization: str = Header(default="")):
-    _admin_auth(authorization)
+    _admin_auth(authorization, write=True)
     if not STATE.revoke_device(did):
         raise HTTPException(404, "no such active device")
     return {"ok": True}
@@ -961,8 +975,76 @@ def session_info(authorization: str = Header(default="")):
     if token.startswith(_state.SESSION_PREFIX):
         u = STATE.session_user(token)
         if u is not None:
-            return {"username": u["username"], "expires_at": u["expires_at"]}
-    return {"username": "", "expires_at": None}
+            return {"username": u["username"], "expires_at": u["expires_at"],
+                    "role": u.get("role") or "admin"}
+    return {"username": "", "expires_at": None, "role": "admin"}
+
+
+# -------------------------------------------------------------- accounts --
+# Admin runs the platform; viewer reads it and changes nothing - the
+# auditor, the exec, the person who needs the pages but must never be a
+# way in. Every action below lands in the audit trail with who did it.
+
+_USERNAME_RE = re.compile(r"^[a-zA-Z0-9._@-]{2,64}$")
+
+
+class UserCreate(BaseModel):
+    model_config = {"extra": "forbid"}
+    username: str = Field(min_length=2, max_length=64)
+    password: str = Field(min_length=12, max_length=256)
+    role: str = Field(min_length=1, max_length=16)
+
+
+class UserPasswordReset(BaseModel):
+    model_config = {"extra": "forbid"}
+    new: str = Field(min_length=12, max_length=256)
+
+
+@app.get("/admin/users")
+def get_users(authorization: str = Header(default="")):
+    _admin_auth(authorization)
+    return {"users": STATE.list_users()}
+
+
+@app.post("/admin/users")
+def post_user(req: UserCreate, authorization: str = Header(default="")):
+    _admin_auth(authorization, write=True)
+    if not _USERNAME_RE.match(req.username):
+        raise HTTPException(422, "usernames are 2-64 characters of letters, "
+                                 "digits, . _ @ -")
+    try:
+        return STATE.create_user(req.username, req.password, req.role,
+                                 _admin_actor(authorization))
+    except _state.AuthError as e:
+        raise HTTPException(e.status, e.detail)
+
+
+@app.post("/admin/users/{uid}/delete")
+def delete_user(uid: str, authorization: str = Header(default="")):
+    _admin_auth(authorization, write=True)
+    if not re.fullmatch(r"[0-9a-f]{16}", uid):
+        raise HTTPException(422, "malformed user id")
+    try:
+        if not STATE.delete_user(uid, _admin_actor(authorization)):
+            raise HTTPException(404, "no account with that id")
+    except _state.AuthError as e:
+        raise HTTPException(e.status, e.detail)
+    return {"deleted": uid}
+
+
+@app.post("/admin/users/{uid}/password")
+def reset_user_password(uid: str, req: UserPasswordReset,
+                        authorization: str = Header(default="")):
+    """An admin setting someone else's password - the forgotten-password
+    path. Changing your own goes through /admin/password, which proves the
+    current one."""
+    _admin_auth(authorization, write=True)
+    if not re.fullmatch(r"[0-9a-f]{16}", uid):
+        raise HTTPException(422, "malformed user id")
+    if not STATE.reset_user_password(uid, req.new,
+                                     _admin_actor(authorization)):
+        raise HTTPException(404, "no account with that id")
+    return {"reset": uid}
 
 
 # ------------------------------------------------------- central settings --
@@ -1004,6 +1086,10 @@ _STR_SETTINGS = (
     ("extension_update_url", True, 500),
     ("extension_crx_url", True, 500),
     ("extension_xpi_url", True, 500),
+    # Where event notifications go: a Slack-compatible incoming webhook.
+    # Fired on a NEW discovery candidate - the moment a human decision
+    # becomes needed - and never per finding, which would be a firehose.
+    ("webhook_url", True, 500),
 )
 
 # What the paste guard does when a marked document is pasted into an AI
@@ -1033,6 +1119,7 @@ class SettingsUpdate(BaseModel):
     extension_update_url: str | None = Field(default=None, max_length=500)
     extension_crx_url: str | None = Field(default=None, max_length=500)
     extension_xpi_url: str | None = Field(default=None, max_length=500)
+    webhook_url: str | None = Field(default=None, max_length=500)
     paste_guard_mode: str | None = Field(default=None, max_length=8)
     firefox_extension_id: str | None = Field(default=None, max_length=128)
     classification_markings: list[str] | None = Field(default=None,
@@ -1116,6 +1203,11 @@ def get_settings_secrets(authorization: str = Header(default="")):
     have SET the password, so it grants nothing they lack - but it is the
     honest statement of the property: integration secrets are recoverable
     by the admin API, unlike fleet credentials, which are hashes.
+
+    Deliberately NOT write-gated: the portal reads Loki on behalf of
+    whoever is signed in, so a viewer session reaches this hop too. What
+    the credential guards - the findings - is exactly what a viewer is
+    trusted to read, and the portal still never relays the value itself.
     """
     _admin_auth(authorization)
     s = STATE.get_settings()
@@ -1129,7 +1221,7 @@ def get_settings_secrets(authorization: str = Header(default="")):
 def put_settings(req: SettingsUpdate, authorization: str = Header(default="")):
     """Partial upsert: only the keys sent change. An explicit null deletes
     the row, which is how the environment value comes back into effect."""
-    _admin_auth(authorization)
+    _admin_auth(authorization, write=True)
     by = _admin_actor(authorization)
 
     if "corp_domains" in req.model_fields_set:
@@ -1222,7 +1314,7 @@ async def test_log_store_push(authorization: str = Header(default="")):
     collector and never stored. That is invisible until someone looks at a
     dashboard; here it is one button during setup.
     """
-    _admin_auth(authorization)
+    _admin_auth(authorization, write=True)
     url, username, password = _effective_log_push()
     if not url:
         raise HTTPException(
@@ -1361,7 +1453,7 @@ def put_registry_entries(req: RegistryEntriesUpdate,
     before anything is written, and the domain map refreshes on the way
     out, so a defined tool normalizes findings immediately and reaches
     collectors on their next check-in."""
-    _admin_auth(authorization)
+    _admin_auth(authorization, write=True)
     by = _admin_actor(authorization)
 
     shipped = _load_registry() or {"tools": []}
@@ -1443,6 +1535,29 @@ def _candidate_key(kind: str, name: str) -> str:
     return "%s:%s" % (kind, slug[:80])
 
 
+def _notify_webhook(text: str):
+    """Fire-and-forget to the operator's incoming webhook, if one is set.
+
+    A thread rather than the request: ingest must never wait on someone
+    else's Slack. Failures are logged and dropped, because a webhook outage
+    must not become a reason findings bounce. The payload is the plain
+    {"text": ...} shape Slack-compatible incoming webhooks accept.
+    """
+    if STATE is None:
+        return
+    url = STATE.get_setting("webhook_url")
+    if not url:
+        return
+
+    def post():
+        try:
+            httpx.post(url, json={"text": text}, timeout=5)
+        except Exception as e:  # noqa: BLE001 - a log line is the whole story
+            log.warning("webhook notification failed: %s", type(e).__name__)
+
+    threading.Thread(target=post, daemon=True).start()
+
+
 @app.post("/candidates")
 def post_candidates(req: CandidatesPost, request: Request,
                     authorization: str = Header(default="")):
@@ -1454,6 +1569,7 @@ def post_candidates(req: CandidatesPost, request: Request,
     source = device["serial"] if device else "shared-token"
 
     accepted = 0
+    new_names = []
     for c in req.candidates:
         if c.kind not in _CANDIDATE_KINDS:
             raise HTTPException(422, "unknown candidate kind: %s" % c.kind[:16])
@@ -1467,11 +1583,18 @@ def post_candidates(req: CandidatesPost, request: Request,
         for d in c.domains:
             if not _CANDIDATE_DOMAIN.match(d):
                 raise HTTPException(422, "bad domain: %s" % d[:60])
-        STATE.upsert_candidate(
+        fresh = STATE.upsert_candidate(
             _candidate_key(c.kind, c.name), c.kind, c.name, c.vendor,
             c.category, c.confidence, sorted(set(c.domains)), c.devices,
             c.evidence, source)
+        if fresh:
+            new_names.append(c.name)
         accepted += 1
+    if new_names:
+        _notify_webhook(
+            "ai-guard: %d new AI tool%s in the review queue: %s"
+            % (len(new_names), "" if len(new_names) == 1 else "s",
+               ", ".join(sorted(new_names)[:10])))
     return {"accepted": accepted}
 
 
@@ -1502,10 +1625,13 @@ def _note_mcp_candidates(f: Finding):
         key = _candidate_key("mcp_server", name)
         if key.split(":", 1)[1] in _REGISTRY_IDS:
             continue
-        STATE.observe_candidate(
-            key, "mcp_server", name,
-            "MCP server defined in %s config" % f.tool, "endpoint",
-            f.device if f.device != "unknown" else "")
+        if STATE.observe_candidate(
+                key, "mcp_server", name,
+                "MCP server defined in %s config" % f.tool, "endpoint",
+                f.device if f.device != "unknown" else ""):
+            _notify_webhook(
+                "ai-guard: unknown MCP server %r seen in a %s config - now"
+                " in the review queue" % (name, f.tool))
 
 
 @app.get("/admin/candidates")
@@ -1535,12 +1661,65 @@ def get_candidates(authorization: str = Header(default="")):
 
 @app.post("/admin/candidates/{key}/dismiss")
 def dismiss_candidate(key: str, authorization: str = Header(default="")):
-    _admin_auth(authorization)
+    _admin_auth(authorization, write=True)
     if not re.fullmatch(r"[a-z0-9_:-]{1,100}", key):
         raise HTTPException(422, "malformed candidate key")
     if not STATE.dismiss_candidate(key, _admin_actor(authorization)):
         raise HTTPException(404, "no undismissed candidate with that key")
     return {"dismissed": key}
+
+
+class FindingStatusWrite(BaseModel):
+    model_config = {"extra": "forbid"}
+    key: str = Field(min_length=1, max_length=500)
+    status: str = Field(min_length=1, max_length=16)
+    reason: str = Field(default="", max_length=500)
+
+
+class FindingStatusClear(BaseModel):
+    model_config = {"extra": "forbid"}
+    key: str = Field(min_length=1, max_length=500)
+
+
+@app.get("/admin/finding-status")
+def get_finding_statuses(authorization: str = Header(default="")):
+    """The human answers to derived findings: acknowledged, or accepted with
+    a reason. The findings themselves live in the log store and are
+    recomputed every load; only the answer is state, and only the answer
+    is here. The key is opaque to the receiver on purpose - the portal
+    composes it from the finding's identity, and a receiver that parsed it
+    would couple itself to a shape it does not own."""
+    _admin_auth(authorization)
+    return {"statuses": STATE.list_finding_statuses()}
+
+
+@app.put("/admin/finding-status")
+def put_finding_status(req: FindingStatusWrite,
+                       authorization: str = Header(default="")):
+    _admin_auth(authorization, write=True)
+    try:
+        STATE.set_finding_status(req.key, req.status, req.reason,
+                                 _admin_actor(authorization))
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    return {"key": req.key, "status": req.status}
+
+
+@app.post("/admin/finding-status/clear")
+def clear_finding_status(req: FindingStatusClear,
+                         authorization: str = Header(default="")):
+    _admin_auth(authorization, write=True)
+    if not STATE.clear_finding_status(req.key, _admin_actor(authorization)):
+        raise HTTPException(404, "no status recorded for that key")
+    return {"cleared": req.key}
+
+
+@app.get("/admin/events")
+def get_events(limit: int = 200, authorization: str = Header(default="")):
+    """The audit trail. Every admin write already records who did what and
+    when; this read is what turns that from a diary into accountability."""
+    _admin_auth(authorization)
+    return {"events": STATE.list_events(min(max(int(limit), 1), 1000))}
 
 
 @app.get("/admin/governance")
@@ -1556,7 +1735,7 @@ def put_governance(req: GovernanceUpdate, authorization: str = Header(default=""
     Validation happens for the whole batch before anything is written, so a
     422 means nothing changed rather than half a batch applied.
     """
-    _admin_auth(authorization)
+    _admin_auth(authorization, write=True)
     by = _admin_actor(authorization)
 
     for d in req.decisions:
@@ -1600,11 +1779,16 @@ def change_password(req: PasswordChangeRequest,
     _admin_auth(authorization)
     token = _bearer(authorization)
     is_session = token.startswith(_state.SESSION_PREFIX)
+    # A session changes its own account's password, whatever its role: a
+    # viewer owning their credential is not a write to the platform. The
+    # API credential path targets the oldest admin - break-glass.
+    user = STATE.session_user(token) if is_session else None
     try:
         STATE.change_password(
             req.new,
             current=req.current if is_session else None,
             keep_session=token if is_session else None,
+            user_id=user["user_id"] if user else None,
         )
     except _state.AuthError as e:
         raise HTTPException(e.status, e.detail)
