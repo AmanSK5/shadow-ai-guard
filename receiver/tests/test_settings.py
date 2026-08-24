@@ -292,7 +292,8 @@ def test_the_firefox_id_refuses_whitespace(managed):
 
 
 def test_the_delivery_urls_must_be_urls(managed):
-    for key in ("extension_update_url", "extension_xpi_url"):
+    for key in ("extension_update_url", "extension_crx_url",
+                "extension_xpi_url"):
         bad = client.put("/admin/settings", headers=ADMIN, json={key: "files/x"})
         assert bad.status_code == 422, key
         ok = client.put("/admin/settings", headers=ADMIN,

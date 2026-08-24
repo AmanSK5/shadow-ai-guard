@@ -21,6 +21,7 @@ the portal image cannot see the endpoint/ tree at build time.
 import json
 import re
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from xml.sax.saxutils import escape as _xml
@@ -651,3 +652,149 @@ spec:
                 - name: AIGUARD_SCANNER_ID
                   value: "scanner"
 """
+
+
+# ------------------------------------------------- extension source & hosting
+
+# Verified copies of extension/src (the same byte-equality test as the
+# collector scripts), so an operator without a checkout can download the
+# source, pack it, and host it - the whole of extension/README.md's setup
+# without the repo. The zip does README step 1 for them: the receiver
+# origin substituted into manifest.json's host_permissions.
+EXTENSION_SOURCE_FILES = ("manifest.json", "background.js", "content.js",
+                          "guard.js", "managed-schema.json")
+
+# The shipped manifest's placeholder receiver origin. Substituted as a
+# byte-exact anchor, like the collector scripts: a manifest edit that
+# reshapes this line must fail loudly at generation, not produce a zip
+# whose report POSTs die on CORS.
+_MANIFEST_ORIGIN_ANCHOR = '"https://ai-guard.example.com/*"'
+
+
+def extension_version(src_dir: str) -> str:
+    """The version of the bundled extension source.
+
+    The generated update manifests carry it, because the version in an
+    update manifest MUST match the packed extension's own, and the packed
+    extension is (for anyone using the guided setup) exactly this source.
+    """
+    try:
+        manifest = json.loads((Path(src_dir) / "manifest.json").read_text())
+    except (OSError, ValueError) as e:
+        raise ArtifactError("bundled extension manifest not readable (%s)"
+                            % type(e).__name__)
+    version = str(manifest.get("version", ""))
+    if not re.fullmatch(r"[0-9]+(\.[0-9]+){0,3}", version):
+        raise ArtifactError("the bundled extension manifest has no usable"
+                            " version")
+    return version
+
+
+def generate_extension_source(src_dir: str, url: str) -> tuple[str, bytes]:
+    """A zip of the extension source, pointed at this deployment's receiver.
+
+    Everything ships byte-identical except manifest.json, where the
+    placeholder origin in host_permissions becomes the receiver's - the one
+    edit the README requires before packing. Deterministic timestamps, so
+    two downloads of the same release are the same bytes.
+    """
+    import io
+    import zipfile
+
+    _refuse_unembeddable(((url, "receiver URL"),))
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme not in ("http", "https") or not parts.netloc:
+        raise ArtifactError("the receiver URL does not parse as a URL")
+    origin = "%s://%s" % (parts.scheme, parts.netloc)
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for name in EXTENSION_SOURCE_FILES:
+            path = Path(src_dir) / name
+            try:
+                data = path.read_bytes()
+            except OSError as e:
+                raise ArtifactError("bundled extension source not readable:"
+                                    " %s (%s)" % (name, type(e).__name__))
+            if name == "manifest.json":
+                text = data.decode()
+                if text.count(_MANIFEST_ORIGIN_ANCHOR) != 1:
+                    raise ArtifactError(
+                        "substitution anchor not found exactly once in"
+                        " manifest.json - the extension manifest changed"
+                        " shape; update _MANIFEST_ORIGIN_ANCHOR to match")
+                data = text.replace(_MANIFEST_ORIGIN_ANCHOR,
+                                    '"%s/*"' % origin).encode()
+            info = zipfile.ZipInfo("ai-guard-extension/" + name,
+                                   date_time=(1980, 1, 1, 0, 0, 0))
+            info.external_attr = 0o644 << 16
+            z.writestr(info, data)
+    return "ai-guard-extension-source.zip", buf.getvalue()
+
+
+def generate_updates_xml(extension_id: str, crx_url: str,
+                         version: str) -> tuple[str, str]:
+    """The Chromium update manifest, filled in from Settings.
+
+    Mirrors extension/updates.xml.template; the operator hosts this next to
+    the .crx instead of hand-editing the template. The version is the
+    bundled source's own - see extension_version().
+    """
+    if not re.fullmatch(r"[a-p]{32}", extension_id or ""):
+        raise ArtifactError(
+            "the extension id does not look like a Chromium extension id"
+            " (32 letters a-p); check Settings")
+    _refuse_unembeddable(((crx_url, "packed .crx URL"),))
+    return "updates.xml", _UPDATES_XML_TEMPLATE % {
+        "id": _xml(extension_id), "crx": _xml(crx_url),
+        "version": _xml(version),
+    }
+
+
+_UPDATES_XML_TEMPLATE = """\
+<?xml version='1.0' encoding='UTF-8'?>
+<!--
+  ai-guard extension update manifest, generated by the portal. Host this
+  file at the update manifest URL saved in Settings, next to the packed
+  .crx. On every release: pack the new source with the SAME .pem, upload
+  the versioned .crx, and download this file again - the version below
+  must always match the packed manifest's.
+-->
+<gupdate xmlns='http://www.google.com/update2/response' protocol='2.0'>
+  <app appid='%(id)s'>
+    <updatecheck
+      codebase='%(crx)s'
+      version='%(version)s' />
+  </app>
+</gupdate>
+"""
+
+
+def generate_firefox_updates_json(gecko_id: str, xpi_url: str,
+                                  version: str) -> tuple[str, str]:
+    """The Firefox update manifest, filled in from Settings.
+
+    Mirrors extension/firefox-updates.json.template. Serialized with
+    json.dumps rather than formatted into a string: the gecko id is
+    operator-supplied and lands as a JSON key.
+    """
+    _refuse_unembeddable(((xpi_url, "signed .xpi URL"),
+                          (gecko_id, "Firefox extension id")))
+    body = {
+        "_comment": [
+            "ai-guard Firefox update manifest, generated by the portal.",
+            "Host this file at the URL named in the extension manifest's",
+            "browser_specific_settings.gecko.update_url, next to the",
+            "SIGNED .xpi. On every release: rebuild the .xpi, have AMO",
+            "sign it, upload the signed file, and download this file",
+            "again - the version below must match the packed manifest's.",
+        ],
+        "addons": {
+            gecko_id: {
+                "updates": [
+                    {"version": version, "update_link": xpi_url}
+                ]
+            }
+        },
+    }
+    return "firefox-updates.json", json.dumps(body, indent=2) + "\n"

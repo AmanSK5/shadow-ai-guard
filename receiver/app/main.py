@@ -998,9 +998,11 @@ _STR_SETTINGS = (
     ("grafana_dashboard_uid", False, 128),
     ("overview_widgets", False, 500),
     # Where the packed extension is served from: the Chromium update
-    # manifest, and the Mozilla-signed .xpi. The portal bakes these into
-    # the Windows deploy scripts and the Firefox policy.
+    # manifest, the packed .crx it points at, and the Mozilla-signed .xpi.
+    # The portal bakes these into the Windows deploy scripts, the Firefox
+    # policy, and the generated update manifests.
     ("extension_update_url", True, 500),
+    ("extension_crx_url", True, 500),
     ("extension_xpi_url", True, 500),
 )
 
@@ -1029,6 +1031,7 @@ class SettingsUpdate(BaseModel):
     grafana_dashboard_uid: str | None = Field(default=None, max_length=128)
     overview_widgets: str | None = Field(default=None, max_length=500)
     extension_update_url: str | None = Field(default=None, max_length=500)
+    extension_crx_url: str | None = Field(default=None, max_length=500)
     extension_xpi_url: str | None = Field(default=None, max_length=500)
     paste_guard_mode: str | None = Field(default=None, max_length=8)
     firefox_extension_id: str | None = Field(default=None, max_length=128)
@@ -1091,6 +1094,7 @@ def get_settings(authorization: str = Header(default="")):
         "grafana_dashboard_uid": plain("grafana_dashboard_uid"),
         "overview_widgets": plain("overview_widgets"),
         "extension_update_url": plain("extension_update_url"),
+        "extension_crx_url": plain("extension_crx_url"),
         "extension_xpi_url": plain("extension_xpi_url"),
         "paste_guard_mode": plain("paste_guard_mode"),
         "firefox_extension_id": plain("firefox_extension_id"),

@@ -1,0 +1,38 @@
+{
+  "type": "object",
+  "properties": {
+    "allowedDomains": {
+      "title": "Allowed email domains",
+      "description": "Account domains that are NOT flagged, e.g. example.com",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "reportEndpoint": {
+      "title": "Report endpoint",
+      "description": "HTTPS URL that receives flag events as JSON POST",
+      "type": "string"
+    },
+    "deviceIdentifier": {
+      "title": "Device identifier",
+      "description": "Value the MDM stamps in so flags can be attributed to a device or enrolled user",
+      "type": "string"
+    },
+    "authToken": {
+      "title": "Auth token",
+      "description": "Bearer token sent to the report endpoint: the receiver's shared AUTH_TOKEN, or an enrollment token (aige_...) from a managed-mode receiver, which this browser profile exchanges once for its own device credential",
+      "type": "string"
+    },
+    "pasteGuardMode": {
+      "title": "Paste guard mode",
+      "description": "off, warn (intercept with a paste-anyway override), or block. Unset behaves as warn.",
+      "type": "string",
+      "enum": ["off", "warn", "block"]
+    },
+    "classificationMarkings": {
+      "title": "Classification markings",
+      "description": "Document classification labels the paste guard flags, matched case-insensitively as phrases (e.g. Client Confidential). Bare CONFIDENTIAL in caps is always flagged. Unset uses the built-in defaults in guard.js.",
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

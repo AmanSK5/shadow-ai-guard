@@ -374,7 +374,8 @@ const NAV = [
 // not recognised. Two lists that must agree, with nothing enforcing it.
 // 'wizard' is reachable by fragment but absent from the nav: it is a door
 // you walk through once, not a place to live.
-const VIEWS = NAV.flatMap(sec => sec.items.map(([id]) => id)).concat(['wizard']);
+const VIEWS = NAV.flatMap(sec => sec.items.map(([id]) => id))
+  .concat(['wizard', 'extsetup']);
 const fromHash = () => {
   const h = (location.hash || '').replace(/^#/, '');
   return VIEWS.includes(h) ? h : 'setup';
@@ -1433,11 +1434,14 @@ function settingRow(key, label, placeholder, note) {
     <div class="src-note">${esc(note)}${note ? ' ' : ''}${secretNote || src}</div></dd>`;
 }
 
-// The paste guard and extension-delivery settings, shared by the wizard
-// and the Settings view. The paste guard IS the browser extension - one
-// package, one policy - and these values are baked into every generated
-// policy artifact, so a change here means regenerate and re-push.
-function pasteGuardFields() {
+// The paste guard and extension-delivery settings, shared by the Settings
+// view and the extension setup guide. The paste guard IS the browser
+// extension - one package, one policy - and these values are baked into
+// every generated policy artifact, so a change here means regenerate and
+// re-push. Split in two: behaviour (what the guard does) and delivery
+// (where the packed extension lives), because the guide puts them on
+// different pages while Settings shows everything flat.
+function pasteGuardBehaviourFields() {
   const s = (SETTINGS && SETTINGS.settings) || {};
   const mode = (s.paste_guard_mode || {}).value || '';
   const marksSet = (s.classification_markings || {}).source === 'db';
@@ -1462,12 +1466,20 @@ function pasteGuardFields() {
       <div class="src-note">Document phrases the guard looks for in pastes,
       one per line. Save an empty box to use no markings; clear to go back
       to the default five. What people paste never leaves their device -
-      only which detector matched gets reported.</div></dd>
+      only which detector matched gets reported.</div></dd>`;
+}
+
+function extensionDeliveryFields() {
+  return `
     ${settingRow('firefox_extension_id', 'Firefox extension ID (gecko id)',
       'ai-guard@your-org.example',
       'The id you set in the manifest (browser_specific_settings.gecko.id).'
       + ' Not the same as the Chromium id. Needed for the Firefox'
       + ' downloads.')}
+    ${settingRow('extension_crx_url', 'Packed .crx URL (Chromium)',
+      'https://files.example.com/ai-guard-1.0.0.crx',
+      'Where you host the packed .crx. The generated updates.xml points'
+      + ' browsers at it.')}
     ${settingRow('extension_update_url', 'Chromium update manifest URL',
       'https://files.example.com/updates.xml',
       'Where you host the packed extension update manifest (updates.xml).'
@@ -1476,8 +1488,12 @@ function pasteGuardFields() {
       'https://files.example.com/ai-guard-1.0.0.xpi',
       'Where you host the SIGNED .xpi from addons.mozilla.org'
       + ' (self-distribution). Firefox only installs Mozilla-signed'
-      + ' extensions - extension/README.md explains the one-time signing'
-      + ' step. Needed for the Firefox downloads.')}`;
+      + ' extensions - the extension setup guide covers the one-time'
+      + ' signing step. Needed for the Firefox downloads.')}`;
+}
+
+function pasteGuardFields() {
+  return pasteGuardBehaviourFields() + extensionDeliveryFields();
 }
 
 // The last result of a connection test, rendered where its button lives.
@@ -1512,6 +1528,218 @@ const logStoreTests = () => `<div style="margin-top:8px">
   <button class="mini" data-act="run-test" data-key="log-store-push">test: receiver can write</button>
   <button class="mini" data-act="run-test" data-key="log-store-read">test: portal can read</button>
 </div>${testNote('log-store-push')}${testNote('log-store-read')}`;
+
+// ------------------------------------------------- extension setup guide --
+// The pack-and-host workflow from extension/README.md as six short pages,
+// so setting the extension up needs neither a checkout nor the README:
+// the source download is pre-configured, the update manifests are
+// generated, and the hosting URLs are probed. Reachable from the wizard's
+// step 5 and from Settings; every value it saves is the same central
+// setting the flat Settings rows edit.
+let EXTPAGE = 1;
+
+function extSettingsState() {
+  const s = (SETTINGS && SETTINGS.settings) || {};
+  const v = k => ((s[k] || {}).value || '');
+  return {
+    id: v('extension_id'), crx: v('extension_crx_url'),
+    upd: v('extension_update_url'), gecko: v('firefox_extension_id'),
+    xpi: v('extension_xpi_url'), mode: v('paste_guard_mode'),
+  };
+}
+
+// The wizard step-5 summary: where extension setup stands, at a glance.
+function extStatusRows() {
+  const st = extSettingsState();
+  const pill = val => val
+    ? `<span class="pill p-ok">set</span> <span class="mono" style="font-size:11px">${esc(val)}</span>`
+    : '<span class="none">not set</span>';
+  return `<dl class="kv">
+    <dt>Chromium extension ID</dt><dd>${pill(st.id)}</dd>
+    <dt>Chromium hosting</dt><dd>${pill(st.crx && st.upd ? 'crx + updates.xml URLs' : st.crx || st.upd)}</dd>
+    <dt>Firefox (optional)</dt><dd>${pill(st.gecko && st.xpi ? st.gecko : st.gecko || st.xpi)}</dd>
+    <dt>Paste guard mode</dt><dd><span class="pill ${st.mode === 'block' ? 'p-warn' : 'p-ok'}">${esc(st.mode || 'warn (default)')}</span></dd>
+  </dl>`;
+}
+
+const extCmd = c => `<div style="display:flex;gap:8px;align-items:flex-start;margin:8px 0">
+  <pre class="mono" style="margin:0;padding:8px 10px;background:var(--sf2);border:1px solid var(--bd);border-radius:6px;overflow-x:auto;flex:1;font-size:12px">${esc(c)}</pre>
+  <button class="mini" data-act="copy" data-copy="${esc(c)}">copy</button></div>`;
+
+async function extSetup() {
+  const gate = CFG.managed && CFG.managed.enabled
+    ? '' : (managedGate('Extension setup') || '<h2>Extension setup</h2>');
+  if (gate) return gate;
+  const st = extSettingsState();
+  const ver = (CFG.managed && CFG.managed.extension_version) || '';
+  const rx = (CFG.managed && CFG.managed.receiver_public_url_default) || '';
+  const ready = CFG.managed && CFG.managed.artifacts_ready;
+  const crxName = 'ai-guard-' + (ver || 'VERSION') + '.crx';
+  const xpiName = 'ai-guard-' + (ver || 'VERSION') + '.xpi';
+
+  const PAGES = [
+    ['Download', !!ready],
+    ['Pack', null],
+    ['Identity', !!st.id],
+    ['Host it', !!(st.crx && st.upd)],
+    ['Firefox', !!(st.gecko && st.xpi)],
+    ['Behaviour', null],
+  ];
+  const chips = PAGES.map(([t, done], i) => `<button class="mini"
+    ${EXTPAGE === i + 1 ? 'style="border-color:var(--pri);color:var(--pri)"' : ''}
+    data-act="ext-page" data-key="${i + 1}">${i + 1} · ${t}${done === true ? ' ✓' : ''}</button>`).join(' ');
+
+  const dlBtn = (kind, label) => `<button class="mini" style="padding:6px 14px"
+    data-act="artifact" data-key="${kind}">${label}</button>`;
+
+  let body = '';
+  if (EXTPAGE === 1) body = `
+    <h3>Download the pre-configured source</h3>
+    <p class="lede">The extension is not on a web store: you pack it once and
+    your browsers install it from where you host it. This download is the
+    extension source shipped with this portal${ver ? ` (version ${esc(ver)})` : ''},
+    with its manifest already pointed at
+    <span class="mono">${esc(rx || 'your receiver')}</span> - the one edit
+    packing needs. Unzip it somewhere you will keep: repacking a later
+    release must use the same folder name and the same key.</p>
+    ${ready ? dlBtn('extension-source', 'download the extension source (zip)')
+      : '<div class="note">No public receiver URL yet - the manifest bakes the origin your browsers report to. Save one in the wizard\'s step 1 (or Settings) and this download appears.</div>'}
+    <p class="src-note">If the receiver URL ever changes, download again and
+    repack - the extension reads no central config, so the origin lives in
+    the package. Trimming the covered AI sites is possible too (edit
+    host_permissions and both content_scripts match lists together), but the
+    default set is the registry's browser surface and most deployments ship
+    it as is.</p>`;
+  if (EXTPAGE === 2) body = `
+    <h3>Pack it, and keep the key</h3>
+    <p class="lede">Packing happens in any Chromium browser on your own
+    machine and produces two files: the extension package (.crx) and its
+    signing key (.pem).</p>
+    <ol class="lede" style="line-height:2">
+      <li>Open <span class="mono">chrome://extensions</span>, switch on
+        <b>Developer mode</b> (top right).</li>
+      <li><b>Pack extension</b> → root directory = the unzipped
+        <span class="mono">ai-guard-extension</span> folder. Leave the key
+        field blank the first time.</li>
+      <li>You get <span class="mono">ai-guard-extension.crx</span> and
+        <span class="mono">ai-guard-extension.pem</span>.</li>
+    </ol>
+    <div class="note">The .pem is the signing key. Store it in your password
+    manager and never commit it: losing it changes the extension id and
+    forces a full redeployment through your MDM.</div>
+    <p class="lede" style="margin-top:10px">Derive the 32-letter extension id
+    (you will save it on the next page):</p>
+    ${extCmd("openssl rsa -in ai-guard-extension.pem -pubout -outform DER 2>/dev/null | shasum -a 256 | cut -c1-32 | tr '0-9a-f' 'a-p'")}
+    <p class="lede">Then pin the identity so every future repack keeps the
+    same id: derive the public key,</p>
+    ${extCmd('openssl rsa -in ai-guard-extension.pem -pubout -outform DER 2>/dev/null | openssl base64 -A; echo')}
+    <p class="lede">add it to <span class="mono">manifest.json</span> as a
+    top-level <span class="mono">"key": "&lt;that value&gt;"</span>, and pack
+    again - this time supplying the .pem. Rename the result to a versioned
+    name: <span class="mono">${esc(crxName)}</span>.</p>`;
+  if (EXTPAGE === 3) body = `
+    <h3>Save the Chromium identity</h3>
+    <p class="lede">The id from the previous page's first command (or from
+    <span class="mono">chrome://extensions</span> on any machine with the
+    packed extension loaded). Every Chromium policy artifact is keyed on it -
+    without it the browser installs nothing.</p>
+    <dl class="kv">
+      <dt>Chromium extension ID</dt><dd>
+        <input id="set-extid" class="mfield" style="min-width:340px"
+          placeholder="the 32-letter id, a-p only" value="${esc(st.id)}">
+        <button class="mini" data-act="save-extid">save</button>
+        <div class="src-note">32 letters a-p. Anything else means the id was
+        read from the wrong place - it is not the key, and not a hash.</div></dd>
+    </dl>`;
+  if (EXTPAGE === 4) body = `
+    <h3>Host the package</h3>
+    <p class="lede">Two small files go on HTTPS anywhere every browser in
+    the fleet can fetch: the packed <span class="mono">${esc(crxName)}</span>
+    and an update manifest (<span class="mono">updates.xml</span>) that
+    points at it. Any static host or artifact pipeline your org already
+    trusts works; serve the .crx as
+    <span class="mono">application/x-chrome-extension</span>.</p>
+    <dl class="kv">
+      ${settingRow('extension_crx_url', 'Packed .crx URL',
+        'https://files.example.com/' + crxName,
+        'The public URL of the versioned .crx. Save it first; the update manifest below is generated from it.')}
+    </dl>
+    <p class="lede" style="margin:10px 0 0">${st.crx && st.id
+      ? 'Download the generated update manifest and host it next to the .crx:'
+      : 'Save the .crx URL (and the id on the previous page) and the generated update manifest appears here:'}</p>
+    ${st.crx && st.id ? dlBtn('extension-updates-xml', 'download updates.xml') : ''}
+    <dl class="kv" style="margin-top:10px">
+      ${settingRow('extension_update_url', 'Update manifest URL',
+        'https://files.example.com/updates.xml',
+        'Where you put updates.xml. The install policies point every browser at this URL, and it is how future releases roll out - pack, upload, replace updates.xml, done.')}
+    </dl>
+    ${st.upd ? `<div style="margin-top:8px">
+      <button class="mini" data-act="run-test" data-key="extension-updates">probe the hosted manifest</button>
+    </div>${testNote('extension-updates')}` : ''}`;
+  if (EXTPAGE === 5) body = `
+    <h3>Firefox (skip if you do not deploy it)</h3>
+    <p class="lede">Firefox refuses unsigned extensions on release builds,
+    with no enterprise override, so it takes three extra one-time steps:
+    give the extension a Firefox identity, have Mozilla sign it, and host
+    the signed file.</p>
+    <p class="lede"><b>1 · Identity.</b> In your unzipped source, edit
+    <span class="mono">manifest.json</span> →
+    <span class="mono">browser_specific_settings.gecko</span>: set
+    <span class="mono">id</span> to an address-shaped id you own (e.g.
+    <span class="mono">ai-guard@your-org.example</span>) and
+    <span class="mono">update_url</span> to where you will host
+    <span class="mono">firefox-updates.json</span>. Then build the .xpi -
+    an .xpi is a zip of the files themselves, not of the folder:</p>
+    ${extCmd('cd ai-guard-extension && zip -r -FS ../' + xpiName + ' manifest.json background.js content.js guard.js managed-schema.json')}
+    <p class="lede"><b>2 · Signing.</b> Submit that file to
+    addons.mozilla.org as a <b>self-distributed</b> add-on ("On your own
+    site" at submission). Mozilla signs it without listing it publicly,
+    usually in minutes. The file you host is the one AMO returns, not the
+    one you built - a signed .xpi contains
+    <span class="mono">META-INF/mozilla.rsa</span>.</p>
+    <p class="lede"><b>3 · Host.</b> The signed .xpi and the generated
+    <span class="mono">firefox-updates.json</span> go next to the Chromium
+    files (serve the .xpi as
+    <span class="mono">application/x-xpinstall</span>).</p>
+    <dl class="kv">
+      ${settingRow('firefox_extension_id', 'Firefox extension ID (gecko id)',
+        'ai-guard@your-org.example',
+        'The id you set in the manifest. Not the 32-letter Chromium id.')}
+      ${settingRow('extension_xpi_url', 'Signed .xpi URL',
+        'https://files.example.com/' + xpiName,
+        'The public URL of the SIGNED file from AMO.')}
+    </dl>
+    ${st.gecko && st.xpi ? `<p class="lede" style="margin:10px 0 0">Host this
+      next to it, at the update_url you put in the manifest:</p>
+      ${dlBtn('firefox-updates-json', 'download firefox-updates.json')}
+      <div style="margin-top:8px">
+        <button class="mini" data-act="run-test" data-key="extension-xpi">probe the hosted .xpi (checks the Mozilla signature)</button>
+      </div>${testNote('extension-xpi')}` : ''}`;
+  if (EXTPAGE === 6) body = `
+    <h3>What the guard does</h3>
+    <p class="lede">Both values are baked into every policy download, so a
+    later change here means regenerate and re-push. The usual path is warn
+    for a couple of weeks, then block once the override count has had its
+    policy conversation.</p>
+    <dl class="kv">${pasteGuardBehaviourFields()}</dl>
+    <p class="lede" style="margin-top:14px">That is the one-time work done.
+    The policy downloads - pre-filled with all of this plus a fresh
+    enrollment token each - are in the wizard's step 7, and pushing those
+    through your MDM is the actual rollout.</p>
+    <button class="mini" style="padding:6px 14px" data-act="open-wizard">back to the setup wizard</button>`;
+
+  return `<h2>Extension setup</h2>
+  <p class="lede">The browser extension, from source to hosted package, one
+  step at a time. Nothing here needs a checkout, and every saved value stays
+  editable under Settings.</p>
+  ${SETMSG ? `<div class="note">${esc(SETMSG)}</div>` : ''}
+  <div style="margin:12px 0">${chips}</div>
+  <div class="wcard" style="margin-bottom:10px">${body}</div>
+  <div style="margin:14px 0">
+    ${EXTPAGE > 1 ? `<button class="mini" data-act="ext-page" data-key="${EXTPAGE - 1}">← back</button>` : ''}
+    ${EXTPAGE < 6 ? `<button class="mini" data-act="ext-page" data-key="${EXTPAGE + 1}">next →</button>` : ''}
+  </div>`;
+}
 
 // The first-run wizard: everything a fresh managed install needs, in
 // order, on one page. Every step is skippable and everything here is
@@ -1628,19 +1856,18 @@ async function wizard() {
   <div class="wcard" style="margin-bottom:10px"><h3>5 · Browser extension &amp; paste guard</h3>
   <p class="lede" style="margin-bottom:10px">One extension does both jobs:
   it reports which account is signed into each AI site, and its paste guard
-  warns or blocks risky pastes. You pack it once (extension/README.md), then
-  everything you set here gets baked into the ready-made policy downloads in
-  step 7. Fine to skip on a first pass and come back.</p>
-  <dl class="kv">
-    <dt>Chromium extension ID</dt><dd>
-      <input id="set-extid" class="mfield" style="min-width:340px"
-        placeholder="the 32-letter id from chrome://extensions" value="${esc(eid)}">
-      <button class="mini" data-act="save-extid">save</button>
-      <div class="src-note">The 32-letter id Chrome gives the packed
-      extension - read it from chrome://extensions on a machine that has it.
-      Needed for the Chromium downloads.</div></dd>
-    ${pasteGuardFields()}
-  </dl></div>
+  warns or blocks risky pastes. It is a one-time pack-and-host, and the
+  guided setup walks it one step at a time - download the pre-configured
+  source here, no checkout needed. Everything it saves gets baked into the
+  ready-made policy downloads in step 7. Fine to skip on a first pass and
+  come back.</p>
+  ${extStatusRows()}
+  <div style="margin-top:10px">
+    <button class="mini" style="padding:6px 14px" data-act="ext-open">open the extension setup</button>
+    <span class="src-note" style="margin-left:8px">Six short steps: download,
+    pack, identity, hosting, Firefox, behaviour. Each value is also editable
+    flat under Settings.</span>
+  </div></div>
 
   <div class="wcard" style="margin-bottom:10px"><h3>6 · Alerting and Grafana (optional)</h3>
   <dl class="kv">
@@ -1718,7 +1945,12 @@ function managedSettings() {
       <div class="src-note">Used to generate the extension's managed-policy
       artifact. Empty clears it.</div></dd>
     ${pasteGuardFields()}
-  </dl></div>
+  </dl>
+  <div style="margin-top:10px">
+    <button class="mini" data-act="ext-open">open the extension setup</button>
+    <span class="src-note" style="margin-left:8px">The guided version of
+    these fields: pack, host and sign, one step at a time.</span>
+  </div></div>
 
   <div class="wcard" style="margin-bottom:10px"><h3>Receiver</h3>
   <dl class="kv">
@@ -2373,6 +2605,16 @@ async function managedAction(act, el) {
     history.replaceState(null, '', '#wizard');
     drawNav(); render(); return;
   }
+  if (act === 'ext-open') {
+    view = 'extsetup'; detail = null;
+    history.replaceState(null, '', '#extsetup');
+    drawNav(); render(); return;
+  }
+  if (act === 'ext-page') {
+    EXTPAGE = Math.min(6, Math.max(1, parseInt(el.getAttribute('data-key'), 10) || 1));
+    SETMSG = '';
+    render(); return;
+  }
   if (act === 'save-domains' || act === 'clear-domains' || act === 'save-extid') {
     const body = act === 'save-domains'
       ? {corp_domains: _val('set-domains').split(',').map(s => s.trim()).filter(Boolean)}
@@ -2499,6 +2741,7 @@ async function render() {
   if (view === 'fleet') { app.innerHTML = await fleet(); return; }
   if (view === 'tokens') { app.innerHTML = await tokens(); return; }
   if (view === 'wizard') { app.innerHTML = await wizard(); return; }
+  if (view === 'extsetup') { app.innerHTML = await extSetup(); return; }
   if (view === 'registry') { app.innerHTML = await registryView(); return; }
   app.innerHTML = ({setup, overview, devices, people, tools, coverage,
                     dashboard, personal, mcp})[view]();

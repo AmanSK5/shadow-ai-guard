@@ -72,18 +72,23 @@ through enterprise browser policy. The one-time work is:
 After that, everything day-to-day (mode changes, domain changes, new
 enrollment tokens) is a policy push, and releases are pack-upload-done.
 
-With a managed-mode deployment, the portal generates the whole matrix
-pre-configured (the onboarding wizard, or the Setup view's browser row):
-the Chromium managed-storage plist for macOS, the Windows deploy scripts
-for Chromium and Firefox, and the Firefox install-and-configure plist for
-macOS - receiver URL, a fresh enrollment token per download, your
-corporate domains, and the paste guard settings (mode and classification
-markings, both editable in the portal) baked in. Set the extension IDs in
-the portal's Settings first - the Chromium id comes from packing (step 2
-below), the Firefox gecko id from the manifest - plus the update-manifest
-URL (Chromium) and the signed .xpi URL (Firefox), which the portal cannot
-derive for you. Because this extension reads no central config, changing
-any of those means regenerating and re-pushing the policies.
+With a managed-mode deployment, the portal walks all of this: the wizard's
+extension step opens a guided setup that serves the source pre-configured
+(this repo's `src/`, with the receiver origin already in the manifest - so
+none of it needs a checkout), carries the packing instructions from this
+README, generates `updates.xml` and `firefox-updates.json` from what you
+save, and probes the hosted URLs - including whether the .xpi you hosted
+is actually the Mozilla-signed one. The portal also generates the whole
+policy matrix pre-configured: the Chromium managed-storage plist for
+macOS, the Windows deploy scripts for Chromium and Firefox, and the
+Firefox install-and-configure plist for macOS - receiver URL, a fresh
+enrollment token per download, your corporate domains, and the paste
+guard settings (mode and classification markings, both editable in the
+portal) baked in. What the portal cannot derive for you it asks for: the
+Chromium id from packing (step 2 below), the Firefox gecko id from the
+manifest, and the hosting URLs. Because this extension reads no central
+config, changing any of those means regenerating and re-pushing the
+policies.
 
 ### 1. Customise the source
 
