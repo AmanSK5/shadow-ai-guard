@@ -43,6 +43,12 @@ If your console supports SDL v2 natively, expect to adapt the queries.
 
 ## Quick start
 
+Deploying against a running platform? You don't need this section: the
+portal's deployment downloads generate a ready-to-apply scanner CronJob
+with the receiver URL and an enrollment token baked in, and the credential
+names commented for your secret store. The quick start below is for ad hoc
+CLI scans and local development.
+
 ```bash
 git clone https://github.com/AmanSK5/shadow-ai-guard.git
 cd shadow-ai-guard/scanner

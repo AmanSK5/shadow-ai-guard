@@ -76,8 +76,11 @@ That is the **base** URL, not the push endpoint - the portal appends its own
 query path, unlike `loki.pushUrl` which the receiver POSTs to verbatim.
 
 The portal refuses to start without authentication, because it names who runs
-what on which machine. The chart generates a password on first install and
-keeps it across upgrades, the same way it handles the bearer token:
+what on which machine. In managed mode - the default - that is the real
+login backed by the receiver's accounts: the setup code creates the first
+admin, and more accounts (admin or read-only viewer) are added under
+Settings. The generated password below is the **classic-mode** path, kept
+across upgrades the same way the chart handles the bearer token:
 
     kubectl get secret <release>-ai-guard-portal \
       -o jsonpath='{.data.password}' | base64 -d; echo
@@ -144,12 +147,14 @@ the portal.
 | `alertmanager.ttlMinutes` | `120` | how long a warn finding counts as already alerted |
 | `displayTz` | `UTC` | timezone for the readable timestamp on alerts only |
 | `corpDomains` | `[]` | corporate domains served to the collectors via `/registry/collector`; collectors prefer this to their local list, so a change here reaches the fleet on its next check-in with no MDM re-push |
-| `managed.enabled` | `false` | device enrollment, per-device credentials, revocation and a fleet inventory, backed by SQLite on a PVC. Requires `replicaCount: 1` (the chart refuses otherwise) and switches the Deployment to `Recreate` |
-| `managed.adminToken.value` | `""` | the credential that mints/revokes enrollment tokens and devices; leave unset to auto-generate into `<release>-ai-guard-admin` and keep across upgrades |
+| `managed.enabled` | `true` | the default since 0.9.9: device enrollment, accounts, central settings and a fleet inventory, backed by SQLite on a PVC. Requires `replicaCount: 1` (the chart refuses otherwise) and switches the Deployment to `Recreate`. Set `false` for classic mode |
+| `managed.adminToken.value` | `""` | the optional API credential for `/admin/*`: automation, break-glass recovery, and the portal's digest task. Humans need nothing here - the setup code and portal login cover them - so leaving both unset means no admin secret exists at all |
 | `managed.adminToken.existingSecret` | `""` | a Secret you created yourself, key `adminToken` |
 | `managed.persistence.size` | `1Gi` | the state PVC. Annotated `helm.sh/resource-policy: keep`: uninstalling the chart does not unenroll the fleet |
 | `managed.persistence.existingClaim` | `""` | use a PVC you created yourself |
 | `managed.requireDeviceCredentials` | `false` | the shared token's off-switch, once every surface has enrolled: ingest accepts device credentials only and refuses the shared token with a 401 that says "enroll". Flip it back and unenrolled machines report again |
+| `portal.digest.webhookUrl` | `""` | a Slack-compatible webhook for the portal's weekly digest. When set alongside `managed.adminToken`, the chart mounts the credential for the portal's background reads |
+| `portal.digest.day` / `portal.digest.hour` | `""` | when the digest sends; defaults to Monday 08:00 UTC |
 | `portal.receiverUrl` | receiver service | managed mode: where the portal proxies admin actions; defaults to the chart's own receiver service |
 | `portal.receiverPublicUrl` | ingress host | managed mode: the ingest URL baked into downloaded deployment artifacts; defaults to the receiver ingress host when one is enabled |
 | `registry.create` | `true` | ship the compiled registry as a ConfigMap |

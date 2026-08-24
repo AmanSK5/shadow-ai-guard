@@ -38,7 +38,7 @@ fits in with the rest.
                           │
   endpoint collectors ────┤                        ┌─► logs ─┬─► Grafana
   macOS / Windows / Linux │                        │  (Loki,  │   dashboard
-  (pushed by MDM or RMM)  ├──►  receiver  ──────────┤   or     │
+  (pushed by MDM or RMM)  ├──►  receiver  ─────────┤   or     │
                           │                        │  anything └─► portal
   cloud scanners ─────────┤                        │  that         (optional)
   sign-in logs,           │                        │  takes
@@ -48,10 +48,10 @@ fits in with the rest.
   software inventory      │
                           │        ▲
   network / DNS scanner ──┘        │
-  anything that sees             registry (a YAML file, reviewed in a PR)
-  which domains devices          domains, extension IDs, config paths,
-  talk to: EDR, DNS              whether a tool's approved - collectors
-  firewall, web gateway          pull this at runtime
+  anything that sees             registry (shipped + your own entries,
+  which domains devices          added in the portal or as YAML)
+  talk to: EDR, DNS              domains, extension IDs, config paths -
+  firewall, web gateway          collectors pull this at runtime
 ```
 
 Left to right: anything on the left sends the same kind of finding into the
@@ -170,21 +170,30 @@ already understands it.
 ## Components
 
 **receiver**, a FastAPI service, the only component every finding passes
-through. It authenticates the sender with a shared bearer token, writes each
-finding as a structured JSON line to stdout (which the log pipeline scrapes),
-optionally fires an Alertmanager alert for personal-account findings, and
-serves the registry to collectors. It is deliberately thin: it does not
-store findings itself, does not deduplicate at rest, and does not know about
-any specific tool. State it does keep is in memory only (active-session and
-device gauges), so a restart loses gauges but no findings, because findings
-live in the log store.
+through. It authenticates the sender (a per-device credential, or the shared
+bearer token), writes each finding as a structured JSON line to stdout
+(which the log pipeline scrapes), optionally fires an Alertmanager alert for
+personal-account findings, and serves the registry to collectors. It is
+deliberately thin: it does not store findings itself, does not deduplicate
+at rest, and does not know about any specific tool.
 
-**registry**, a YAML file, schema-validated, that is the source of truth
-for what counts as an AI tool: domains, extension IDs, config file paths per
-OS, account file locations, approval status. `build.py` compiles it into two
-views: one for the receiver and one for collectors. Collectors fetch their
-view from the receiver at runtime, which is why adding a tool is a registry
-merge request rather than a script change pushed to every endpoint.
+In managed mode - the default - the receiver also holds the platform's one
+piece of durable state: a single SQLite file with the device registry,
+accounts and sessions, central settings, governance decisions,
+portal-defined registry entries, the discovery queue and the audit trail.
+Everything in it is a decision or a credential hash, never a finding;
+findings always live in the log store. Classic mode never creates the file,
+so a classic deployment keeps the property that losing any component loses
+nothing.
+
+**registry**, the source of truth for what counts as an AI tool: domains,
+extension IDs, config file paths per OS, account file locations. The shipped
+registry is a schema-validated YAML file compiled at release time; in
+managed mode the portal's own entries are merged on top at serve time,
+validated to the same rules, so defining a tool in the review queue reaches
+every collector on its next check-in. Either way, collectors fetch their
+view from the receiver at runtime, which is why adding a tool never means a
+script change pushed to every endpoint.
 
 **collectors**, per-OS scripts (macOS/bash, Windows/PowerShell,
 Linux/bash) delivered by whatever runs scripts as root on that fleet: Jamf,
@@ -211,14 +220,20 @@ database, and computes personal-vs-work from the corporate domain variable
 the deployer sets. Most panels count distinct devices or users, not events,
 so they are stable across receiver restarts.
 
-**portal**, optional, a second read-only view over the same findings. Where
-the dashboard answers how much and when, the portal answers what belongs to
-what. Findings arrive as a flat stream of isolated rows; a log store can
-filter and count them but cannot say that forty rows are the same twelve
-machines, or that a device seen by a collector and a device seen by DNS
-telemetry are one laptop. The portal derives those relationships on request
-and holds no database, so like the dashboard it is a view rather than a store,
-and losing it loses nothing.
+**portal**, the operating surface. Where the dashboard answers how much and
+when, the portal answers what belongs to what - findings arrive as a flat
+stream of isolated rows, and a log store cannot say that forty rows are the
+same twelve machines. The portal derives those relationships on request and
+holds no database of its own, so it is a view rather than a store and it is
+never in the ingest path: losing it loses nothing.
+
+In managed mode it is also where the platform is run: the wizard, central
+settings, accounts (admin and read-only viewer), the review queue, the
+fleet, notifications, and pre-configured deployment downloads. Every one of
+those writes is proxied to the receiver and authorized there with the
+operator's own session - the portal stores no credentials, so a compromised
+portal yields readable findings, which it always did, and nothing that can
+mint or revoke.
 
 The AI register is that view pointed at governance: the tools actually in
 use, joined to what your organisation has decided about each. Tools the
@@ -303,7 +318,8 @@ band from the automated deploy.
 
 ## The trust model in one paragraph
 
-One shared bearer token authenticates all sources to the receiver. Findings
+Sources authenticate to the receiver with their own enrolled credential, or
+the shared bearer token during migration and in classic mode. Findings
 carry usernames and device identifiers, so the log store is sensitive and
 should be access-scoped. Collectors run as root and are delivered through
 your MDM, so they are as trusted as anything else you push that way. The

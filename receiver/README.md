@@ -54,10 +54,14 @@ shared token off for ingest (see the configuration table).
 | POST | `/admin/setup` | setup code | claim the boot-printed code, create the admin account, leave with a session |
 | POST | `/admin/login` | none | username + password for a session token (`aigt_...`) |
 | POST | `/admin/logout` | admin | revoke the presented session |
-| GET  | `/admin/session` | admin | who this session is and until when; the portal's validity probe |
-| POST | `/admin/password` | admin | change the password (`current` + `new`). With the `ADMIN_TOKEN` credential, `current` is not required - the break-glass reset. Every other session dies with the old password |
+| GET  | `/admin/session` | admin | who this session is, its role, and until when; the portal's validity probe |
+| POST | `/admin/password` | admin | change your own password (`current` + `new`) - a viewer owns theirs too. With the `ADMIN_TOKEN` credential, `current` is not required and the reset targets the oldest admin: the break-glass path. Every other session dies with the old password |
+| GET  | `/admin/users` | admin | the accounts: username, role, created, last sign-in |
+| POST | `/admin/users` | admin (write) | create an account (`username`, `password`, `role`: `admin` or `viewer`). Roles are fixed at creation; changing trust is delete and recreate, which leaves a cleaner trail |
+| POST | `/admin/users/{id}/delete` | admin (write) | remove an account and kill its sessions. The last admin cannot be deleted |
+| POST | `/admin/users/{id}/password` | admin (write) | set someone else's password - the forgotten-password path. Their old sessions die with it |
 | GET  | `/admin/settings` | admin | each central setting with its effective value and its source (`db`, `env`, `unset`), so a saved value shadowing an environment one is visible as such. The log-store password is reported as `{set, source}` only, never its value |
-| PUT  | `/admin/settings` | admin | partial upsert; a saved value wins over the matching env var, an explicit `null` (or empty) deletes the row and falls back to it. Unknown keys are 422. Keys: `corp_domains`, `extension_id`, `onboarding_done`, `receiver_public_url`, `log_store_url` (base - the push endpoint is **derived** as `<base>/loki/api/v1/push`), `log_store_push_url` (explicit override for gateways), `log_store_username`, `log_store_password`, `alertmanager_url`, `grafana_url`, `grafana_panels`, `grafana_dashboard_uid`, `overview_widgets` |
+| PUT  | `/admin/settings` | admin | partial upsert; a saved value wins over the matching env var, an explicit `null` (or empty) deletes the row and falls back to it. Unknown keys are 422. Keys: `corp_domains`, `extension_id`, `onboarding_done`, `receiver_public_url`, `log_store_url` (base - the push endpoint is **derived** as `<base>/loki/api/v1/push`), `log_store_push_url` (explicit override for gateways), `log_store_username`, `log_store_password`, `alertmanager_url`, `grafana_url`, `grafana_panels`, `grafana_dashboard_uid`, `overview_widgets`, `extension_update_url`, `extension_crx_url`, `extension_xpi_url`, `paste_guard_mode`, `firefox_extension_id`, `classification_markings`, `webhook_url` (Slack-compatible; the receiver posts to it when discovery queues a NEW tool or MCP server - once per candidate lifetime, from a thread, so a webhook outage can never bounce ingest) |
 | GET  | `/admin/settings/secrets` | admin | the stored log-store configuration with the password in plaintext - for the portal's server-side reads; the portal exposes no route that relays it. See SECURITY.md on integration secrets vs fleet credentials |
 | POST | `/admin/test/log-store-push` | admin | push one synthetic `kind:"test"` line with the effective configuration and report what happened, hints included - catches the write-only-token trap at setup time instead of on the first quiet dashboard |
 | GET  | `/admin/registry-entries` | admin | the portal-defined registry entries, each flagged `shadowed` if a later release ships the same id (shipped wins at serve time; a shadowed local copy is a row to delete) |
@@ -65,12 +69,21 @@ shared token off for ingest (see the configuration table).
 | POST | `/candidates` | shared token or device credential | suggest observed-but-undefined tools (the discovery service's classified DNS residue). Re-validated here field by field - a reporting credential can suggest a tool but never define one; candidates wait in the portal's review queue |
 | GET  | `/admin/candidates` | admin | the candidates queue, each flagged `resolved` once the merged registry answers it (a claimed domain, or for MCP-server candidates an entry whose id is the server's slug). MCP-server candidates arrive on their own: the endpoint MCP scan reports raw server names as evidence, and unknown ones join the queue at ingest with a distinct-device count |
 | POST | `/admin/candidates/{key}/dismiss` | admin | record a dismissal; the same candidate resurfacing on a later run stays dismissed |
+| GET  | `/admin/finding-status` | admin | the recorded answers to derived findings (acknowledged, or accepted with a reason), keyed on an opaque string the portal composes. The findings themselves stay in the log store; only the human's answer is state |
+| PUT  | `/admin/finding-status` | admin (write) | set one (`key`, `status`, `reason`) |
+| POST | `/admin/finding-status/clear` | admin (write) | back to open |
+| GET  | `/admin/events` | admin | the audit trail: every admin write above, newest first, with who did it |
 | GET  | `/admin/governance` | admin | the portal-recorded governance decisions |
 | PUT  | `/admin/governance` | admin | upsert (`decisions`) and delete (`delete`) decisions, validated to the governance file's own rules - an approval needs a `review_due` date. The whole batch validates before anything is written |
 
 **Admin auth** is either of two things: a session from `/admin/login`, or
 the optional `ADMIN_TOKEN` API credential. Humans get the first; automation
-and break-glass recovery get the second. On a fresh managed deployment no
+and break-glass recovery get the second (the API credential always counts
+as an admin - both of its jobs are operator acts). Accounts carry a role:
+an **admin** passes everything, a **viewer** passes every read and is
+refused by every write with a 403 that says the account is read-only,
+rather than a generic 401 to someone who is authenticated. The rows marked
+"(write)" above are the gated ones. On a fresh managed deployment no
 admin account exists yet, and until one does, **every boot prints a one-time
 setup code** to the receiver's log as a JSON line with `"kind":
 "setup_code"`. Enter it in the portal (or POST it to `/admin/setup`) to
