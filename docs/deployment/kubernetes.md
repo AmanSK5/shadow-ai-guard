@@ -125,14 +125,14 @@ The same thing without Helm, if you would rather see the pieces.
 Published to GHCR by CI, so nothing needs building:
 
 ```
-ghcr.io/amansk5/shadow-ai-guard/receiver:0.11.2
+ghcr.io/amansk5/shadow-ai-guard/receiver:0.11.3
 ```
 
 Built for `linux/amd64` and `linux/arm64` under one tag, so it resolves on
 Graviton, Apple Silicon and a Pi without anything extra:
 
 ```bash
-docker buildx imagetools inspect ghcr.io/amansk5/shadow-ai-guard/receiver:0.11.2
+docker buildx imagetools inspect ghcr.io/amansk5/shadow-ai-guard/receiver:0.11.3
 ```
 
 Pin a version. `latest` moves when a release is tagged, which means a pod
@@ -266,7 +266,7 @@ findings are stored and cannot be read back, and neither container reports an
 error you would attribute to the right cause. On Grafana Cloud the username is
 a numeric instance id rather than an email, and the access policy needs both
 `logs:write` and `logs:read`: a read-only token produces a 401 the receiver
-counts while still answering 200 to the collector, so findings look accepted
+counts, logs, and answers to the collector as a 503 - so findings retry
 and are not stored. `aiguard_loki_push_total` staying at zero while findings
 arrive is that failure.
 
@@ -303,7 +303,8 @@ back to the registry's own `approved` flag and devices show as serials.
 
 ## When findings stop arriving
 
-The receiver answers 200 to a reporting source even when the push to the log
+With a push target configured, a failed push is a 503 and collectors
+retry; the failure is also visible where the receiver writes to the log
 store fails. That is deliberate - a log store being down should not lose a
 collector's finding, which is on stdout regardless - but it means a
 misconfigured push is invisible from the collector's side.

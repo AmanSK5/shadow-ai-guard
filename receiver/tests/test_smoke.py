@@ -241,14 +241,12 @@ def test_collector_registry_is_untouched_when_no_corp_domains(tmp_path, monkeypa
 
 
 def test_a_rejected_push_is_counted_and_says_why():
-    """A push that fails is a finding that exists only in this container's
-    stdout. The receiver still answers 200, which is right - a log store being
-    down should not lose a collector's finding - so the failure is invisible
-    from the outside unless something counts it.
+    """A push that fails is counted, logged with a hint, and reported back
+    to the sender as a 503 (test_report_delivery.py covers the status). The
+    metric matters regardless: it is what an operator alerts on.
 
     This was logged at info with no metric, and a wrong LOKI_PUSH_URL
-    therefore produced a 404 per finding that nobody read while every
-    collector saw a 200.
+    therefore produced a 404 per finding that nobody read.
     """
     import asyncio
 

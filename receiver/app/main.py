@@ -995,16 +995,24 @@ def login(req: LoginRequest):
         raise HTTPException(
             429, "too many failed sign-ins; try again in a few minutes",
             headers={"Retry-After": str(LOGIN_WINDOW_SECONDS)})
+    # The slot is taken without blocking: a burst that beats the failure
+    # counters must be refused, not queued, or the waiters themselves
+    # occupy worker threads - the exhaustion the gate exists to prevent.
+    if not _scrypt_gate.acquire(blocking=False):
+        raise HTTPException(
+            429, "too many concurrent sign-ins; try again in a moment",
+            headers={"Retry-After": "5"})
     try:
-        with _scrypt_gate:
-            return STATE.login(req.username, req.password, SESSION_TTL_HOURS,
-                               log_failure=user_n < LOGIN_LOGGED_FAILURES)
+        return STATE.login(req.username, req.password, SESSION_TTL_HOURS,
+                           log_failure=user_n < LOGIN_LOGGED_FAILURES)
     except _state.AuthError as e:
         _login_failed(req.username)
         if user_n + 1 == LOGIN_MAX_FAILURES_PER_USER:
             STATE.record_login_throttled(req.username)
         time.sleep(LOGIN_FAILURE_DELAY_SECONDS)
         raise HTTPException(e.status, e.detail)
+    finally:
+        _scrypt_gate.release()
 
 
 @app.post("/admin/logout")
@@ -1910,9 +1918,12 @@ _LOKI_HINTS = {
 
 
 async def _push_loki(f: Finding, line: str, url: str, username: str,
-                     password: str):
-    """Fire-and-forget push to Loki. Bounded labels only (no tool/device:
-    unbounded values stay inside the JSON line, parsed at query time)."""
+                     password: str) -> bool:
+    """Push to Loki and say whether it worked. Bounded labels only (no
+    tool/device: unbounded values stay inside the JSON line, parsed at
+    query time). The caller turns False into a 503, because collectors
+    treat only a 200 as delivered - answering 200 on a failed push is what
+    made them discard findings the store never received."""
     payload = {
         "streams": [
             {
@@ -1948,6 +1959,7 @@ async def _push_loki(f: Finding, line: str, url: str, username: str,
         if code in _LOKI_HINTS:
             entry["hint"] = _LOKI_HINTS[code]
         log.error(json.dumps(entry))
+        return False
     except httpx.HTTPError as e:
         LOKI_PUSH_FAILURES.labels(reason=type(e).__name__).inc()
         log.error(json.dumps({
@@ -1958,9 +1970,11 @@ async def _push_loki(f: Finding, line: str, url: str, username: str,
             "error": "loki push failed: %s" % type(e).__name__,
             "url": _redact_url(url),
         }))
+        return False
     else:
         LOKI_PUSH_OK.inc()
         LOKI_PUSH_LAST_SUCCESS.set(time.time())
+        return True
 
 
 async def _fire_alert(f: Finding, alertmanager_url: str):
@@ -2044,11 +2058,23 @@ async def report(f: Finding, request: Request, authorization: str = Header(defau
     # when a push target is configured - the portal-saved log store when
     # one exists, LOKI_PUSH_URL otherwise. Resolved per finding, so a
     # store configured in the wizard takes effect with no restart.
+    #
+    # A failed push is a 503, not a 200. Collectors advance their delivered
+    # state only on 200, so acknowledging a finding the store rejected made
+    # them discard it - a broken token produced a clean-looking dashboard
+    # because telemetry silently stopped reaching storage, which is the
+    # exact failure this platform exists to catch. The retry costs a
+    # duplicate stdout line; duplicate evidence beats silently missing
+    # evidence. Metrics, gauges and alerting run only on the stored path,
+    # so a retried finding counts once, when it is actually stored.
     line = json.dumps({"app": "ai-guard-receiver", "kind": "finding", **f.model_dump()})
     log.info(line)
     push_url, push_user, push_pass = _effective_log_push()
     if push_url:
-        await _push_loki(f, line, push_url, push_user, push_pass)
+        if not await _push_loki(f, line, push_url, push_user, push_pass):
+            raise HTTPException(
+                503, "finding accepted locally but log-store delivery "
+                     "failed; retry")
 
     FINDINGS.labels(
         surface=f.surface, severity=f.severity, os=f.os
