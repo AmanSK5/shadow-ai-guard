@@ -314,6 +314,11 @@ podSecurityContext:
   runAsNonRoot: true
   runAsUser: 65532
   runAsGroup: 65532
+  # Managed mode mounts a PVC for the state DB. Most StorageClasses hand the
+  # volume over owned by root, and it is fsGroup that makes the kubelet chown
+  # it to something uid 65532 can write - without it the receiver crash-loops
+  # on "unable to open database file" before serving a single request.
+  fsGroup: 65532
   seccompProfile:
     type: RuntimeDefault
 
