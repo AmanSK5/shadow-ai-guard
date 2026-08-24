@@ -60,8 +60,8 @@ portal explains how on the setup page. It proposes one and will not apply it:
 the proposals are string matches against local usernames, and a mapping this
 platform invented and then acted on is how the wrong name ends up on a report.
 
-The portal is optional. Stop that one service and everything else here still
-works, which is the point of it not being in the ingest path.
+The portal is never in the ingest path. Stop that one service and
+collection carries on, which is a property worth seeing for yourself.
 
 ## The dashboard
 
@@ -86,11 +86,14 @@ contains what you pasted. Deploying the real extension is covered in
 
 ## What is running
 
-Five containers:
+Six containers:
 
 - **loki** - the log store, where findings land
-- **receiver** - the real receiver, built from `../receiver`, pushing every
-  finding straight to Loki (no scraping sidecar needed)
+- **receiver** - the real receiver, built from `../receiver`, running
+  managed mode and pushing every finding straight to Loki (no scraping
+  sidecar needed)
+- **portal** - the real portal, built from `../portal`, proxying admin
+  actions to the receiver exactly as a deployment does
 - **grafana** - pre-provisioned with the Loki datasource and the project
   dashboard, so it is populated on load with nothing to import
 - **seeder** - posts a spread of synthetic findings once the receiver is

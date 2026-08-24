@@ -26,6 +26,13 @@ work:
 Because the only assumption is "run as root on a schedule", Linux coverage
 does not depend on your fleet living in any particular management tool.
 
+## Getting the script
+
+The portal's deployment downloads serve this script with the receiver URL
+and a fresh enrollment token baked in as its own defaults, so the
+environment variables below become overrides rather than required setup.
+Corporate domains are never baked - the receiver serves those at runtime.
+
 ## Configuration
 
 Three environment variables:
