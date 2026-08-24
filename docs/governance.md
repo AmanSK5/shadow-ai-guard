@@ -1,14 +1,21 @@
 # Governance decisions
 
-The register shows what AI tools are in use. This is where you record what your
-organisation has decided about them: approved, not approved, or under review,
+The register shows what AI tools are in use. A decision records what your
+organisation concluded about one: approved, not approved, or under review,
 with an owner and a date to revisit it.
 
-Optional. Without it the portal falls back to the registry's own `approved`
-flag, every tool reads as undecided, and the owner and review columns show as
-not set. Nothing else changes.
+In managed mode - the default - you record decisions in the portal: every
+register card has an edit control, the wizard offers a baseline pass over
+the common tools, and each write is stamped into the audit trail with who
+made it. In classic mode the same decisions live in a YAML file in your
+repo, reviewed the way the rest of your configuration is. This page covers
+the rules both paths share, then the file format.
 
-## Why it is a separate file
+Recording nothing is fine. Without any decisions the portal falls back to
+the registry's own `approved` flag, every tool reads as undecided, and the
+owner and review columns show as not set. Nothing else changes.
+
+## Why governance is separate from the registry
 
 The registry answers *what is this tool and how do I detect it*. It ships with
 the project, and it is the same for everyone.
@@ -39,7 +46,11 @@ So both of these are correct and normal:
 The second is still the thing to act on, because the risky part is the account,
 not the tool. Approval must never quietly come to mean safe.
 
-## The file
+## The file (classic mode)
+
+The portal path needs no file; everything below applies to it too, enforced
+on the write path. The file is for classic deployments, or for anyone who
+wants decisions in a repo:
 
 ```yaml
 version: 1

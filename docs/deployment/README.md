@@ -1,7 +1,10 @@
 # Deployment
 
-Two routes. Both deploy the same images, take the same configuration, and
-produce the same findings. Pick whichever matches what you already run.
+Two routes. Both deploy the same images and produce the same findings, and
+on both the install is the short part: once the receiver and portal are up,
+you create the admin account with the setup code from the receiver's log
+and the portal's wizard does the rest. Pick whichever matches what you
+already run.
 
 | | [Docker Compose](../../deploy/compose/README.md) | [Kubernetes](kubernetes.md) |
 |---|---|---|
@@ -34,6 +37,13 @@ one browser profile or one scanner revocable on its own.
 writes JSON lines to stdout regardless, and pushes to Loki when
 `LOKI_PUSH_URL` is set, so an existing log agent scraping the container is as
 valid as configuring the push.
+
+**The portal runs it.** On both routes the day-two work happens in the
+portal: the log store, corporate domains, approvals, the review queue,
+accounts, enrollment, and pre-configured downloads for every surface.
+Classic mode (files and environment variables, no server-side state) is
+available on both routes too, for teams that want their repo as the audit
+trail.
 
 **Everything after the receiver.** Collectors, scanners, the extension, the
 dashboard and the portal are identical. Only the first step differs.

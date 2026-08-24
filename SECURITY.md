@@ -72,10 +72,16 @@ machine in the fleet.
 ### The portal
 
 The portal authenticates separately, and what that is depends on the mode.
-In managed mode it is a real login: an admin account in the receiver's state
-DB (scrypt-hashed password, created on first boot with a one-time setup code
-the receiver prints to its log), a session carried as an HttpOnly
-SameSite=Strict cookie, validated against the receiver per request.
+In managed mode it is a real login: accounts in the receiver's state DB
+(scrypt-hashed passwords; the first is created on first boot with a one-time
+setup code the receiver prints to its log, further ones by an admin from
+inside), a session carried as an HttpOnly SameSite=Strict cookie, validated
+against the receiver per request. Accounts carry a role: an admin runs the
+platform, a viewer reads every page and is refused by every write route -
+the shape for an auditor, who gets the visibility without becoming a way
+in. The last admin cannot be deleted, password resets revoke the sessions
+the old password minted, and every admin action lands in the receiver's
+event log with who did it.
 
 A word on what the state DB holds, because it changed in 0.9.8. **Fleet
 credentials** - enrollment tokens, device credentials, sessions, the admin

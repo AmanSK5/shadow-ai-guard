@@ -85,6 +85,8 @@ credentials, and it reveals nothing about your estate.
 | `DEPLOY_CHART_VERSION` | no | shown on the settings page, clearly unverified |
 | `DEPLOY_RELEASE` | no | as above |
 | `DEPLOY_NAMESPACE` | no | as above |
+| `DIGEST_WEBHOOK_URL` | no | Slack-compatible webhook for the weekly digest; `DIGEST_DAY` (mon..sun) and `DIGEST_HOUR` (UTC) tune when it sends |
+| `RECEIVER_ADMIN_TOKEN` | no | the receiver's `ADMIN_TOKEN`, `_FILE` supported. Lets the digest task read a log store that was saved through the portal; without it the digest needs `LOKI_URL` |
 | `RECEIVER_URL` | no | the receiver's admin API, reachable from the portal. Unset means the Managed views say so and nothing else changes |
 | `RECEIVER_PUBLIC_URL` | no | the ingest URL agents can reach, baked into downloaded deployment artifacts. Different from `RECEIVER_URL` on purpose: a cluster-internal service name baked into a Jamf script would enroll nothing |
 | `COLLECTOR_SCRIPTS_DIR` | no | verified copies of the endpoint collector scripts, shipped in the image; override for development |
@@ -134,11 +136,40 @@ and the card says "set in the portal" so the two are never mistaken for one
 another. Exceptions stay file-only
 ([docs/governance.md](../docs/governance.md)).
 
+**Accounts and roles.** The first account (the one the setup code creates)
+is an admin. Admins can add more under Settings, as admin or as viewer. A
+viewer reads every page and can change nothing - every write comes back as
+a 403 that says so - which is the right shape for an auditor or an exec.
+Roles are fixed at creation; changing someone's trust level is delete and
+recreate, which leaves a cleaner trail than an edit would. The last admin
+cannot be deleted, password resets revoke the sessions the old password
+minted, and everything lands in the audit trail.
+
+**The audit trail.** Every change made through the portal - settings,
+decisions, accounts, enrollments, revocations - is recorded by the receiver
+as it happens, with who did it. Settings, Diagnostics shows the recent
+trail; `/api/audit` serves it.
+
+**The finding lifecycle.** A personal-account finding can be acknowledged
+(spoken to - stays visible, stops being new) or accepted with a reason
+(drops out of the open count), and reopened. The receiver stores only the
+answer; the finding itself stays derived from the log store, so the record
+and the evidence can never disagree.
+
+**Notifications.** A `webhook_url` saved in Settings makes the receiver
+post to Slack (or anything webhook-compatible) the moment discovery puts a
+new tool or MCP server in the review queue - once per discovery, never per
+finding. Separately, the portal can send a weekly digest of the estate:
+set `DIGEST_WEBHOOK_URL` on the portal, and give it `RECEIVER_ADMIN_TOKEN`
+if your log store was configured through the wizard rather than by env
+(a background task has no operator session to read the saved settings
+with).
+
 Every one of those actions is authorized by the **receiver**, not the
 portal: the operator's own session token is forwarded per request and never
-stored anywhere in the portal. The portal still holds no database and no
-credentials - a compromised portal yields readable findings, which it
-always did, and nothing that can mint or revoke.
+stored anywhere in the portal. The portal holds no database and no
+credentials of its own - a compromised portal yields readable findings,
+which it always did, and nothing that can mint or revoke.
 
 ### Reading from a hosted log store
 
@@ -230,21 +261,22 @@ effect within `CACHE_TTL_SECONDS` (default 30) without a restart.
 
 ## Sections
 
-| Section | What it answers |
-|---|---|
-| Overview | how the estate looks right now, in widgets you choose |
-| Tools | which AI tools appear, on how many devices, on which surfaces |
-| People | identities from cloud sources, and the devices an identity map attaches |
-| Devices | one row per machine, with each tool paired to the account it uses |
-| Personal accounts | every personal account seen, with first and last seen |
-| MCP servers | which MCP servers are configured, on which machines, by which tool |
-| AI register | the tools actually in use, joined to what has been decided about each |
-| Paste guard | what the guard stopped, on which tool, and how often |
-| ISO 42001 evidence | an index of what the platform can say and where each record lives |
-| Setup | which detection sources are reporting and which are silent |
-| Uncovered devices | machines a scanner knows about that no collector reports from |
-| Grafana | Grafana, embedded, with a link to the real thing |
-| Settings | what the portal can say about itself, for a support conversation |
+The sidebar is six sections; each holds its pages as tabs. Details open in
+an inspector beside the list rather than a separate page, and the theme
+toggle (light or dark) is remembered per browser.
+
+| Section | Pages | What it answers |
+|---|---|---|
+| Overview | Overview, Grafana | how the estate looks and which way the week went, in widgets you choose |
+| Inventory | Tools, People, Devices, Personal accounts, MCP servers | what is in use, by whom, on what, signed into which account |
+| Governance | AI register, Tool registry, Paste guard, ISO 42001 evidence | what each tool is, what was decided, what the guard stopped |
+| Health | Sources, Uncovered devices | which detection sources are reporting, which are silent, and which machines nothing covers |
+| Fleet | Devices, Enrollment tokens | who is enrolled with their own credential, and the invitations that enroll them |
+| Settings | Settings tabs, Diagnostics | central settings, accounts, the audit trail, and what the portal verified about itself |
+
+Tools that need a look sort first, with the reasons spelled out as named
+factors (personal accounts, wide spread, multiple surfaces, new this week)
+rather than a score. Personal-account rows carry their lifecycle controls.
 
 ## AI register
 
@@ -313,7 +345,8 @@ OVERVIEW_WIDGETS=stat_row,top_tools,recent_personal_accounts,detection_coverage
 | `recent_personal_accounts` | most recently seen personal accounts |
 | `detection_coverage` | how much of each surface is reporting |
 | `source_health` | sources listed as silent |
-| `paste_guard` | pastes warned, overridden and blocked |
+| `review_queue` | observed tools awaiting a governance decision |
+| `paste_guard` | pastes warned, overridden and blocked - and what block mode would have stopped |
 | `grafana:<panel title>` | a panel named in `GRAFANA_PANELS` |
 
 Prefer a native widget over a `grafana:` one where both exist - embedded

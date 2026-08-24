@@ -78,9 +78,11 @@ The portal opens on a first-run wizard. Work through it top to bottom:
    of these is a work account; anything else is flagged as personal.
 4. **Governance baseline** - which tools your organisation has approved or
    banned. Only set the ones you have a position on; the rest stay undecided.
-5. **Browser extension and paste guard** - skip this on a first pass. Come
-   back to it once a collector is reporting (the extension needs packing
-   first; its [README](../extension/README.md) explains).
+5. **Browser extension and paste guard** - fine to skip on a first pass. When
+   you come back, the portal has a guided setup that walks the whole thing:
+   pre-configured source download, packing, hosting, signing for Firefox, and
+   the paste guard behaviour. Every value it saves is also editable flat
+   under Settings.
 6. **Alerting and Grafana** - optional, also fine to skip for now.
 7. **Deployment downloads** - this is the step that matters today. Download
    the collector for whatever OS your test machine runs.
@@ -132,16 +134,29 @@ Everything below is optional and independent. Add them in any order.
 - **More machines**: push the collector through your MDM/RMM.
 - **The browser extension and paste guard**: shows which accounts are signed
   into AI sites, and warns or blocks when marked documents are pasted into
-  them. [extension/README.md](../extension/README.md) - it needs packing and
-  hosting once, then the portal generates the deployment files.
+  them. The portal's guided setup covers packing and hosting; the deployment
+  files come pre-configured. [extension/README.md](../extension/README.md)
+  has the same material for reading offline.
 - **Cloud and network scanners**: Entra sign-ins, OAuth grants, Exchange
   signup evidence, Intune/Jamf inventory, SentinelOne DNS.
   [scanner/README.md](../scanner/README.md). The portal generates the CronJob.
-- **Discovery**: a daily job that spots AI domains in your fleet's DNS that
-  the registry doesn't know yet, and queues them in the portal for you to
-  approve or dismiss. The portal generates this CronJob too.
+- **Discovery**: a scheduled job that spots AI domains in your fleet's DNS
+  that the registry doesn't know yet, and queues them in the portal's review
+  queue for you to define or dismiss. The portal generates this CronJob too.
+- **More eyes**: add accounts under Settings. Admins run the platform;
+  viewers read every page and can change nothing, which is the right shape
+  for an auditor or an exec. Every change anyone makes lands in the audit
+  trail under Diagnostics.
+- **Notifications**: set a webhook URL in Settings and the receiver posts to
+  Slack (or anything webhook-compatible) the moment discovery finds a new
+  tool. The portal can also send a weekly digest of the estate; see the
+  [portal README](../portal/README.md) for the one credential it needs.
+- **Working the findings**: personal-account findings carry a lifecycle.
+  Acknowledge one to mark it spoken-to, or accept it with a reason and it
+  drops out of the open count. Who decided what, and when, is recorded.
 - **Grafana**: import `dashboards/ai-guard.json` for trends and history. The
-  portal can embed the panels.
+  portal can embed the panels, and they follow the portal's light or dark
+  theme.
 - **Alerting**: set the Alertmanager URL in Settings and personal-account
   findings will page you.
 

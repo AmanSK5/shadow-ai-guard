@@ -238,6 +238,18 @@ whatever you already have - and run the portal with `PORTAL_AUTH=none`
 behind it. That opt-out logs a warning on every start, so an
 unauthenticated deployment is never something nobody noticed.
 
+## Notifications
+
+Two kinds, configured in two places on purpose. Discovery events come from
+the receiver: save a Slack-compatible webhook URL under Settings in the
+portal and it posts the moment something new lands in the review queue.
+The weekly digest comes from the portal's own background task: set
+`DIGEST_WEBHOOK_URL` in `.env` (plus `DIGEST_DAY` and `DIGEST_HOUR` if
+Monday 08:00 UTC is wrong for you), and set `AIGUARD_ADMIN_TOKEN` so the
+task can read a log store that was saved through the wizard - the compose
+file hands the same value to the receiver as its API credential and to the
+portal as `RECEIVER_ADMIN_TOKEN`.
+
 ## The registry
 
 `registry-builder` compiles `registry.yaml` into the two views the receiver
