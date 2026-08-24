@@ -44,6 +44,11 @@ encryption.
   LOKI_USERNAME     basic auth user, for Grafana Cloud and most hosted Loki
   LOKI_PASSWORD     basic auth password, _FILE supported
   LOOKBACK_HOURS    default window, default 168
+  DIGEST_WEBHOOK_URL  Slack-compatible webhook for the weekly digest;
+                    DIGEST_DAY (mon..sun) and DIGEST_HOUR (UTC) tune when
+  RECEIVER_ADMIN_TOKEN  the receiver's ADMIN_TOKEN, _FILE supported. Lets
+                    the digest task read the log store saved through the
+                    portal; without it the digest needs LOKI_URL
   REGISTRY_PATH     registry.yaml, for resolving domains to tool ids
   IDENTITY_MAP      CSV of key,identity for attaching people to devices
   GOVERNANCE_PATH   YAML of approval decisions, owners and review dates
@@ -76,6 +81,8 @@ import re
 import secrets
 import time
 import urllib.parse
+import urllib.request
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
@@ -252,7 +259,7 @@ SESSION_COOKIE = "aiguard_session"
 # again. Bounds the revocation latency, and only the positive answer is
 # cached: a refused session is refused every time.
 SESSION_CACHE_TTL = 60
-_session_cache: dict[str, tuple[float, str]] = {}  # token -> (until, username)
+_session_cache: dict[str, tuple[float, str, str]] = {}  # token -> (until, username, role)
 
 # The receiver-stored settings, cached briefly so a page of API calls does
 # not re-fetch them. Two caches because they answer different callers: the
@@ -503,11 +510,15 @@ def _log_store(request):
     answer is a loud error, because silently falling back to env here
     could read a different store than the receiver is writing to.
     """
-    if LOGIN_MODE and request is not None:
+    # request=None is a background caller (the digest). It reads with the
+    # service credential when one is configured, and falls back to env
+    # below when not - the same precedence a session gets.
+    if LOGIN_MODE and (request is not None or RECEIVER_ADMIN_TOKEN):
         now = time.time()
         if (_log_store_cache["data"] is None
                 or now - _log_store_cache["at"] >= SETTINGS_CACHE_TTL):
-            token = request.cookies.get(SESSION_COOKIE, "")
+            token = (request.cookies.get(SESSION_COOKIE, "")
+                     if request is not None else RECEIVER_ADMIN_TOKEN)
             try:
                 _log_store_cache["data"] = managed.receiver_request(
                     RECEIVER_URL, "GET", "/admin/settings/secrets", token)
@@ -824,7 +835,7 @@ def graph(request: Request,
         findings = _findings(hours, request)
         domain_map = derive.load_domain_map_from(_registry(request))
         identity_map = derive.load_identity_map(IDENTITY_MAP) if IDENTITY_MAP else {}
-        return derive.graph_from(findings, domain_map, identity_map)
+        return derive.graph_from(findings, domain_map, identity_map, hours)
 
     value, at = _cached("graph", hours, build)
     return JSONResponse(dict(value, derived_at=at, hours=hours,
@@ -1093,7 +1104,8 @@ def _session_ok(token: str) -> bool:
         for k in [k for k, v in _session_cache.items() if v[0] <= now]:
             _session_cache.pop(k, None)
     _session_cache[token] = (now + SESSION_CACHE_TTL,
-                             str(who.get("username", "")))
+                             str(who.get("username", "")),
+                             str(who.get("role", "admin")))
     return True
 
 
@@ -1162,9 +1174,11 @@ def auth_state(request: Request):
             # A login screen that cannot say whether an account exists should
             # say why, not guess a form.
             raise HTTPException(e.status, e.detail)
+    hit = _session_cache.get(token) or (0, "", "admin")
     return {"mode": "login" if PORTAL_AUTH != "none" else "none",
             "authenticated": authenticated,
-            "username": (_session_cache.get(token) or (0, ""))[1],
+            "username": hit[1],
+            "role": hit[2] if authenticated else "",
             "setup_needed": setup_needed}
 
 
@@ -1389,6 +1403,190 @@ def api_settings_write(req: SettingsWrite, _=Depends(require_auth),
     # log store must be read from on the very next page, not in 30s.
     _invalidate_settings_caches()
     return out
+
+
+class FindingStatusWrite(BaseModel):
+    model_config = {"extra": "forbid"}
+    key: str = Field(min_length=1, max_length=500)
+    # Empty status means clear: back to open.
+    status: str = Field(default="", max_length=16)
+    reason: str = Field(default="", max_length=500)
+
+
+@app.get("/api/finding-status")
+def api_finding_status(_=Depends(require_auth),
+                       token: str = Depends(_admin_forward)):
+    """The recorded answers to derived findings (acknowledged / accepted).
+    The findings themselves come from /api/graph; the receiver holds only
+    the human's response, keyed on a string the portal composes."""
+    return _receiver("GET", "/admin/finding-status", token)
+
+
+@app.post("/api/finding-status")
+def api_finding_status_write(req: FindingStatusWrite, _=Depends(require_auth),
+                             token: str = Depends(_admin_forward)):
+    if not req.status:
+        return _receiver("POST", "/admin/finding-status/clear", token,
+                         {"key": req.key})
+    return _receiver("PUT", "/admin/finding-status", token,
+                     {"key": req.key, "status": req.status,
+                      "reason": req.reason})
+
+
+@app.get("/api/audit")
+def api_audit(limit: int = Query(default=200, ge=1, le=1000),
+              _=Depends(require_auth), token: str = Depends(_admin_forward)):
+    """The receiver's admin activity trail, relayed as-is."""
+    return _receiver("GET", "/admin/events?limit=%d" % limit, token)
+
+
+class UserCreate(BaseModel):
+    model_config = {"extra": "forbid"}
+    username: str = Field(min_length=2, max_length=64)
+    password: str = Field(min_length=12, max_length=256)
+    role: str = Field(min_length=1, max_length=16)
+
+
+class UserPasswordReset(BaseModel):
+    model_config = {"extra": "forbid"}
+    new: str = Field(min_length=12, max_length=256)
+
+
+_UID_RE = re.compile(r"^[0-9a-f]{16}$")
+
+
+@app.get("/api/users")
+def api_users(_=Depends(require_auth), token: str = Depends(_admin_forward)):
+    """The accounts, admin and viewer alike. The receiver owns them; the
+    portal relays, and the receiver's role gate decides who may change
+    what."""
+    return _receiver("GET", "/admin/users", token)
+
+
+@app.post("/api/users")
+def api_users_create(req: UserCreate, _=Depends(require_auth),
+                     token: str = Depends(_admin_forward)):
+    return _receiver("POST", "/admin/users", token, req.model_dump())
+
+
+@app.post("/api/users/{uid}/delete")
+def api_users_delete(uid: str, _=Depends(require_auth),
+                     token: str = Depends(_admin_forward)):
+    if not _UID_RE.match(uid):
+        raise HTTPException(422, "malformed user id")
+    return _receiver("POST", "/admin/users/%s/delete" % uid, token)
+
+
+@app.post("/api/users/{uid}/password")
+def api_users_reset(uid: str, req: UserPasswordReset, _=Depends(require_auth),
+                    token: str = Depends(_admin_forward)):
+    if not _UID_RE.match(uid):
+        raise HTTPException(422, "malformed user id")
+    return _receiver("POST", "/admin/users/%s/password" % uid, token,
+                     req.model_dump())
+
+
+# ---------------------------------------------------------------- digest ---
+# A weekly summary to a Slack-compatible webhook: the portal is a page
+# somebody must remember to open, and the digest is what keeps the estate
+# in front of them when they do not. Env-driven, because the task runs with
+# no operator session to read portal-saved settings with - the receiver's
+# own webhook_url setting covers the event-shaped notifications (a new
+# discovery candidate) instead.
+#
+# The task reads findings either from the env log store (LOKI_URL), or -
+# the managed-by-default path, where the log store was saved through the
+# wizard - via RECEIVER_ADMIN_TOKEN: the receiver's ADMIN_TOKEN credential,
+# which lets the background task read the saved log-store settings the way
+# a session would. Without either it declines at startup and says why,
+# rather than mailing a digest of an empty estate.
+DIGEST_WEBHOOK_URL = require_http_url(
+    "DIGEST_WEBHOOK_URL", os.environ.get("DIGEST_WEBHOOK_URL", ""))
+RECEIVER_ADMIN_TOKEN = _secret("RECEIVER_ADMIN_TOKEN")
+_DIGEST_DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+# `or` rather than a default arg: compose passes empty strings for unset
+# variables, and int("") is a crash at startup rather than a default.
+DIGEST_DAY = (os.environ.get("DIGEST_DAY") or "mon").lower()[:3]
+DIGEST_HOUR = min(23, max(0, int(os.environ.get("DIGEST_HOUR") or "8")))
+
+
+def next_digest(after, day=DIGEST_DAY, hour=DIGEST_HOUR):
+    """The next scheduled send strictly after `after` (UTC). Restart-safe by
+    construction: there is no cursor to lose, just the next slot."""
+    target = _DIGEST_DAYS.index(day if day in _DIGEST_DAYS else "mon")
+    cand = after.replace(hour=hour, minute=0, second=0, microsecond=0)
+    while cand <= after or cand.weekday() != target:
+        cand += timedelta(days=1)
+    return cand
+
+
+def digest_text(g, s, hours):
+    """The digest body, from the same derivations every page reads.
+
+    Slack mrkdwn, and deliberately short: the digest's job is to say
+    whether the estate needs someone this week, not to be the report.
+    """
+    pa = g.get("personal_accounts") or []
+    people = {r.get("user") or r.get("device")
+              for r in pa if r.get("user") or r.get("device")}
+    counts = g.get("counts") or {}
+    silent = [r for grp in (s or {}).get("groups", [])
+              for r in grp.get("sources", []) if not r.get("reporting")]
+    top = sorted(((k, len(v.get("devices") or []))
+                  for k, v in (g.get("tools") or {}).items()),
+                 key=lambda kv: (-kv[1], kv[0]))[:5]
+    n = len(pa)
+    lines = ["*ai-guard: the last %d days*" % round(hours / 24),
+             "• %d personal account%s across %d %s"
+             % (n, "" if n == 1 else "s", len(people),
+                "person" if len(people) == 1 else "people"),
+             "• %d tools in use on %d devices"
+             % (counts.get("tools", 0), counts.get("devices", 0))]
+    if top:
+        lines.append("• top tools: "
+                     + ", ".join("%s (%d)" % t for t in top))
+    if silent:
+        lines.append("• %d detection source%s silent"
+                     % (len(silent), "" if len(silent) == 1 else "s"))
+    return "\n".join(lines)
+
+
+@app.on_event("startup")
+async def _digest_task():
+    if not DIGEST_WEBHOOK_URL:
+        return
+    if LOGIN_MODE and not LOKI_URL and not RECEIVER_ADMIN_TOKEN:
+        log.warning("DIGEST_WEBHOOK_URL is set but the background task has "
+                    "no way to read findings: set RECEIVER_ADMIN_TOKEN (the "
+                    "receiver's ADMIN_TOKEN) so it can use the log store "
+                    "saved in the portal, or set LOKI_URL directly. No "
+                    "digest will be sent.")
+        return
+    import asyncio
+
+    def send():
+        findings = _findings(LOOKBACK_HOURS, None)
+        domain_map = derive.load_domain_map_from(_registry(None))
+        g = derive.graph_from(findings, domain_map, {}, LOOKBACK_HOURS)
+        s = derive.status_from(findings)
+        body = json.dumps({"text": digest_text(g, s, LOOKBACK_HOURS)}).encode()
+        req = urllib.request.Request(
+            DIGEST_WEBHOOK_URL, data=body,
+            headers={"Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=10).read()
+
+    async def loop():
+        while True:
+            now = datetime.now(timezone.utc)
+            await asyncio.sleep(
+                max(60.0, (next_digest(now) - now).total_seconds()))
+            try:
+                await asyncio.to_thread(send)
+                log.info("weekly digest sent")
+            except Exception as e:  # noqa: BLE001 - the log line is the story
+                log.warning("weekly digest failed: %s", e)
+
+    asyncio.get_running_loop().create_task(loop())
 
 
 @app.get("/api/governance-decisions")
