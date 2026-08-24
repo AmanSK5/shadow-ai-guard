@@ -2,93 +2,136 @@
 <meta charset="utf-8">
 <title>ai-guard portal</title>
 <style>
-:root{--bg:oklch(.16 .012 250);--fg:oklch(.93 .008 250);--sf:oklch(.2 .014 250);
---sf2:oklch(.24 .016 250);--pri:oklch(.8 .17 155);--acc:oklch(.72 .13 215);
---warn:oklch(.79 .15 78);--dstr:oklch(.63 .21 25);--mut:oklch(.68 .018 250);
---bd:oklch(.3 .016 250)}
+/* Light is the default and dark is the [data-theme=dark] overlay. The
+   variable names are load-bearing: views reference them inline, so both
+   themes define the same set and the views never know which is active. */
+:root{
+  --bg:#f6f6f3; --fg:#1c2024; --sf:#ffffff; --sf2:#eef0ec;
+  --pri:#177245; --acc:#0e6e8c; --warn:#8a5b00; --dstr:#b3261e;
+  --mut:#5c636e; --bd:#e4e5e0; --line:var(--bd);
+  --pri-soft:#e7f3ec; --acc-soft:#e3f0f5; --warn-soft:#fdf0d3; --dstr-soft:#fbeae9;
+  --shadow:0 1px 2px rgba(20,24,28,.05),0 4px 16px rgba(20,24,28,.05);
+  /* The sidebar keeps its own palette: midnight navy from the logo's hood,
+     the same in both themes, so the chrome holds still while content adapts. */
+  --side:#131b29; --side-ink:#e1e7ef; --side-mut:#8d99ab;
+  --side-line:rgba(255,255,255,.08); --side-on:rgba(94,199,222,.13); --side-on-ink:#7cd4e6;
+}
+[data-theme=dark]{
+  --bg:#14171b; --fg:#e8eaed; --sf:#1d2126; --sf2:#262b31;
+  --pri:#46c07f; --acc:#67c1dd; --warn:#e3b341; --dstr:#f28b82;
+  --mut:#9aa3ad; --bd:#2b313a;
+  --pri-soft:#1c3328; --acc-soft:#12303a; --warn-soft:#33290f; --dstr-soft:#3a1f1d;
+  --shadow:none;
+  --side:#0f1520; --side-line:rgba(255,255,255,.07);
+}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
-code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
-.shell{display:grid;grid-template-columns:220px 1fr;min-height:100vh}
-aside{border-right:1px solid var(--bd);background:var(--sf);padding:16px 0;position:sticky;top:0;height:100vh;overflow-y:auto;display:flex;flex-direction:column}
-aside .brand{padding:2px 18px 2px}
-aside .brand img{display:block;width:178px;height:auto}
-aside nav{flex:1}
-aside .grp{margin:18px 0 8px;padding:14px 18px 0;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.11em;color:var(--acc);border-top:2px solid var(--bd)}
-nav button{display:block;width:100%;text-align:left;background:none;border:0;color:var(--mut);font:inherit;cursor:pointer;padding:7px 18px;border-left:2px solid transparent}
-nav button:hover{color:var(--fg);background:color-mix(in oklch,var(--fg) 4%,transparent)}
-nav button.on{color:var(--pri);border-left-color:var(--pri);background:color-mix(in oklch,var(--pri) 10%,transparent)}
-nav .count{float:right;font-family:ui-monospace,monospace;font-size:11px;opacity:.7}
-.foot{padding:14px 18px 2px;border-top:1px solid var(--bd);margin-top:14px;font-size:11px;line-height:1.7;color:var(--mut)}
-.foot a{color:var(--mut);text-decoration:none;border-bottom:1px solid transparent}
-.foot a:hover{color:var(--pri);border-bottom-color:color-mix(in oklch,var(--pri) 40%,transparent)}
-.topbar{display:flex;gap:14px;align-items:center;padding:12px 24px;border-bottom:1px solid var(--bd);position:sticky;top:0;background:var(--bg);z-index:5;max-width:1440px;margin:0 auto}
-/* Centred, and the topbar carries the same cap and margin. Left-aligned at
-   1180 the topbar border ran to the window edge while the content stopped
-   520px short of it on a 1920 screen, which read as a broken layout rather
-   than a margin. Removing the cap instead is worse: table{width:100%} then
-   spreads five columns over 2292px on a 2560 screen and puts last seen
-   1873px from the start of the row, for no gain, because the widest cell is
-   already capped at 52ch. */
-main{padding:22px 24px;max-width:1440px;margin:0 auto}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}
+/* Monospace is reserved for what earns it: serials, domains, tokens, URLs. */
+code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.9em}
+.shell{display:grid;grid-template-columns:232px 1fr;min-height:100vh}
+.shell.collapsed{grid-template-columns:66px 1fr}
+/* Signed out there is no navigating to do, so there is no sidebar: the
+   sign-in card is the whole page. */
+body.auth aside{display:none}
+body.auth .shell{grid-template-columns:1fr}
+aside{background:var(--side);color:var(--side-ink);padding:16px 0 14px;
+  position:sticky;top:0;height:100vh;overflow-y:auto;display:flex;flex-direction:column}
+.brand{display:flex;align-items:center;padding:2px 14px 14px;min-height:46px}
+.brand img{display:block;width:100%;max-width:180px;height:auto}
+/* Collapsed, the wordmark crops down to the hooded-figure mark. */
+.collapsed .brand{padding:2px 0 12px;justify-content:center}
+.collapsed .brand img{width:28px;height:44px;max-width:none;object-fit:cover;object-position:left center}
+aside nav{flex:1;padding:4px 10px}
+nav button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;
+  border:0;border-radius:8px;color:var(--side-mut);font:inherit;font-weight:500;cursor:pointer;
+  padding:8px 10px;margin:1px 0}
+nav button svg{flex:none;opacity:.8}
+nav button:hover{background:rgba(255,255,255,.06);color:var(--side-ink)}
+nav button.on{background:var(--side-on);color:var(--side-on-ink)}
+nav button.on svg{opacity:1}
+nav .count{margin-left:auto;font-size:12px;font-variant-numeric:tabular-nums;opacity:.7}
+.collapsed nav button{justify-content:center;padding:10px 0}
+.collapsed nav .lbl,.collapsed nav .count,.collapsed .foot .txt{display:none}
+.fold{background:none;border:1px solid var(--side-line);border-radius:8px;color:var(--side-mut);
+  font:inherit;font-size:13px;cursor:pointer;padding:5px 0;width:calc(100% - 20px);margin:8px 10px 6px}
+.fold:hover{color:var(--side-ink);border-color:var(--side-mut)}
+.foot{padding:12px 16px 0;border-top:1px solid var(--side-line);font-size:12px;color:var(--side-mut);line-height:1.8}
+.foot a{color:var(--side-mut);text-decoration:none;border-bottom:1px solid transparent}
+.foot a:hover{color:var(--side-on-ink);border-bottom-color:rgba(124,212,230,.4)}
+.topbar{display:flex;gap:14px;align-items:center;padding:10px 24px;border-bottom:1px solid var(--bd);
+  position:sticky;top:0;background:var(--sf);z-index:5}
+.search{flex:0 1 380px;display:flex;align-items:center;gap:8px;background:var(--bg);
+  border:1px solid var(--bd);border-radius:8px;padding:6px 12px;color:var(--mut)}
+.search input{border:0;background:none;outline:none;font:inherit;color:var(--fg);width:100%;min-width:0;padding:0}
+/* Centred with a cap, for the same reason as before: uncapped tables spread
+   five columns across the whole of a 2560 screen for no gain. */
+main{padding:22px 26px 60px;max-width:1280px;margin:0 auto}
+/* Section tabs, for the views that share a sidebar entry. */
+.tabs{display:flex;gap:2px;background:var(--sf);border:1px solid var(--bd);border-radius:9px;
+  padding:3px;width:max-content;max-width:100%;overflow-x:auto;margin:0 0 18px}
+.tabs button{border:0;background:none;font:inherit;font-size:13.5px;font-weight:500;color:var(--mut);
+  padding:6px 14px;border-radius:6px;cursor:pointer;white-space:nowrap}
+.tabs button.on{background:var(--pri-soft);color:var(--pri)}
+.tabs button:hover:not(.on){color:var(--fg)}
 /* Flex rather than a fixed 12 column grid. The widget list is a deployment
    choice, so most counts do not divide evenly into a rigid grid and the last
    row ends up with a hole in it. Growing the items instead means any number
    fills its row. */
-.grid{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px}
+.grid{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:12px}
 .grid>*{flex:1 1 auto;min-width:0}
 .w6{flex-basis:46%}.w4{flex-basis:30%}.w12{flex-basis:100%}
 @media(max-width:900px){.shell{grid-template-columns:1fr}aside{position:static;height:auto}.w6,.w4{flex-basis:100%}}
-.wcard{background:var(--sf);border:1px solid var(--bd);border-radius:10px;padding:14px 16px}
-.wcard h3{margin:0 0 8px;font-size:12px;font-family:ui-monospace,monospace;color:var(--mut);text-transform:uppercase;letter-spacing:.05em}
-.bar{display:flex;align-items:center;gap:8px;margin:5px 0;font-family:ui-monospace,monospace;font-size:12px}
-.bar span:first-child{width:120px;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.bar i{display:block;height:9px;background:var(--pri);border-radius:2px;min-width:2px}
-.bar i.alt{background:var(--acc)}
-.kv{display:grid;grid-template-columns:200px 1fr;gap:5px 16px;margin:0}
-.kv dt{color:var(--mut);font-size:12px}
-.kv dd{margin:0;font-family:ui-monospace,monospace;font-size:12px}
-.src-note{color:var(--mut);font-size:11px;font-style:italic;margin:10px 0 0}
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:1px;background:var(--bd);border:1px solid var(--bd);border-radius:10px;overflow:hidden;margin-bottom:22px}
-.stats div{background:var(--sf);padding:14px 16px}
-.stats dt{font:600 22px/1.2 ui-monospace,monospace;color:var(--pri)}
-.stats dd{margin:4px 0 0;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut)}
-.card{background:var(--sf);border:1px solid var(--bd);border-radius:10px;padding:14px 16px;margin-bottom:10px;cursor:pointer}
-.card:hover{border-color:color-mix(in oklch,var(--pri) 50%,transparent)}
-.card h3{margin:0 0 6px;font-size:15px;font-family:ui-monospace,monospace}
-.card .sub{color:var(--mut);font-size:12px}
-.pill{display:inline-block;white-space:nowrap;border:1px solid currentColor;border-radius:999px;padding:1px 8px;font-size:11px;margin:2px 4px 2px 0;font-family:ui-monospace,monospace}
+.wcard{background:var(--sf);border:1px solid var(--bd);border-radius:12px;padding:15px 17px;box-shadow:var(--shadow)}
+.wcard h3{margin:0 0 10px;font-size:12px;font-weight:600;color:var(--mut);text-transform:uppercase;letter-spacing:.06em}
+.bar{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:12.5px}
+.bar span:first-child{width:130px;color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar i{display:block;height:8px;background:var(--pri);border-radius:99px;min-width:2px}
+.bar i.alt{background:var(--warn)}
+.bar span:last-child{font-variant-numeric:tabular-nums;color:var(--mut);font-size:12px}
+.kv{display:grid;grid-template-columns:200px 1fr;gap:6px 16px;margin:0}
+.kv dt{color:var(--mut);font-size:12.5px}
+.kv dd{margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;overflow-wrap:anywhere}
+.src-note{color:var(--mut);font-size:11.5px;font-style:italic;margin:10px 0 0}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px}
+.stats div{background:var(--sf);border:1px solid var(--bd);border-radius:12px;padding:13px 16px;box-shadow:var(--shadow)}
+.stats dt{font-size:25px;font-weight:650;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.2}
+.stats dd{margin:3px 0 0;font-size:12px;color:var(--mut)}
+.card{background:var(--sf);border:1px solid var(--bd);border-radius:12px;padding:14px 16px;margin-bottom:10px;box-shadow:var(--shadow);cursor:pointer;min-width:0}
+.card:hover{border-color:color-mix(in srgb,var(--pri) 50%,transparent)}
+.card h3{margin:0 0 6px;font-size:15px;font-weight:600}
+.card .sub{color:var(--mut);font-size:12.5px}
+.pill{display:inline-block;white-space:nowrap;border-radius:6px;padding:1.5px 8px;font-size:12px;
+  font-weight:550;margin:2px 4px 2px 0;background:var(--sf2);color:var(--mut)}
 .nw{white-space:nowrap}
-.p-warn{color:var(--dstr)} .p-ok{color:var(--pri)} .p-mut{color:var(--mut)} .p-acc{color:var(--acc)}
-table{width:100%;border-collapse:collapse;font-size:13px}
-th{text-align:left;font-weight:400;color:var(--mut);border-bottom:1px solid var(--bd);padding:6px 10px 6px 0;font-size:12px}
-td{padding:7px 10px 7px 0;border-bottom:1px solid color-mix(in oklch,var(--bd) 45%,transparent);font-family:ui-monospace,monospace;font-size:12px}
+/* One status language everywhere: green is fine, red needs attention,
+   cyan is classification, grey is neutral. */
+.p-warn{background:var(--dstr-soft);color:var(--dstr)}
+.p-ok{background:var(--pri-soft);color:var(--pri)}
+.p-mut{background:var(--sf2);color:var(--mut)}
+.p-acc{background:var(--acc-soft);color:var(--acc)}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th{text-align:left;font-weight:600;color:var(--mut);border-bottom:1px solid var(--bd);
+  padding:7px 12px 7px 0;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em}
+td{padding:8px 12px 8px 0;border-bottom:1px solid color-mix(in srgb,var(--bd) 55%,transparent);font-size:13px;vertical-align:top}
+tr:last-child td{border-bottom:0}
+tr[data-open]:hover td{background:color-mix(in srgb,var(--pri-soft) 45%,transparent)}
 /* The register, as cards.
    -------------------------------------------------------------------------
-   Four table attempts failed, and the last measurement said why: the content
-   area is 1125px, not the ~1392px every one of those attempts was sized
-   against. Nine columns needed 1077px and fitted by 48px, which is not
-   fitting, it is scraping. Reducing to eight would have needed 1007px and
-   scraped by 118px instead.
-
    A register is read one tool at a time as often as it is scanned, so the
    table shape was never load-bearing. Cards drop the width problem entirely:
-   auto-fill gives two per row at 1125px, one on a narrow window and three on a
-   wide monitor, with no breakpoint to keep in step and no horizontal scrolling
-   at any width.
-
-   Fields that were columns are now labelled rows inside a card, which also
-   removes the thing no amount of width tuning fixed: a header three columns
-   away from the value it describes. */
+   auto-fill gives two per row at typical widths, one on a narrow window and
+   three on a wide monitor, with no breakpoint to keep in step and no
+   horizontal scrolling at any width. Fields that were columns are labelled
+   rows inside a card, which also removes the thing no amount of width tuning
+   fixed: a header three columns away from the value it describes. */
 .cards{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(400px,1fr))}
-.card{border:1px solid var(--bd);border-radius:10px;padding:14px 16px;min-width:0}
 /* Name and decision on one line, because those are the two things someone
    scanning is looking for. */
 .card-top{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}
-.card-name{font-size:15px;font-weight:600}
-.card-meta{font-family:ui-monospace,monospace;font-size:11px;color:var(--mut);
+.card-name{font-size:15.5px;font-weight:650}
+.card-meta{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;color:var(--mut);
            margin-top:2px;overflow-wrap:anywhere}
-.card hr{border:0;border-top:1px solid color-mix(in oklch,var(--bd) 55%,transparent);margin:12px 0}
+.card hr{border:0;border-top:1px solid color-mix(in srgb,var(--bd) 55%,transparent);margin:12px 0}
 /* A quiet label rather than another box. The lower block is organisational
    record rather than observation, and the two were reading as one list. */
 .card-section{font-size:11px;color:var(--mut);text-transform:uppercase;
@@ -96,7 +139,7 @@ td{padding:7px 10px 7px 0;border-bottom:1px solid color-mix(in oklch,var(--bd) 4
 /* An exception. Its own block rather than a row in the key/value list, because
    it has an id, a scope, a date and a reason, and flattening that into one
    line loses the scope, which is the part that says who it applies to. */
-.exc{font-family:ui-monospace,monospace;font-size:11px;margin-bottom:6px;
+.exc{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;margin-bottom:6px;
      display:flex;flex-wrap:wrap;gap:4px 10px;align-items:baseline}
 .exc-scope{color:var(--acc)}
 .exc-when{color:var(--mut)}
@@ -108,64 +151,120 @@ td{padding:7px 10px 7px 0;border-bottom:1px solid color-mix(in oklch,var(--bd) 4
 .exc-old .exc-when{color:var(--dstr)}
 /* Label and value, with the label beside its own value rather than three
    columns away from it. */
-.card-kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:12px;
-         font-family:ui-monospace,monospace}
+.card-kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:13px}
 .card-kv dt{color:var(--mut);white-space:nowrap}
 .card-kv dd{margin:0;overflow-wrap:anywhere}
 .card-kv dd .pill{margin:0 4px 0 0}
 
 .gov{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0}
 .gov .pill{margin:0}
-.gov-sub{font-size:11px;color:var(--mut);white-space:nowrap}
+.gov-sub{font-size:11.5px;color:var(--mut);white-space:nowrap}
 .gov-sub.over{color:var(--dstr)}
 .gov-owner{white-space:nowrap}
-/* No border, no fill. Absence of governance, not a state with equal weight to
-   approved or reviewing. */
-.inputs{margin:0 0 18px;padding-left:20px;font-size:13px;line-height:1.9}
+.inputs{margin:0 0 18px;padding-left:20px;font-size:13.5px;line-height:1.9}
 .inputs a{color:var(--warn)}
-.none{color:color-mix(in oklch,var(--mut) 70%,transparent);font-family:ui-monospace,monospace;
-      font-size:11px;white-space:nowrap}
+/* No fill, barely-there text. Absence of governance, not a state with equal
+   weight to approved or reviewing. */
+.none{color:color-mix(in srgb,var(--mut) 70%,transparent);font-size:12px;white-space:nowrap}
 /* A zero is the absence of something and should not compete with a real
    count. Without this a row of zeros is as loud as a row of findings. */
-td.n .z{color:color-mix(in oklch,var(--mut) 55%,transparent)}
+td.n .z{color:color-mix(in srgb,var(--mut) 55%,transparent)}
 /* The counts split into two questions: how widely is this used, and what is
    it signed into. A rule rather than a gap, because a gap in a dense table
    reads as a missing column. */
-th.grp,td.grp{border-left:1px solid color-mix(in oklch,var(--bd) 60%,transparent);padding-left:14px}
-.note{background:color-mix(in oklch,var(--warn) 10%,transparent);border:1px solid color-mix(in oklch,var(--warn) 40%,transparent);color:var(--warn);border-radius:8px;padding:12px 14px;margin-bottom:18px;font-size:13px}
-.back{background:none;border:1px solid var(--bd);color:var(--mut);border-radius:6px;padding:5px 10px;cursor:pointer;font:inherit;margin-bottom:14px}
-h2{font-size:19px;margin:0 0 4px}
-.lede{color:var(--mut);font-size:13px;margin:0 0 16px}
-/* No max-width here. main is already capped and centred, so a second
-   constraint on the prose only makes it stop short of the table it
-   introduces, which reads as a broken line rather than a measure. */
-input,select{background:var(--sf2);border:1px solid var(--bd);color:var(--fg);border-radius:6px;padding:6px 10px;font:inherit;min-width:220px}
+th.grp,td.grp{border-left:1px solid color-mix(in srgb,var(--bd) 60%,transparent);padding-left:14px}
+.note{background:var(--warn-soft);border:1px solid color-mix(in srgb,var(--warn) 35%,transparent);
+  color:var(--warn);border-radius:9px;padding:12px 14px;margin-bottom:18px;font-size:13.5px}
+.back{background:none;border:1px solid var(--bd);color:var(--mut);border-radius:7px;
+  padding:5px 11px;cursor:pointer;font:inherit;font-size:13px;margin-bottom:14px}
+.back:hover{color:var(--fg);border-color:var(--mut)}
+h2{font-size:20px;margin:0 0 4px;letter-spacing:-.01em}
+.lede{color:var(--mut);font-size:13.5px;margin:0 0 16px}
+input,select{background:var(--sf2);border:1px solid var(--bd);color:var(--fg);border-radius:7px;padding:6px 10px;font:inherit;min-width:220px}
 select.mfield{min-width:160px}
-/* Managed views: small action buttons, the login fields, and the one-time
-   pane a minted token appears in. */
-button.mini{font:inherit;font-size:12px;padding:3px 10px;border:1px solid var(--line,#8884);border-radius:6px;background:transparent;color:var(--pri);cursor:pointer}
+button.mini{font:inherit;font-size:12.5px;font-weight:550;padding:4px 11px;border:1px solid var(--bd);
+  border-radius:7px;background:transparent;color:var(--pri);cursor:pointer}
 button.mini:hover{border-color:var(--pri)}
-.mfield{font:inherit;font-size:13px;padding:5px 8px;border:1px solid var(--line,#8884);border-radius:6px;background:transparent;color:inherit;min-width:260px}
-.tokpane{border:1px solid var(--pri);border-radius:8px;padding:12px 14px;margin:14px 0}
+.mfield{font:inherit;font-size:13px;padding:5px 9px;border:1px solid var(--bd);border-radius:7px;
+  background:var(--sf2);color:inherit;min-width:260px}
+.tokpane{border:1px solid var(--pri);border-radius:9px;padding:12px 14px;margin:14px 0;background:var(--sf)}
 .tokpane code{word-break:break-all}
+/* The inspector: a device, tool or MCP server opens beside the list rather
+   than replacing it, so the list you were scanning stays where it was. */
+.overlay{position:fixed;inset:0;background:rgba(15,18,20,.35);opacity:0;pointer-events:none;transition:opacity .18s;z-index:19}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(500px,92vw);background:var(--sf);
+  border-left:1px solid var(--bd);box-shadow:-12px 0 40px rgba(15,18,20,.18);z-index:20;
+  transform:translateX(102%);transition:transform .2s ease;padding:20px 24px;overflow-y:auto}
+body.open .overlay{opacity:1;pointer-events:auto}
+body.open .drawer{transform:none}
+.dclose{position:absolute;top:12px;right:14px;background:none;border:0;font-size:22px;
+  line-height:1;color:var(--mut);cursor:pointer;padding:4px 8px}
+.dclose:hover{color:var(--fg)}
+.drawer h2{padding-right:30px}
+.drawer .back{margin:0 0 12px}
+/* Fold-away guidance. The tables and status stay scannable; the how-to is
+   one click away when a silent row is the one being fixed. */
+details.how{margin-top:6px;max-width:62ch}
+details.how summary{cursor:pointer;font-size:12.5px;color:var(--acc);font-weight:550;list-style:none;width:max-content}
+details.how summary::-webkit-details-marker{display:none}
+details.how summary::before{content:'▸ '}
+details.how[open] summary::before{content:'▾ '}
+details.how>div{margin-top:6px;font-size:12.5px;color:var(--mut);line-height:1.55}
+/* Per-field help, behind the small i beside the label. A row is label,
+   input, save; the sentence about it appears when asked for. */
+.info{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;
+  border-radius:99px;border:1px solid color-mix(in srgb,var(--mut) 65%,transparent);
+  background:none;color:var(--mut);font:600 10px/1 ui-monospace,monospace;
+  cursor:pointer;margin-left:7px;padding:0;vertical-align:1px}
+.info:hover,.info.on{color:var(--acc);border-color:var(--acc)}
+.fnote{display:none;max-width:62ch}
+.fnote.shown{display:block}
+/* Sparklines, deltas, coverage dots: each overview widget gets the visual
+   form its question deserves, instead of every one being the same bar. */
+.spark{display:block;margin-top:8px}
+td .spark,.covrow .spark{margin-top:0}
+.trend{font-size:12px;margin-left:6px;vertical-align:3px}
+.trend.bad{color:var(--dstr)} .trend.good{color:var(--pri)}
+.covrow{display:grid;grid-template-columns:110px 1fr auto;align-items:center;gap:10px;margin:8px 0;font-size:12.5px}
+.covrow>span{color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.covrow b{font-weight:500;font-size:12px;color:var(--mut);font-variant-numeric:tabular-nums}
+.dots{display:flex;gap:3px;flex-wrap:wrap}
+.dots i{width:10px;height:10px;border-radius:3px;background:color-mix(in srgb,var(--mut) 22%,transparent)}
+.dots i.on{background:var(--pri)}
+table.plain td{border-bottom:0;padding:4.5px 10px 4.5px 0;vertical-align:middle}
+.p-amb{background:var(--warn-soft);color:var(--warn)}
+/* A list's table sits in a card, so a page of several sections reads as
+   several bounded things rather than one run-on column of rows. */
+.tcard{background:var(--sf);border:1px solid var(--bd);border-radius:12px;
+  padding:6px 16px 10px;box-shadow:var(--shadow);margin-bottom:14px}
+.cardhead{display:flex;align-items:center;gap:10px;padding:10px 0 4px}
+.cardhead h3{margin:0;font-size:12px;font-weight:600;color:var(--mut);
+  text-transform:uppercase;letter-spacing:.06em}
 </style>
-<div class="shell">
+<div class="overlay" id="overlay"></div>
+<div class="drawer" id="drawer"></div>
+<div class="shell" id="shell">
   <aside>
     <div class="brand"><img src="/logo.png" alt="Shadow AI Guard"></div>
     <nav id="nav"></nav>
-    <div class="foot">
+    <button class="fold" id="fold" title="collapse sidebar">«</button>
+    <div class="foot"><span class="txt">
       <div class="mono" id="footver">v</div>
-      <div>by <a href="https://amansk.co" target="_blank" rel="noopener">Aman Karir</a></div>
+      <div>by Aman Karir</div>
       <div><a href="https://github.com/AmanSK5/shadow-ai-guard" target="_blank" rel="noopener">Source and issues</a></div>
-    </div>
+    </span></div>
   </aside>
   <div>
     <div class="topbar">
-      <input id="q" placeholder="filter…">
+      <div class="search">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.8-3.8"/></svg>
+        <input id="q" placeholder="filter this view…">
+      </div>
       <span id="freshness" class="mono" style="font-size:11px;color:var(--mut)"></span>
       <button id="refresh" class="back" style="margin:0">refresh</button>
       <span id="who" class="mono" style="font-size:11px;color:var(--mut);margin-left:auto"></span>
       <button id="signout" class="back" style="margin:0;display:none">sign out</button>
+      <button id="themebtn" class="back" style="margin:0" title="light / dark">◐</button>
     </div>
     <main id="app"></main>
   </div>
@@ -208,6 +307,14 @@ let WLOPEN = false;
 let RENTRIES = null, REDIT = null, RPRE = null, RERR = '', RADV = false;
 // The discovery queue: candidates the estate observed that nobody defined.
 let CAND = null;
+// Finding lifecycle: key -> {status, reason, actor, at} from the receiver,
+// and which personal-account row has its accept-reason form open.
+let PSTAT = null, PAFORM = null;
+// The audit trail, fetched when the Diagnostics tab asks for it.
+let AUDITLOG = null;
+// The accounts list (admins only), which row has its reset form open, and
+// the last account-management refusal.
+let USERS = null, URFORM = null, USERR = '';
 let S = null, CFG = {}, loadError = '';
 // What /api/auth said: {mode, authenticated, username, setup_needed}.
 // The session itself is an HttpOnly cookie this script can never read -
@@ -222,12 +329,16 @@ let MINTED = null;
 // The login screen replaces the whole page, so the chrome around it (nav,
 // filter, refresh) goes quiet rather than sitting there doing nothing.
 function chrome(on) {
+  document.body.classList.toggle('auth', !on);
   document.querySelector('.topbar').style.display = on ? '' : 'none';
   document.getElementById('nav').style.display = on ? '' : 'none';
+  document.getElementById('fold').style.display = on ? '' : 'none';
+  if (!on) { detail = null; DSTACK = []; document.body.classList.remove('open'); }
   const so = document.getElementById('signout'), who = document.getElementById('who');
   const login = AUTH && AUTH.mode === 'login';
   so.style.display = on && login ? '' : 'none';
-  who.textContent = on && login && AUTH.username ? AUTH.username : '';
+  who.textContent = on && login && AUTH.username
+    ? AUTH.username + (AUTH.role === 'viewer' ? ' · read-only' : '') : '';
 }
 
 function showLogin(msg) {
@@ -239,7 +350,10 @@ function showLogin(msg) {
   RENTRIES = null; REDIT = null; RPRE = null; RERR = ''; RADV = false;
   chrome(false);
   const create = AUTH && AUTH.setup_needed;
-  app.innerHTML = `<div style="max-width:440px;margin:8vh auto 0">
+  app.innerHTML = `<div style="max-width:470px;margin:9vh auto 0">
+    <div class="wcard" style="padding:28px 30px">
+    <img src="/logo.png" alt="Shadow AI Guard"
+      style="width:230px;max-width:100%;display:block;margin:0 0 20px">
     <h2>${create ? 'Create the admin account' : 'Sign in'}</h2>
     <p class="lede">${create
       ? `No admin account exists yet. The receiver printed a one-time setup
@@ -247,7 +361,7 @@ function showLogin(msg) {
          <code>kubectl logs deploy/&lt;release&gt;-ai-guard | grep setup_code</code>
          or <code>docker compose logs receiver</code>. The code works once;
          if you lose it, restart the receiver for a fresh one.`
-      : `Sign in with the admin account you created during setup.`}</p>
+      : `Sign in with your account.`}</p>
     ${msg ? `<div class="note">${esc(msg)}</div>` : ''}
     ${create ? `<p><input id="li-code" class="mfield" style="width:100%"
       placeholder="setup code (aigs_…)" autocomplete="off"></p>` : ''}
@@ -258,6 +372,10 @@ function showLogin(msg) {
       autocomplete="${create ? 'new-password' : 'current-password'}"></p>
     <button class="mini" style="padding:6px 16px"
       data-act="${create ? 'do-setup' : 'do-login'}">${create ? 'Create account' : 'Sign in'}</button>
+  </div>
+  <p class="src-note" style="text-align:center;margin-top:14px">by Aman Karir ·
+    <a href="https://github.com/AmanSK5/shadow-ai-guard" target="_blank"
+       rel="noopener" style="color:inherit">Source and issues</a></p>
   </div>`;
   const u = document.getElementById(create ? 'li-code' : 'li-user');
   if (u) u.focus();
@@ -284,7 +402,7 @@ async function load(force) {
   const q = force ? '?refresh=true' : '';
   // Refresh must clear the views that read a second endpoint too, or the
   // button refreshes some of the page and silently not the rest.
-  if (force) { DIAG = null; REG = null; EV = null; PG = null; FLEET = null; TOKENS = null; SETTINGS = null; REGTOOLS = null; GOVDECS = null; RENTRIES = null; CAND = null; }
+  if (force) { DIAG = null; REG = null; EV = null; PG = null; FLEET = null; TOKENS = null; SETTINGS = null; REGTOOLS = null; GOVDECS = null; RENTRIES = null; CAND = null; PSTAT = null; AUDITLOG = null; USERS = null; }
   try {
     const cr = await fetch('/api/config');
     if (cr.status === 401 && AUTH && AUTH.mode === 'login') { sessionLost(); return; }
@@ -298,6 +416,17 @@ async function load(force) {
     // guard widget and a widget that fetches on render would flash empty.
     const pr = await fetch('/api/paste-guard' + q);
     if (pr.ok) PG = await pr.json();
+    // The recorded answers to findings (acknowledged / accepted), managed
+    // mode only. Failure leaves PSTAT null and every row simply reads open.
+    if (CFG.managed && CFG.managed.enabled && AUTH && AUTH.mode === 'login') {
+      try {
+        const fr = await mfetch('/api/finding-status');
+        if (fr.ok) {
+          PSTAT = {};
+          ((await fr.json()).statuses || []).forEach(s => PSTAT[s.key] = s);
+        }
+      } catch (e) { /* open rows are the honest fallback */ }
+    }
     // Same again for the review queue: it draws from the register, and in
     // managed mode from the discovery candidates queue too.
     if ((CFG.overview_widgets || []).some(w => w.kind === 'review_queue')) {
@@ -353,20 +482,29 @@ const app = document.getElementById('app'), q = document.getElementById('q');
 // where you were, and storing it would need somewhere to store it; the
 // fragment is free, survives a reload, and makes a view linkable to a
 // colleague. An unknown fragment falls back rather than rendering nothing.
-// Grouped rather than flat, so a section can be added without reshuffling
-// everything else, and so the shape of the tool is legible before you click.
+// Six sections rather than one flat list: fifteen sidebar entries stopped
+// being scannable, so the sidebar names the areas and each section's views
+// become tabs inside the page. Every view keeps its id, so old fragment
+// links keep working.
 const NAV = [
-  {grp:null,        items:[['overview','Overview']]},
-  {grp:'Inventory', items:[['tools','Tools'],['people','People'],
-                           ['devices','Devices'],['personal','Personal accounts'],
-                           ['mcp','MCP servers']]},
-  {grp:'Coverage',  items:[['setup','Setup'],['coverage','Uncovered devices']]},
-  {grp:'Governance',items:[['register','AI register'],['registry','Tool registry'],
-                           ['paste','Paste guard'],['iso','ISO 42001 evidence']]},
-  {grp:'Analytics', items:[['dashboard','Grafana']]},
-  {grp:'Managed',   items:[['fleet','Fleet'],['tokens','Enrollment tokens']]},
-  {grp:'System',    items:[['settings','Settings']]},
+  {id:'home',      lbl:'Overview',   items:[['overview','Overview'],['dashboard','Grafana']]},
+  {id:'inventory', lbl:'Inventory',  items:[['tools','Tools'],['people','People'],
+                                            ['devices','Devices'],['personal','Personal accounts'],
+                                            ['mcp','MCP servers']]},
+  {id:'governance',lbl:'Governance', items:[['register','AI register'],['registry','Tool registry'],
+                                            ['paste','Paste guard'],['iso','ISO 42001 evidence']]},
+  {id:'health',    lbl:'Health',     items:[['setup','Sources'],['coverage','Uncovered devices']]},
+  {id:'managed',   lbl:'Fleet',      items:[['fleet','Devices'],['tokens','Enrollment tokens']]},
+  {id:'system',    lbl:'Settings',   items:[['settings','Settings']]},
 ];
+const NAVICONS = {
+  home:'<path d="M3 12l9-8 9 8"/><path d="M5 10v10h14V10"/>',
+  inventory:'<rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/>',
+  governance:'<path d="M12 3l8 3v5.5c0 4.7-3.2 8.2-8 10-4.8-1.8-8-5.3-8-10V6l8-3z"/>',
+  health:'<path d="M3 12h4l3-7 4 14 3-7h4"/>',
+  managed:'<rect x="3" y="5" width="18" height="12" rx="1.5"/><path d="M8 21h8"/>',
+  system:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M4.9 4.9l2.1 2.1m10 10l2.1 2.1M19.1 4.9l-2.1 2.1m-10 10l-2.1 2.1"/>',
+};
 
 // Derived from NAV rather than written out beside it. Kept as a second list,
 // #register was missing from it: the nav entry worked, the view rendered, and
@@ -403,6 +541,38 @@ const match = s => !filter || String(s).toLowerCase().includes(filter);
 const num = n => n ? String(n) : '<span class="z">0</span>';
 const when = t => t ? `<span class="nw">${esc(String(t).slice(0, 10))}</span>` : '—';
 
+// A tiny inline chart: the shape of the week, not a chart to read values
+// off. Bars rather than a line, because seven integer points joined by a
+// line imply a continuity the data does not have.
+function spark(series, warn) {
+  if (!series || !series.some(v => v)) return '';
+  const max = Math.max(...series), w = 6, gap = 2;
+  const W = series.length * (w + gap) - gap;
+  return `<svg class="spark" width="${W}" height="18" viewBox="0 0 ${W} 18" aria-hidden="true">`
+    + series.map((v, i) => {
+      const h = v ? Math.max(2, Math.round(v / max * 16)) : 1.5;
+      return `<rect x="${i * (w + gap)}" y="${18 - h}" width="${w}" height="${h}" rx="1.5"
+        fill="${v ? `var(--${warn ? 'dstr' : 'pri'})` : 'color-mix(in srgb,var(--mut) 30%,transparent)'}"/>`;
+    }).join('') + '</svg>';
+}
+// The window split in half: is the second half worse than the first. Not a
+// week-over-week claim - the data only covers one window - which is why the
+// arrow carries a title saying exactly what it compared.
+function delta(series) {
+  if (!series || series.length < 4) return null;
+  const mid = Math.floor(series.length / 2);
+  const a = series.slice(0, mid).reduce((x, y) => x + y, 0);
+  const b = series.slice(mid).reduce((x, y) => x + y, 0);
+  return {a, b, up: b > a, down: b < a};
+}
+const trendChip = (series, badWhenUp) => {
+  const d = delta(series);
+  if (!d || (!d.up && !d.down)) return '';
+  const bad = badWhenUp ? d.up : d.down;
+  return `<span class="trend ${bad ? 'bad' : 'good'}"
+    title="second half of the window: ${d.b}, first half: ${d.a}">${d.up ? '▲' : '▼'}</span>`;
+};
+
 const WIDGETS = {
 
   stat_row: () => {
@@ -411,27 +581,41 @@ const WIDGETS = {
     const week = Date.now()/1000 - 7*86400;
     const fresh = pa.filter(r => r.first_seen &&
       Date.parse(r.first_seen)/1000 > week).length;
+    const tr = G.trends || {};
+    // Accepted-with-a-reason rows leave the headline count: the tile is
+    // "what needs someone", and an answered finding no longer does.
+    const open = PSTAT
+      ? pa.filter(r => (PSTAT[paKey(r)] || {}).status !== 'accepted') : pa;
     return `<dl class="stats">
-      <div><dt style="color:var(--dstr)">${pa.length}</dt><dd>personal accounts</dd></div>
+      <div><dt style="color:var(--dstr)">${open.length}${trendChip(tr.personal, true)}</dt>
+        <dd${open.length !== pa.length
+          ? ` title="${pa.length - open.length} more accepted with a reason"` : ''}>
+        open personal accounts</dd>${spark(tr.personal, true)}</div>
       <div><dt>${fresh}</dt><dd>new this week</dd></div>
       <div><dt>${new Set(pa.map(r=>r.user||r.device)).size}</dt><dd>affected people</dd></div>
       <div><dt>${new Set(pa.map(r=>r.tool)).size}</dt><dd>affected tools</dd></div>
-      <div><dt>${devs.length}</dt><dd>devices</dd></div>
+      <div><dt>${devs.length}</dt><dd>devices</dd>${spark(tr.devices)}</div>
       <div><dt>${ents(G.tools).length}</dt><dd>tools</dd></div>
-      <div><dt>${gaps.length}</dt><dd>coverage gaps</dd></div>
+      <div><dt${gaps.length ? ' style="color:var(--warn)"' : ''}>${gaps.length}</dt><dd>coverage gaps</dd></div>
     </dl>`;
   },
 
   top_tools: () => {
+    const tr = G.trends || {}, series = tr.tools || {}, firsts = tr.tool_first_seen || {};
+    const twoDays = Date.now() - 2*86400000;
     const rows = ents(G.tools)
       .sort((a,b)=>(b[1].devices||[]).length-(a[1].devices||[]).length).slice(0,7);
-    const max = rows.length ? (rows[0][1].devices||[]).length || 1 : 1;
     return `<div class="wcard w6"><h3>Top tools</h3>
-    ${rows.length ? rows.map(([k,t])=>{
-      const n = (t.devices||[]).length;
-      return `<div class="bar"><span>${esc(k)}</span>
-        <i style="width:${Math.round(n/max*160)}px"></i><span>${n}</span></div>`;
-    }).join('') : '<p class="lede">Nothing reported yet.</p>'}</div>`;
+    ${rows.length ? `<table class="plain">${rows.map(([k,t])=>{
+      const isNew = firsts[k] && Date.parse(firsts[k]) > twoDays;
+      return `<tr data-open="tool" data-key="${esc(k)}" style="cursor:pointer">
+        <td>${esc(k)}${isNew ? ' <span class="pill p-amb">new</span>' : ''}</td>
+        <td>${spark(series[k])}</td>
+        <td class="num">${(t.devices||[]).length || (t.identities||[]).length}</td></tr>`;
+    }).join('')}</table>
+    <p class="src-note">The bars are the last ${ (tr.days||[]).length || 7 } days,
+    left to right. Click a tool to open it.</p>`
+    : '<p class="lede">Nothing reported yet.</p>'}</div>`;
   },
 
   recent_personal_accounts: () => {
@@ -449,12 +633,16 @@ const WIDGETS = {
 
   detection_coverage: () => {
     if (!S) return '<div class="wcard w4"><h3>Detection coverage</h3><p class="lede">No status available.</p></div>';
+    // One square per source, filled when it reports: 1/5 should look like
+    // four dark squares, not a bar length to squint at.
     return `<div class="wcard w4"><h3>Detection coverage</h3>
     ${(S.groups||[]).map(g=>{
-      const pct = g.total ? Math.round(g.reporting/g.total*100) : 0;
-      return `<div class="bar"><span>${esc(g.group)}</span>
-        <i class="${pct<50?'alt':''}" style="width:${Math.max(pct*1.1,2)}px"></i>
-        <span>${g.reporting}/${g.total}</span></div>`;
+      const dots = g.total <= 14
+        ? `<span class="dots">${Array.from({length: g.total}, (_, i) =>
+            `<i class="${i < g.reporting ? 'on' : ''}"></i>`).join('')}</span>`
+        : spark([g.reporting, g.total - g.reporting]);
+      return `<div class="covrow"><span>${esc(g.group)}</span>${dots}
+        <b>${g.reporting}/${g.total}</b></div>`;
     }).join('')}</div>`;
   },
 
@@ -481,12 +669,17 @@ const WIDGETS = {
     if (!PG) return '<div class="wcard w4"><h3>Paste guard</h3>'
       + '<p class="lede">No paste guard data.</p></div>';
     const over = PG.overridden || 0, live = PG.guard_devices || 0;
+    const warned = PG.warned || 0;
     const versions = (PG.guard_versions || []).length;
+    const warnMode = (PG.guard_modes || []).some(m => m.mode === 'warn');
     return `<div class="wcard w4"><h3>Paste guard</h3>
       <dl class="stats" style="margin:0;grid-template-columns:repeat(2,1fr)">
         <div><dt${live ? '' : ' style="color:var(--dstr)"'}>${live}</dt><dd>devices</dd></div>
         <div><dt${over ? ' style="color:var(--dstr)"' : ''}>${over}</dt><dd>overridden</dd></div>
       </dl>
+      ${warnMode && warned ? `<p class="src-note" style="color:var(--warn);font-style:normal">
+        In block mode, ${warned} warned paste${warned === 1 ? '' : 's'} would have
+        been stopped outright - the breakdown is on the Paste guard page.</p>` : ''}
       <p class="src-note">${live
         ? `The guard is running on ${live} device${live === 1 ? '' : 's'}${
              versions > 1 ? ` (${versions} versions)` : ''}, so low numbers
@@ -566,7 +759,8 @@ const WIDGETS = {
       <div class="note" style="margin:0">No panel in GRAFANA_PANELS matches
       "${esc(w.ref)}". Named here but not defined there, so there is nothing
       to draw.</div></div>`;
-    const q = 'orgId=1&theme=dark&from=now-7d&to=now&kiosk';
+    const q = 'orgId=1&theme=' + (document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light')
+    + '&from=now-7d&to=now&kiosk';
     // No heading of our own. The panel draws its own, from the dashboard, so a
     // second one is both duplicated and less trustworthy: ours comes from
     // GRAFANA_PANELS, which is a snapshot of a title someone can rename in
@@ -633,31 +827,60 @@ function people() {
   than machines. Devices appear here only where an identity map attaches them —
   see <a href="/api/suggest-identities?fmt=csv" style="color:var(--pri)">a
   proposed map</a> to start one.</p>
-  <table><tr><th>identity</th><th>tools</th><th>devices</th></tr>
+  <div class="tcard"><table><tr><th>identity</th><th>tools</th><th>devices</th></tr>
   ${rows.map(([k,i]) => `<tr><td>${esc(k)}</td>
     <td>${(i.tools||[]).map(t=>`<span class="pill p-mut">${esc(t)}</span>`).join('')}</td>
     <td>${(i.devices||[]).map(d=>`<span class="pill p-acc">${esc(d)}</span>`).join('') || '<span class="pill p-mut">unmapped</span>'}</td></tr>`).join('')}
-  </table>`;
+  </table></div>`;
 }
+
+// Why a tool needs looking at, as named factors rather than a score. A
+// number would rank the same tools while hiding the reasoning; the factors
+// ARE the explanation, and the level is just how many of them stack up.
+function attention(k, t) {
+  const personal = (G.personal_accounts || []).filter(r => r.tool === k).length;
+  const devs = (t.devices || []).length;
+  const f = [];
+  if (personal) f.push(`${personal} personal account${personal === 1 ? '' : 's'}`);
+  if (devs >= 5) f.push(`wide spread (${devs} devices)`);
+  if ((t.surfaces || []).filter(Boolean).length >= 2) f.push('multiple surfaces');
+  const fs = ((G.trends || {}).tool_first_seen || {})[k];
+  if (fs && Date.parse(fs) > Date.now() - 2 * 86400000) f.push('new this week');
+  const level = (personal && devs >= 3) || personal >= 2 ? 'high'
+    : personal || f.length >= 2 ? 'medium' : '';
+  return {level, factors: f};
+}
+const attnPill = a => a.level === 'high'
+  ? `<span class="pill p-warn" title="${esc(a.factors.join(' · '))}">attention</span>`
+  : a.level === 'medium'
+  ? `<span class="pill p-amb" title="${esc(a.factors.join(' · '))}">watch</span>`
+  : '';
 
 function tools() {
   const rows = ents(G.tools).filter(([k]) => match(k))
-    .sort((a,b) => (b[1].devices||[]).length - (a[1].devices||[]).length);
+    .map(([k, t]) => [k, t, attention(k, t)])
+    .sort((a, b) => {
+      const rank = x => x[2].level === 'high' ? 2 : x[2].level === 'medium' ? 1 : 0;
+      return rank(b) - rank(a) || (b[1].devices||[]).length - (a[1].devices||[]).length;
+    });
   return `<h2>Tools</h2><p class="lede">Surfaces are kept apart on purpose: the same
-  tool in a browser, a desktop app and a CLI are different exposures.</p>
-  <table><tr><th>tool</th><th>devices</th><th>identities</th><th>by surface</th></tr>
-  ${rows.map(([k,t]) => `<tr data-open="tool" data-key="${esc(k)}" style="cursor:pointer">
-    <td>${esc(k)}</td><td>${(t.devices||[]).length}</td><td>${(t.identities||[]).length}</td>
-    <td>${ents(t.devices_by_surface||{}).sort((a,b)=>b[1].length-a[1].length)
+  tool in a browser, a desktop app and a CLI are different exposures. The ones
+  needing a look sort first - open a tool to see exactly why it is flagged.</p>
+  <div class="tcard"><table><tr><th>tool</th><th></th><th>devices</th><th>identities</th><th>by surface</th></tr>
+  ${rows.map(([k,t,a]) => `<tr data-open="tool" data-key="${esc(k)}" style="cursor:pointer">
+    <td>${esc(k)}</td><td>${attnPill(a)}</td>
+    <td>${(t.devices||[]).length}</td><td>${(t.identities||[]).length}</td>
+    <td>${ents(t.devices_by_surface||{}).sort((a2,b2)=>b2[1].length-a2[1].length)
       .map(([s,v])=>`<span class="pill p-acc">${esc(s||'none')} ${v.length}</span>`).join('')}</td>
-  </tr>`).join('')}</table>
-  ${ents(G.bridges||{}).length ? `<h2 style="margin-top:26px">Bridge targets</h2>
+  </tr>`).join('')}</table></div>
+  ${ents(G.bridges||{}).length ? `<div class="tcard">
+  <div class="cardhead"><h3>Bridge targets</h3></div>
   <p class="lede">Where an AI tool reached. Not a tool inventory: these are
   destinations of an integration, not something someone installed.</p>
   <table><tr><th>resource</th><th>devices</th></tr>
   ${ents(G.bridges).sort((a,b)=>b[1].devices.length-a[1].devices.length)
     .map(([k,b])=>`<tr><td>${esc(k)}</td><td>${b.devices.length}</td></tr>`).join('')}
-  </table>` : ''}`;
+  </table></div>` : ''}`;
 }
 
 function coverage() {
@@ -665,18 +888,17 @@ function coverage() {
   return `<h2>Coverage</h2><p class="lede">These machines are known to an inventory or
   telemetry source, but no endpoint collector has reported from them. Usually
   that means the collector isn't installed there yet.</p>
-  ${gaps.length ? `<table><tr><th>device</th><th>sources</th><th>tools seen</th></tr>
+  ${gaps.length ? `<div class="tcard"><table><tr><th>device</th><th>sources</th><th>tools seen</th></tr>
   ${gaps.map(([k,d])=>`<tr><td>${esc(label(k,d))}</td>
     <td>${(d.sources||[]).map(s=>`<span class="pill p-mut">${esc(s)}</span>`).join('')}</td>
-    <td>${(d.tools||[]).length}</td></tr>`).join('')}</table>`
+    <td>${(d.tools||[]).length}</td></tr>`).join('')}</table></div>`
   : '<p class="lede">Every device with a scanner finding also has a collector reporting.</p>'}`;
 }
 
 function deviceDetail(k) {
   const d = G.devices[k]; if (!d) return '<p>not found</p>';
   const bridges = ents(G.bridges||{}).filter(([,b]) => (b.devices||[]).includes(k)).map(([n])=>n);
-  return `<button class="back" data-open="">back</button>
-  <h2>${esc(label(k,d))}</h2>
+  return `<h2>${esc(label(k,d))}</h2>
   <p class="lede">${esc(k)} · ${esc((d.os||[]).join(', ')) || 'os unknown'} · ${d.findings} findings</p>
   <table>
     <tr><th>person</th><td>${d.person ? esc(d.person) : '<span class="pill p-mut">unattributed</span>'}</td></tr>
@@ -698,9 +920,15 @@ function deviceDetail(k) {
 
 function toolDetail(k) {
   const t = G.tools[k]; if (!t) return '<p>not found</p>';
-  return `<button class="back" data-open="">back</button>
-  <h2>${esc(k)}</h2>
+  const a = attention(k, t);
+  const series = ((G.trends || {}).tools || {})[k];
+  return `<h2>${esc(k)}</h2>
   <p class="lede">${(t.devices||[]).length} devices · ${(t.identities||[]).length} identities · ${t.findings} findings</p>
+  ${series && series.some(v => v) ? `<div style="margin:0 0 12px">${spark(series)}
+    <div class="src-note" style="margin-top:2px">daily activity, oldest to newest</div></div>` : ''}
+  ${a.level ? `<p class="lede" style="color:var(--${a.level === 'high' ? 'dstr' : 'warn'})">
+    ${a.level === 'high' ? 'Needs attention' : 'Worth watching'}:
+    ${esc(a.factors.join(' · '))}.</p>` : ''}
   <table><tr><th>by surface</th><td>${ents(t.devices_by_surface||{})
     .sort((a,b)=>b[1].length-a[1].length)
     .map(([s,v])=>`<span class="pill p-acc">${esc(s||'none')} ${v.length}</span>`).join('')}</td></tr>
@@ -727,7 +955,7 @@ function mcp() {
     <div><dt>${tools.length}</dt><dd>configuring tools</dd></div>
   </dl>
 
-  ${rows.length ? `<table>
+  ${rows.length ? `<div class="tcard"><table>
   <tr><th>server</th><th>devices</th><th>configured by</th>
   <th>first seen</th><th>last seen</th></tr>
   ${rows.map(r => `<tr data-open="mcp" data-key="${esc(r.server)}" style="cursor:pointer">
@@ -737,8 +965,8 @@ function mcp() {
     <td style="color:var(--mut)">${esc((r.first_seen||'').slice(0,10) || '—')}</td>
     <td style="color:var(--mut)">${esc((r.last_seen||'').slice(0,10) || '—')}</td>
   </tr>`).join('')}</table>
-  <p class="src-note">Click a server to see which machines it's configured on.
-  Widest reach is listed first.</p>`
+  <p class="src-note" style="margin-bottom:8px">Click a server to see which machines it's configured on.
+  Widest reach is listed first.</p></div>`
   : `<p class="lede">No MCP servers found. Check the Setup page first: MCP
   findings come from the endpoint collectors, so if no collector is reporting,
   this page can't see anything either.</p>`}`;
@@ -748,8 +976,7 @@ function mcpDetail(k) {
   const r = (G.mcp_servers || []).find(x => x.server === k);
   if (!r) return '<p>not found</p>';
   const devs = (r.devices || []);
-  return `<button class="back" data-open="">back</button>
-  <h2>${esc(r.server)}</h2>
+  return `<h2>${esc(r.server)}</h2>
   <p class="lede">${devs.length} device${devs.length === 1 ? '' : 's'} ·
   configured by ${esc((r.tools||[]).join(', '))} ·
   first seen ${esc((r.first_seen||'').slice(0,10) || 'unknown')} ·
@@ -765,20 +992,50 @@ function mcpDetail(k) {
     : '<p class="lede">No device recorded against it.</p>'}`;
 }
 
+// A personal-account row's identity, as the opaque key the receiver stores
+// lifecycle answers under. JSON so no field can smuggle a separator.
+const paKey = r => JSON.stringify(
+  [r.user || '', r.account_domain || '', r.tool || '', r.device || '']);
+const paStatus = r => (PSTAT || {})[paKey(r)] || null;
+
+function paActions(r) {
+  const st = paStatus(r);
+  const key = esc(paKey(r));
+  if (st) return `<button class="mini" data-act="pa-reopen" data-key="${key}">reopen</button>`;
+  if (PAFORM === paKey(r)) return `
+    <input id="pa-reason" class="mfield" style="min-width:180px"
+      placeholder="why this is acceptable" autocomplete="off">
+    <button class="mini" data-act="pa-accept" data-key="${key}">accept</button>
+    <button class="mini" data-act="pa-cancel">cancel</button>`;
+  return `<button class="mini" data-act="pa-ack" data-key="${key}"
+      title="spoken to - stays visible, stops being new">ack</button>
+    <button class="mini" data-act="pa-accept-form" data-key="${key}"
+      title="accepted with a reason - drops out of the open count">accept…</button>`;
+}
+
+const paChip = st => !st ? ''
+  : st.status === 'accepted'
+    ? `<span class="pill p-ok" title="${esc(st.reason || '')} — ${esc(st.actor)} ${esc((st.at||'').slice(0,10))}">accepted</span>`
+    : `<span class="pill p-acc" title="${esc(st.actor)} ${esc((st.at||'').slice(0,10))}">acknowledged</span>`;
+
 function personal() {
   const rows = (G.personal_accounts || []).filter(r =>
     match(r.user) || match(r.account_domain) || match(r.tool) ||
     match(r.device) || match(r.device_name));
+  const lifecycle = CFG.managed && CFG.managed.enabled && PSTAT !== null;
   return `<h2>Personal accounts</h2>
   <p class="lede">AI tools signed into personal accounts. Even an approved
   tool on a personal account means company data flowing somewhere you don't
   manage, and access that survives offboarding. "Personal" means the account
   domain isn't in your corporate domains list. Treat these as leads to follow
-  up, not verdicts.</p>
-  ${rows.length ? `<table>
+  up, not verdicts${lifecycle ? ` - and record where each one got to:
+  acknowledged keeps it visible, accepted needs a reason and drops it from
+  the open count` : ''}.</p>
+  ${rows.length ? `<div class="tcard"><table>
   <tr><th>who</th><th>account domain</th><th>tool</th><th>device</th>
-  <th>surface</th><th>first seen</th><th>last seen</th><th>source</th></tr>
-  ${rows.map(r => `<tr>
+  <th>surface</th><th>first seen</th><th>last seen</th><th>source</th>
+  ${lifecycle ? '<th>status</th>' : ''}</tr>
+  ${rows.map(r => `<tr${paStatus(r) ? ' style="opacity:.6"' : ''}>
     <td>${r.user ? esc(r.user) : '<span class="pill p-mut">no identity</span>'}</td>
     <td><span class="pill p-warn">${esc(r.account_domain)}</span></td>
     <td>${esc(r.tool)}</td>
@@ -787,7 +1044,8 @@ function personal() {
     <td style="color:var(--mut)">${esc((r.first_seen||'').slice(0,10) || '—')}</td>
     <td style="color:var(--mut)">${esc((r.last_seen||'').slice(0,10) || '—')}</td>
     <td style="color:var(--mut)">${esc((r.sources||[]).join(', ')) || '—'}</td>
-  </tr>`).join('')}</table>`
+    ${lifecycle ? `<td class="nw">${paChip(paStatus(r))} ${paActions(r)}</td>` : ''}
+  </tr>`).join('')}</table></div>`
   : `<p class="lede">None seen in the last ${CFG.lookback_hours || '?'} hours.
   Worth trusting only if the sources on the Setup page are reporting.</p>`}`;
 }
@@ -1280,7 +1538,21 @@ async function paste() {
     warn mode where policy says block is a policy that is not in force. Neither
     is visible in a count of what was stopped.</p>` : ''}
 
-  ${rows.length ? `<table>
+  ${(PG.guard_modes || []).some(m => m.mode === 'warn') && (PG.warned || 0) ? `
+  <div class="wcard" style="margin-bottom:14px"><h3>If block mode were on</h3>
+    <p class="lede" style="margin-bottom:10px">Every warned paste in this window
+    would have been stopped outright instead of asked about - the same events,
+    replayed under the stricter policy. What warn cannot stop is the override
+    column: block has no "paste anyway".</p>
+    ${(PG.rows || []).filter(r => r.warned).map(r =>
+      `<div class="covrow" style="grid-template-columns:140px auto 1fr">
+        <span>${esc(r.tool)}</span>
+        <b>${r.warned} stopped${r.overridden ? ` + ${r.overridden} override${r.overridden === 1 ? '' : 's'} prevented` : ''}</b>
+        <span></span></div>`).join('')}
+    <p class="src-note">Flip it under Settings → Fleet → paste guard mode, then
+    regenerate the policy artifacts to roll it out.</p></div>` : ''}
+
+  ${rows.length ? `<div class="tcard"><table>
   <tr><th>tool</th><th class="n">warned</th><th class="n">overridden</th>
   <th class="n">blocked</th><th class="n">devices</th><th>detectors</th>
   <th>last seen</th></tr>
@@ -1294,7 +1566,7 @@ async function paste() {
     <td>${r.detectors.map(d => `<span class="pill p-mut">${esc(d)}</span>`).join('')}</td>
     <td class="nowrap">${when(r.last_seen)}</td>
   </tr>`).join('')}
-  </table>` : `<p class="lede">No paste events in this window. That is a real
+  </table></div>` : `<p class="lede">No paste events in this window. That is a real
   answer, and it is also what an estate with the extension not deployed looks
   like: check Setup before reading it as nobody having tried.</p>`}`;
 }
@@ -1416,22 +1688,34 @@ async function iso() {
 // came from. The password key reports {set, source} rather than a value,
 // so its input is always blank and saving blank CLEARS it - said in the
 // note rather than discovered.
+// The i beside a field label. Every field's explanation folds behind it,
+// so a row is label + input + save - what someone changing a value scans
+// for. What stays visible is state (set, and from where), because that is
+// a glance rather than reading.
+const INFO = '<button class="info" data-info type="button" title="about this field">i</button>';
+
 function settingRow(key, label, placeholder, note) {
   const s = (SETTINGS && SETTINGS.settings || {})[key] || {value: '', source: 'unset'};
   const secret = !('value' in s);
+  const state = secret
+    ? (s.set ? '<span class="pill p-ok">set</span>' : '')
+    : s.source === 'db' ? '<span class="pill p-mut">saved here</span>'
+    : s.source === 'env' ? '<span class="pill p-mut">from deployment</span>' : '';
   const src = s.source === 'db'
     ? (s.env ? `Saved in the portal (overriding the deployment's value; clear to fall back to it).` : 'Saved in the portal.')
     : s.source === 'env' ? `Currently from the deployment's environment; saving here overrides it.` : '';
   const secretNote = secret
     ? (s.set ? 'A value is set (never shown). Leave blank and save to CLEAR it; type and save to replace it.' : 'Not set.')
     : '';
-  return `<dt>${esc(label)}</dt><dd>
+  const more = `${esc(note)}${note ? ' ' : ''}${secretNote || src}`.trim();
+  return `<dt>${esc(label)}${more ? INFO : ''}</dt><dd>
     <input id="set-${esc(key)}" class="mfield" style="min-width:340px"
       ${secret ? 'type="password" autocomplete="off"' : ''}
       placeholder="${esc(placeholder)}"
       value="${secret ? '' : esc(s.value || '')}">
     <button class="mini" data-act="save-setting" data-key="${esc(key)}">save</button>
-    <div class="src-note">${esc(note)}${note ? ' ' : ''}${secretNote || src}</div></dd>`;
+    ${state}
+    ${more ? `<div class="src-note fnote">${more}</div>` : ''}</dd>`;
 }
 
 // The paste guard and extension-delivery settings, shared by the Settings
@@ -1448,22 +1732,22 @@ function pasteGuardBehaviourFields() {
   const marks = marksSet ? ((s.classification_markings || {}).value || []) : null;
   const opt = (v, label) => `<option value="${v}"${mode === v ? ' selected' : ''}>${label}</option>`;
   return `
-    <dt>Paste guard mode</dt><dd>
+    <dt>Paste guard mode${INFO}</dt><dd>
       <select id="set-paste_guard_mode" class="mfield">
         <option value=""${mode ? '' : ' selected'}>warn (default)</option>
         ${opt('off', 'off')}${opt('warn', 'warn')}${opt('block', 'block')}
       </select>
       <button class="mini" data-act="save-setting" data-key="paste_guard_mode">save</button>
-      <div class="src-note">What happens when someone pastes marked content
+      <div class="src-note fnote">What happens when someone pastes marked content
       into an AI tool: warn asks them first, block stops it. Baked into the
       policy downloads.</div></dd>
-    <dt>Classification markings</dt><dd>
+    <dt>Classification markings${INFO}</dt><dd>
       <textarea id="set-classification_markings" class="mfield" rows="4"
         style="min-width:340px;resize:vertical;font-family:inherit"
         placeholder="one marking per line (empty = the default set)">${marks === null ? '' : esc(marks.join('\n'))}</textarea>
       <button class="mini" data-act="save-markings">save</button>
       ${marksSet ? '<button class="mini" data-act="clear-markings">clear (default set)</button>' : ''}
-      <div class="src-note">Document phrases the guard looks for in pastes,
+      <div class="src-note fnote">Document phrases the guard looks for in pastes,
       one per line. Save an empty box to use no markings; clear to go back
       to the default five. What people paste never leaves their device -
       only which detector matched gets reported.</div></dd>`;
@@ -1913,8 +2197,12 @@ async function wizard() {
 // The editable deployment settings, managed mode only: what the receiver
 // stores centrally and serves to the fleet at runtime. Everything below it
 // in the Settings view stays the read-only diagnostics it always was.
-function managedSettings() {
-  if (!SETTINGS) return '';
+// The managed settings, as small groups the Settings tabs show one at a
+// time. Every group used to stack on one page, and the page had become a
+// wall nobody could scan for the one field they came to change.
+let SETTAB = 'fleet';
+
+function fleetSettings() {
   const s = SETTINGS.settings || {};
   const cd = s.corp_domains || {value: [], source: 'unset', env: []};
   const srcNote = cd.source === 'db'
@@ -1927,26 +2215,27 @@ function managedSettings() {
       ? `From the deployment's <span class="mono">CORP_DOMAINS</span>;
          saving here overrides it without touching the deployment.`
       : 'Not set anywhere yet.';
-  return `<div class="wcard" style="margin-bottom:10px"><h3>Central settings</h3>
+  return `<div class="wcard" style="margin-bottom:10px"><h3>Fleet</h3>
   <p class="lede" style="margin-bottom:10px">Saved in the receiver and picked
   up by the fleet automatically - collectors get changes on their next
-  check-in, nothing needs re-pushing through the MDM. A value saved here
-  overrides the matching environment variable.</p>
-  ${SETMSG ? `<div class="note">${esc(SETMSG)}</div>` : ''}
+  check-in, nothing needs re-pushing through the MDM.</p>
   <dl class="kv">
-    <dt>Corporate domains</dt><dd>
+    <dt>Corporate domains${INFO}</dt><dd>
       <input id="set-domains" class="mfield" style="min-width:340px"
         placeholder="example.com, example.co.uk"
         value="${esc((cd.value || []).join(', '))}">
       <button class="mini" data-act="save-domains">save</button>
       ${cd.source === 'db' ? `<button class="mini" data-act="clear-domains">clear (fall back)</button>` : ''}
-      <div class="src-note">${srcNote}</div></dd>
-    <dt>Extension ID</dt><dd>
+      ${cd.source === 'db' ? '<span class="pill p-mut">saved here</span>'
+        : cd.source === 'env' ? '<span class="pill p-mut">from deployment</span>' : ''}
+      <div class="src-note fnote">An AI tool signed into one of these counts
+      as a work account; anything else is flagged personal. ${srcNote}</div></dd>
+    <dt>Extension ID${INFO}</dt><dd>
       <input id="set-extid" class="mfield" style="min-width:340px"
         placeholder="the browser extension's ID"
         value="${esc((s.extension_id || {}).value || '')}">
       <button class="mini" data-act="save-extid">save</button>
-      <div class="src-note">Used to generate the extension's managed-policy
+      <div class="src-note fnote">Used to generate the extension's managed-policy
       artifact. Empty clears it.</div></dd>
     ${pasteGuardFields()}
   </dl>
@@ -1954,9 +2243,11 @@ function managedSettings() {
     <button class="mini" data-act="ext-open">open the extension setup</button>
     <span class="src-note" style="margin-left:8px">The guided version of
     these fields: pack, host and sign, one step at a time.</span>
-  </div></div>
+  </div></div>`;
+}
 
-  <div class="wcard" style="margin-bottom:10px"><h3>Receiver</h3>
+function connectionSettings() {
+  return `<div class="wcard" style="margin-bottom:10px"><h3>Receiver</h3>
   <dl class="kv">
     ${settingRow('receiver_public_url', 'Public receiver URL',
       'https://ai-guard.your-tailnet.ts.net',
@@ -1976,13 +2267,18 @@ function managedSettings() {
     ${settingRow('log_store_push_url', 'Push endpoint override',
       'only for gateways with a non-standard push path',
       'Advanced. Leave empty to derive it from the base URL, which is almost always right.')}
-  </dl>${logStoreTests()}</div>
+  </dl>${logStoreTests()}</div>`;
+}
 
-  <div class="wcard" style="margin-bottom:10px"><h3>Alerting and Grafana</h3>
+function alertingSettings() {
+  return `<div class="wcard" style="margin-bottom:10px"><h3>Alerting and Grafana</h3>
   <dl class="kv">
     ${settingRow('alertmanager_url', 'Alertmanager URL',
       'http://alertmanager.<namespace>.svc:9093',
       'warn findings page through this. Empty means findings are logged and dashboarded but nothing pages.')}
+    ${settingRow('webhook_url', 'Notification webhook',
+      'https://hooks.slack.com/services/…',
+      'A Slack-compatible incoming webhook. The receiver posts to it when discovery adds a NEW tool or MCP server to the review queue - once per discovery, never per finding. The weekly digest is separate: set DIGEST_WEBHOOK_URL on the portal deployment.')}
     ${settingRow('grafana_url', 'Grafana URL',
       'the URL a BROWSER reaches Grafana on',
       'Saving reloads the page: the frame permission lives in this page\u2019s own security policy, which is fixed per load. Grafana must also allow embedding.')}
@@ -1993,9 +2289,49 @@ function managedSettings() {
       'Embeds one whole dashboard instead of panels. Pasting the full dashboard URL works: it is trimmed to the UID.')}
     ${settingRow('overview_widgets', 'Overview widgets',
       'stat_row, top_tools, …  (empty = sensible default)', '')}
-  </dl></div>
+  </dl></div>`;
+}
 
-  <div class="wcard" style="margin-bottom:10px"><h3>Admin account</h3>
+function accountSettings() {
+  const viewer = AUTH && AUTH.role === 'viewer';
+  const users = USERS === null ? '' : `
+  <div class="wcard" style="margin-bottom:10px"><h3>Accounts</h3>
+    <p class="lede" style="margin-bottom:10px">An admin runs the platform; a
+    viewer reads every page and can change nothing - made for the auditor
+    and the exec. Roles are fixed at creation: changing someone's trust
+    level is delete and recreate, which leaves a cleaner trail than an
+    edit would.</p>
+    ${USERR ? `<div class="note">${esc(USERR)}</div>` : ''}
+    <table><tr><th>username</th><th>role</th><th>created</th><th>last sign-in</th><th></th></tr>
+    ${USERS.map(u => `<tr>
+      <td>${esc(u.username)}${AUTH && AUTH.username === u.username ? ' <span class="pill p-acc">you</span>' : ''}</td>
+      <td><span class="pill ${u.role === 'admin' ? 'p-ok' : 'p-mut'}">${esc(u.role)}</span></td>
+      <td style="color:var(--mut)">${esc((u.created_at || '').slice(0, 10))}</td>
+      <td style="color:var(--mut)">${esc((u.last_login_at || '').slice(0, 10)) || '—'}</td>
+      <td class="nw">${URFORM === u.id
+        ? `<input id="ur-new" class="mfield" type="password" style="min-width:190px"
+             placeholder="new password (12+)" autocomplete="new-password">
+           <button class="mini" data-act="user-reset" data-key="${esc(u.id)}">set</button>
+           <button class="mini" data-act="user-reset-cancel">cancel</button>`
+        : `<button class="mini" data-act="user-reset-form" data-key="${esc(u.id)}">reset password</button>
+           <button class="mini" data-act="user-delete" data-key="${esc(u.id)}">delete</button>`}</td>
+    </tr>`).join('')}</table>
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <input id="user-name" class="mfield" placeholder="username" autocomplete="off">
+      <input id="user-pass" class="mfield" type="password"
+        placeholder="password (12+ characters)" autocomplete="new-password">
+      <select id="user-role" class="mfield" style="min-width:110px">
+        <option value="viewer">viewer</option><option value="admin">admin</option>
+      </select>
+      <button class="mini" data-act="user-create">add account</button>
+    </div>
+    <p class="src-note">Deleting an account kills its sessions; the last
+    admin cannot be deleted. Every action here lands in the audit trail.</p>
+  </div>`;
+  return `${viewer ? `<div class="note">This account is read-only: every
+    page works, saving does not. An admin manages accounts from this tab.</div>` : ''}
+  ${users}
+  <div class="wcard" style="margin-bottom:10px"><h3>Your account</h3>
   <dl class="kv">
     <dt>Change password</dt><dd>
       <input id="set-curpass" class="mfield" type="password"
@@ -2009,21 +2345,11 @@ function managedSettings() {
 
   <p class="src-note" style="margin:4px 0 14px">
     <button class="mini" data-act="open-wizard">run the setup wizard again</button>
-    — safe to repeat: every step is one of the settings above, prefilled
+    — safe to repeat: every step is one of these settings, prefilled
     with what is saved.</p>`;
 }
 
-async function settings() {
-  if (!DIAG) {
-    try { DIAG = await (await fetch('/api/diagnostics')).json(); }
-    catch (e) { return `<h2>Settings</h2><div class="note">Could not read
-      diagnostics: ${esc(String(e.message || e))}</div>`; }
-  }
-  if (CFG.managed && CFG.managed.enabled && !SETTINGS) {
-    const r = await mfetch('/api/settings');
-    if (r.ok) SETTINGS = await r.json();
-    else if (r.status === 401) { sessionLost(); return ''; }
-  }
+function diagnosticsCards() {
   const r = DIAG.runtime, d = DIAG.deployment;
   const yn = v => v ? '<span class="pill p-ok">yes</span>'
                     : '<span class="pill p-mut">no</span>';
@@ -2032,17 +2358,10 @@ async function settings() {
   const dur = sec => sec < 3600 ? Math.round(sec/60) + 'm'
     : Math.floor(sec/3600) + 'h ' + Math.round(sec%3600/60) + 'm';
 
-  return `<h2>Settings and diagnostics</h2>
-  <p class="lede">${CFG.managed && CFG.managed.enabled
-    ? `Central settings are editable and reach the fleet at runtime.
-       Everything below them is read only: what the portal verified about
-       itself, and - labelled at the bottom - what it was merely told.`
-    : `Read only. Everything under the first four headings is
-  something the portal verified about itself. Anything it was merely told is
-  grouped at the bottom and labelled, so a value nobody updated cannot be
-  mistaken for one something checked.`}</p>
-
-  ${managedSettings()}
+  return `<p class="lede">Read only. Everything except the last card is
+  something the portal verified about itself. What it was merely told is
+  labelled as such, so a value nobody updated cannot be mistaken for one
+  something checked.</p>
 
   <div class="wcard" style="margin-bottom:10px"><h3>Application</h3>
   <dl class="kv">
@@ -2089,7 +2408,64 @@ async function settings() {
   <p class="src-note">The portal cannot verify any of this. It is passed in as
   environment variables by whatever deployed it, and shown because it helps
   when raising an issue, not because it was observed. A deployment that does
-  not set it leaves it empty rather than guessing.</p></div>`;
+  not set it leaves it empty rather than guessing.</p></div>
+
+  ${AUDITLOG === null ? '' : `<div class="wcard" style="margin:10px 0 0"><h3>Recent admin activity</h3>
+  ${AUDITLOG.length ? `<table><tr><th>when</th><th>what</th><th>who</th></tr>
+  ${AUDITLOG.map(e => `<tr>
+    <td class="nw" style="color:var(--mut)">${esc((e.at||'').replace('T',' ').slice(0,16))}</td>
+    <td>${esc((e.kind||'').replace(/_/g,' '))}${e.detail && (e.detail.key || e.detail.tool)
+      ? ` <span class="mono" style="color:var(--mut)">${esc(String(e.detail.key || e.detail.tool).slice(0,60))}</span>` : ''}</td>
+    <td>${esc((e.detail && (e.detail.by || e.detail.username)) || '')}</td>
+  </tr>`).join('')}</table>` : '<p class="lede">Nothing recorded yet.</p>'}
+  <p class="src-note">Every change made through the portal, recorded by the
+  receiver as it happened. The trail survives sign-outs and cannot be edited
+  from here.</p></div>`}`;
+}
+
+async function settings() {
+  if (!DIAG) {
+    try { DIAG = await (await fetch('/api/diagnostics')).json(); }
+    catch (e) { return `<h2>Settings</h2><div class="note">Could not read
+      diagnostics: ${esc(String(e.message || e))}</div>`; }
+  }
+  const managed = CFG.managed && CFG.managed.enabled;
+  if (managed && !SETTINGS) {
+    const r = await mfetch('/api/settings');
+    if (r.ok) SETTINGS = await r.json();
+    else if (r.status === 401) { sessionLost(); return ''; }
+  }
+  if (managed && SETTAB === 'diagnostics' && AUDITLOG === null) {
+    try {
+      const ar = await mfetch('/api/audit?limit=50');
+      if (ar.ok) AUDITLOG = (await ar.json()).events || [];
+    } catch (e) { /* the card simply stays absent */ }
+  }
+  if (managed && SETTAB === 'account' && USERS === null
+      && AUTH && AUTH.role !== 'viewer') {
+    try {
+      const ur = await mfetch('/api/users');
+      if (ur.ok) USERS = (await ur.json()).users || [];
+    } catch (e) { /* the accounts card simply stays absent */ }
+  }
+  if (!managed || !SETTINGS) return `<h2>Settings and diagnostics</h2>
+    ${diagnosticsCards()}`;
+
+  const SGROUPS = {fleet: fleetSettings, connection: connectionSettings,
+                   alerting: alertingSettings, account: accountSettings,
+                   diagnostics: diagnosticsCards};
+  const STABS = [['fleet', 'Fleet'], ['connection', 'Receiver & log store'],
+                 ['alerting', 'Alerting & Grafana'], ['account', 'Account'],
+                 ['diagnostics', 'Diagnostics']];
+  if (!SGROUPS[SETTAB]) SETTAB = 'fleet';
+  return `<h2>Settings</h2>
+  <p class="lede">Central settings are editable and reach the fleet at
+  runtime - a value saved here overrides the matching environment variable.
+  Diagnostics is the read-only view: what the portal verified about itself.</p>
+  ${SETMSG ? `<div class="note">${esc(SETMSG)}</div>` : ''}
+  <div class="tabs">${STABS.map(([id, lbl]) =>
+    `<button data-settab="${id}" class="${SETTAB===id?'on':''}">${lbl}</button>`).join('')}</div>
+  ${SGROUPS[SETTAB]()}`;
 }
 
 // Repo docs as real links, pinned to the release this portal runs - the
@@ -2109,8 +2485,8 @@ function setup() {
   const g = S.groups || [];
   return `<h2>Setup</h2>
   <p class="lede">What's reporting and what isn't, worked out from actual
-  findings - not from whether something is configured. Each silent source
-  below tells you what it needs to start reporting.</p>
+  findings - not from whether something is configured. Every silent source
+  carries a fold-out with exactly what it needs to start reporting.</p>
 
   <dl class="stats">
     ${g.map(x => `<div><dt>${x.reporting}/${x.total}</dt><dd>${esc(x.group)}</dd></div>`).join('')}
@@ -2121,27 +2497,29 @@ function setup() {
   collector (Getting started walks through it) and it will appear here.</div>` : ''}
 
   ${g.map(x => `
-    <h2 style="margin-top:22px;font-size:16px">${esc(x.group)}
-      <span class="pill ${x.reporting ? 'p-ok' : 'p-mut'}">${x.reporting} of ${x.total}</span></h2>
+    <div class="tcard">
+    <div class="cardhead"><h3>${esc(x.group)}</h3>
+      <span class="pill ${x.reporting ? 'p-ok' : 'p-mut'}">${x.reporting} of ${x.total}</span></div>
     <table><tr><th>source</th><th>status</th><th>findings</th><th>devices</th><th>last seen</th></tr>
     ${x.sources.map(r => `<tr>
       <td>${esc(r.label)}<br><span class="mono" style="font-size:11px;color:var(--mut)">${esc(r.source)}</span>
-        ${r.reporting ? '' : `<div style="margin-top:6px;font-family:inherit;font-size:12px;color:var(--mut);max-width:52ch;line-height:1.5">
-          ${esc(r.needs || '')}
+        ${r.reporting ? '' : `<details class="how"><summary>how to set this up</summary>
+          <div>${esc(r.needs || '')}
           <br><a class="mono" style="font-size:11px;color:var(--acc)"
             href="${esc(docUrl(r.doc))}" target="_blank"
-            rel="noopener noreferrer">${esc(r.doc)}</a></div>`}
+            rel="noopener noreferrer">${esc(r.doc)}</a></div></details>`}
         ${r.artifact && CFG.managed && CFG.managed.artifacts_ready ? `<div style="margin-top:6px">
           <button class="mini" data-act="artifact" data-key="${esc(r.artifact)}">Download pre-configured artifact</button></div>` : ''}</td>
       <td>${r.reporting ? '<span class="pill p-ok">reporting</span>'
                         : '<span class="pill p-mut">not reporting</span>'}</td>
       <td>${r.findings || '—'}</td><td>${r.devices || '—'}</td>
       <td>${esc((r.last_seen || '—').replace('T',' ').replace('Z',''))}</td>
-    </tr>`).join('')}</table>`).join('')}
+    </tr>`).join('')}</table></div>`).join('')}
 
-  <h2 style="margin-top:28px;font-size:16px">Attaching people to devices
+  <div class="tcard" style="padding-bottom:14px">
+  <div class="cardhead"><h3>Attaching people to devices</h3>
     <span class="pill ${CFG.identity_map_configured ? 'p-ok' : 'p-mut'}">${
-      CFG.identity_map_configured ? 'map configured' : 'no map'}</span></h2>
+      CFG.identity_map_configured ? 'map configured' : 'no map'}</span></div>
   <p class="lede">Endpoint findings know the machine but only a local
   username; cloud findings know the person but not the machine. Joining the
   two - "this laptop belongs to this person" - needs a lookup only you have:
@@ -2149,7 +2527,8 @@ function setup() {
   file below.</p>
   ${CFG.identity_map_configured ? `<p class="lede">A map is configured.
   Devices it doesn't cover show as unattributed, which is fine.</p>`
-  : `<ol class="lede" style="padding-left:18px;line-height:2">
+  : `<details class="how" style="margin:0 0 14px"><summary>how to build the map</summary><div>
+  <ol style="padding-left:18px;line-height:2;margin:6px 0">
     <li><a href="/api/suggest-identities?fmt=csv" style="color:var(--pri)">Download
       a proposed map</a>. It matches local usernames against identities from
       your cloud sources, and lists what it couldn't match for you to fill
@@ -2162,16 +2541,18 @@ function setup() {
     <li>Set <code>IDENTITY_MAP</code> to its path. In Docker, mount it read-only;
       in Kubernetes, a ConfigMap or Secret mounted as a file.</li>
   </ol>
-  <p class="lede">The file is re-read automatically, so edits take effect
-  within ${esc(CFG.cache_ttl_seconds || 300)} seconds, no restart needed.
-  Devices with no mapping just show as unattributed.</p>`}
+  The file is re-read automatically, so edits take effect within
+  ${esc(CFG.cache_ttl_seconds || 300)} seconds, no restart needed. Devices
+  with no mapping just show as unattributed.</div></details>`}</div>
 
-  ${(S.unexpected || []).length ? `<h2 style="margin-top:26px;font-size:16px">Unrecognised sources</h2>
+  ${(S.unexpected || []).length ? `<div class="tcard">
+  <div class="cardhead"><h3>Unrecognised sources</h3>
+    <span class="pill p-amb">${S.unexpected.length}</span></div>
   <p class="lede">These are reporting, but this portal build doesn't know
   them. Either something newer than this portal, or a custom scanner with its
   own source name. Worth checking either way.</p>
   <table><tr><th>source</th></tr>${S.unexpected.map(u =>
-    `<tr><td>${esc(u)}</td></tr>`).join('')}</table>` : ''}`;
+    `<tr><td>${esc(u)}</td></tr>`).join('')}</table></div>` : ''}`;
 }
 
 // A way out to the real Grafana. The embedded frames are kiosk mode with a
@@ -2200,7 +2581,8 @@ function dashboard() {
     this page just adds charts and history.</p>`;
 
   const base = CFG.grafana_url, panels = CFG.grafana_panels || [];
-  const q = 'orgId=1&theme=dark&from=now-7d&to=now&kiosk';
+  const q = 'orgId=1&theme=' + (document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light')
+    + '&from=now-7d&to=now&kiosk';
 
   if (!panels.length && CFG.grafana_dashboard_uid) {
     return `<h2>Grafana</h2>
@@ -2334,7 +2716,64 @@ async function tokens() {
 
 const _val = id => (document.getElementById(id)?.value || '').trim();
 
+// Set, accept or clear a finding's lifecycle status, then refresh the
+// local copy so the row shows the answer that was just recorded.
+async function paWrite(key, status, reason) {
+  const r = await mfetch('/api/finding-status', {method: 'POST',
+    body: JSON.stringify({key, status: status || '', reason: reason || ''})});
+  if (r.status === 401) { sessionLost(); return; }
+  if (r.ok) {
+    const fr = await mfetch('/api/finding-status');
+    if (fr.ok) {
+      PSTAT = {};
+      ((await fr.json()).statuses || []).forEach(s => PSTAT[s.key] = s);
+    }
+  }
+  PAFORM = null; render();
+}
+
+// The refusal detail from a failed write, for the message line.
+async function _refusal(r) {
+  let d = r.statusText;
+  try { d = (await r.json()).detail || d; } catch (e) { /* keep statusText */ }
+  return typeof d === 'string' ? d : 'check the values';
+}
+
 async function managedAction(act, el) {
+  if (act === 'user-create') {
+    const role = (document.getElementById('user-role') || {}).value || 'viewer';
+    const r = await mfetch('/api/users', {method: 'POST', body: JSON.stringify(
+      {username: _val('user-name'), password: _val('user-pass'), role})});
+    if (r.status === 401) { sessionLost(); return; }
+    USERR = r.ok ? '' : 'Not created: ' + await _refusal(r);
+    if (r.ok) USERS = null;
+    render(); return;
+  }
+  if (act === 'user-delete') {
+    const r = await mfetch('/api/users/' + el.getAttribute('data-key') + '/delete',
+                           {method: 'POST'});
+    if (r.status === 401) { sessionLost(); return; }
+    USERR = r.ok ? '' : 'Not deleted: ' + await _refusal(r);
+    if (r.ok) USERS = null;
+    render(); return;
+  }
+  if (act === 'user-reset-form') { URFORM = el.getAttribute('data-key'); USERR = ''; render(); return; }
+  if (act === 'user-reset-cancel') { URFORM = null; render(); return; }
+  if (act === 'user-reset') {
+    const r = await mfetch('/api/users/' + el.getAttribute('data-key') + '/password',
+      {method: 'POST', body: JSON.stringify({new: _val('ur-new')})});
+    if (r.status === 401) { sessionLost(); return; }
+    USERR = r.ok ? 'Password set. Their old sessions are signed out.'
+                 : 'Not reset: ' + await _refusal(r);
+    URFORM = null; render(); return;
+  }
+  if (act === 'pa-ack') { paWrite(el.getAttribute('data-key'), 'acknowledged'); return; }
+  if (act === 'pa-accept-form') { PAFORM = el.getAttribute('data-key'); render(); return; }
+  if (act === 'pa-cancel') { PAFORM = null; render(); return; }
+  if (act === 'pa-accept') {
+    paWrite(el.getAttribute('data-key'), 'accepted', _val('pa-reason')); return;
+  }
+  if (act === 'pa-reopen') { paWrite(el.getAttribute('data-key'), ''); return; }
   if (act === 'do-login' || act === 'do-setup') {
     const body = act === 'do-setup'
       ? {setup_code: _val('li-code'), username: _val('li-user'), password: _val('li-pass')}
@@ -2344,6 +2783,9 @@ async function managedAction(act, el) {
     if (r.ok) {
       const o = await r.json();
       AUTH = {mode: 'login', authenticated: true, username: o.username, setup_needed: false};
+      // /api/auth also carries the account's role, which gates the
+      // account-management card and labels the read-only state.
+      try { AUTH = await (await fetch('/api/auth')).json(); } catch (e) { /* keep the basics */ }
       chrome(true); load();
     } else {
       let d = r.statusText;
@@ -2708,18 +3150,25 @@ async function managedAction(act, el) {
   }
 }
 
+// A section remembers which of its views you were last on, so switching
+// sections and back does not lose your place.
+const SECTAB = {};
+const sectionOf = v => NAV.find(s => s.items.some(([id]) => id === v));
+
 function drawNav() {
   const n = document.getElementById('nav');
-  n.innerHTML = NAV.map(sec =>
-    (sec.grp ? `<div class="grp">${sec.grp}</div>` : '') +
-    sec.items.map(([id, lbl]) => {
-      const c = id === 'personal' ? (G.personal_accounts||[]).length : null;
-      return `<button data-v="${id}" class="${view===id?'on':''}">${lbl}` +
-             (c ? `<span class="count">${c}</span>` : '') + `</button>`;
-    }).join('')
-  ).join('');
+  const cur = sectionOf(view);
+  n.innerHTML = NAV.map(sec => {
+    const c = sec.id === 'inventory' ? (G.personal_accounts||[]).length : null;
+    return `<button data-s="${sec.id}" class="${cur && cur.id===sec.id ? 'on':''}" title="${sec.lbl}">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${NAVICONS[sec.id]}</svg>
+      <span class="lbl">${sec.lbl}</span>` +
+      (c ? `<span class="count">${c}</span>` : '') + `</button>`;
+  }).join('');
   n.querySelectorAll('button').forEach(b => b.onclick = () => {
-    view = b.dataset.v; detail = null;
+    const sec = NAV.find(s => s.id === b.dataset.s);
+    view = SECTAB[sec.id] || sec.items[0][0]; detail = null;
     // Replace rather than push: clicking through the nav should not fill the
     // back button with every tab you glanced at.
     history.replaceState(null, '', '#' + view);
@@ -2729,28 +3178,61 @@ function drawNav() {
   if (fv && CFG.version) fv.textContent = 'v' + CFG.version;
 }
 
+// The in-page tab bar for sections holding more than one view. The wizard
+// and the extension guide belong to no section and get none.
+function tabbar() {
+  const sec = sectionOf(view);
+  if (!sec || sec.items.length < 2) return '';
+  return `<div class="tabs">${sec.items.map(([id, lbl]) =>
+    `<button data-nav="${id}" class="${view===id?'on':''}">${lbl}</button>`).join('')}</div>`;
+}
+
 async function render() {
+  const sec = sectionOf(view);
+  if (sec) SECTAB[sec.id] = view;
   drawNav();
-  if (detail) {
-    const D = {device: deviceDetail, tool: toolDetail, mcp: mcpDetail};
-    app.innerHTML = D[detail[0]](detail[1]);
-    return;
-  }
-  // settings reads a second endpoint, so it is the one async view.
+  // A full render is a change of place, so the inspector closes with it.
+  if (!detail) { DSTACK = []; document.body.classList.remove('open'); }
+  const tb = tabbar();
   // settings and register each read a second endpoint, so they are async.
-  if (view === 'settings') { app.innerHTML = await settings(); return; }
-  if (view === 'register') { app.innerHTML = await register(); return; }
-  if (view === 'paste') { app.innerHTML = await paste(); return; }
-  if (view === 'iso') { app.innerHTML = await iso(); return; }
-  if (view === 'fleet') { app.innerHTML = await fleet(); return; }
-  if (view === 'tokens') { app.innerHTML = await tokens(); return; }
+  if (view === 'settings') { app.innerHTML = tb + await settings(); return; }
+  if (view === 'register') { app.innerHTML = tb + await register(); return; }
+  if (view === 'paste') { app.innerHTML = tb + await paste(); return; }
+  if (view === 'iso') { app.innerHTML = tb + await iso(); return; }
+  if (view === 'fleet') { app.innerHTML = tb + await fleet(); return; }
+  if (view === 'tokens') { app.innerHTML = tb + await tokens(); return; }
   if (view === 'wizard') { app.innerHTML = await wizard(); return; }
   if (view === 'extsetup') { app.innerHTML = await extSetup(); return; }
-  if (view === 'registry') { app.innerHTML = await registryView(); return; }
-  app.innerHTML = ({setup, overview, devices, people, tools, coverage,
-                    dashboard, personal, mcp})[view]();
+  if (view === 'registry') { app.innerHTML = tb + await registryView(); return; }
+  app.innerHTML = tb + ({setup, overview, devices, people, tools, coverage,
+                         dashboard, personal, mcp})[view]();
 }
-function open_(kind, key) { detail = kind ? [kind, key] : null; render(); window.scrollTo(0,0); }
+// A detail opens in the inspector beside the list rather than replacing it.
+// Opening touches only the drawer, so the list keeps its scroll position;
+// a data-open inside the drawer (a device on a tool page) swaps the drawer
+// content in place. The drawer keeps its own trail, so drilling from a tool
+// into one of its devices offers a back step rather than only the ×.
+let DSTACK = [];
+function drawDetail() {
+  const D = {device: deviceDetail, tool: toolDetail, mcp: mcpDetail};
+  const drawer = document.getElementById('drawer');
+  drawer.innerHTML = '<button class="dclose" data-open="" title="close">×</button>'
+    + (DSTACK.length > 1 ? '<button class="back" data-dback="">‹ back</button>' : '')
+    + D[detail[0]](detail[1]);
+  drawer.scrollTop = 0;
+  document.body.classList.add('open');
+}
+function open_(kind, key) {
+  if (!kind) { detail = null; DSTACK = []; document.body.classList.remove('open'); return; }
+  // A click from a list starts a fresh trail; one from inside the drawer
+  // extends it.
+  if (!document.body.classList.contains('open')) DSTACK = [];
+  const top = DSTACK[DSTACK.length - 1];
+  if (top && top[0] === kind && top[1] === key) return;
+  detail = [kind, key];
+  DSTACK.push(detail);
+  drawDetail();
+}
 
 // One delegated listener rather than an onclick per row. The handlers used to
 // be inline, which put a finding's own text inside executable script: a device
@@ -2767,6 +3249,56 @@ app.addEventListener('click', e => {
   if (!el) return;
   const kind = el.getAttribute('data-open');
   open_(kind || null, el.getAttribute('data-key'));
+});
+// The in-page tabs, delegated for the same reason as the rows: the bar is
+// re-rendered with every view.
+app.addEventListener('click', e => {
+  const el = e.target.closest('[data-nav]');
+  if (!el) return;
+  view = el.getAttribute('data-nav'); detail = null;
+  history.replaceState(null, '', '#' + view);
+  drawNav(); render();
+});
+// The Settings sub-tabs, delegated like everything else in #app.
+app.addEventListener('click', e => {
+  const el = e.target.closest('[data-settab]');
+  if (!el) return;
+  SETTAB = el.getAttribute('data-settab');
+  render();
+});
+// The per-field i: toggles the note in the field's own dd. Delegated on
+// document rather than #app so fields rendered anywhere - Settings, the
+// wizard, the extension guide - get it for free.
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-info]');
+  if (!el) return;
+  const dt = el.closest('dt');
+  const note = dt && dt.nextElementSibling
+    ? dt.nextElementSibling.querySelector('.fnote') : null;
+  if (note) { note.classList.toggle('shown'); el.classList.toggle('on'); }
+});
+// The inspector lives outside #app, so it needs the same delegation the
+// views get: its close button and the rows inside a detail both use
+// data-open, and anything action-shaped uses data-act.
+const drawerEl = document.getElementById('drawer');
+drawerEl.addEventListener('click', e => {
+  const el = e.target.closest('[data-open]');
+  if (!el) return;
+  open_(el.getAttribute('data-open') || null, el.getAttribute('data-key'));
+});
+drawerEl.addEventListener('click', e => {
+  const el = e.target.closest('[data-act]');
+  if (el) managedAction(el.getAttribute('data-act'), el);
+});
+drawerEl.addEventListener('click', e => {
+  if (!e.target.closest('[data-dback]')) return;
+  DSTACK.pop();
+  detail = DSTACK[DSTACK.length - 1];
+  drawDetail();
+});
+document.getElementById('overlay').addEventListener('click', () => open_(null));
+window.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && document.body.classList.contains('open')) open_(null);
 });
 // Managed actions, same delegation for the same reason. A separate listener
 // rather than branches in the one above, because data-open is navigation and
@@ -2790,6 +3322,28 @@ app.addEventListener('keydown', e => {
 });
 q.oninput = e => { filter = e.target.value.toLowerCase(); detail = null; render(); };
 document.getElementById('refresh').onclick = () => load(true);
+// Theme and sidebar width are the viewer's own habits, so they live in this
+// browser rather than in a setting every operator would share.
+function setTheme(t) {
+  if (t === 'dark') document.documentElement.dataset.theme = 'dark';
+  else delete document.documentElement.dataset.theme;
+  try { localStorage.setItem('aiguard-theme', t); } catch (e) {}
+}
+document.getElementById('themebtn').onclick = () => {
+  setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+  // Re-render: the Grafana frames carry the theme in their URL, and an
+  // embedded dark dashboard on a light page reads as a broken frame.
+  render();
+};
+try { if (localStorage.getItem('aiguard-theme') === 'dark') setTheme('dark'); } catch (e) {}
+const fold = document.getElementById('fold');
+fold.onclick = () => {
+  const on = document.getElementById('shell').classList.toggle('collapsed');
+  fold.textContent = on ? '»' : '«';
+  fold.title = on ? 'expand sidebar' : 'collapse sidebar';
+  try { localStorage.setItem('aiguard-side', on ? '1' : ''); } catch (e) {}
+};
+try { if (localStorage.getItem('aiguard-side')) fold.onclick(); } catch (e) {}
 document.getElementById('signout').onclick = async () => {
   await mfetch('/api/logout', {method: 'POST'});
   AUTH = {mode: 'login', authenticated: false, username: '', setup_needed: false};
