@@ -105,6 +105,9 @@ is unchanged.
 Where your log store can mint separate tokens, give the receiver a
 write-only one and the portal a read-only one (`portal.loki.*` in the
 chart): a compromised portal then never holds anything that can write.
+The portal's service credential is the receiver's full admin credential
+for now; a purpose-built read-scoped service role is on the list, so a
+compromised portal would hold less than it needs to today.
 
 The login route is throttled at the application level, because it is
 necessarily unauthenticated and scrypt is deliberately expensive: past a

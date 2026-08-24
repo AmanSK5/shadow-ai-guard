@@ -124,10 +124,11 @@ If nothing appears within a minute:
 - **The collector printed an error about the receiver URL or token** - it
   never reached the receiver. Re-download the script (each download carries a
   fresh token) and check the URL is reachable from that machine.
-- **The collector said it reported, but the portal is empty** - the receiver
-  got the finding but couldn't push it to the log store. Check the receiver's
-  logs for lines with `"kind": "error"`; they name the URL it tried and the
-  likely fix. The Diagnostics view in the portal shows the same thing.
+- **The collector reported a POST failure** - the receiver refused the
+  finding because it couldn't deliver it to the log store (the collector
+  keeps it and retries). Check the receiver's logs for lines with
+  `"kind": "error"`; they name the URL it tried and the likely fix. The
+  Diagnostics view in the portal shows the same thing.
 - Anything else: [Troubleshooting](../TROUBLESHOOTING.md).
 
 ## Where to go next

@@ -26,13 +26,10 @@ Those two differ on purpose. `LOKI_PUSH_URL` is the full push endpoint the
 receiver POSTs to verbatim, and posting to the base URL returns 404. `LOKI_URL`
 is the base the portal appends its own query path to.
 
-A wrong `LOKI_PUSH_URL` is quiet in a way worth knowing about: the receiver
-still returns 200 to the reporting source, because a log-store failure should
-not lose a collector's finding, and the failure is logged rather than raised.
-So the collector is satisfied, the finding exists in the receiver's stdout, and
-nothing reaches the portal. If the portal shows nothing after a finding was
-accepted, check `docker compose logs receiver` for a Loki error before anything
-else.
+A wrong `LOKI_PUSH_URL` answers the reporting source with a 503 rather
+than a quiet 200: collectors keep the finding and retry, and the failure is
+logged with the likely cause. If collectors report POST failures, check
+`docker compose logs receiver` for a Loki error before anything else.
 
 ## Setup
 
@@ -79,10 +76,10 @@ page for your stack.
 is the base URL without it, because the portal appends its own query path. Same
 host, two different values.
 
-The access policy needs both `logs:write` and `logs:read`. A read-only token
-produces a 401 on every push that the receiver counts and logs, while still
-answering 200 to the collector, so findings look accepted and are not stored.
-Check before you assume it worked:
+The access policy needs both `logs:write` and `logs:read`. A read-only
+token produces a 401 on every push, which the receiver counts, logs, and
+answers to the collector as a 503 so nothing is silently discarded. Check
+before you assume it worked:
 
     curl -s localhost:8080/metrics | grep -E 'loki_push_total|failures_total'
 
@@ -128,12 +125,10 @@ a Mac and deploy on Linux.
 
 ## When findings stop arriving
 
-The receiver answers 200 to a reporting source even when the push to the log
-store fails, and that is deliberate: a log store being down should not lose a
-collector's finding, which is on stdout regardless. It does mean a
-misconfigured push is invisible from the collector's side.
-
-Three things make it visible:
+When a push target is configured, a failed push answers the reporting
+source with a 503, and collectors keep the finding and retry next run - so
+a store outage delays evidence rather than losing it. Three things make the
+failure itself visible:
 
     docker compose logs receiver | grep '"kind": "error"'
 
