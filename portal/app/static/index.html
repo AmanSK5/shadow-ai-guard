@@ -1658,7 +1658,11 @@ async function extSetup() {
     and an update manifest (<span class="mono">updates.xml</span>) that
     points at it. Any static host or artifact pipeline your org already
     trusts works; serve the .crx as
-    <span class="mono">application/x-chrome-extension</span>.</p>
+    <span class="mono">application/x-chrome-extension</span>. Two habits
+    save a later outage: if your host grants read access per file, grant it
+    by prefix instead, or every new release starts life private; and keep
+    the previous .crx up when you upload a new one - re-pointing updates.xml
+    at it is your rollback.</p>
     <dl class="kv">
       ${settingRow('extension_crx_url', 'Packed .crx URL',
         'https://files.example.com/' + crxName,
