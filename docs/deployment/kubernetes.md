@@ -125,14 +125,14 @@ The same thing without Helm, if you would rather see the pieces.
 Published to GHCR by CI, so nothing needs building:
 
 ```
-ghcr.io/amansk5/shadow-ai-guard/receiver:0.11.1
+ghcr.io/amansk5/shadow-ai-guard/receiver:0.11.2
 ```
 
 Built for `linux/amd64` and `linux/arm64` under one tag, so it resolves on
 Graviton, Apple Silicon and a Pi without anything extra:
 
 ```bash
-docker buildx imagetools inspect ghcr.io/amansk5/shadow-ai-guard/receiver:0.11.1
+docker buildx imagetools inspect ghcr.io/amansk5/shadow-ai-guard/receiver:0.11.2
 ```
 
 Pin a version. `latest` moves when a release is tagged, which means a pod
@@ -212,7 +212,8 @@ Optional, all off by default:
   the admin account. From there the Managed section shows the fleet, mints
   and revokes enrollment tokens, and downloads pre-configured collector
   scripts from the Setup view. No admin secret is provisioned by default;
-  set `managed.adminToken.value` only if automation drives the `/admin` API
+  set `managed.adminToken.value` if you use viewer accounts or the weekly
+  digest (the portal reads with it server-side), if automation drives the `/admin` API
   with curl, or as break-glass when the portal password is lost. Enrollment
   tokens go wherever the shared token goes today - collector parameters,
   the extension's managed policy, the scanner Secret - one surface at a

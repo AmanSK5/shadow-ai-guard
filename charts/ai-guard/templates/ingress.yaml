@@ -17,13 +17,26 @@ spec:
     - host: {{ .Values.ingress.host | quote }}
       http:
         paths:
-          - path: /
+          {{- /* The public surface is what reporting machines need:
+               ingest, enrollment, the registry, the candidates queue and
+               the health probe. /admin and /metrics stay off the public
+               ingress by default - the portal reaches the admin API over
+               the cluster-internal Service, and an operator's automation
+               can too. exposeAdminApi restores the old expose-everything
+               behaviour for the deployment that genuinely drives /admin
+               from outside. Controllers that ignore path rules (Tailscale
+               forwards the whole host) are unaffected: every path targets
+               the same service, and those networks are private anyway. */}}
+          {{- $paths := ternary (list "/") (list "/report" "/flag" "/enroll" "/registry" "/candidates" "/healthz") .Values.ingress.exposeAdminApi }}
+          {{- range $paths }}
+          - path: {{ . }}
             pathType: Prefix
             backend:
               service:
-                name: {{ include "ai-guard.fullname" . }}
+                name: {{ include "ai-guard.fullname" $ }}
                 port:
-                  number: {{ .Values.service.port }}
+                  number: {{ $.Values.service.port }}
+          {{- end }}
   {{- if .Values.ingress.tls.enabled }}
   tls:
     - hosts:

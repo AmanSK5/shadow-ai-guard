@@ -267,6 +267,45 @@ SESSION_TTL_HOURS = int(os.environ.get("SESSION_TTL_HOURS", "24"))
 # operator's ingress, and a counter that can lock the real admin out is a
 # denial-of-service lever pointed at the person who would respond.
 LOGIN_FAILURE_DELAY_SECONDS = 0.5
+# Failed-login throttling, because /admin/login is necessarily open and
+# scrypt is deliberately expensive - which cuts both ways: without a cap an
+# unauthenticated caller can spend receiver CPU and threadpool capacity
+# freely, and grow the audit log one row per attempt. Counters live in
+# memory; a restart forgives, which is fine - the defence is against
+# sustained abuse, not perfect accounting.
+LOGIN_WINDOW_SECONDS = 300
+LOGIN_MAX_FAILURES_PER_USER = 10
+LOGIN_MAX_FAILURES_GLOBAL = 50
+# How many failures per username per window earn their own audit event;
+# past that, the single throttle event is the record, so an attack cannot
+# write the audit log full.
+LOGIN_LOGGED_FAILURES = 3
+_login_failures: dict[str, list] = {}
+_login_lock = threading.Lock()
+# scrypt work is bounded in parallel too, so a burst that stays under the
+# counters still cannot occupy every worker thread at once.
+_scrypt_gate = threading.BoundedSemaphore(4)
+
+
+def _login_gate(username: str) -> tuple[int, int]:
+    """Failures in the current window for this username, and across all of
+    them, after sweeping expired entries."""
+    cutoff = time.time() - LOGIN_WINDOW_SECONDS
+    with _login_lock:
+        total = 0
+        for k in list(_login_failures):
+            kept = [ts for ts in _login_failures[k] if ts > cutoff]
+            if kept:
+                _login_failures[k] = kept
+                total += len(kept)
+            else:
+                del _login_failures[k]
+        return len(_login_failures.get(username, [])), total
+
+
+def _login_failed(username: str):
+    with _login_lock:
+        _login_failures.setdefault(username, []).append(time.time())
 
 # The off-switch for the shared token, once every surface has enrolled: with
 # this set, /report and /registry accept device credentials only and the
@@ -945,9 +984,25 @@ def setup(req: SetupRequest):
 def login(req: LoginRequest):
     if STATE is None:
         raise HTTPException(404, "Not Found")
+    user_n, global_n = _login_gate(req.username)
+    if (user_n >= LOGIN_MAX_FAILURES_PER_USER
+            or global_n >= LOGIN_MAX_FAILURES_GLOBAL):
+        # Refused before any scrypt work, sleep, or database write: the
+        # point of the throttle is that a rejected attempt costs nearly
+        # nothing. The single login_throttled event below is the audit
+        # record; per-attempt rows here would be the attack writing our
+        # log for us.
+        raise HTTPException(
+            429, "too many failed sign-ins; try again in a few minutes",
+            headers={"Retry-After": str(LOGIN_WINDOW_SECONDS)})
     try:
-        return STATE.login(req.username, req.password, SESSION_TTL_HOURS)
+        with _scrypt_gate:
+            return STATE.login(req.username, req.password, SESSION_TTL_HOURS,
+                               log_failure=user_n < LOGIN_LOGGED_FAILURES)
     except _state.AuthError as e:
+        _login_failed(req.username)
+        if user_n + 1 == LOGIN_MAX_FAILURES_PER_USER:
+            STATE.record_login_throttled(req.username)
         time.sleep(LOGIN_FAILURE_DELAY_SECONDS)
         raise HTTPException(e.status, e.detail)
 
@@ -1096,7 +1151,7 @@ _STR_SETTINGS = (
 # tool. Baked into every extension policy artifact; "warn" is the default
 # when unset, matching the extension's own default.
 _PASTE_GUARD_MODES = ("off", "warn", "block")
-SECRET_SETTINGS = ("log_store_password",)
+SECRET_SETTINGS = ("log_store_password", "webhook_url")
 
 
 class SettingsUpdate(BaseModel):
@@ -1185,6 +1240,13 @@ def get_settings(authorization: str = Header(default="")):
         "extension_xpi_url": plain("extension_xpi_url"),
         "paste_guard_mode": plain("paste_guard_mode"),
         "firefox_extension_id": plain("firefox_extension_id"),
+        # An incoming webhook URL is itself a bearer capability - whoever
+        # holds it can post to the channel - so it is masked like the log
+        # store password: set-ness and source, never the value.
+        "webhook_url": {
+            "set": stored.get("webhook_url") is not None,
+            "source": "db" if stored.get("webhook_url") is not None else "unset",
+        },
         "classification_markings": {
             "value": stored.get("classification_markings"),
             "source": ("db" if stored.get("classification_markings")
@@ -1204,12 +1266,15 @@ def get_settings_secrets(authorization: str = Header(default="")):
     honest statement of the property: integration secrets are recoverable
     by the admin API, unlike fleet credentials, which are hashes.
 
-    Deliberately NOT write-gated: the portal reads Loki on behalf of
-    whoever is signed in, so a viewer session reaches this hop too. What
-    the credential guards - the findings - is exactly what a viewer is
-    trusted to read, and the portal still never relays the value itself.
+    Admin-only, and the role gate here is load-bearing: the stored
+    credential is typically write-capable (hosted log stores hand out one
+    token for both directions), so a viewer who could recover it could
+    inject findings past the receiver's validation - a read-only account
+    must not be a path to a write credential. The portal reads this with
+    its own service credential (RECEIVER_ADMIN_TOKEN) or an admin session;
+    a viewer's session is refused, and the portal says what to configure.
     """
-    _admin_auth(authorization)
+    _admin_auth(authorization, write=True)
     s = STATE.get_settings()
     return {"log_store_url": s.get("log_store_url") or "",
             "log_store_push_url": s.get("log_store_push_url") or "",

@@ -62,8 +62,21 @@ def admin(managed):
 def test_viewer_reads_everything(viewer):
     for path in ("/admin/settings", "/admin/devices", "/admin/candidates",
                  "/admin/governance", "/admin/events", "/admin/users",
-                 "/admin/finding-status", "/admin/settings/secrets"):
+                 "/admin/finding-status"):
         assert client.get(path, headers=viewer).status_code == 200, path
+
+
+def test_viewer_cannot_recover_the_log_store_credential(viewer, admin):
+    """The stored credential is typically write-capable (hosted stores hand
+    out one token for both directions), so a read-only account recovering
+    it would be a path to injecting findings past the receiver. Admin
+    sessions and the service credential still can."""
+    assert client.get("/admin/settings/secrets",
+                      headers=viewer).status_code == 403
+    assert client.get("/admin/settings/secrets",
+                      headers=admin).status_code == 200
+    assert client.get("/admin/settings/secrets",
+                      headers=API_ADMIN).status_code == 200
 
 
 def test_viewer_writes_nothing_and_is_told_why(viewer):
