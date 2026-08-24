@@ -116,11 +116,13 @@ without.
 **This is the most misleading failure in the system, so check it first when
 data is missing.**
 
-The receiver returns `200` to the reporting source even when it cannot write to
-Loki, deliberately: a log store being down should not make a collector think its
-finding was rejected and throw it away. The consequence is that every collector
-is satisfied, the finding exists in the receiver's stdout, and nothing reaches
-either view.
+Since 0.11.3 a failed push answers the collector with a `503`, so collectors
+keep the finding and retry - on current versions this failure shows up as
+`POST-FAILED` in collector logs rather than silence. On 0.11.2 and earlier
+the receiver returned `200` even when it could not write to Loki: every
+collector was satisfied, the finding existed in the receiver's stdout, and
+nothing reached either view. Either way, the receiver's own metrics name
+the cause:
 
 Check the receiver's own metrics:
 
