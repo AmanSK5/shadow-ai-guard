@@ -1516,7 +1516,7 @@ function testNote(which) {
 // fields flat.
 function logStoreFields(withUsername) {
   return settingRow('log_store_url', 'Log store base URL',
-    'http://loki.monitoring.svc.cluster.local:3100',
+    'http://loki.<namespace>.svc.cluster.local:3100',
     'The BASE URL. The receiver derives the push endpoint from it, so the push-vs-base mixup cannot happen here.')
     + (withUsername ? settingRow('log_store_username', 'Log store username',
         'numeric instance id on Grafana Cloud', '')
@@ -1876,7 +1876,7 @@ async function wizard() {
   <div class="wcard" style="margin-bottom:10px"><h3>6 · Alerting and Grafana (optional)</h3>
   <dl class="kv">
     ${settingRow('alertmanager_url', 'Alertmanager URL',
-      'http://alertmanager.monitoring.svc:9093',
+      'http://alertmanager.<namespace>.svc:9093',
       'warn findings page through this; empty means nothing pages.')}
     ${settingRow('grafana_url', 'Grafana URL',
       'the URL a BROWSER reaches Grafana on',
@@ -1981,7 +1981,7 @@ function managedSettings() {
   <div class="wcard" style="margin-bottom:10px"><h3>Alerting and Grafana</h3>
   <dl class="kv">
     ${settingRow('alertmanager_url', 'Alertmanager URL',
-      'http://alertmanager.monitoring.svc:9093',
+      'http://alertmanager.<namespace>.svc:9093',
       'warn findings page through this. Empty means findings are logged and dashboarded but nothing pages.')}
     ${settingRow('grafana_url', 'Grafana URL',
       'the URL a BROWSER reaches Grafana on',
