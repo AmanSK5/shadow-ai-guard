@@ -29,6 +29,7 @@ useful without a name on it.
 import csv
 import io
 import json
+import math
 import os
 import re
 import sys
@@ -36,6 +37,7 @@ import time
 import urllib.parse
 import urllib.request
 from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 
 from app import governance
 
@@ -741,7 +743,72 @@ def mcp_from(findings):
     return out
 
 
-def graph_from(findings, domain_map=None, identity_map=None):
+def trends_from(findings, domain_map=None, hours=168):
+    """Per-day activity across the window: the change dimension.
+
+    Every other number here is a total over the window, which answers "how
+    much" and never "which way is it going" - 23 personal accounts reads
+    the same whether it was 12 last week or 40. These series are bucketed
+    by UTC calendar day from the same findings, so the overview can draw
+    the shape of the week instead of one number.
+
+    Per-tool activity counts distinct devices per day; a cloud-only tool
+    (no device on any finding) falls back to findings per day rather than
+    flatlining at zero. tool_first_seen is kept so a tool that appeared two
+    days ago can be labelled new - a thing no total can show.
+    """
+    domain_map = domain_map or {}
+    ndays = max(2, math.ceil(hours / 24))
+    today = datetime.now(timezone.utc).date()
+    days = [(today - timedelta(days=i)).isoformat()
+            for i in range(ndays - 1, -1, -1)]
+    idx = {d: i for i, d in enumerate(days)}
+
+    devices_daily = [set() for _ in days]
+    personal_daily = [0] * ndays
+    tool_devices = defaultdict(lambda: [set() for _ in days])
+    tool_events = defaultdict(lambda: [0] * ndays)
+    tool_first = {}
+
+    for f in findings:
+        ts = f.get("reported_at") or ""
+        i = idx.get(ts[:10])
+        if i is None:
+            continue
+        device = (f.get("device") or "").strip()
+        if device:
+            devices_daily[i].add(device)
+        tool = f.get("tool") or ""
+        if not tool or tool in NOT_A_TOOL:
+            continue
+        if (f.get("source") or "") in BRIDGE_SOURCES:
+            continue
+        tool = normalise_tool(tool, domain_map)
+        tool_events[tool][i] += 1
+        if device:
+            tool_devices[tool][i].add(device)
+        if tool not in tool_first or ts < tool_first[tool]:
+            tool_first[tool] = ts
+        if ((f.get("severity") or "") == "warn"
+                and (f.get("account_domain") or "").strip()):
+            personal_daily[i] += 1
+
+    tools_out = {}
+    for tool, events in tool_events.items():
+        counts = ([len(s) for s in tool_devices[tool]]
+                  if tool in tool_devices else [])
+        tools_out[tool] = counts if any(counts) else events
+
+    return {
+        "days": days,
+        "devices": [len(s) for s in devices_daily],
+        "personal": personal_daily,
+        "tools": tools_out,
+        "tool_first_seen": tool_first,
+    }
+
+
+def graph_from(findings, domain_map=None, identity_map=None, hours=168):
     """Everything above, assembled into the shape the API and the UI read."""
     devices, identities, tools, bridges, unattributed = build(
         findings, domain_map, identity_map)
@@ -763,6 +830,7 @@ def graph_from(findings, domain_map=None, identity_map=None):
         "unattributed": unattributed,
         "personal_accounts": personal_accounts_from(findings, domain_map),
         "mcp_servers": mcp_from(findings),
+        "trends": trends_from(findings, domain_map, hours),
         "counts": {
             "findings": len(findings),
             "devices": len(devices),
