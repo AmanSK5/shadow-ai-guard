@@ -33,7 +33,10 @@ helm install ai-guard oci://ghcr.io/amansk5/shadow-ai-guard/charts/ai-guard \
 
 The two hosts are the URLs your machines will reach the receiver on and you
 will reach the portal on. Anything that gives those two services a hostname
-works: an ingress controller, Tailscale, a reverse proxy.
+works: an ingress controller, Tailscale, a reverse proxy. With an ingress
+controller, both names need a DNS record pointing at its load balancer -
+[the deployment docs](deployment/kubernetes.md) walk that through; Tailscale
+handles names and certificates itself.
 
 **Docker Compose:**
 
