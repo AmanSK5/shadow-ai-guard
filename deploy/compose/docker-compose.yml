@@ -144,6 +144,14 @@ services:
       # than an empty page; an unknown name renders an error card naming what
       # is valid, rather than quietly not appearing.
       OVERVIEW_WIDGETS: ${OVERVIEW_WIDGETS:-}
+      # Weekly digest to a Slack-compatible webhook, sent by the portal.
+      # Needs LOKI_URL above as the log store the background task reads.
+      DIGEST_WEBHOOK_URL: ${DIGEST_WEBHOOK_URL:-}
+      DIGEST_DAY: ${DIGEST_DAY:-}
+      DIGEST_HOUR: ${DIGEST_HOUR:-}
+      # The digest task reads the wizard-saved log store with the receiver's
+      # admin credential - the same AIGUARD_ADMIN_TOKEN the receiver gets.
+      RECEIVER_ADMIN_TOKEN: ${AIGUARD_ADMIN_TOKEN:-}
       # There is no chart here, so the portal's settings page shows this and
       # leaves the Kubernetes-only fields empty rather than guessing at them.
       DEPLOY_CHART_VERSION: ${DEPLOY_CHART_VERSION:-compose}
