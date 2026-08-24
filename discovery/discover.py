@@ -34,6 +34,8 @@ Env:
                                          posting to the receiver)
   MIN_DEVICES                           (default 1)
   DRY_RUN                               (set to print candidates, emit nothing)
+  DEBUG                                 (set to log the domains sent for
+                                         classification)
 """
 
 import json
@@ -59,6 +61,7 @@ GITLAB_TOKEN = os.environ.get("GITLAB_TOKEN", "")
 GITLAB_PROJECT = os.environ.get("GITLAB_PROJECT_ID", "")
 MIN_DEVICES = int(os.environ.get("MIN_DEVICES", "1"))
 DRY_RUN = os.environ.get("DRY_RUN", "").strip().lower() in {"1", "true", "yes", "on"}
+DEBUG = os.environ.get("DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}
 
 def _require_https(name: str, value: str) -> None:
     """Reject non-HTTPS base URLs at startup to prevent sending API tokens
@@ -596,13 +599,19 @@ def main():
     if not residue:
         return
 
+    if DEBUG:
+        print("sending for classification:", ", ".join(sorted(residue)),
+              file=sys.stderr)
     verdicts = classify(sorted(residue))
     candidates = [
         v for v in verdicts
         if v.get("is_ai") and v.get("confidence") in ("high", "medium")
     ]
     groups = group_candidates(candidates, residue)
-    print(f"classified: {len(candidates)} AI domain(s) -> {len(groups)} product(s)")
+    # "classified 56 of 56: 0 AI" and "classified 0 of 56: 0 AI" are very
+    # different failures; the count of verdicts that came back tells them apart.
+    print(f"classified {len(verdicts)} of {len(residue)} domain(s): "
+          f"{len(candidates)} AI -> {len(groups)} product(s)")
     if not groups:
         return
 
