@@ -212,7 +212,8 @@ Optional, all off by default:
   the admin account. From there the Managed section shows the fleet, mints
   and revokes enrollment tokens, and downloads pre-configured collector
   scripts from the Setup view. No admin secret is provisioned by default;
-  set `managed.adminToken.value` only if automation drives the `/admin` API
+  set `managed.adminToken.value` if you use viewer accounts or the weekly
+  digest (the portal reads with it server-side), if automation drives the `/admin` API
   with curl, or as break-glass when the portal password is lost. Enrollment
   tokens go wherever the shared token goes today - collector parameters,
   the extension's managed policy, the scanner Secret - one surface at a

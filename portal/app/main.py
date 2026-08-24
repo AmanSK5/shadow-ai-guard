@@ -510,15 +510,20 @@ def _log_store(request):
     answer is a loud error, because silently falling back to env here
     could read a different store than the receiver is writing to.
     """
-    # request=None is a background caller (the digest). It reads with the
-    # service credential when one is configured, and falls back to env
-    # below when not - the same precedence a session gets.
+    # The secrets read is a server-side hop with the portal's own service
+    # credential (RECEIVER_ADMIN_TOKEN) when one is configured - it also
+    # serves request=None, the digest's background caller. Without one it
+    # falls back to the session, which works for admins; a viewer session
+    # is refused there by design (the stored credential is typically
+    # write-capable, and a read-only account must not be a path to it), so
+    # the refusal names what to configure instead of echoing a bare 403.
     if LOGIN_MODE and (request is not None or RECEIVER_ADMIN_TOKEN):
         now = time.time()
         if (_log_store_cache["data"] is None
                 or now - _log_store_cache["at"] >= SETTINGS_CACHE_TTL):
-            token = (request.cookies.get(SESSION_COOKIE, "")
-                     if request is not None else RECEIVER_ADMIN_TOKEN)
+            token = RECEIVER_ADMIN_TOKEN or (
+                request.cookies.get(SESSION_COOKIE, "")
+                if request is not None else "")
             try:
                 _log_store_cache["data"] = managed.receiver_request(
                     RECEIVER_URL, "GET", "/admin/settings/secrets", token)
@@ -527,6 +532,13 @@ def _log_store(request):
                 if e.status == 502:
                     log.warning("receiver call failed for %s: %s",
                                 _redact_url(RECEIVER_URL), e.detail)
+                if e.status == 403:
+                    raise HTTPException(
+                        403, "this account cannot read the log-store "
+                             "credentials (read-only accounts never can). "
+                             "Give the portal RECEIVER_ADMIN_TOKEN - the "
+                             "receiver's ADMIN_TOKEN - so it reads with "
+                             "its own credential, or set LOKI_URL by env.")
                 raise HTTPException(
                     e.status, "could not read the log-store configuration "
                               "from the receiver (%s)" % e.detail)
