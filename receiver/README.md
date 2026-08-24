@@ -147,10 +147,14 @@ no receiver restart.
 
 ## When findings stop arriving
 
-The receiver answers 200 to a reporting source even when the push to the log
-store fails. That is deliberate - a log store being down should not lose a
-collector's finding, which is on stdout regardless - but it means a
-misconfigured push is invisible from the collector's side.
+When a push target is configured, a failed push is a **503** back to the
+reporting source, and collectors keep the finding and retry on their next
+run - a 200 means the finding actually reached the store. It used to be a
+200 either way, which made a broken token produce a clean-looking dashboard
+while collectors discarded findings the store never received. With no push
+target configured, stdout is the contract and /report answers 200 as ever.
+The retry costs a duplicate stdout line; duplicate evidence beats silently
+missing evidence.
 
 Push failures log at error with the URL and, for the codes that account for
 almost every misconfiguration, the likely cause: a 404 usually means

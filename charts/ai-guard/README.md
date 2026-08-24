@@ -238,8 +238,8 @@ misconfiguration.
 
 On Grafana Cloud the username is a numeric instance id rather than an email,
 and the access policy needs `logs:write` AND `logs:read`. A read-only token
-produces a 401 on every push that the receiver counts and logs while still
-answering 200 to the collector, so findings look accepted and are not stored.
+produces a 401 on every push, which the receiver counts, logs, and answers
+to the collector as a 503 so nothing is silently discarded.
 `aiguard_loki_push_total` staying at zero while findings arrive is that
 failure.
 
