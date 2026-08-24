@@ -8,7 +8,10 @@
 # Then open either:
 #
 #   http://localhost:8091   the portal: devices, tools, people, and what is
-#                           reporting. Start here.
+#                           reporting. Start here. It runs managed mode like
+#                           a real deployment, so it asks for the one-time
+#                           setup code the receiver printed:
+#                               docker compose logs receiver | grep setup_code
 #   http://localhost:3000   Grafana (anonymous, no login), the "Shadow AI"
 #                           dashboard.
 #
@@ -73,8 +76,16 @@ services:
       REGISTRY_PATH: "/etc/ai-guard/registry.json"
       COLLECTOR_REGISTRY_PATH: "/etc/ai-guard/collector.json"
       DISPLAY_TZ: "UTC"
+      # Managed mode, because it is the default everywhere else: enrollment,
+      # the portal login and central settings, backed by one SQLite file on
+      # the named volume below. `down -v` wipes it, so every fresh start of
+      # the demo walks the real first-boot path: setup code, admin account,
+      # wizard.
+      MANAGED_MODE: "true"
+      STATE_DB_PATH: /var/lib/ai-guard/state.db
     volumes:
       - registry-dist:/etc/ai-guard:ro
+      - managed-state:/var/lib/ai-guard
     depends_on:
       loki:
         condition: service_healthy
@@ -145,11 +156,14 @@ services:
     build: ../portal
     environment:
       LOKI_URL: "http://loki:3100"
-      # The portal refuses to start without authentication, deliberately: it
-      # names who runs what on which machine. This demo is seeded with fake
-      # Pokemon users and bound to loopback, so it opts out explicitly rather
-      # than shipping a credential someone might carry into production.
-      PORTAL_AUTH: "none"
+      # Managed mode, same as a real deployment: admin actions proxy to the
+      # receiver and the portal gets a real login. The receiver prints a
+      # one-time setup code to its log on first boot - find it with
+      #     docker compose logs receiver | grep setup_code
+      # and create the admin account from the login screen. That unlocks the
+      # settings, the wizard (#wizard), fleet and enrollment tokens - the
+      # parts of the platform a no-auth demo could not show.
+      RECEIVER_URL: "http://receiver:8080"
       REGISTRY_PATH: "/etc/ai-guard/registry.json"
       # Governance decisions. Optional everywhere, including here: comment
       # this out and the register falls back to the registry's own approved
@@ -211,3 +225,4 @@ services:
 
 volumes:
   registry-dist:
+  managed-state:
