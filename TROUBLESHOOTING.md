@@ -247,6 +247,31 @@ keeps its current token, so nothing has to be redeployed.
 
 ---
 
+## The receiver crash-loops on `unable to open database file`
+
+```
+sqlite3.OperationalError: unable to open database file
+```
+
+Managed mode keeps its state DB on a PVC, and the PVC arrived owned by root.
+Most StorageClasses hand volumes over that way; it is `fsGroup` in the pod
+security context that makes the kubelet chown the mount to the pod's group.
+The chart runs the receiver as uid 65532, so without `fsGroup` that uid cannot
+create `/var/lib/ai-guard/state.db` and the pod dies before serving anything.
+
+Chart 0.10.5 sets `fsGroup: 65532` by default. On an older chart, or with a
+values file that replaces `podSecurityContext` wholesale, add it back:
+
+```yaml
+podSecurityContext:
+  fsGroup: 65532
+```
+
+and `helm upgrade`. The pod recovers on the next start; nothing on the volume
+needs repair.
+
+---
+
 ## `ImagePullBackOff`
 
 ```bash
