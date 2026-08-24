@@ -86,7 +86,7 @@ credentials, and it reveals nothing about your estate.
 | `DEPLOY_RELEASE` | no | as above |
 | `DEPLOY_NAMESPACE` | no | as above |
 | `DIGEST_WEBHOOK_URL` | no | Slack-compatible webhook for the weekly digest; `DIGEST_DAY` (mon..sun) and `DIGEST_HOUR` (UTC) tune when it sends |
-| `RECEIVER_ADMIN_TOKEN` | no | the receiver's `ADMIN_TOKEN`, `_FILE` supported. Lets the digest task read a log store that was saved through the portal; without it the digest needs `LOKI_URL` |
+| `RECEIVER_ADMIN_TOKEN` | no | the receiver's `ADMIN_TOKEN`, `_FILE` supported. The portal's own service credential for the server-side log-store secrets read - needed for viewer sessions and the digest task when the log store was saved through the wizard (viewers are refused that read by design; the credential is typically write-capable). The chart mounts it automatically when `managed.adminToken` is set |
 | `RECEIVER_URL` | no | the receiver's admin API, reachable from the portal. Unset means the Managed views say so and nothing else changes |
 | `RECEIVER_PUBLIC_URL` | no | the ingest URL agents can reach, baked into downloaded deployment artifacts. Different from `RECEIVER_URL` on purpose: a cluster-internal service name baked into a Jamf script would enroll nothing |
 | `COLLECTOR_SCRIPTS_DIR` | no | verified copies of the endpoint collector scripts, shipped in the image; override for development |

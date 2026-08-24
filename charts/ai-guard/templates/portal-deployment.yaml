@@ -52,17 +52,20 @@ spec:
             # version of the same message, delivered before anyone can see it.
             - name: LOKI_URL
               value: {{ .Values.portal.lokiUrl | quote }}
-            {{- with .Values.loki.username }}
-            # The same credentials the receiver writes with. The portal had no
-            # Loki auth of any kind, so a chart install pointed at an
-            # authenticated log store stored findings the portal then got a 401
-            # reading back: the receiver healthy, the counters climbing, and
-            # the portal reporting an error a deployer would read as their own
-            # misconfiguration.
+            {{- /* The shared pair is the receiver's credentials reused for
+                 reading - the portal had no Loki auth at all once, and a
+                 chart install against an authenticated store produced
+                 findings the portal got a 401 reading back. portal.loki.*
+                 overrides let the portal carry a READ-ONLY token instead,
+                 so a compromised portal never holds anything that can
+                 write: worth doing where your log store can mint separate
+                 read and write tokens. */}}
+            {{- $ploki := .Values.portal.loki | default dict }}
+            {{- with $ploki.username | default .Values.loki.username }}
             - name: LOKI_USERNAME
               value: {{ . | quote }}
             {{- end }}
-            {{- with .Values.loki.existingSecret }}
+            {{- with $ploki.existingSecret | default .Values.loki.existingSecret }}
             - name: LOKI_PASSWORD
               valueFrom:
                 secretKeyRef:
@@ -151,12 +154,13 @@ spec:
             - name: DIGEST_WEBHOOK_URL
               value: {{ . | quote }}
             {{- end }}
-            {{- if and $digest.webhookUrl .Values.managed.enabled
+            {{- if and .Values.managed.enabled
                        (or .Values.managed.adminToken.value .Values.managed.adminToken.existingSecret) }}
-            # The digest task runs with no operator session; the receiver's
-            # admin credential is how it reads the log store saved through
-            # the wizard. Only mounted when the digest is actually on, so a
-            # portal without one never holds it.
+            # The portal's own service credential for server-side receiver
+            # reads: the log-store secrets hop (which viewer sessions are
+            # refused, by design - a read-only account must not be a path
+            # to a write-capable credential) and the digest's background
+            # task. Mounted whenever the credential exists.
             - name: RECEIVER_ADMIN_TOKEN
               valueFrom:
                 secretKeyRef:
