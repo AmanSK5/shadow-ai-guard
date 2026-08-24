@@ -36,14 +36,20 @@ docker compose up
 
 Then:
 
+- open http://localhost:8091. The demo runs managed mode like a real
+  deployment, so it asks for the one-time setup code the receiver printed
+  (`docker compose logs receiver | grep setup_code`). Create the throwaway
+  admin account, click through the wizard, and explore - the seeded
+  findings are already in there
 - open http://localhost:3000 and find the "AI Guard - Shadow AI Visibility"
   dashboard. It should already have data in it
 - open http://localhost:8090/demo/ and paste one of the test values on the
   page into the box. The paste guard should stop it
 - stop and wipe with `docker compose down -v`
 
-What this tells me: whether a clean clone works, and whether the dashboard
-makes sense to somebody who has not seen it before.
+What this tells me: whether a clean clone works, whether the first-boot flow
+makes sense cold, and whether the portal makes sense to somebody who has not
+seen it before.
 
 Worth reporting: any container that failed, an empty dashboard, a panel that
 says No data, or anything on the dashboard you could not interpret.
@@ -83,10 +89,14 @@ a Helm chart if you want the short version:
 
 ```bash
 helm install ai-guard charts/ai-guard \
-  --set ingress.enabled=true --set ingress.host=<something you can reach>
+  --set ingress.enabled=true --set ingress.host=<something you can reach> \
+  --set portal.ingress.enabled=true --set portal.ingress.host=<another one>
 ```
 
-Then run a collector from your own machine against it, as in route 2.
+Then create the admin account with the setup code from the receiver's log,
+follow the wizard, download a collector from it, and run that on your own
+machine. The download carries its own enrollment token, so there is no token
+to copy around.
 
 What this tells me: whether the deployment instructions work on a cluster
 that is not mine. This is the route with the most assumptions baked in and

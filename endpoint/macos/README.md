@@ -41,6 +41,15 @@ reports as `warn`; everything else is `info`.
   clean machine. The failure is visible in the policy log and as a failed
   policy run.
 
+## Getting the script
+
+The portal's deployment downloads serve this script pre-configured: the
+receiver URL and a fresh enrollment token are baked in as the script's own
+defaults, so the Jamf parameters below become optional overrides rather
+than required setup. Corporate domains are never baked - the receiver
+serves those at runtime. Downloading from the portal and pushing through
+Jamf is the short path; everything below also works from a checkout.
+
 ## Jamf deployment
 
 1. **Script object**: add `ai-guard-collector.sh` as a script in Jamf

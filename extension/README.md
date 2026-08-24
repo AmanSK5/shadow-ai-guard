@@ -58,22 +58,29 @@ warn to block is a policy push, not a release.
 ## Setup
 
 The extension is not on a web store - you pack it and deploy it yourself
-through enterprise browser policy. The one-time work is:
+through enterprise browser policy.
 
-1. Point the source at your receiver (a one-line manifest edit).
+**Start in the portal.** The extension setup guide (from the wizard's
+extension step, or Settings) walks the whole flow one page at a time, serves
+the source pre-configured, generates every policy file, and probes your
+hosting. This README is the same material for reading offline, and the
+reference for classic mode.
+
+The one-time work, whichever way you drive it:
+
+1. Point the source at your receiver (a one-line manifest edit; the
+   portal's download has it done).
 2. Pack it, which gives you the extension's id and signing key.
 3. Host the packed file and its update manifest anywhere on HTTPS.
    (Firefox: also submit to Mozilla for signing - covered below.)
-4. Deploy the policies through your MDM/GPO. In managed mode the portal
-   generates these pre-configured; classic mode uses the templates in
-   `deploy/`.
+4. Deploy the policies through your MDM/GPO. The portal generates these
+   pre-configured; classic mode uses the templates in `deploy/`.
 5. Verify on one machine.
 
 After that, everything day-to-day (mode changes, domain changes, new
 enrollment tokens) is a policy push, and releases are pack-upload-done.
 
-With a managed-mode deployment, the portal walks all of this: the wizard's
-extension step opens a guided setup that serves the source pre-configured
+In detail, the guided setup serves the source pre-configured
 (this repo's `src/`, with the receiver origin already in the manifest - so
 none of it needs a checkout), carries the packing instructions from this
 README, generates `updates.xml` and `firefox-updates.json` from what you

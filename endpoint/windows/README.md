@@ -17,6 +17,13 @@ directories, and POSTs data to an external URL. EDR tools may flag this as
 suspicious; add an allowlist entry for the script and the receiver URL if
 needed.
 
+## Getting the script
+
+The portal's deployment downloads serve this script with the receiver URL
+and a fresh enrollment token already substituted, so the manual edit below
+is only needed when working from a checkout. Corporate domains are never
+baked - the receiver serves those at runtime.
+
 ## Configuration
 
 Intune platform scripts take no parameters, so configuration lives in
