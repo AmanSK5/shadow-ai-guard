@@ -141,6 +141,30 @@ spec:
             - name: GRAFANA_DASHBOARD_UID
               value: {{ . | quote }}
             {{- end }}
+            {{- with .Values.portal.digest.webhookUrl }}
+            - name: DIGEST_WEBHOOK_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if and .Values.portal.digest.webhookUrl .Values.managed.enabled
+                       (or .Values.managed.adminToken.value .Values.managed.adminToken.existingSecret) }}
+            # The digest task runs with no operator session; the receiver's
+            # admin credential is how it reads the log store saved through
+            # the wizard. Only mounted when the digest is actually on, so a
+            # portal without one never holds it.
+            - name: RECEIVER_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.managed.adminToken.existingSecret | default (printf "%s-admin" (include "ai-guard.fullname" .)) }}
+                  key: adminToken
+            {{- end }}
+            {{- with .Values.portal.digest.day }}
+            - name: DIGEST_DAY
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.portal.digest.hour }}
+            - name: DIGEST_HOUR
+              value: {{ . | quote }}
+            {{- end }}
           volumeMounts:
             - name: registry
               mountPath: /etc/ai-guard

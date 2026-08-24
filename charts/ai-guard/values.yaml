@@ -272,6 +272,21 @@ portal:
   overview:
     widgets: []
 
+  # A weekly summary to a Slack-compatible incoming webhook: personal
+  # accounts, tools in use, silent sources. Sent by the portal's background
+  # task, which holds no operator session - so on the managed default,
+  # where the log store is saved through the wizard, it reads via the
+  # receiver's admin credential: set managed.adminToken (value or
+  # existingSecret) and the chart mounts it for the portal automatically
+  # while the digest is on. A deployment that sets the portal's log store
+  # by env instead needs no credential. Distinct from the receiver's
+  # webhook_url setting, which fires on new discovery candidates the
+  # moment they appear.
+  digest:
+    webhookUrl: ""
+    day: ""      # mon..sun, default mon
+    hour: ""     # 0-23 UTC, default 8
+
   # Panel ids are not knowable until Grafana is running with data, so this is
   # usually a second pass. See the chart README.
   grafana:

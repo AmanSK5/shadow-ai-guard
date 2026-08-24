@@ -1,8 +1,10 @@
 # Local demo
 
 See the platform work with synthetic data in about five minutes. No cluster,
-no credentials, no real estate touched. Everything here is fake: demo users
-are named after Pokemon, findings are seeded locally.
+no real estate touched. Everything here is fake: demo users are named after
+Pokemon, findings are seeded locally. The only credential involved is the
+one the demo itself mints: the portal runs managed mode like a real
+deployment, so the first visit walks the real first-boot path.
 
 The demo shows both halves of the platform: the detection pipeline landing
 in a Grafana dashboard, and the browser paste guard intercepting secrets
@@ -28,11 +30,24 @@ docker compose down -v
 
 ## The portal
 
-Open http://localhost:8091. It lands on a setup view showing which detection
-sources are reporting and what each silent one would need. In the demo most
-are not reporting - that's what a partly-configured deployment looks like,
-and the page exists so you can always tell "not set up" apart from "nothing
-to report".
+Open http://localhost:8091. It asks you to create the admin account - the
+receiver printed a one-time setup code to its log when it started:
+
+```bash
+docker compose logs receiver | grep setup_code
+```
+
+Paste the code, pick a username and password, and you are in - the same
+first-boot flow as a real deployment, which is why the demo does not skip
+it. Being signed in unlocks the managed half of the platform: the setup
+wizard (the portal offers it, or go to `#wizard`), central settings, the
+fleet view and enrollment tokens.
+
+After login it lands on a sources view showing which detection sources are
+reporting and what each silent one would need. In the demo most are not
+reporting - that's what a partly-configured deployment looks like, and the
+page exists so you can always tell "not set up" apart from "nothing to
+report".
 
 The other tabs are the part Grafana cannot do. Findings are a flat stream of
 isolated rows; the portal derives the relationships between them, so a device
