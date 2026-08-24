@@ -142,7 +142,7 @@ def test_auth_state_in_classic_mode_names_the_mode_and_calls_nothing(monkeypatch
 def test_auth_state_offers_create_account_on_a_fresh_receiver(login_mode):
     out = main.auth_state(_request())
     assert out == {"mode": "login", "authenticated": False, "username": "",
-                   "setup_needed": True}
+                   "role": "", "setup_needed": True}
     # It asked the receiver's unauthenticated one-bit probe, nothing else.
     assert [c["path"] for c in login_mode] == ["/admin/setup"]
 
