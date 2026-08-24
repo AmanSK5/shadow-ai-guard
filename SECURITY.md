@@ -87,13 +87,46 @@ A word on what the state DB holds, because it changed in 0.9.8. **Fleet
 credentials** - enrollment tokens, device credentials, sessions, the admin
 password - are stored as hashes only; a copied database file cannot
 impersonate anything. **Integration secrets** are different: a log store
-password saved in the portal is stored recoverable, because the receiver
-must present it to push findings. It is masked everywhere in the UI and in
-the ordinary settings API, and the plaintext exists on exactly one admin
-route the portal uses server-side - but an admin who can set it can read it
-back, and a copied database file now contains it. If that trade is
-unacceptable, leave the log store configured by environment/Secret as
-before; the wizard step is optional and the env path is unchanged.
+password saved in the portal, and a notification webhook URL (itself a
+bearer capability - whoever holds it can post to the channel), are stored
+recoverable, because the receiver must present them outward. Both are
+masked everywhere in the UI and in the ordinary settings API. The log-store
+plaintext exists on exactly one admin-only route the portal uses
+server-side, and the role gate there is load-bearing: the stored credential
+is typically write-capable (hosted log stores hand out one token for both
+directions), so a read-only viewer recovering it would be a path to
+injecting findings past the receiver's validation - viewers are refused,
+and the portal reads with its own service credential instead. An admin who
+can set a secret can read it back, and a copied database file contains
+them. If that trade is unacceptable, leave the log store configured by
+environment/Secret as before; the wizard step is optional and the env path
+is unchanged.
+
+Where your log store can mint separate tokens, give the receiver a
+write-only one and the portal a read-only one (`portal.loki.*` in the
+chart): a compromised portal then never holds anything that can write.
+
+The login route is throttled at the application level, because it is
+necessarily unauthenticated and scrypt is deliberately expensive: past a
+per-username or global failure cap inside a five-minute window, attempts
+are refused with a 429 before any password work or database write happens,
+scrypt runs are bounded in parallel, and a sustained attack earns a bounded
+number of audit rows plus one throttle event rather than a row per attempt.
+Ingress rate limiting in front remains worth having; the application no
+longer depends on it.
+
+Admin-configurable outbound destinations - the log store, Alertmanager, the
+webhook - mean an admin can point the receiver's HTTP client at arbitrary
+http(s) locations, including internal ones, and the log-store test button
+makes that an authenticated network probe. That is the price of supporting
+private, self-hosted stores; it is an *admin* capability, gated like every
+other write, and worth knowing when deciding who gets an admin account.
+
+The chart's public receiver ingress carries only the reporting surfaces
+(/report, /flag, /enroll, /registry, /candidates, /healthz) by default;
+/admin and /metrics stay cluster-internal, where the portal reaches them
+over the Service. `ingress.exposeAdminApi: true` restores the old
+behaviour for a deployment that drives the admin API from outside.
 Classically it is HTTP basic auth: one shared credential, no per-user trail,
 and plaintext without TLS in front of it. That is a floor, not a ceiling.
 

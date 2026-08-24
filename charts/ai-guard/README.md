@@ -143,12 +143,13 @@ the portal.
 | `loki.pushUrl` | `""` | unset means stdout only, for pipelines that scrape logs |
 | `loki.username` | `""` | basic auth, used by BOTH containers: the receiver writes, the portal reads |
 | `loki.existingSecret` | `""` | a Secret with a `lokiPassword` key. Not a value: `helm get values` would show it |
+| `portal.loki.username` / `portal.loki.existingSecret` | `""` | optional read-only credentials for the portal, overriding the shared pair - where your store can mint separate tokens, the portal then never holds a write credential |
 | `alertmanager.url` | `""` | unset means findings are logged and dashboarded but nothing pages |
 | `alertmanager.ttlMinutes` | `120` | how long a warn finding counts as already alerted |
 | `displayTz` | `UTC` | timezone for the readable timestamp on alerts only |
 | `corpDomains` | `[]` | corporate domains served to the collectors via `/registry/collector`; collectors prefer this to their local list, so a change here reaches the fleet on its next check-in with no MDM re-push |
 | `managed.enabled` | `true` | the default since 0.9.9: device enrollment, accounts, central settings and a fleet inventory, backed by SQLite on a PVC. Requires `replicaCount: 1` (the chart refuses otherwise) and switches the Deployment to `Recreate`. Set `false` for classic mode |
-| `managed.adminToken.value` | `""` | the optional API credential for `/admin/*`: automation, break-glass recovery, and the portal's digest task. Humans need nothing here - the setup code and portal login cover them - so leaving both unset means no admin secret exists at all |
+| `managed.adminToken.value` | `""` | the optional API credential for `/admin/*`: automation, break-glass recovery, and the portal's own service reads (viewer accounts reading a wizard-saved log store, and the digest task). Set it if you use viewer accounts or the digest; leaving both unset means no admin secret exists at all |
 | `managed.adminToken.existingSecret` | `""` | a Secret you created yourself, key `adminToken` |
 | `managed.persistence.size` | `1Gi` | the state PVC. Annotated `helm.sh/resource-policy: keep`: uninstalling the chart does not unenroll the fleet |
 | `managed.persistence.existingClaim` | `""` | use a PVC you created yourself |
@@ -162,6 +163,7 @@ the portal.
 | `service.type` | `ClusterIP` | |
 | `service.port` | `8080` | |
 | `ingress.enabled` | `false` | endpoints report over HTTPS, so a real deployment needs this |
+| `ingress.exposeAdminApi` | `false` | the public ingress carries only the reporting surfaces; `/admin` and `/metrics` stay cluster-internal. `true` restores expose-everything for automation that drives `/admin` from outside |
 | `ingress.className` | `""` | |
 | `ingress.host` | `ai-guard.example.com` | |
 | `ingress.tls.enabled` | `true` | |

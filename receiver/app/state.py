@@ -459,13 +459,18 @@ class State:
             self._db.commit()
         return {"id": uid, "username": username}
 
-    def login(self, username: str, password: str, ttl_hours: int = 24) -> dict:
+    def login(self, username: str, password: str, ttl_hours: int = 24,
+              log_failure: bool = True) -> dict:
         """A session token for a correct username and password.
 
         One failure message for both a wrong username and a wrong password:
         naming which half was wrong tells an attacker which usernames exist.
         The scrypt derivation runs either way, so the two failures cost the
         same time as well as carry the same words.
+
+        log_failure=False skips the per-attempt audit row - the caller's
+        throttle records one aggregated event instead, so a sustained
+        attack cannot write the audit log full.
         """
         now = _now()
         with self._lock:
@@ -475,8 +480,9 @@ class State:
             ).fetchone()
             stored = row["password_hash"] if row else _DUMMY_HASH
             if not _verify_password(password, stored) or row is None:
-                self._event("login_failed", {"username": username[:64]})
-                self._db.commit()
+                if log_failure:
+                    self._event("login_failed", {"username": username[:64]})
+                    self._db.commit()
                 raise AuthError(401, "bad username or password")
 
             # Expired sessions have nothing left to say; a login is the
@@ -498,6 +504,13 @@ class State:
             self._db.commit()
         # The one moment the plaintext exists, same as every credential here.
         return {"token": token, "expires_at": expires, "username": username}
+
+    def record_login_throttled(self, username: str):
+        """The one audit row a burst of failures earns once the throttle
+        engages, in place of a row per rejected attempt."""
+        with self._lock:
+            self._event("login_throttled", {"username": username[:64]})
+            self._db.commit()
 
     def session_user(self, token: str) -> dict | None:
         """Who this session belongs to (and as what role), or None if it is

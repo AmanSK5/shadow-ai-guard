@@ -128,6 +128,12 @@ ingress:
   className: ""
   host: ai-guard.example.com
   annotations: {}
+  # The public ingress carries only what reporting machines need: /report,
+  # /flag, /enroll, /registry, /candidates and /healthz. The admin API and
+  # /metrics stay cluster-internal - the portal proxies to the Service, not
+  # through here. true restores the old expose-everything behaviour for a
+  # deployment that drives /admin from outside the cluster.
+  exposeAdminApi: false
   tls:
     enabled: true
     secretName: ai-guard-tls
@@ -165,6 +171,16 @@ portal:
     pullPolicy: IfNotPresent
 
   replicaCount: 1
+
+  # Optional read-only log store credentials for the portal, overriding the
+  # shared loki.* pair. The receiver needs logs:write and the portal only
+  # logs:read; where your store can mint separate tokens, giving the portal
+  # its own read-only one means a compromised portal never holds a write
+  # credential. Same shapes as loki.username / loki.existingSecret (the
+  # Secret key is lokiPassword).
+  loki:
+    username: ""
+    existingSecret: ""
 
   # Where the portal reads findings back from: the same log store the receiver
   # writes to, reachable from inside the cluster. Leave it empty and the portal
