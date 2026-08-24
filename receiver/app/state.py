@@ -95,7 +95,8 @@ CREATE TABLE IF NOT EXISTS admin_users (
   username      TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
   created_at    TEXT NOT NULL,
-  last_login_at TEXT
+  last_login_at TEXT,
+  role          TEXT NOT NULL DEFAULT 'admin'
 );
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash BLOB NOT NULL UNIQUE,
@@ -148,6 +149,13 @@ CREATE TABLE IF NOT EXISTS candidates (
   dismissed_at TEXT,
   dismissed_by TEXT NOT NULL DEFAULT ''
 );
+CREATE TABLE IF NOT EXISTS finding_status (
+  key    TEXT PRIMARY KEY,
+  status TEXT NOT NULL,
+  reason TEXT NOT NULL DEFAULT '',
+  actor  TEXT NOT NULL DEFAULT '',
+  at     TEXT NOT NULL
+);
 """
 
 # Columns added after the first release, applied to databases that predate
@@ -159,6 +167,12 @@ _DEVICE_COLUMNS_ADDED = (
     # reimaged laptop, the stateless scanner - or a displaced device).
     ("reenrolled_at", "TEXT"),
     ("enrollments", "INTEGER NOT NULL DEFAULT 1"),
+)
+
+# Accounts predate roles; a database from before the column gets every
+# existing account as admin, which is exactly what those accounts were.
+_ADMIN_COLUMNS_ADDED = (
+    ("role", "TEXT NOT NULL DEFAULT 'admin'"),
 )
 
 
@@ -242,6 +256,12 @@ class State:
             for name, decl in _DEVICE_COLUMNS_ADDED:
                 if name not in have:
                     self._db.execute(f"ALTER TABLE devices ADD COLUMN {name} {decl}")
+            have = {r["name"]
+                    for r in self._db.execute("PRAGMA table_info(admin_users)")}
+            for name, decl in _ADMIN_COLUMNS_ADDED:
+                if name not in have:
+                    self._db.execute(
+                        f"ALTER TABLE admin_users ADD COLUMN {name} {decl}")
             self._db.commit()
 
     def _event(self, kind: str, detail: dict):
@@ -418,20 +438,21 @@ class State:
         return row is not None
 
     def create_admin(self, username: str, password: str) -> dict:
-        """The first (and for now only) admin account.
+        """The first account, always an admin.
 
-        Refuses once any account exists: creating an account is what the
-        one-time setup code authorizes, and after that the door is shut.
-        More accounts, when they come, will be minted by an admin from
-        inside, not by anyone holding a boot log.
+        Refuses once any account exists: creating the first account is what
+        the one-time setup code authorizes, and after that the door is
+        shut. Further accounts are minted by an admin from inside
+        (create_user below), not by anyone holding a boot log.
         """
         uid = secrets.token_hex(8)
         with self._lock:
             if self._db.execute("SELECT 1 FROM admin_users LIMIT 1").fetchone():
                 raise AuthError(409, "an admin account already exists")
             self._db.execute(
-                "INSERT INTO admin_users (id, username, password_hash, created_at)"
-                " VALUES (?, ?, ?, ?)",
+                "INSERT INTO admin_users"
+                " (id, username, password_hash, created_at, role)"
+                " VALUES (?, ?, ?, ?, 'admin')",
                 (uid, username, _hash_password(password), _now()),
             )
             self._event("admin_created", {"user": uid, "username": username})
@@ -479,16 +500,103 @@ class State:
         return {"token": token, "expires_at": expires, "username": username}
 
     def session_user(self, token: str) -> dict | None:
-        """Who this session belongs to, or None if it is not a live one."""
+        """Who this session belongs to (and as what role), or None if it is
+        not a live one."""
         with self._lock:
             row = self._db.execute(
-                "SELECT s.user_id, s.expires_at, u.username"
+                "SELECT s.user_id, s.expires_at, u.username, u.role"
                 " FROM sessions s JOIN admin_users u ON u.id = s.user_id"
                 " WHERE s.token_hash = ? AND s.revoked_at IS NULL"
                 " AND s.expires_at > ?",
                 (_hash(token), _now()),
             ).fetchone()
         return dict(row) if row else None
+
+    # ------------------------------------------------- account management --
+    # More than one pair of eyes, without more than one level of trust being
+    # implicit: an admin runs the platform, a viewer reads it. Viewer exists
+    # for the auditor and the exec - people who need the pages and must not
+    # be able to change what the pages say. Roles are fixed at creation;
+    # changing someone's trust level is delete-and-recreate, which leaves a
+    # cleaner audit trail than an edit ever would.
+
+    ROLES = ("admin", "viewer")
+
+    def list_users(self) -> list[dict]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT id, username, role, created_at, last_login_at"
+                " FROM admin_users ORDER BY created_at"
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def create_user(self, username: str, password: str, role: str,
+                    by: str = "") -> dict:
+        if role not in self.ROLES:
+            raise AuthError(422, "role must be admin or viewer")
+        uid = secrets.token_hex(8)
+        with self._lock:
+            if self._db.execute(
+                "SELECT 1 FROM admin_users WHERE username = ?", (username,)
+            ).fetchone():
+                raise AuthError(409, "that username already exists")
+            self._db.execute(
+                "INSERT INTO admin_users"
+                " (id, username, password_hash, created_at, role)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (uid, username, _hash_password(password), _now(), role),
+            )
+            self._event("user_created",
+                        {"user": uid, "username": username, "role": role,
+                         "by": by})
+            self._db.commit()
+        return {"id": uid, "username": username, "role": role}
+
+    def delete_user(self, uid: str, by: str = "") -> bool:
+        """Remove an account and kill its sessions. The last admin cannot be
+        deleted: a deployment with accounts and no admin is locked out of
+        its own account management, and the API credential that could fix
+        it is optional."""
+        with self._lock:
+            row = self._db.execute(
+                "SELECT role FROM admin_users WHERE id = ?", (uid,)
+            ).fetchone()
+            if row is None:
+                return False
+            if row["role"] == "admin":
+                admins = self._db.execute(
+                    "SELECT COUNT(*) AS n FROM admin_users WHERE role = 'admin'"
+                ).fetchone()["n"]
+                if admins <= 1:
+                    raise AuthError(409, "cannot delete the last admin")
+            # Sessions reference the account (FK), and a deleted account's
+            # sessions have nothing left to say - remove rather than revoke.
+            self._db.execute("DELETE FROM sessions WHERE user_id = ?", (uid,))
+            self._db.execute("DELETE FROM admin_users WHERE id = ?", (uid,))
+            self._event("user_deleted", {"user": uid, "by": by})
+            self._db.commit()
+        return True
+
+    def reset_user_password(self, uid: str, new_password: str,
+                            by: str = "") -> bool:
+        """An admin setting someone else's password. Every session that user
+        holds dies with the old one - the reset exists because the old
+        credential can no longer be trusted, and that distrust extends to
+        anything it minted."""
+        with self._lock:
+            if self._db.execute(
+                "SELECT 1 FROM admin_users WHERE id = ?", (uid,)
+            ).fetchone() is None:
+                return False
+            self._db.execute(
+                "UPDATE admin_users SET password_hash = ? WHERE id = ?",
+                (_hash_password(new_password), uid))
+            self._db.execute(
+                "UPDATE sessions SET revoked_at = ? WHERE user_id = ?"
+                " AND revoked_at IS NULL", (_now(), uid))
+            self._event("password_reset", {"user": uid, "by": by})
+            self._db.commit()
+        return True
 
     def logout(self, token: str) -> bool:
         with self._lock:
@@ -670,9 +778,13 @@ class State:
                          devices: int, evidence: str, source: str):
         """New key inserts; a known key refreshes what a rerun can know
         better (device count, confidence, last_seen) and keeps what it
-        cannot (first_seen, and any dismissal)."""
+        cannot (first_seen, and any dismissal). Returns whether the key was
+        new, so the caller can notify on a discovery exactly once."""
         now = _now()
         with self._lock:
+            fresh = self._db.execute(
+                "SELECT 1 FROM candidates WHERE key = ?", (key,)
+            ).fetchone() is None
             self._db.execute(
                 "INSERT INTO candidates (key, kind, name, vendor, category,"
                 " confidence, domains, devices, evidence, source,"
@@ -688,6 +800,7 @@ class State:
             )
             self._event("candidate_reported", {"key": key, "source": source})
             self._db.commit()
+        return fresh
 
     def observe_candidate(self, key: str, kind: str, name: str,
                           evidence: str, source: str, device: str = ""):
@@ -730,6 +843,72 @@ class State:
                 self._event("candidate_observed", {"key": key,
                                                    "source": source})
             self._db.commit()
+        return fresh
+
+    # ------------------------------------------------- finding lifecycle --
+    # A finding the portal derives (a personal account, say) has no row of
+    # its own here - it is recomputed from the log store every load. What
+    # DOES belong here is the human's answer to it: spoken to, accepted
+    # with a reason, or back to open. Keyed on an opaque string the portal
+    # composes, so the receiver never needs to understand the finding shape.
+
+    FINDING_STATUSES = ("acknowledged", "accepted")
+
+    def list_finding_statuses(self) -> list[dict]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT key, status, reason, actor, at FROM finding_status"
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def set_finding_status(self, key: str, status: str, reason: str = "",
+                           by: str = ""):
+        if status not in self.FINDING_STATUSES:
+            raise ValueError("status must be one of %s"
+                             % ", ".join(self.FINDING_STATUSES))
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO finding_status (key, status, reason, actor, at)"
+                " VALUES (?, ?, ?, ?, ?)"
+                " ON CONFLICT(key) DO UPDATE SET status = excluded.status,"
+                " reason = excluded.reason, actor = excluded.actor,"
+                " at = excluded.at",
+                (key, status, reason, by, _now()),
+            )
+            self._event("finding_status_set",
+                        {"key": key[:200], "status": status, "by": by})
+            self._db.commit()
+
+    def clear_finding_status(self, key: str, by: str = "") -> bool:
+        with self._lock:
+            cur = self._db.execute(
+                "DELETE FROM finding_status WHERE key = ?", (key,))
+            if cur.rowcount:
+                self._event("finding_status_cleared",
+                            {"key": key[:200], "by": by})
+            self._db.commit()
+        return bool(cur.rowcount)
+
+    # ---------------------------------------------------------- audit -----
+
+    def list_events(self, limit: int = 200) -> list[dict]:
+        """The admin activity trail, newest first. Every write above already
+        records itself here; this is the read that makes it an audit log
+        rather than a diary nobody opens."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT rowid, at, kind, detail FROM events"
+                " ORDER BY rowid DESC LIMIT ?", (int(limit),)
+            ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["detail"] = json.loads(d["detail"])
+            except (json.JSONDecodeError, TypeError):
+                d["detail"] = {}
+            out.append(d)
+        return out
 
     def dismiss_candidate(self, key: str, by: str = "") -> bool:
         with self._lock:
@@ -744,19 +923,29 @@ class State:
         return bool(cur.rowcount)
 
     def change_password(self, new_password: str, current: str | None = None,
-                        keep_session: str | None = None):
-        """Set the sole admin's password, optionally proving the current one.
+                        keep_session: str | None = None,
+                        user_id: str | None = None):
+        """Set a user's own password, optionally proving the current one.
 
-        current=None is the break-glass path, reached only with the API
-        credential (the operator who can set the receiver's environment
-        already owns the box). Every session except keep_session dies with
-        the old password - a stolen session must not outlive the password
-        change that was made because of it.
+        user_id names whose - the session's own user in the normal path.
+        current=None with no user_id is the break-glass path, reached only
+        with the API credential (the operator who can set the receiver's
+        environment already owns the box); it targets the oldest admin,
+        which is the account the setup code created. Every session except
+        keep_session dies with the old password - a stolen session must not
+        outlive the password change that was made because of it.
         """
         with self._lock:
-            row = self._db.execute(
-                "SELECT id, password_hash FROM admin_users LIMIT 1"
-            ).fetchone()
+            if user_id is not None:
+                row = self._db.execute(
+                    "SELECT id, password_hash FROM admin_users WHERE id = ?",
+                    (user_id,),
+                ).fetchone()
+            else:
+                row = self._db.execute(
+                    "SELECT id, password_hash FROM admin_users"
+                    " WHERE role = 'admin' ORDER BY created_at LIMIT 1"
+                ).fetchone()
             if row is None:
                 raise AuthError(409, "no admin account exists")
             if current is not None and not _verify_password(
