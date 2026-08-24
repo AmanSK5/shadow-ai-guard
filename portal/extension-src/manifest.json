@@ -1,0 +1,80 @@
+{
+  "manifest_version": 3,
+  "name": "AI Guard",
+  "version": "1.4.0",
+  "description": "Flags AI tools signed in with a non-corporate account and stops secrets being pasted into them. Reports detector ids and account domains only, never content.",
+  "permissions": [
+    "storage",
+    "alarms"
+  ],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "https://chat.openai.com/*",
+    "https://claude.ai/*",
+    "https://gemini.google.com/*",
+    "https://otter.ai/*",
+    "https://*.otter.ai/*",
+    "https://fireflies.ai/*",
+    "https://app.fireflies.ai/*",
+    "https://copilot.microsoft.com/*",
+    "https://ai-guard.example.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "scripts": [
+      "background.js"
+    ]
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://claude.ai/*",
+        "https://gemini.google.com/*",
+        "https://otter.ai/*",
+        "https://*.otter.ai/*",
+        "https://fireflies.ai/*",
+        "https://app.fireflies.ai/*",
+        "https://copilot.microsoft.com/*"
+      ],
+      "js": [
+        "guard.js"
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://claude.ai/*",
+        "https://gemini.google.com/*",
+        "https://otter.ai/*",
+        "https://*.otter.ai/*",
+        "https://fireflies.ai/*",
+        "https://app.fireflies.ai/*",
+        "https://copilot.microsoft.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "storage": {
+    "managed_schema": "managed-schema.json"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "ai-guard@example.com",
+      "strict_min_version": "140.0",
+      "update_url": "https://YOUR_HOST/firefox-updates.json",
+      "data_collection_permissions": {
+        "required": [
+          "websiteActivity",
+          "personallyIdentifyingInfo"
+        ]
+      }
+    }
+  }
+}

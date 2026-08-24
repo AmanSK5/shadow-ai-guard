@@ -41,6 +41,8 @@ def test_the_script_copies_match_their_sources():
         ("firefox-windows.ps1",
          "extension/deploy/windows/Deploy-AiGuardExtensionFirefox.ps1"),
     ]
+    pairs += [("../extension-src/%s" % name, "extension/src/%s" % name)
+              for name in managed.EXTENSION_SOURCE_FILES]
     for copy, source in pairs:
         assert (SCRIPTS / copy).read_bytes() == (REPO / source).read_bytes(), (
             "portal/collector-scripts/%s no longer matches %s - re-copy it"
@@ -249,7 +251,8 @@ def test_config_names_which_managed_flag_is_missing(monkeypatch):
     monkeypatch.setattr(main, "RECEIVER_PUBLIC_URL", "")
     assert main.config(None, _=None)["managed"] == {
         "enabled": True, "artifacts_ready": False,
-        "receiver_public_url_default": ""}
+        "receiver_public_url_default": "",
+        "extension_version": managed.extension_version(main.EXTENSION_SRC_DIR)}
 
 
 # --------------------------------------------------------- receiver client --

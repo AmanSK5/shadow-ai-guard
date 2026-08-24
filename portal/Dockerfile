@@ -26,6 +26,9 @@ COPY app/ app/
 # asserts these are byte-identical to the sources, the same pattern as the
 # chart's bundled registry.
 COPY collector-scripts/ collector-scripts/
+# Verified copies of extension/src, same reasoning: the extension-source
+# download serves these with the receiver origin substituted in.
+COPY extension-src/ extension-src/
 
 # Passed by CI from the release tag, or the commit for a build off main. A
 # local build leaves it as "dev", which is honest: a hardcoded version drifts,

@@ -79,7 +79,8 @@ import urllib.parse
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import (FileResponse, JSONResponse, PlainTextResponse,
+                               Response)
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel, Field
 
@@ -302,6 +303,12 @@ elif not (PORTAL_USER and PORTAL_PASSWORD):
 # chart's bundled registry; a test asserts byte equality with the sources).
 COLLECTOR_SCRIPTS_DIR = os.environ.get(
     "COLLECTOR_SCRIPTS_DIR", str(Path(__file__).parent.parent / "collector-scripts"))
+
+# Verified copies of extension/src, same pattern: the extension-source
+# download serves these with the receiver origin substituted in, so packing
+# the extension no longer needs a checkout.
+EXTENSION_SRC_DIR = os.environ.get(
+    "EXTENSION_SRC_DIR", str(Path(__file__).parent.parent / "extension-src"))
 
 STATIC = Path(__file__).parent / "static"
 
@@ -678,8 +685,21 @@ def config(request: Request, _=Depends(require_auth)):
             "enabled": bool(RECEIVER_URL),
             "artifacts_ready": bool(RECEIVER_URL and public_url),
             "receiver_public_url_default": public_url,
+            # The bundled extension source's version: the setup guide names
+            # files with it and the generated update manifests carry it.
+            "extension_version": _extension_version_or_blank(),
         },
     }
+
+
+def _extension_version_or_blank() -> str:
+    """Config must render even if the bundled source is unreadable - the
+    guide then says VERSION where it would say a number, and the download
+    itself reports the real error."""
+    try:
+        return managed.extension_version(EXTENSION_SRC_DIR)
+    except managed.ArtifactError:
+        return ""
 
 
 # The widgets the overview knows how to draw. A name not in here is a typo or
@@ -1480,6 +1500,125 @@ def test_log_store_push(_=Depends(require_auth),
     return _receiver("POST", "/admin/test/log-store-push", token)
 
 
+def _fetch_hosted(url: str, cap: int):
+    """(status, content-type, first `cap` bytes) of a saved hosting URL.
+
+    Server-side like the receiver-url probe, and reading at most `cap`
+    bytes: the .xpi check needs the file, but a probe must not be a way to
+    pull something huge through the portal pod.
+    """
+    import urllib.request as _urlreq
+
+    req = _urlreq.Request(url, headers={"User-Agent": "ai-guard-portal"})
+    with _urlreq.urlopen(req, timeout=10) as resp:
+        return (resp.status, resp.headers.get("Content-Type", ""),
+                resp.read(cap))
+
+
+_HOSTING_CAVEAT = ("could not reach %s from inside the cluster (%s). These "
+                   "files must be reachable by every browser in the fleet, "
+                   "so unlike the receiver probe this usually IS a problem - "
+                   "but if your artifact host is only visible from the "
+                   "corporate network, confirm from a fleet machine instead.")
+
+
+@app.post("/api/test/extension-updates")
+def test_extension_updates(_=Depends(require_auth),
+                           token: str = Depends(_admin_forward)):
+    """Fetch the saved Chromium update manifest URL and check it against
+    the saved extension id: the failure this catches is a hosted file that
+    answers 200 and quietly describes some other id or version, which
+    browsers treat as 'no update for you', forever."""
+    stored = _receiver("GET", "/admin/settings", token).get("settings", {})
+    url = ((stored.get("extension_update_url") or {}).get("value") or "").strip()
+    if not url:
+        raise HTTPException(
+            400, "no update manifest URL to probe: save one first")
+    try:
+        status, ctype, body = _fetch_hosted(url, 64 * 1024)
+    except Exception as e:
+        return {"ok": False,
+                "detail": _HOSTING_CAVEAT % (_redact_url(url),
+                                             type(e).__name__)}
+    warnings = []
+    try:
+        import xml.etree.ElementTree as ET
+        root = ET.fromstring(body.decode("utf-8", "replace"))
+        ns = "{http://www.google.com/update2/response}"
+        apps = root.findall(ns + "app") or root.findall("app")
+        appids = [a.get("appid", "") for a in apps]
+        saved_id = ((stored.get("extension_id") or {}).get("value") or "")
+        if saved_id and saved_id not in appids:
+            return {"ok": False, "url": url,
+                    "detail": "the hosted manifest describes %s, not the "
+                              "saved extension id - browsers pointed at it "
+                              "will never install or update this extension"
+                              % (", ".join(appids) or "no extension")}
+        checks = [u for a in apps
+                  for u in a.findall(ns + "updatecheck") + a.findall("updatecheck")]
+        versions = sorted({c.get("version", "?") for c in checks})
+        try:
+            bundled = managed.extension_version(EXTENSION_SRC_DIR)
+            if bundled not in versions:
+                warnings.append(
+                    "the hosted manifest says version %s; the source this "
+                    "portal serves is %s. Fine if you packed a different "
+                    "version on purpose."
+                    % (", ".join(versions) or "?", bundled))
+        except managed.ArtifactError:
+            pass
+    except ET.ParseError:
+        return {"ok": False, "url": url,
+                "detail": "%s answered, but not with XML an update manifest "
+                          "could parse as" % _redact_url(url)}
+    return {"ok": True, "url": url, "warnings": warnings,
+            "detail": "the hosted manifest matches the saved extension id"}
+
+
+@app.post("/api/test/extension-xpi")
+def test_extension_xpi(_=Depends(require_auth),
+                       token: str = Depends(_admin_forward)):
+    """Fetch the saved .xpi URL and check it is the SIGNED file.
+
+    The trap this exists for: hosting the .xpi you built instead of the one
+    AMO returned. Both are valid zips, both download fine, and Firefox
+    refuses one of them on every machine in the fleet. A signed .xpi
+    contains META-INF/mozilla.rsa; an unsigned one does not."""
+    import io
+    import zipfile
+
+    stored = _receiver("GET", "/admin/settings", token).get("settings", {})
+    url = ((stored.get("extension_xpi_url") or {}).get("value") or "").strip()
+    if not url:
+        raise HTTPException(400, "no signed .xpi URL to probe: save one first")
+    try:
+        status, ctype, body = _fetch_hosted(url, 32 * 1024 * 1024)
+    except Exception as e:
+        return {"ok": False,
+                "detail": _HOSTING_CAVEAT % (_redact_url(url),
+                                             type(e).__name__)}
+    warnings = []
+    if ctype and "xpinstall" not in ctype and "octet-stream" not in ctype:
+        warnings.append(
+            "served as %s; Firefox expects application/x-xpinstall "
+            "(some hosts need the content type set per file)" % ctype)
+    try:
+        names = zipfile.ZipFile(io.BytesIO(body)).namelist()
+    except zipfile.BadZipFile:
+        return {"ok": False, "url": url,
+                "detail": "%s answered, but the file is not a zip (an .xpi "
+                          "is one), or is larger than this probe reads"
+                          % _redact_url(url)}
+    if "META-INF/mozilla.rsa" not in names:
+        return {"ok": False, "url": url,
+                "detail": "the hosted .xpi is not Mozilla-signed (no "
+                          "META-INF/mozilla.rsa) - this is your own build; "
+                          "Firefox will refuse it. Host the file AMO "
+                          "returned after signing."}
+    return {"ok": True, "url": url, "warnings": warnings,
+            "detail": "the hosted .xpi is Mozilla-signed"}
+
+
 @app.post("/api/password")
 def api_password(req: PasswordWrite, _=Depends(require_auth),
                  token: str = Depends(_admin_forward)):
@@ -1494,7 +1633,16 @@ def api_password(req: PasswordWrite, _=Depends(require_auth),
 # copies. Same minting and download shape as the collector kinds.
 GENERATED_ARTIFACTS = ("extension-policy", "extension-windows",
                        "firefox-policy", "firefox-windows",
-                       "scanner-cronjob", "discovery-cronjob")
+                       "scanner-cronjob", "discovery-cronjob",
+                       "extension-source", "extension-updates-xml",
+                       "firefox-updates-json")
+
+# The extension-hosting downloads carry no credential - the source zip and
+# the update manifests bake URLs and ids, never a token - so generating one
+# must not mint. A minted-but-unused token in the list reads as a rollout
+# that never happened.
+TOKENLESS_ARTIFACTS = ("extension-source", "extension-updates-xml",
+                       "firefox-updates-json")
 
 
 @app.post("/api/artifacts/{kind}")
@@ -1531,6 +1679,45 @@ def artifact(kind: str, _=Depends(require_auth),
 
     def setting(key):
         return (stored.get(key) or {}).get("value") or ""
+
+    if kind in TOKENLESS_ARTIFACTS:
+        try:
+            if kind == "extension-source":
+                filename, content = managed.generate_extension_source(
+                    EXTENSION_SRC_DIR, public_url)
+                return Response(content, media_type="application/zip",
+                                headers={"Content-Disposition":
+                                         'attachment; filename="%s"' % filename})
+            if kind == "extension-updates-xml":
+                if not setting("extension_id"):
+                    raise HTTPException(
+                        409, "set the extension ID in Settings first: the "
+                             "update manifest is keyed on it")
+                if not setting("extension_crx_url"):
+                    raise HTTPException(
+                        409, "set the packed .crx URL in Settings first: "
+                             "the update manifest points browsers at it")
+                filename, content = managed.generate_updates_xml(
+                    setting("extension_id"), setting("extension_crx_url"),
+                    managed.extension_version(EXTENSION_SRC_DIR))
+            else:
+                if not setting("firefox_extension_id"):
+                    raise HTTPException(
+                        409, "set the Firefox extension ID (the gecko id) "
+                             "in Settings first: the update manifest is "
+                             "keyed on it")
+                if not setting("extension_xpi_url"):
+                    raise HTTPException(
+                        409, "set the signed .xpi URL in Settings first: "
+                             "the update manifest points Firefox at it")
+                filename, content = managed.generate_firefox_updates_json(
+                    setting("firefox_extension_id"),
+                    setting("extension_xpi_url"),
+                    managed.extension_version(EXTENSION_SRC_DIR))
+        except managed.ArtifactError as e:
+            raise HTTPException(500, str(e))
+        return PlainTextResponse(content, headers={
+            "Content-Disposition": 'attachment; filename="%s"' % filename})
 
     extension_kinds = ("extension-policy", "extension-windows",
                        "firefox-policy", "firefox-windows")
