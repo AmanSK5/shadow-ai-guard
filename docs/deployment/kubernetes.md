@@ -52,6 +52,37 @@ governance baseline, the extension ID, and pre-configured deployment
 downloads for every surface. Nothing after `helm install` touches a values
 file, and everything the wizard sets is editable later under Settings.
 
+## Making the hostnames resolve
+
+The chart creates the routing rules inside the cluster; it cannot make
+`ai-guard.example.com` resolve from the internet. That part is DNS you own:
+
+1. Your ingress controller sits behind one entry point - a load balancer IP,
+   or a hostname on a cloud provider. `kubectl get ingress -n ai-guard`
+   shows it under ADDRESS once the chart is installed.
+2. Point both names at it: an A record to the IP, or an ALIAS/CNAME to the
+   hostname (in Route 53, an alias to the ELB). Both hosts go to the same
+   place - the ingress controller routes by the Host header, which is how
+   two names share one entry point. A wildcard record (`*.example.com`) does
+   the same job once for every service you will ever add.
+3. TLS comes after DNS, not before: cert-manager with Let's Encrypt can only
+   issue a certificate for a name that already resolves. Set
+   `ingress.tls.secretName` to what it issues.
+
+Teams that automate step 2 run external-dns, which watches Ingress resources
+and writes the records itself.
+
+Two audiences, one nuance: the receiver's name must resolve from **every
+machine that reports** - a laptop on hotel wifi included - so it needs real
+public DNS. The portal's name only has to resolve for the people who open
+it, so internal DNS or VPN-only is a legitimate choice there.
+
+The Tailscale route above skips all of this: the operator registers the
+names in your tailnet's own DNS and issues the certificates itself, with
+nothing exposed publicly. The wizard's probe button is the check either
+way - it tells you when a saved name does not resolve or the certificate
+does not match.
+
 ## The short way: classic mode
 
 The file-and-environment deployment, for teams that want configuration in a
