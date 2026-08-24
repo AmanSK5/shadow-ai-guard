@@ -2081,8 +2081,10 @@ async function wizard() {
   <div class="wcard" style="margin-bottom:10px"><h3>1 · Where your machines reach the receiver</h3>
   <p class="lede" style="margin-bottom:10px">The URL your laptops and servers
   will send findings to. It gets baked into every download below, so it has
-  to work from those machines - not just from inside the cluster. Save it,
-  then hit probe to check.</p>
+  to work from those machines - not just from inside the cluster. That means
+  a DNS record pointing this name at your ingress or reverse proxy, plus a
+  certificate - unless something like a Tailscale operator handles both for
+  you. Save it, then hit probe to check.</p>
   <dl class="kv">
     ${settingRow('receiver_public_url', 'Public receiver URL',
       'https://ai-guard.your-tailnet.ts.net', '')}
