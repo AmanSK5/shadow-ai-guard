@@ -1,6 +1,6 @@
 # Trying it, and telling me what broke
 
-This is an alpha. It runs in one environment, mine, and the useful thing
+This is a beta. It runs in one environment, mine, and the useful thing
 someone else can do is follow the documentation without knowing any of the
 history behind it and say where it stops making sense.
 

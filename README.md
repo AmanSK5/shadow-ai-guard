@@ -21,8 +21,9 @@
 </p>
 
 > [!NOTE]
-> **Alpha release.** Early-stage and under active development. It works, but
-> has known limitations tracked in [Issues](../../issues).
+> **Beta release.** Under active development. It runs in production, the
+> finding schema is stable, and known limitations are tracked in
+> [Issues](../../issues).
 
 ---
 
@@ -334,8 +335,8 @@ monitoring in most jurisdictions and usually warrants a DPIA.
 
 ## Status and known limitations
 
-This is an alpha. It runs in production in one environment, and the rough
-edges are listed here rather than hidden.
+This is a beta. It runs in production, and the rough edges are listed here
+rather than hidden.
 
 The list keeps shrinking: registry fallback drift, the Entra scanner counting
 failed sign-ins as usage, unreported delegated access, and browser extension
