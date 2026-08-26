@@ -47,12 +47,15 @@ FIREFLIES_URL = "https://api.fireflies.ai/graphql"
 # secrets - served as-is by /admin/budget.
 PROVIDERS = {
     "anthropic": {
-        "label": "Anthropic (Claude Team / Enterprise)",
+        "label": "Anthropic (Claude Enterprise / Console)",
         "key_hint": "Scoped Admin API key with the read:members scope. The "
                     "org's primary owner creates it at claude.ai > "
                     "Organization settings > API (Console orgs: Settings > "
                     "Admin keys). Select read-only scopes: this sync never "
-                    "writes.",
+                    "writes. Claude Team plans do not offer admin keys - "
+                    "the API section simply is not there - so a Team "
+                    "workspace uses the Import path instead, from "
+                    "Organization settings > Members.",
         "syncs": "members and roles. Seat tiers are not in the API - "
                  "record them on the subscription.",
     },
