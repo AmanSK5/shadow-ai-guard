@@ -29,7 +29,7 @@ Three sources, per tool, and each card names which one its rows came from:
 
 | Source | How | Good for |
 | --- | --- | --- |
-| Automatic | The vendor's admin API, synced on demand with a stored key | Anthropic (Claude Team / Enterprise), Fireflies |
+| Automatic | The vendor's admin API, synced on demand with a stored key | Anthropic (Claude Enterprise / Console), Fireflies |
 | Import | Paste the member export from the vendor's admin page | ChatGPT Business, and any vendor without an admin API |
 | Manual | Add members by hand on the card | Small teams, one-off seats |
 
@@ -52,8 +52,14 @@ its `email,role,seat type` shape directly.
 The sync needs a scoped Admin API key with the `read:members` scope. The
 organisation's **primary owner** creates it:
 
-- Claude work orgs (claude.ai): Organization settings → API → Keys
+- Claude Enterprise orgs (claude.ai): Organization settings → API → Keys
 - Claude Console (platform.claude.com) orgs: Settings → Admin keys
+
+**Claude Team plans do not offer admin keys** - the API section is
+simply absent from a Team workspace's organization settings, even for
+the primary owner. A Team workspace uses the Import path instead: copy
+the list from Organization settings → Members and paste it into the
+card's import. Everything downstream behaves identically.
 
 Select **read-only scopes** when creating it. The sync only ever lists
 members; a key that can also write members is more credential than this
