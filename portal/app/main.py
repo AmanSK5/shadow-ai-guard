@@ -2074,6 +2074,111 @@ def api_candidate_dismiss(req: CandidateDismiss, _=Depends(require_auth),
         % urllib.parse.quote(req.key, safe=""), token)
 
 
+# ------------------------------------------------------------- budget --
+# The spend view's write path: thin proxies to the receiver, which owns
+# storage, validation and the role gate, exactly like governance and the
+# registry above. POST throughout on the portal side (the JSON-only CSRF
+# rule covers POST); the receiver keeps its PUTs. The vendor API key
+# passes through one request on its way in and no route reads it back -
+# the receiver spends it server-side when the portal asks for a sync.
+
+
+class BudgetSeatTier(BaseModel):
+    model_config = {"extra": "forbid"}
+    name: str = Field(min_length=1, max_length=64)
+    seats: int = Field(default=0, ge=0, le=100000)
+    unit_price_monthly: float = Field(default=0, ge=0, le=1000000)
+
+
+class BudgetSubscriptionWrite(BaseModel):
+    model_config = {"extra": "forbid"}
+    tool_id: str = Field(min_length=1, max_length=100)
+    vendor: str = Field(default="", max_length=200)
+    plan: str = Field(default="", max_length=100)
+    currency: str = Field(default="", max_length=8)
+    renewal_date: str = Field(default="", max_length=10)
+    owner: str = Field(default="", max_length=200)
+    notes: str = Field(default="", max_length=1000)
+    seat_tiers: list[BudgetSeatTier] = Field(default_factory=list,
+                                             max_length=10)
+
+
+class BudgetMemberWrite(BaseModel):
+    model_config = {"extra": "forbid"}
+    email: str = Field(min_length=3, max_length=254)
+    name: str = Field(default="", max_length=200)
+    role: str = Field(default="", max_length=64)
+    seat_tier: str = Field(default="", max_length=64)
+
+
+class BudgetMembersWrite(BaseModel):
+    model_config = {"extra": "forbid"}
+    tool_id: str = Field(min_length=1, max_length=100)
+    source: str = Field(min_length=1, max_length=16)
+    members: list[BudgetMemberWrite] = Field(default_factory=list,
+                                             max_length=5000)
+
+
+class BudgetConnectionWrite(BaseModel):
+    model_config = {"extra": "forbid"}
+    tool_id: str = Field(min_length=1, max_length=100)
+    provider: str = Field(min_length=1, max_length=32)
+    api_key: str = Field(min_length=8, max_length=512)
+
+
+class BudgetToolRef(BaseModel):
+    model_config = {"extra": "forbid"}
+    tool_id: str = Field(min_length=1, max_length=100)
+
+
+@app.get("/api/budget")
+def api_budget(_=Depends(require_auth), token: str = Depends(_admin_forward)):
+    return _receiver("GET", "/admin/budget", token)
+
+
+@app.post("/api/budget/subscription")
+def api_budget_subscription(req: BudgetSubscriptionWrite,
+                            _=Depends(require_auth),
+                            token: str = Depends(_admin_forward)):
+    return _receiver("PUT", "/admin/budget/subscription", token,
+                     req.model_dump())
+
+
+@app.post("/api/budget/subscription-delete")
+def api_budget_subscription_delete(req: BudgetToolRef,
+                                   _=Depends(require_auth),
+                                   token: str = Depends(_admin_forward)):
+    return _receiver("POST", "/admin/budget/subscription/delete", token,
+                     req.model_dump())
+
+
+@app.post("/api/budget/members")
+def api_budget_members(req: BudgetMembersWrite, _=Depends(require_auth),
+                       token: str = Depends(_admin_forward)):
+    return _receiver("PUT", "/admin/budget/members", token, req.model_dump())
+
+
+@app.post("/api/budget/connection")
+def api_budget_connection(req: BudgetConnectionWrite,
+                          _=Depends(require_auth),
+                          token: str = Depends(_admin_forward)):
+    return _receiver("PUT", "/admin/budget/connection", token,
+                     req.model_dump())
+
+
+@app.post("/api/budget/connection-delete")
+def api_budget_connection_delete(req: BudgetToolRef, _=Depends(require_auth),
+                                 token: str = Depends(_admin_forward)):
+    return _receiver("POST", "/admin/budget/connection/delete", token,
+                     req.model_dump())
+
+
+@app.post("/api/budget/sync")
+def api_budget_sync(req: BudgetToolRef, _=Depends(require_auth),
+                    token: str = Depends(_admin_forward)):
+    return _receiver("POST", "/admin/budget/sync", token, req.model_dump())
+
+
 @app.get("/")
 def index(_=Depends(require_page_auth)):
     return FileResponse(STATIC / "index.html")

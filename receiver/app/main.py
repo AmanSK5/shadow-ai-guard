@@ -50,6 +50,7 @@ from pydantic import BaseModel, Field
 
 # Importing the module costs nothing stateful: the SQLite file only exists
 # once State() is instantiated, which only happens under MANAGED_MODE below.
+from . import budget as _budget
 from . import state as _state
 
 # ------------------------------------------------------------------ config --
@@ -1838,6 +1839,200 @@ def put_governance(req: GovernanceUpdate, authorization: str = Header(default=""
     for tid in req.delete:
         STATE.delete_decision(tid, by)
     return {"decisions": STATE.list_decisions()}
+
+
+# ------------------------------------------------------------- budget --
+# What the organisation pays for, per tool: subscription, seat tiers,
+# roster, and (where a vendor has an admin API) the connection that syncs
+# the roster. Storage in state.py, vendor calls in budget.py; these routes
+# validate shape and hold the role gate. The vendor key is written here
+# and never read back out by any route - sync spends it server-side.
+
+_TIER_NAME_RE = re.compile(r"^[^\x00-\x1f]{1,64}$")
+# Not RFC 5322 - a roster row needs an @ with something either side, and
+# a tighter pattern only manufactures reasons to refuse a real address.
+_EMAIL_RE = re.compile(r"^[^@\s]{1,180}@[^@\s]{1,253}$")
+
+
+class SeatTierWrite(BaseModel):
+    model_config = {"extra": "forbid"}
+    name: str = Field(min_length=1, max_length=64)
+    seats: int = Field(default=0, ge=0, le=100000)
+    unit_price_monthly: float = Field(default=0, ge=0, le=1000000)
+
+
+class BudgetSubscriptionWrite(BaseModel):
+    model_config = {"extra": "forbid"}
+    tool_id: str = Field(min_length=1, max_length=100)
+    vendor: str = Field(default="", max_length=200)
+    plan: str = Field(default="", max_length=100)
+    currency: str = Field(default="", max_length=8)
+    renewal_date: str = Field(default="", max_length=10)
+    owner: str = Field(default="", max_length=200)
+    notes: str = Field(default="", max_length=1000)
+    seat_tiers: list[SeatTierWrite] = Field(default_factory=list,
+                                            max_length=10)
+
+
+class BudgetMemberWrite(BaseModel):
+    model_config = {"extra": "forbid"}
+    email: str = Field(min_length=3, max_length=254)
+    name: str = Field(default="", max_length=200)
+    role: str = Field(default="", max_length=64)
+    seat_tier: str = Field(default="", max_length=64)
+
+
+class BudgetMembersWrite(BaseModel):
+    model_config = {"extra": "forbid"}
+    tool_id: str = Field(min_length=1, max_length=100)
+    # csv and manual only: "api" rows are written by sync alone, and a
+    # request that could claim to be a sync would let a CSV wear an
+    # API-synced provenance label in the portal.
+    source: str = Field(min_length=1, max_length=16)
+    members: list[BudgetMemberWrite] = Field(default_factory=list,
+                                             max_length=_budget.MAX_MEMBERS)
+
+
+class BudgetConnectionWrite(BaseModel):
+    model_config = {"extra": "forbid"}
+    tool_id: str = Field(min_length=1, max_length=100)
+    provider: str = Field(min_length=1, max_length=32)
+    api_key: str = Field(min_length=8, max_length=512)
+
+
+class BudgetToolRef(BaseModel):
+    model_config = {"extra": "forbid"}
+    tool_id: str = Field(min_length=1, max_length=100)
+
+
+@app.get("/admin/budget")
+def get_budget(authorization: str = Header(default="")):
+    """Subscriptions with rosters, connection metadata (never keys), and
+    the provider catalogue the wizard offers."""
+    _admin_auth(authorization)
+    out = STATE.list_budget()
+    out["providers"] = _budget.PROVIDERS
+    return out
+
+
+@app.put("/admin/budget/subscription")
+def put_budget_subscription(req: BudgetSubscriptionWrite,
+                            authorization: str = Header(default="")):
+    _admin_auth(authorization, write=True)
+    if not _TOOL_ID_RE.match(req.tool_id):
+        raise HTTPException(422, "malformed tool id: %s" % req.tool_id[:60])
+    if req.renewal_date:
+        try:
+            date.fromisoformat(req.renewal_date)
+        except ValueError:
+            raise HTTPException(
+                422, "renewal_date must be an ISO date (YYYY-MM-DD)")
+    names = [t.name.strip() for t in req.seat_tiers]
+    for n in names:
+        if not _TIER_NAME_RE.match(n):
+            raise HTTPException(422, "malformed seat tier name")
+    if len(set(n.lower() for n in names)) != len(names):
+        raise HTTPException(422, "seat tier names must be unique")
+    STATE.upsert_budget_subscription(
+        req.tool_id,
+        {"vendor": req.vendor.strip(), "plan": req.plan.strip(),
+         "currency": req.currency.strip(),
+         "renewal_date": req.renewal_date, "owner": req.owner.strip(),
+         "notes": req.notes.strip(),
+         "seat_tiers": [{"name": n, "seats": t.seats,
+                         "unit_price_monthly": t.unit_price_monthly}
+                        for n, t in zip(names, req.seat_tiers)]},
+        _admin_actor(authorization))
+    return get_budget(authorization)
+
+
+@app.post("/admin/budget/subscription/delete")
+def delete_budget_subscription(req: BudgetToolRef,
+                               authorization: str = Header(default="")):
+    _admin_auth(authorization, write=True)
+    if not STATE.delete_budget_subscription(req.tool_id,
+                                            _admin_actor(authorization)):
+        raise HTTPException(404, "no subscription for that tool")
+    return get_budget(authorization)
+
+
+@app.put("/admin/budget/members")
+def put_budget_members(req: BudgetMembersWrite,
+                       authorization: str = Header(default="")):
+    """Replace the roster rows the named source owns. Validated as a
+    batch before anything is written: a 422 means nothing changed."""
+    _admin_auth(authorization, write=True)
+    if not _TOOL_ID_RE.match(req.tool_id):
+        raise HTTPException(422, "malformed tool id: %s" % req.tool_id[:60])
+    if req.source not in ("csv", "manual"):
+        raise HTTPException(422, "source must be csv or manual")
+    seen = set()
+    members = []
+    for m in req.members:
+        email = m.email.strip().lower()
+        if not _EMAIL_RE.match(email):
+            raise HTTPException(422, "not an email address: %s" % email[:60])
+        if email in seen:
+            raise HTTPException(422, "duplicate email: %s" % email[:60])
+        seen.add(email)
+        members.append({"email": email, "name": m.name.strip(),
+                        "role": m.role.strip(),
+                        "seat_tier": m.seat_tier.strip()})
+    count = STATE.replace_budget_members(req.tool_id, members, req.source,
+                                         _admin_actor(authorization))
+    return {"ok": True, "count": count}
+
+
+@app.put("/admin/budget/connection")
+def put_budget_connection(req: BudgetConnectionWrite,
+                          authorization: str = Header(default="")):
+    _admin_auth(authorization, write=True)
+    if not _TOOL_ID_RE.match(req.tool_id):
+        raise HTTPException(422, "malformed tool id: %s" % req.tool_id[:60])
+    if req.provider not in _budget.SYNCERS:
+        raise HTTPException(
+            422, "provider must be one of: " + ", ".join(_budget.SYNCERS))
+    key = req.api_key.strip()
+    if any(ord(c) < 33 for c in key):
+        raise HTTPException(422, "the API key contains whitespace or "
+                                 "control characters - check the paste")
+    STATE.set_budget_connection(req.tool_id, req.provider, key,
+                                _admin_actor(authorization))
+    return {"ok": True}
+
+
+@app.post("/admin/budget/connection/delete")
+def delete_budget_connection(req: BudgetToolRef,
+                             authorization: str = Header(default="")):
+    _admin_auth(authorization, write=True)
+    if not STATE.delete_budget_connection(req.tool_id,
+                                          _admin_actor(authorization)):
+        raise HTTPException(404, "no connection for that tool")
+    return {"ok": True}
+
+
+@app.post("/admin/budget/sync")
+async def budget_sync(req: BudgetToolRef,
+                      authorization: str = Header(default="")):
+    """One roster sync, now, with the stored connection. The failure body
+    is the operator's answer (ok: false with the reason), not a 5xx: the
+    vendor refusing a key is an expected state the page must render, and
+    the result is recorded either way so the card can show it later."""
+    _admin_auth(authorization, write=True)
+    by = _admin_actor(authorization)
+    conn = STATE.sync_connection_key(req.tool_id)
+    if conn is None:
+        raise HTTPException(404, "no connection for that tool: save one "
+                                 "first")
+    provider, key = conn
+    try:
+        members = await _budget.SYNCERS[provider](key)
+    except _budget.SyncError as e:
+        STATE.record_budget_sync(req.tool_id, False, str(e), 0, by)
+        return {"ok": False, "detail": str(e)}
+    STATE.replace_budget_members(req.tool_id, members, "api", by)
+    STATE.record_budget_sync(req.tool_id, True, "", len(members), by)
+    return {"ok": True, "count": len(members)}
 
 
 @app.post("/admin/password")
