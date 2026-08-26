@@ -37,6 +37,9 @@ receiver printed a one-time setup code to its log when it started:
 docker compose logs receiver | grep setup_code
 ```
 
+On Windows, swap `grep` for `findstr` - it is built into both PowerShell
+and cmd.
+
 Paste the code, pick a username and password, and you are in - the same
 first-boot flow as a real deployment, which is why the demo does not skip
 it. Being signed in unlocks the managed half of the platform: the setup
