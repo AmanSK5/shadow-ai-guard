@@ -57,9 +57,12 @@ organisation's **primary owner** creates it:
 
 **Claude Team plans do not offer admin keys** - the API section is
 simply absent from a Team workspace's organization settings, even for
-the primary owner. A Team workspace uses the Import path instead: copy
-the list from Organization settings → Members and paste it into the
-card's import. Everything downstream behaves identically.
+the primary owner. A Team workspace uses the Import path instead:
+Organization settings → Members has a CSV export (name, email, role,
+status, seat tier), and the import understands it directly - the seat
+tier column maps onto the subscription's tiers by name. Pasting the
+rows out of a spreadsheet works too; the parser handles tabs as well
+as commas. Everything downstream behaves identically.
 
 Select **read-only scopes** when creating it. The sync only ever lists
 members; a key that can also write members is more credential than this
