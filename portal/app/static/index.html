@@ -2727,7 +2727,7 @@ const _val = id => (document.getElementById(id)?.value || '').trim();
 
 // ------------------------------------------------------------- budget --
 // What the organisation pays for, joined against what the estate is
-// observed doing. The stored half (subscriptions, rosters, connections)
+// observed doing. The stored half (subscriptions, user lists, connections)
 // lives in the receiver; the observed half is the same graph every other
 // view reads. The join happens here, in the page, from data both halves
 // already sent - no new endpoint learns anything new about anyone.
@@ -2741,7 +2741,7 @@ const _val = id => (document.getElementById(id)?.value || '').trim();
 const bNorm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
 // Findings never carry full addresses - the platform stores account
-// DOMAINS and identity hints, deliberately - so a roster email is matched
+// DOMAINS and identity hints, deliberately - so a user's email is matched
 // on its local part against the observed identities and mapped persons.
 function bObserved(toolId) {
   const t = (G.tools || {})[toolId] || {};
@@ -2795,9 +2795,9 @@ function bCsvRow(line) {
 // by header name (email/name/role/seat, with the spellings the vendors
 // actually use); a file with no header row works when its first column
 // is the addresses. Returns {members, skipped} - skipped rows are shown,
-// never silently dropped, because a roster that quietly lost three rows
+// never silently dropped, because an import that quietly lost three rows
 // reads as three people who left.
-function parseRosterCsv(text) {
+function parseUsersCsv(text) {
   const lines = String(text || '').split(/\r?\n/)
     .filter(l => l.trim() && !l.trim().startsWith('#'));
   if (!lines.length) return {members: [], skipped: 0};
@@ -2827,7 +2827,7 @@ function parseRosterCsv(text) {
 }
 
 const BPROVIDER_NONE = `ChatGPT Business (Team) has no admin API - OpenAI
-  keeps SCIM and the Compliance API for Enterprise - so its roster comes in
+  keeps SCIM and the Compliance API for Enterprise - so its users come in
   through the guided import below. That is the vendor's boundary, not this
   page's.`;
 
@@ -2947,7 +2947,7 @@ function budgetWizard() {
       <dt>Owner</dt><dd><input id="bw-owner" class="mfield"
         value="${esc(w.owner || '')}" placeholder="who holds this budget"></dd>
     </dl>
-    <p class="src-note">Tier names matter: a roster row whose seat tier
+    <p class="src-note">Tier names matter: a user row whose seat tier
     matches a name here is counted against that tier's seats. The vendor
     APIs do not expose per-user tiers, so tiers come from you either way.</p>
     <button class="mini" data-act="b-step" data-key="2">back</button>
@@ -2963,7 +2963,7 @@ function bProvenance(sub, conn) {
   if (conn) {
     if (conn.last_sync_at) {
       bits.push((conn.last_sync_ok
-        ? `roster synced via API ${when(conn.last_sync_at)}`
+        ? `users synced via API ${when(conn.last_sync_at)}`
         : `last API sync failed ${when(conn.last_sync_at)}: ${esc(conn.last_sync_detail)}`));
     } else bits.push('API connection saved, never synced');
   }
@@ -3017,16 +3017,16 @@ function budgetCard(sub) {
   ${days != null ? `<p class="src-note">renews ${when(sub.renewal_date)}
     ${days <= 30 ? `<span class="pill p-amb">${days <= 0 ? 'past due' : 'in ' + days + 'd'}</span>` : ''}
     ${sub.owner ? ' · owner: ' + esc(sub.owner) : ''}</p>` : ''}
-  ${tiers.length ? `<table class="plain"><tr><th>tier</th><th>seats paid</th><th>assigned on roster</th><th>price/seat</th><th>monthly</th></tr>
+  ${tiers.length ? `<table class="plain"><tr><th>tier</th><th>seats paid</th><th>assigned to users</th><th>price/seat</th><th>monthly</th></tr>
     ${tiers.map(t => `<tr><td>${esc(t.name)}</td><td class="num">${t.seats}</td>
       <td class="num">${tierOf[t.name] || 0}</td>
       <td class="num">${bMoney(t.unit_price_monthly, sub.currency)}</td>
       <td class="num">${bMoney((t.seats || 0) * (t.unit_price_monthly || 0), sub.currency)}</td></tr>`).join('')}</table>` : ''}
-  ${(sub.members || []).length ? `<details style="margin-top:8px"><summary>Roster
+  ${(sub.members || []).length ? `<details style="margin-top:8px"><summary>Users
       (${(sub.members || []).length}) — ${bProvenance(sub, conn) || 'manual'}</summary>
     <table><tr><th>member</th><th>role</th><th>seat</th><th>vendor usage</th><th>source</th></tr>
     ${(sub.members || []).map(memberRow).join('')}</table></details>`
-    : `<p class="src-note">No roster yet${conn ? ' - run a sync' : ''}.</p>`}
+    : `<p class="src-note">No users yet${conn ? ' - run a sync' : ''}.</p>`}
   ${unobserved.length ? `<details><summary>${unobserved.length} paid
       ${unobserved.length === 1 ? 'seat' : 'seats'} with no observed use — downgrade candidates</summary>
     <p class="src-note">"Never observed" means no detection surface has
@@ -3037,7 +3037,7 @@ function budgetCard(sub) {
   ${strangers.length ? `<details><summary>${strangers.length} observed
       ${strangers.length === 1 ? 'user' : 'users'} not matched to any seat</summary>
     <p class="src-note">Observed identities that matched nobody on the
-    roster. Matching is by name, and a miss is "unmatched", not proof
+    user list. Matching is by name, and a miss is "unmatched", not proof
     someone is unlicensed - but several of these alongside personal
     accounts below is the shadow-spend picture this page exists for.</p>
     <ul>${strangers.map(n => `<li>${esc(n)}</li>`).join('')}</ul></details>` : ''}
@@ -3056,9 +3056,9 @@ function budgetCard(sub) {
     ${esc(sub.tool_id)} with no person attached - not counted anywhere
     above. An identity map (Sources view) links them.</p>` : ''}
   ${ro ? '' : `<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
-    ${conn ? `<button class="mini" data-act="b-sync" data-key="${esc(sub.tool_id)}">sync roster now</button>` : ''}
+    ${conn ? `<button class="mini" data-act="b-sync" data-key="${esc(sub.tool_id)}">sync users now</button>` : ''}
     <button class="mini" data-act="b-edit" data-key="${esc(sub.tool_id)}">edit</button>
-    <button class="mini" data-act="b-import" data-key="${esc(sub.tool_id)}">import roster CSV</button>
+    <button class="mini" data-act="b-import" data-key="${esc(sub.tool_id)}">import users</button>
     <button class="mini" data-act="b-unlink" data-key="${esc(sub.tool_id)}">unlink</button>
   </div>
   <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
@@ -3071,7 +3071,7 @@ function budgetCard(sub) {
 
 function budgetImport() {
   const parsed = BCSV && BCSV.parsed;
-  return `<h2>Import roster — ${esc(BCSV.tool_id)}</h2>
+  return `<h2>Import users — ${esc(BCSV.tool_id)}</h2>
   <p class="lede">Paste the member export from the vendor's admin page
   (ChatGPT Business: Workspace settings → Members; Claude: Organization
   settings → Members). A header row with email / name / role / seat
@@ -3122,7 +3122,7 @@ async function budget() {
   return `<h2>Budget</h2>
   <p class="lede">The AI tools the organisation pays for, against what the
   estate is observed doing: seats nobody uses, users no seat covers, and
-  personal accounts running alongside paid ones. Rosters come from a
+  personal accounts running alongside paid ones. User lists come from a
   vendor's admin API where one exists, or a CSV export where one does not -
   the numbers work the same either way and each card says which it is.</p>
   ${BMSG ? `<div class="note">${esc(BMSG)}</div>` : ''}
@@ -3132,11 +3132,11 @@ async function budget() {
   </dl>` : ''}
   ${subs.map(budgetCard).join('')}
   ${subs.length ? '' : `<div class="note">Nothing linked yet. Link a tool
-    to record what it costs and see the roster-versus-reality picture the
+    to record what it costs and see the users-versus-reality picture the
     detection data already holds.</div>`}
   ${ro ? '' : `<p style="margin-top:10px">
     <button class="mini" data-act="b-open">Link a tool</button></p>`}
-  <p class="src-note">Automatic roster sync currently supports
+  <p class="src-note">Automatic user sync currently supports
   ${ents((BUDGET.providers) || {}).map(([, p]) => esc(p.label)).join(' and ') || 'no vendors yet'}.
   More vendors will be added for automatic configuration - if you want a
   particular tool, please raise an issue on
@@ -3198,7 +3198,7 @@ async function budgetAction(act, el) {
       BCSV = {tool_id: w.tool_id, text: '', parsed: null};
       BMSG = '';
       render(); return;
-    } else BMSG = w.editing ? 'Saved.' : 'Linked. Add the roster from the card.';
+    } else BMSG = w.editing ? 'Saved.' : 'Linked. Add users from the card.';
     BWIZ = null; BUDGET = null; render(); return;
   }
   if (act === 'b-sync') {
@@ -3212,7 +3212,7 @@ async function budgetAction(act, el) {
   if (act === 'b-unlink') {
     const r = await post('/api/budget/subscription-delete', {tool_id: key});
     if (!r) return;
-    BMSG = r.ok ? `Unlinked ${key}. Its roster and any stored key went with it.`
+    BMSG = r.ok ? `Unlinked ${key}. Its users and any stored key went with it.`
       : 'Not unlinked: ' + await _refusal(r);
     BUDGET = null; render(); return;
   }
@@ -3222,7 +3222,7 @@ async function budgetAction(act, el) {
   }
   if (act === 'b-csv-parse') {
     BCSV.text = document.getElementById('b-csv').value;
-    BCSV.parsed = parseRosterCsv(BCSV.text);
+    BCSV.parsed = parseUsersCsv(BCSV.text);
     BMSG = ''; render(); return;
   }
   if (act === 'b-csv-cancel') { BCSV = null; BMSG = ''; render(); return; }

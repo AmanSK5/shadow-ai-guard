@@ -6,25 +6,24 @@ pay for, and do the two lists agree*. Link a tool, record what its seats
 cost, give the portal the member list the plan covers, and each tool's
 card shows:
 
-- **paid seats never observed** - members on the vendor roster that no
+- **paid seats never observed** - users on the vendor's member list that no
   detection surface has matched to activity. Downgrade candidates, with
   the caveat the card itself carries: a coverage gap looks identical to
   absence, so check the Sources view before acting.
 - **observed users not matched to a seat** - identities the estate has
-  seen on the tool that match nobody on the roster.
+  seen on the tool that match nobody on the member list.
 - **personal-account use alongside the paid plan** - the same rows the
   Personal accounts view holds, surfaced under the seats being paid for,
   because that is where the spend question lives.
-- the per-tier arithmetic: seats paid versus seats assigned on the
-  roster, price per seat, monthly total, and the renewal date with a
+- the per-tier arithmetic: seats paid versus seats assigned to users, price per seat, monthly total, and the renewal date with a
   warning inside 30 days.
 
-Budget is managed-mode only. The subscriptions, rosters and connections
+Budget is managed-mode only. The subscriptions, user lists and connections
 are receiver state, every write is role-gated (viewers read, admins
 write) and lands in the audit trail, and the portal remains a page over
 data others hold.
 
-## Where the roster comes from
+## Where the user list comes from
 
 Three sources, per tool, and each card names which one its rows came from:
 
@@ -65,7 +64,7 @@ feature needs, and the receiver will happily use less.
 An API key from fireflies.ai → Integrations → Fireflies API. A team
 admin's key lists the whole team, and the sync also records the per-user
 usage the API reports (transcripts, minutes), which shows up in the
-roster table.
+users table.
 
 ## Where the key lives, exactly
 
@@ -82,7 +81,7 @@ about the new one.
 
 Findings deliberately carry account **domains** and identity hints, never
 full addresses - that is a privacy property of the platform, and Budget
-does not weaken it. A roster email is matched against observed identities
+does not weaken it. A user's email is matched against observed identities
 (cloud sign-in names, and people attached to devices through the identity
 map) by normalising both sides to bare letters and digits, the same trick
 the identity-map suggestions use.
@@ -99,7 +98,7 @@ view) is what turns those into names.
 Vendors sell mixed plans (Claude Team and ChatGPT Business both split
 standard from premium seats), so a subscription holds up to ten named
 tiers, each with a seat count and a per-seat monthly price. Tier names
-matter: a roster row whose seat tier matches a tier's name counts against
+matter: a user row whose seat tier matches a tier's name counts against
 that tier's seats, which is how "8 premium seats paid, 3 assigned" falls
 out. The vendor APIs do not expose per-user tiers, so tier assignment
 comes from the CSV import or the card either way.

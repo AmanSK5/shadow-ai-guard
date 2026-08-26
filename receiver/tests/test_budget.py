@@ -1,4 +1,4 @@
-"""The budget store and its routes: subscriptions, rosters, connections,
+"""The budget store and its routes: subscriptions, members, connections,
 and the vendor sync.
 
 Same harness shape as test_settings. The properties held here are the
@@ -95,7 +95,7 @@ def test_subscription_validation(managed):
                       json=bad).status_code == 422
 
 
-def test_delete_takes_the_roster_and_connection_with_it(managed):
+def test_delete_takes_the_members_and_connection_with_it(managed):
     client.put("/admin/budget/subscription", headers=ADMIN, json=SUB)
     client.put("/admin/budget/members", headers=ADMIN, json={
         "tool_id": "claude", "source": "csv",
@@ -111,7 +111,7 @@ def test_delete_takes_the_roster_and_connection_with_it(managed):
     assert managed.sync_connection_key("claude") is None
 
 
-# ---------------------------------------------------------------- roster --
+# --------------------------------------------------------------- members --
 
 
 def test_members_replace_by_source_not_wholesale(managed):

@@ -89,7 +89,7 @@ password - are stored as hashes only; a copied database file cannot
 impersonate anything. **Integration secrets** are different: a log store
 password saved in the portal, a notification webhook URL (itself a
 bearer capability - whoever holds it can post to the channel), and a
-vendor admin API key saved for a Budget roster sync, are stored
+vendor admin API key saved for a Budget user sync, are stored
 recoverable, because the receiver must present them outward. Both are
 masked everywhere in the UI and in the ordinary settings API. The log-store
 plaintext exists on exactly one admin-only route the portal uses
@@ -125,7 +125,7 @@ http(s) locations, including internal ones, and the log-store test button
 makes that an authenticated network probe. That is the price of supporting
 private, self-hosted stores; it is an *admin* capability, gated like every
 other write, and worth knowing when deciding who gets an admin account.
-The Budget roster sync is deliberately narrower: its outbound
+The Budget user sync is deliberately narrower: its outbound
 destinations are the vendors' API hosts, hardcoded in the receiver, so a
 stored key can only ever be presented to the vendor it belongs to.
 

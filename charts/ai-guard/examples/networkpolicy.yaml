@@ -77,7 +77,7 @@ spec:
         - protocol: TCP
           port: 9093
 
-    # Budget roster sync (docs/budget.md): the receiver calls the vendor
+    # Budget user sync (docs/budget.md): the receiver calls the vendor
     # admin APIs (api.anthropic.com, api.fireflies.ai) over HTTPS. Delete
     # this rule if you do not use the Budget view's automatic sync - a
     # webhook_url notification target also rides on it. Plain
