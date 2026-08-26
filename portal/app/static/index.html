@@ -2892,48 +2892,65 @@ function budgetWizard() {
   ${step(1) ? `
     <dl class="kv">
       <dt>Tool</dt><dd>
-        ${w.editing ? `<span class="mono">${esc(w.tool_id)}</span>` : `
-        <select id="bw-tool" class="mfield" style="min-width:220px">
-          ${tools.map(t => `<option value="${esc(t.id)}"
+        ${w.editing ? `<span class="mono">${esc(w.tool_id)}</span>` : (() => {
+          // Observed tools first: the one being linked is almost always
+          // one the estate already uses, and 38 registry entries in one
+          // flat list buries it.
+          const seen = new Set(Object.keys(G.tools || {}));
+          const opt = t => `<option value="${esc(t.id)}"
             ${t.id === w.tool_id ? 'selected' : ''}
             ${linked.has(t.id) && t.id !== w.tool_id ? 'disabled' : ''}>
-            ${esc(t.name)}${linked.has(t.id) && t.id !== w.tool_id ? ' (linked)' : ''}</option>`).join('')}
+            ${esc(t.name)}${linked.has(t.id) && t.id !== w.tool_id ? ' (linked)' : ''}</option>`;
+          const obs = tools.filter(t => seen.has(t.id));
+          const rest = tools.filter(t => !seen.has(t.id));
+          return `<select id="bw-tool" class="mfield" style="min-width:220px">
+          ${obs.length ? `<optgroup label="Seen in your estate">${obs.map(opt).join('')}</optgroup>
+            <optgroup label="Registry watchlist">${rest.map(opt).join('')}</optgroup>`
+            : tools.map(opt).join('')}
         </select>
         <div class="src-note">The registry is the menu. A tool that is not
         in it yet is added in the Tool registry view first, so detection
-        and spend stay one list.</div>`}</dd>
+        and spend stay one list.</div>`; })()}</dd>
       <dt>Vendor</dt><dd><input id="bw-vendor" class="mfield" value="${esc(w.vendor || '')}" placeholder="e.g. Anthropic"></dd>
       <dt>Plan</dt><dd><input id="bw-plan" class="mfield" value="${esc(w.plan || '')}" placeholder="e.g. Team (standard + premium seats)"></dd>
     </dl>
     <button class="mini" data-act="b-step" data-key="2">next</button>` : ''}
   ${step(2) ? `
     <p style="margin-top:0"><strong>Where does the member list come from?</strong></p>
-    <div id="bw-source">
-    <label style="display:block;margin-bottom:6px"><input type="radio" name="bw-source" value="api"
-      ${w.source === 'api' ? 'checked' : ''}> Automatic - the vendor's admin API, synced on demand</label>
-    <label style="display:block;margin-bottom:6px"><input type="radio" name="bw-source" value="csv"
-      ${w.source === 'csv' ? 'checked' : ''}> Import - paste or upload the member export from the vendor's admin page</label>
-    <label style="display:block;margin-bottom:10px"><input type="radio" name="bw-source" value="manual"
-      ${w.source === 'manual' ? 'checked' : ''}> Manual - add members by hand on the tool's card</label>
+    <div id="bw-source" style="margin-bottom:12px">
+    ${[['api', 'Automatic', "the vendor's admin API, synced on demand"],
+       ['csv', 'Import', "paste the member export from the vendor's admin page"],
+       ['manual', 'Manual', "add members by hand on the tool's card"]]
+      .map(([v, name, blurb]) => `
+    <label style="display:flex;align-items:baseline;gap:10px;margin-bottom:8px;cursor:pointer"
+      data-act="b-source" data-key="${v}">
+      <input type="radio" name="bw-source" value="${v}"
+        style="min-width:0;margin:0;accent-color:var(--pri)"
+        ${w.source === v ? 'checked' : ''}>
+      <span><strong>${name}</strong> — ${blurb}</span>
+    </label>`).join('')}
+    <div class="src-note" style="margin-top:4px">${esc(BPROVIDER_NONE)}
+      Automatic setup for more vendors lands by request: if you want a
+      particular tool supported, open an issue at
+      <a href="https://github.com/AmanSK5/shadow-ai-guard/issues" target="_blank" rel="noopener">github.com/AmanSK5/shadow-ai-guard/issues</a>.</div>
     </div>
-    <dl class="kv"><dt>Provider</dt><dd>
+    ${w.source === 'api' ? `<dl class="kv"><dt>Provider</dt><dd>
       <select id="bw-provider" class="mfield" style="min-width:280px">
         ${ents(providers).map(([id, p]) => `<option value="${esc(id)}"
           ${id === w.provider ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}
       </select>
-      <div class="src-note">Only used by Automatic. ${esc(BPROVIDER_NONE)}
-      Automatic setup for more vendors lands by request: if you want a
-      particular tool supported, open an issue at
-      <a href="https://github.com/AmanSK5/shadow-ai-guard/issues" target="_blank" rel="noopener">github.com/AmanSK5/shadow-ai-guard/issues</a>.</div>
     </dd>
     <dt>API key</dt><dd>
       <input id="bw-key" class="mfield" type="password" style="min-width:280px"
         placeholder="${w.key_set ? 'saved - paste to replace' : 'paste the vendor API key'}"
         autocomplete="off" value="${esc(w.api_key || '')}">
-      <div class="src-note">Automatic only. Stored by the receiver and
-      spent server-side; no page ever reads it back.
+      <div class="src-note">Stored by the receiver and spent server-side;
+      no page ever reads it back.
       ${esc(((providers[w.provider] || {}).key_hint) || '')}</div>
-    </dd></dl>
+    </dd></dl>` : ''}
+    ${w.source === 'csv' ? `<p class="src-note" style="margin:0 0 10px">The
+      paste box comes right after the last step - link the tool first, then
+      drop the export in.</p>` : ''}
     <button class="mini" data-act="b-step" data-key="1">back</button>
     <button class="mini" data-act="b-step" data-key="3">next</button>` : ''}
   ${step(3) ? `
@@ -3154,7 +3171,11 @@ async function budgetAction(act, el) {
   };
   if (act === 'b-open') {
     BMSG = '';
-    BWIZ = {step: 1, tool_id: (REGTOOLS || [])[0] ? REGTOOLS[0].id : '',
+    const seen = new Set(Object.keys(G.tools || {}));
+    const first = (REGTOOLS || []).slice()
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .find(t => seen.has(t.id)) || (REGTOOLS || [])[0];
+    BWIZ = {step: 1, tool_id: first ? first.id : '',
             source: 'csv', provider: 'anthropic', tiers: [], api_key: ''};
     render(); return;
   }
@@ -3171,6 +3192,14 @@ async function budgetAction(act, el) {
     render(); return;
   }
   if (act === 'b-cancel') { BWIZ = null; BMSG = ''; render(); return; }
+  if (act === 'b-source') {
+    // The label carries the value: a click on its text lands here before
+    // the browser forwards it to the radio, so the checked state cannot
+    // be trusted yet - the data-key can.
+    bStash();
+    BWIZ.source = el.getAttribute('data-key');
+    render(); return;
+  }
   if (act === 'b-step') { bStash(); BWIZ.step = parseInt(key, 10); render(); return; }
   if (act === 'b-save') {
     bStash();
