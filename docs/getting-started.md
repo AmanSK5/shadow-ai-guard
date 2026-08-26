@@ -63,6 +63,9 @@ kubectl logs deploy/ai-guard -n ai-guard | grep -i setup
 docker compose logs receiver | grep -i setup
 ```
 
+On Windows, swap `grep -i` for `findstr /i` - it is built into both
+PowerShell and cmd.
+
 Open the portal, enter the code, pick a username and password. The code works
 exactly once and only for creating the first account.
 
