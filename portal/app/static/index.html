@@ -2777,44 +2777,64 @@ function bMoney(n, cur) {
   return sign ? sign + v : (cur ? esc(cur) + ' ' + v : v);
 }
 
-// One CSV row, with just enough quote handling for "Last, First" name
-// cells. Not a general CSV parser and not trying to be one.
-function bCsvRow(line) {
+// One delimited row, with just enough quote handling for "Last, First"
+// name cells. Not a general CSV parser and not trying to be one.
+function bCsvRow(line, delim) {
   const out = []; let cur = '', q = false;
   for (const c of line) {
     if (q) { if (c === '"') q = false; else cur += c; }
     else if (c === '"') q = true;
-    else if (c === ',') { out.push(cur); cur = ''; }
+    else if (c === delim) { out.push(cur); cur = ''; }
     else cur += c;
   }
   out.push(cur);
   return out.map(s => s.trim());
 }
 
-// A pasted member export from any vendor's admin page. Column mapping is
-// by header name (email/name/role/seat, with the spellings the vendors
-// actually use); a file with no header row works when its first column
-// is the addresses. Returns {members, skipped} - skipped rows are shown,
-// never silently dropped, because an import that quietly lost three rows
-// reads as three people who left.
+const B_EMAIL_RE = /^[^@\s]+@[^@\s]+$/;
+
+// A pasted member export from any vendor's admin page. The delimiter is
+// detected, not assumed: a saved .csv pastes with commas, but copying
+// the same rows out of Excel or Numbers puts TABS on the clipboard, and
+// the first deployment to try this skipped every row because the parser
+// only knew commas. Column mapping is by header name (the spellings the
+// vendors actually use - Claude's export is name,email,role,status,seat
+// tier; ChatGPT's is email,role,seat type); with no header row, the
+// email column is found by looking for an address in the first row.
+// Returns {members, skipped} - skipped rows are counted and shown, never
+// silently dropped, because an import that quietly lost three rows reads
+// as three people who left.
 function parseUsersCsv(text) {
-  const lines = String(text || '').split(/\r?\n/)
+  const lines = String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/)
     .filter(l => l.trim() && !l.trim().startsWith('#'));
   if (!lines.length) return {members: [], skipped: 0};
-  const head = bCsvRow(lines[0]).map(h => h.toLowerCase());
+  const delim = lines[0].includes('\t') ? '\t'
+    : (lines[0].split(';').length > lines[0].split(',').length ? ';' : ',');
+  const row = l => bCsvRow(l, delim);
+  const head = row(lines[0]).map(h => h.toLowerCase());
+  // A header row names columns; a data row contains an address. The
+  // distinction matters because "email" appears in both a header cell
+  // and jane@example.com's cell.
+  const hasHeader = !head.some(h => B_EMAIL_RE.test(h));
   const col = names => head.findIndex(h => names.some(n => h.includes(n)));
-  let iEmail = col(['email', 'e-mail', 'mail']);
-  const hasHeader = iEmail >= 0;
-  const iName = hasHeader ? col(['name', 'member', 'user']) : -1;
-  const iRole = hasHeader ? col(['role']) : -1;
-  const iTier = hasHeader ? col(['seat', 'tier', 'license', 'licence', 'plan']) : -1;
-  if (!hasHeader) iEmail = 0;
+  let iEmail, iName = -1, iRole = -1, iTier = -1;
+  if (hasHeader) {
+    iEmail = col(['email', 'e-mail', 'mail']);
+    iName = col(['name', 'member', 'user']);
+    iRole = col(['role']);
+    iTier = col(['seat', 'tier', 'license', 'licence', 'plan']);
+    if (iEmail < 0) return {members: [], skipped: lines.length};
+  } else {
+    // No header: the email column is wherever the first row keeps its
+    // address.
+    iEmail = Math.max(0, row(lines[0]).findIndex(c => B_EMAIL_RE.test(c)));
+  }
   const members = []; let skipped = 0;
   const seen = new Set();
   lines.slice(hasHeader ? 1 : 0).forEach(l => {
-    const cells = bCsvRow(l);
+    const cells = row(l);
     const email = (cells[iEmail] || '').toLowerCase();
-    if (!/^[^@\s]+@[^@\s]+$/.test(email) || seen.has(email)) { skipped++; return; }
+    if (!B_EMAIL_RE.test(email) || seen.has(email)) { skipped++; return; }
     seen.add(email);
     members.push({
       email,
@@ -3003,9 +3023,13 @@ function budgetCard(sub) {
   const {matched, unobserved, strangers} = bMatch(sub.members || [], obs);
   const days = sub.renewal_date
     ? Math.ceil((Date.parse(sub.renewal_date) - Date.now()) / 86400000) : null;
+  // Keyed lowercase: the CSV import normalises tiers to lowercase and
+  // the wizard stores whatever the operator typed, and "Premium" not
+  // counting against "premium" would be a silent zero.
   const tierOf = {};
   (sub.members || []).forEach(m => {
-    tierOf[m.seat_tier] = (tierOf[m.seat_tier] || 0) + 1;
+    const k = (m.seat_tier || '').toLowerCase();
+    tierOf[k] = (tierOf[k] || 0) + 1;
   });
   const usageBits = m => {
     const u = m.usage || {};
@@ -3036,7 +3060,7 @@ function budgetCard(sub) {
     ${sub.owner ? ' · owner: ' + esc(sub.owner) : ''}</p>` : ''}
   ${tiers.length ? `<table class="plain"><tr><th>tier</th><th>seats paid</th><th>assigned to users</th><th>price/seat</th><th>monthly</th></tr>
     ${tiers.map(t => `<tr><td>${esc(t.name)}</td><td class="num">${t.seats}</td>
-      <td class="num">${tierOf[t.name] || 0}</td>
+      <td class="num">${tierOf[(t.name || '').toLowerCase()] || 0}</td>
       <td class="num">${bMoney(t.unit_price_monthly, sub.currency)}</td>
       <td class="num">${bMoney((t.seats || 0) * (t.unit_price_monthly || 0), sub.currency)}</td></tr>`).join('')}</table>` : ''}
   ${(sub.members || []).length ? `<details style="margin-top:8px"><summary>Users
@@ -3091,8 +3115,10 @@ function budgetImport() {
   return `<h2>Import users — ${esc(BCSV.tool_id)}</h2>
   <p class="lede">Paste the member export from the vendor's admin page
   (ChatGPT Business: Workspace settings → Members; Claude: Organization
-  settings → Members). A header row with email / name / role / seat
-  columns is understood; so is a plain list of addresses.</p>
+  settings → Members, which exports name / email / role / status / seat
+  tier). A header row with email / name / role / seat columns is
+  understood, commas or tabs - so pasting rows straight out of Excel or
+  Numbers works - and so is a plain list of addresses.</p>
   ${BMSG ? `<div class="note">${esc(BMSG)}</div>` : ''}
   <div class="wcard" style="max-width:760px">
   <textarea id="b-csv" class="mfield" style="width:100%;min-height:140px;font-family:var(--monofont,monospace)"
