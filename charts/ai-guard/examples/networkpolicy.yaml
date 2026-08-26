@@ -76,3 +76,21 @@ spec:
       ports:
         - protocol: TCP
           port: 9093
+
+    # Budget user sync (docs/budget.md): the receiver calls the vendor
+    # admin APIs (api.anthropic.com, api.fireflies.ai) over HTTPS. Delete
+    # this rule if you do not use the Budget view's automatic sync - a
+    # webhook_url notification target also rides on it. Plain
+    # NetworkPolicy cannot scope egress to a hostname; if your CNI offers
+    # FQDN rules (Cilium, Calico Enterprise), tighten this to the two
+    # vendor hosts.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443

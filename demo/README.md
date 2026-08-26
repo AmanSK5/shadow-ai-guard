@@ -63,6 +63,25 @@ portal explains how on the setup page. It proposes one and will not apply it:
 the proposals are string matches against local usernames, and a mapping this
 platform invented and then acted on is how the wrong name ends up on a report.
 
+The Budget tab is worth trying with the seeded data. Link `fireflies`
+(or `chatgpt`), skip the API connection, and import these users when the
+card offers it:
+
+```csv
+email,role,seat type
+squirtle@example.com,member,standard
+psyduck@example.com,member,standard
+misty@example.com,admin,premium
+```
+
+Give the standard tier a couple of seats and a price in the wizard and the
+card does the join the page exists for: psyduck shows as a paid seat with
+observed use, misty as a paid seat never observed, and squirtle's personal
+gmail sign-in surfaces right under the seats being paid for. With a real
+Anthropic or Fireflies admin key the user list syncs from the vendor's API
+instead of the CSV - the demo has no real org behind it, so the import is
+the honest path here.
+
 The portal is never in the ingest path. Stop that one service and
 collection carries on, which is a property worth seeing for yourself.
 
