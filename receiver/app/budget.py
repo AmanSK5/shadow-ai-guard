@@ -1,4 +1,4 @@
-"""Vendor roster sync for the budget view.
+"""Vendor user sync for the budget view.
 
 Each provider here is a vendor whose admin API can list the members of a
 paid workspace. The receiver holds the connection key (state.py, the same
@@ -7,7 +7,7 @@ spends it: one outward call per sync, against a URL hardcoded below -
 never one the request supplies, so there is nothing here for a crafted
 request to point somewhere else.
 
-What a provider returns is a roster, not a judgement: email, name, the
+What a provider returns is a member list, not a judgement: email, name, the
 vendor's own role string, a seat tier where the API exposes one, and any
 usage counters the vendor reports. The reconciliation against what the
 fleet actually does happens in the portal, against findings this module
@@ -33,7 +33,7 @@ import json
 
 import httpx
 
-# One bound for every provider: a roster bigger than this is either the
+# One bound for every provider: a member list bigger than this is either the
 # wrong key (a reseller org?) or an API looping; both deserve a refusal
 # that names the cap rather than an unbounded crawl.
 MAX_MEMBERS = 5000
@@ -127,7 +127,7 @@ async def sync_anthropic(api_key: str) -> list[dict]:
                 })
                 if len(members) > MAX_MEMBERS:
                     raise SyncError("more than %d members: refusing rather "
-                                    "than store a partial roster as if it "
+                                    "than store a partial member list as if it "
                                     "were complete" % MAX_MEMBERS)
             if not body.get("has_more"):
                 return members
@@ -167,7 +167,7 @@ async def sync_fireflies(api_key: str) -> list[dict]:
     users = (body.get("data") or {}).get("users") or []
     if len(users) > MAX_MEMBERS:
         raise SyncError("more than %d members: refusing rather than store "
-                        "a partial roster as if it were complete"
+                        "a partial member list as if it were complete"
                         % MAX_MEMBERS)
     members = []
     for u in users:

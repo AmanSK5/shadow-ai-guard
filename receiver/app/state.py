@@ -748,9 +748,9 @@ class State:
 
     # ---------------------------------------------- budget (managed) --
     # What the organisation pays for, per tool: the subscription (plan,
-    # renewal, seat tiers with pricing), the roster of members that plan
+    # renewal, seat tiers with pricing), the list of members that plan
     # covers, and - where a vendor exposes an admin API - the connection
-    # that syncs the roster automatically. The vendor API key follows the
+    # that syncs the members automatically. The vendor API key follows the
     # log-store password's documented trade (SECURITY.md): recoverable by
     # design, because the receiver must present it outward to sync, unlike
     # fleet credentials, which are hashes. It is never echoed by any list
@@ -825,7 +825,7 @@ class State:
             self._db.commit()
 
     def delete_budget_subscription(self, tool_id: str, by: str = "") -> bool:
-        """The subscription and everything hanging off it: a roster or a
+        """The subscription and everything hanging off it: a member list or a
         stored vendor key with no subscription is orphaned data nobody can
         see or manage, which is the worst kind to keep."""
         with self._lock:
@@ -844,7 +844,7 @@ class State:
 
     def replace_budget_members(self, tool_id: str, members: list[dict],
                                source: str, by: str = "") -> int:
-        """Replace the roster rows this source owns; other sources' rows
+        """Replace the member rows this source owns; other sources' rows
         stay. A CSV re-import replaces the previous import, an API sync
         replaces the previous sync, and neither clobbers a manual entry.
         The event carries counts, never addresses - the audit trail's

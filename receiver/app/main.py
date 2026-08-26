@@ -1843,13 +1843,13 @@ def put_governance(req: GovernanceUpdate, authorization: str = Header(default=""
 
 # ------------------------------------------------------------- budget --
 # What the organisation pays for, per tool: subscription, seat tiers,
-# roster, and (where a vendor has an admin API) the connection that syncs
-# the roster. Storage in state.py, vendor calls in budget.py; these routes
+# members, and (where a vendor has an admin API) the connection that syncs
+# them. Storage in state.py, vendor calls in budget.py; these routes
 # validate shape and hold the role gate. The vendor key is written here
 # and never read back out by any route - sync spends it server-side.
 
 _TIER_NAME_RE = re.compile(r"^[^\x00-\x1f]{1,64}$")
-# Not RFC 5322 - a roster row needs an @ with something either side, and
+# Not RFC 5322 - a member row needs an @ with something either side, and
 # a tighter pattern only manufactures reasons to refuse a real address.
 _EMAIL_RE = re.compile(r"^[^@\s]{1,180}@[^@\s]{1,253}$")
 
@@ -1907,7 +1907,7 @@ class BudgetToolRef(BaseModel):
 
 @app.get("/admin/budget")
 def get_budget(authorization: str = Header(default="")):
-    """Subscriptions with rosters, connection metadata (never keys), and
+    """Subscriptions with members, connection metadata (never keys), and
     the provider catalogue the wizard offers."""
     _admin_auth(authorization)
     out = STATE.list_budget()
@@ -1959,7 +1959,7 @@ def delete_budget_subscription(req: BudgetToolRef,
 @app.put("/admin/budget/members")
 def put_budget_members(req: BudgetMembersWrite,
                        authorization: str = Header(default="")):
-    """Replace the roster rows the named source owns. Validated as a
+    """Replace the member rows the named source owns. Validated as a
     batch before anything is written: a 422 means nothing changed."""
     _admin_auth(authorization, write=True)
     if not _TOOL_ID_RE.match(req.tool_id):
@@ -2014,7 +2014,7 @@ def delete_budget_connection(req: BudgetToolRef,
 @app.post("/admin/budget/sync")
 async def budget_sync(req: BudgetToolRef,
                       authorization: str = Header(default="")):
-    """One roster sync, now, with the stored connection. The failure body
+    """One user sync, now, with the stored connection. The failure body
     is the operator's answer (ok: false with the reason), not a 5xx: the
     vendor refusing a key is an expected state the page must render, and
     the result is recorded either way so the card can show it later."""

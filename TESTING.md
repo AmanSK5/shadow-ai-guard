@@ -45,7 +45,7 @@ Then:
   dashboard. It should already have data in it
 - open http://localhost:8090/demo/ and paste one of the test values on the
   page into the box. The paste guard should stop it
-- optionally, try the Budget tab: link a tool and import the sample roster
+- optionally, try the Budget tab: link a tool and import the sample users
   from [demo/README.md](demo/README.md) to see paid seats joined against
   the seeded findings
 - stop and wipe with `docker compose down -v`
