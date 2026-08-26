@@ -2028,8 +2028,11 @@ async def budget_sync(req: BudgetToolRef,
     try:
         members = await _budget.SYNCERS[provider](key)
     except _budget.SyncError as e:
-        STATE.record_budget_sync(req.tool_id, False, str(e), 0, by)
-        return {"ok": False, "detail": str(e)}
+        # e.detail, not str(e): the field is assigned only from budget.py's
+        # own message templates, so the response provably cannot carry a
+        # stack trace however the sync failed.
+        STATE.record_budget_sync(req.tool_id, False, e.detail, 0, by)
+        return {"ok": False, "detail": e.detail}
     STATE.replace_budget_members(req.tool_id, members, "api", by)
     STATE.record_budget_sync(req.tool_id, True, "", len(members), by)
     return {"ok": True, "count": len(members)}
