@@ -2994,20 +2994,33 @@ function budgetWizard() {
   </div>`;
 }
 
+// Days since an ISO timestamp, or null. Past this many, a member list
+// is presumed drifting: on plans with no admin API the import is a
+// manual loop, and a card that never says "this is old" lets the loop
+// quietly stop while the numbers keep looking authoritative.
+const B_STALE_DAYS = 30;
+const bAgeDays = at => at ? Math.floor((Date.now() - Date.parse(at)) / 86400000) : null;
+
 function bProvenance(sub, conn) {
   const srcs = new Set((sub.members || []).map(m => m.source));
   const bits = [];
+  const stale = (at, verb) => {
+    const days = bAgeDays(at);
+    return days != null && days > B_STALE_DAYS
+      ? ` <span class="pill p-amb">${days}d old - ${verb}?</span>` : '';
+  };
   if (conn) {
     if (conn.last_sync_at) {
       bits.push((conn.last_sync_ok
         ? `users synced via API ${when(conn.last_sync_at)}`
-        : `last API sync failed ${when(conn.last_sync_at)}: ${esc(conn.last_sync_detail)}`));
+        : `last API sync failed ${when(conn.last_sync_at)}: ${esc(conn.last_sync_detail)}`)
+        + stale(conn.last_sync_at, 'sync again'));
     } else bits.push('API connection saved, never synced');
   }
   if (srcs.has('csv')) {
     const at = (sub.members.filter(m => m.source === 'csv')
       .map(m => m.updated_at).sort().pop() || '');
-    bits.push(`imported from CSV ${when(at)}`);
+    bits.push(`imported from CSV ${when(at)}` + stale(at, 're-import'));
   }
   if (srcs.has('manual')) bits.push('manual entries');
   return bits.join(' · ');
