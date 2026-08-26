@@ -72,7 +72,17 @@ PROVIDERS = {
 class SyncError(Exception):
     """A failed sync, carrying what the operator should hear. Never the
     key, and never a raw vendor body - those are logged nowhere and
-    echoed nowhere."""
+    echoed nowhere.
+
+    The message lives in .detail, assigned from this module's own
+    templates at each raise site. The route reads that field rather than
+    str()-ing the caught exception, so nothing exception-shaped flows
+    into a response body - the property CodeQL's stack-trace-exposure
+    query checks for, held structurally instead of by convention."""
+
+    def __init__(self, detail: str):
+        self.detail = detail
+        super().__init__(detail)
 
 
 def _refusal(status: int, vendor: str) -> SyncError:
