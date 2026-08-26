@@ -2756,17 +2756,37 @@ function bObserved(toolId) {
   return {names: [...names], devices, unlinked, personal};
 }
 
+// Every key a person can be recognised by: the whole string normalised,
+// plus the local part normalised when it is an address. The shapes in
+// play never agree - an Entra sign-in carries the full UPN
+// (jane@corp.example), a roster carries the address, a collector or an
+// identity map carries jane.smith or Jane Smith - and the first real
+// deployment proved it: whole-string-only matching left the same person
+// counted as an unused seat AND an unmatched user.
+function bKeys(s) {
+  const out = new Set();
+  const str = String(s || '');
+  const whole = bNorm(str);
+  if (whole) out.add(whole);
+  if (str.includes('@')) {
+    const local = bNorm(str.split('@')[0]);
+    if (local) out.add(local);
+  }
+  return out;
+}
+
 function bMatch(members, obs) {
-  const seen = new Map(obs.names.map(n => [bNorm(n), n]));
+  const seen = new Map();
+  obs.names.forEach(n => bKeys(n).forEach(k => seen.set(k, n)));
   const matched = [], unobserved = [];
-  const used = new Set();
+  const usedNames = new Set();
   members.forEach(m => {
-    const keys = [bNorm(m.email.split('@')[0]), bNorm(m.name)].filter(Boolean);
+    const keys = [...bKeys(m.email), ...bKeys(m.name)];
     const hit = keys.find(k => seen.has(k));
-    if (hit) { matched.push(m); used.add(hit); }
+    if (hit) { matched.push(m); usedNames.add(seen.get(hit)); }
     else unobserved.push(m);
   });
-  const strangers = obs.names.filter(n => !used.has(bNorm(n)));
+  const strangers = obs.names.filter(n => !usedNames.has(n));
   return {matched, unobserved, strangers};
 }
 
