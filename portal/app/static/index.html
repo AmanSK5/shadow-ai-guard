@@ -296,6 +296,10 @@ let REGTOOLS = null, GOVDECS = null, WIZOWNER = '', WIZREVIEW = '';
 // Which log-store shape the wizard's step 2 shows, and the last result of
 // each connection test, keyed by API name, so a result survives re-renders.
 let WIZSTORE = 'self', TESTS = {};
+// The budget view: the fetched spend data, the link-a-tool wizard's state
+// (null = closed), the last action's one-line outcome, and a parsed CSV
+// preview waiting for confirmation.
+let BUDGET = null, BWIZ = null, BMSG = '', BCSV = null;
 // Whether the register's watchlist section is expanded. Tracked because a
 // decision re-renders the view, and a <details> that snaps shut under the
 // operator mid-triage would lose their place.
@@ -348,6 +352,7 @@ function showLogin(msg) {
   GOVEDIT = null; GOVPRE = null; GOVERR = ''; SETMSG = '';
   REGTOOLS = null; GOVDECS = null; TESTS = {}; WLOPEN = false;
   RENTRIES = null; REDIT = null; RPRE = null; RERR = ''; RADV = false;
+  BUDGET = null; BWIZ = null; BMSG = ''; BCSV = null;
   chrome(false);
   const create = AUTH && AUTH.setup_needed;
   app.innerHTML = `<div style="max-width:470px;margin:9vh auto 0">
@@ -402,7 +407,7 @@ async function load(force) {
   const q = force ? '?refresh=true' : '';
   // Refresh must clear the views that read a second endpoint too, or the
   // button refreshes some of the page and silently not the rest.
-  if (force) { DIAG = null; REG = null; EV = null; PG = null; FLEET = null; TOKENS = null; SETTINGS = null; REGTOOLS = null; GOVDECS = null; RENTRIES = null; CAND = null; PSTAT = null; AUDITLOG = null; USERS = null; }
+  if (force) { DIAG = null; REG = null; EV = null; PG = null; FLEET = null; TOKENS = null; SETTINGS = null; REGTOOLS = null; GOVDECS = null; RENTRIES = null; CAND = null; PSTAT = null; AUDITLOG = null; USERS = null; BUDGET = null; }
   try {
     const cr = await fetch('/api/config');
     if (cr.status === 401 && AUTH && AUTH.mode === 'login') { sessionLost(); return; }
@@ -493,6 +498,7 @@ const NAV = [
                                             ['mcp','MCP servers']]},
   {id:'governance',lbl:'Governance', items:[['register','AI register'],['registry','Tool registry'],
                                             ['paste','Paste guard'],['iso','ISO 42001 evidence']]},
+  {id:'spend',     lbl:'Budget',     items:[['budget','Budget']]},
   {id:'health',    lbl:'Health',     items:[['setup','Sources'],['coverage','Uncovered devices']]},
   {id:'managed',   lbl:'Fleet',      items:[['fleet','Devices'],['tokens','Enrollment tokens']]},
   {id:'system',    lbl:'Settings',   items:[['settings','Settings']]},
@@ -501,6 +507,7 @@ const NAVICONS = {
   home:'<path d="M3 12l9-8 9 8"/><path d="M5 10v10h14V10"/>',
   inventory:'<rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/>',
   governance:'<path d="M12 3l8 3v5.5c0 4.7-3.2 8.2-8 10-4.8-1.8-8-5.3-8-10V6l8-3z"/>',
+  spend:'<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18"/><path d="M7 15h4"/>',
   health:'<path d="M3 12h4l3-7 4 14 3-7h4"/>',
   managed:'<rect x="3" y="5" width="18" height="12" rx="1.5"/><path d="M8 21h8"/>',
   system:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M4.9 4.9l2.1 2.1m10 10l2.1 2.1M19.1 4.9l-2.1 2.1m-10 10l-2.1 2.1"/>',
@@ -2718,6 +2725,546 @@ async function tokens() {
 
 const _val = id => (document.getElementById(id)?.value || '').trim();
 
+// ------------------------------------------------------------- budget --
+// What the organisation pays for, joined against what the estate is
+// observed doing. The stored half (subscriptions, user lists, connections)
+// lives in the receiver; the observed half is the same graph every other
+// view reads. The join happens here, in the page, from data both halves
+// already sent - no new endpoint learns anything new about anyone.
+
+// A person, normalised for matching: lowercase, letters and digits only.
+// The same trick suggest_identity_rows uses server-side, for the same
+// reason - jane.smith, Jane Smith and jsmith@ need to have a chance of
+// meeting in the middle. A miss here is reported as "not matched", never
+// as "not a member", because a name that failed to normalise into an
+// email is exactly that: unmatched, not absent.
+const bNorm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+// Findings never carry full addresses - the platform stores account
+// DOMAINS and identity hints, deliberately - so a user's email is matched
+// on its local part against the observed identities and mapped persons.
+function bObserved(toolId) {
+  const t = (G.tools || {})[toolId] || {};
+  const names = new Set(t.identities || []);
+  let devices = 0, unlinked = 0;
+  ents(G.devices).forEach(([k, d]) => {
+    if (!(d.tools || []).includes(toolId)) return;
+    devices++;
+    if (d.person) names.add(d.person); else unlinked++;
+  });
+  const personal = (G.personal_accounts || []).filter(r => r.tool === toolId);
+  return {names: [...names], devices, unlinked, personal};
+}
+
+function bMatch(members, obs) {
+  const seen = new Map(obs.names.map(n => [bNorm(n), n]));
+  const matched = [], unobserved = [];
+  const used = new Set();
+  members.forEach(m => {
+    const keys = [bNorm(m.email.split('@')[0]), bNorm(m.name)].filter(Boolean);
+    const hit = keys.find(k => seen.has(k));
+    if (hit) { matched.push(m); used.add(hit); }
+    else unobserved.push(m);
+  });
+  const strangers = obs.names.filter(n => !used.has(bNorm(n)));
+  return {matched, unobserved, strangers};
+}
+
+const CURRENCY_SIGNS = {GBP: '£', USD: '$', EUR: '€'};
+function bMoney(n, cur) {
+  const v = Math.round(n).toLocaleString('en-GB');
+  const sign = CURRENCY_SIGNS[(cur || '').toUpperCase()];
+  return sign ? sign + v : (cur ? esc(cur) + ' ' + v : v);
+}
+
+// One CSV row, with just enough quote handling for "Last, First" name
+// cells. Not a general CSV parser and not trying to be one.
+function bCsvRow(line) {
+  const out = []; let cur = '', q = false;
+  for (const c of line) {
+    if (q) { if (c === '"') q = false; else cur += c; }
+    else if (c === '"') q = true;
+    else if (c === ',') { out.push(cur); cur = ''; }
+    else cur += c;
+  }
+  out.push(cur);
+  return out.map(s => s.trim());
+}
+
+// A pasted member export from any vendor's admin page. Column mapping is
+// by header name (email/name/role/seat, with the spellings the vendors
+// actually use); a file with no header row works when its first column
+// is the addresses. Returns {members, skipped} - skipped rows are shown,
+// never silently dropped, because an import that quietly lost three rows
+// reads as three people who left.
+function parseUsersCsv(text) {
+  const lines = String(text || '').split(/\r?\n/)
+    .filter(l => l.trim() && !l.trim().startsWith('#'));
+  if (!lines.length) return {members: [], skipped: 0};
+  const head = bCsvRow(lines[0]).map(h => h.toLowerCase());
+  const col = names => head.findIndex(h => names.some(n => h.includes(n)));
+  let iEmail = col(['email', 'e-mail', 'mail']);
+  const hasHeader = iEmail >= 0;
+  const iName = hasHeader ? col(['name', 'member', 'user']) : -1;
+  const iRole = hasHeader ? col(['role']) : -1;
+  const iTier = hasHeader ? col(['seat', 'tier', 'license', 'licence', 'plan']) : -1;
+  if (!hasHeader) iEmail = 0;
+  const members = []; let skipped = 0;
+  const seen = new Set();
+  lines.slice(hasHeader ? 1 : 0).forEach(l => {
+    const cells = bCsvRow(l);
+    const email = (cells[iEmail] || '').toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+$/.test(email) || seen.has(email)) { skipped++; return; }
+    seen.add(email);
+    members.push({
+      email,
+      name: iName >= 0 ? (cells[iName] || '') : '',
+      role: iRole >= 0 ? (cells[iRole] || '').toLowerCase() : '',
+      seat_tier: iTier >= 0 ? (cells[iTier] || '').toLowerCase() : '',
+    });
+  });
+  return {members, skipped};
+}
+
+const BPROVIDER_NONE = `ChatGPT Business (Team) has no admin API - OpenAI
+  keeps SCIM and the Compliance API for Enterprise - so its users come in
+  through the guided import below. That is the vendor's boundary, not this
+  page's.`;
+
+function bTierRows(tiers) {
+  const rows = [...(tiers || [])];
+  while (rows.length < Math.min(4, (tiers || []).length + 2)) rows.push({});
+  return rows.map((t, i) => `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px">
+    <input id="bt-name-${i}" class="mfield" style="min-width:140px" placeholder="tier, e.g. premium"
+      value="${esc(t.name || '')}">
+    <input id="bt-seats-${i}" class="mfield" style="min-width:80px" placeholder="seats"
+      value="${t.seats != null ? esc(String(t.seats)) : ''}">
+    <input id="bt-price-${i}" class="mfield" style="min-width:120px" placeholder="price / seat / month"
+      value="${t.unit_price_monthly != null ? esc(String(t.unit_price_monthly)) : ''}">
+  </div>`).join('');
+}
+
+function bReadTiers() {
+  const tiers = [];
+  for (let i = 0; i < 6; i++) {
+    const name = _val('bt-name-' + i);
+    if (!name) continue;
+    tiers.push({name,
+      seats: parseInt(_val('bt-seats-' + i), 10) || 0,
+      unit_price_monthly: parseFloat(_val('bt-price-' + i)) || 0});
+  }
+  return tiers;
+}
+
+// Read whatever wizard inputs are on screen into BWIZ, so moving between
+// steps loses nothing.
+function bStash() {
+  const w = BWIZ; if (!w) return;
+  if (document.getElementById('bw-tool')) w.tool_id = _val('bw-tool');
+  if (document.getElementById('bw-vendor')) {
+    w.vendor = _val('bw-vendor'); w.plan = _val('bw-plan');
+  }
+  if (document.getElementById('bw-source')) {
+    w.source = (document.querySelector('input[name="bw-source"]:checked') || {}).value || w.source;
+    w.provider = (document.getElementById('bw-provider') || {}).value || w.provider;
+    if (document.getElementById('bw-key')) w.api_key = _val('bw-key');
+  }
+  if (document.getElementById('bt-name-0')) {
+    w.tiers = bReadTiers();
+    w.currency = _val('bw-currency'); w.renewal = _val('bw-renewal');
+    w.owner = _val('bw-owner');
+  }
+}
+
+function budgetWizard() {
+  const w = BWIZ;
+  const tools = (REGTOOLS || []).slice()
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const providers = (BUDGET && BUDGET.providers) || {};
+  const step = n => w.step === n;
+  const linked = new Set((BUDGET.subscriptions || []).map(s => s.tool_id));
+  return `<h2>${w.editing ? 'Edit ' + esc(w.tool_id) : 'Link a tool'}</h2>
+  <p class="lede">Three steps: which tool, where its member list comes
+  from, and what the seats cost. Everything here can be changed later.</p>
+  ${BMSG ? `<div class="note">${esc(BMSG)}</div>` : ''}
+  <div class="wcard" style="max-width:760px">
+  <p class="src-note" style="margin-top:0">step ${w.step} of 3</p>
+  ${step(1) ? `
+    <dl class="kv">
+      <dt>Tool</dt><dd>
+        ${w.editing ? `<span class="mono">${esc(w.tool_id)}</span>` : `
+        <select id="bw-tool" class="mfield" style="min-width:220px">
+          ${tools.map(t => `<option value="${esc(t.id)}"
+            ${t.id === w.tool_id ? 'selected' : ''}
+            ${linked.has(t.id) && t.id !== w.tool_id ? 'disabled' : ''}>
+            ${esc(t.name)}${linked.has(t.id) && t.id !== w.tool_id ? ' (linked)' : ''}</option>`).join('')}
+        </select>
+        <div class="src-note">The registry is the menu. A tool that is not
+        in it yet is added in the Tool registry view first, so detection
+        and spend stay one list.</div>`}</dd>
+      <dt>Vendor</dt><dd><input id="bw-vendor" class="mfield" value="${esc(w.vendor || '')}" placeholder="e.g. Anthropic"></dd>
+      <dt>Plan</dt><dd><input id="bw-plan" class="mfield" value="${esc(w.plan || '')}" placeholder="e.g. Team (standard + premium seats)"></dd>
+    </dl>
+    <button class="mini" data-act="b-step" data-key="2">next</button>` : ''}
+  ${step(2) ? `
+    <p style="margin-top:0"><strong>Where does the member list come from?</strong></p>
+    <div id="bw-source">
+    <label style="display:block;margin-bottom:6px"><input type="radio" name="bw-source" value="api"
+      ${w.source === 'api' ? 'checked' : ''}> Automatic - the vendor's admin API, synced on demand</label>
+    <label style="display:block;margin-bottom:6px"><input type="radio" name="bw-source" value="csv"
+      ${w.source === 'csv' ? 'checked' : ''}> Import - paste or upload the member export from the vendor's admin page</label>
+    <label style="display:block;margin-bottom:10px"><input type="radio" name="bw-source" value="manual"
+      ${w.source === 'manual' ? 'checked' : ''}> Manual - add members by hand on the tool's card</label>
+    </div>
+    <dl class="kv"><dt>Provider</dt><dd>
+      <select id="bw-provider" class="mfield" style="min-width:280px">
+        ${ents(providers).map(([id, p]) => `<option value="${esc(id)}"
+          ${id === w.provider ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}
+      </select>
+      <div class="src-note">Only used by Automatic. ${esc(BPROVIDER_NONE)}
+      Automatic setup for more vendors lands by request: if you want a
+      particular tool supported, open an issue at
+      <a href="https://github.com/AmanSK5/shadow-ai-guard/issues" target="_blank" rel="noopener">github.com/AmanSK5/shadow-ai-guard/issues</a>.</div>
+    </dd>
+    <dt>API key</dt><dd>
+      <input id="bw-key" class="mfield" type="password" style="min-width:280px"
+        placeholder="${w.key_set ? 'saved - paste to replace' : 'paste the vendor API key'}"
+        autocomplete="off" value="${esc(w.api_key || '')}">
+      <div class="src-note">Automatic only. Stored by the receiver and
+      spent server-side; no page ever reads it back.
+      ${esc(((providers[w.provider] || {}).key_hint) || '')}</div>
+    </dd></dl>
+    <button class="mini" data-act="b-step" data-key="1">back</button>
+    <button class="mini" data-act="b-step" data-key="3">next</button>` : ''}
+  ${step(3) ? `
+    <p style="margin-top:0"><strong>Seats and pricing</strong></p>
+    ${bTierRows(w.tiers)}
+    <dl class="kv">
+      <dt>Currency</dt><dd><input id="bw-currency" class="mfield" style="min-width:80px"
+        value="${esc(w.currency || '')}" placeholder="GBP"></dd>
+      <dt>Renews</dt><dd><input id="bw-renewal" class="mfield" style="min-width:140px"
+        value="${esc(w.renewal || '')}" placeholder="YYYY-MM-DD"></dd>
+      <dt>Owner</dt><dd><input id="bw-owner" class="mfield"
+        value="${esc(w.owner || '')}" placeholder="who holds this budget"></dd>
+    </dl>
+    <p class="src-note">Tier names matter: a user row whose seat tier
+    matches a name here is counted against that tier's seats. The vendor
+    APIs do not expose per-user tiers, so tiers come from you either way.</p>
+    <button class="mini" data-act="b-step" data-key="2">back</button>
+    <button class="mini" data-act="b-save">${w.editing ? 'save changes' : 'link tool'}</button>` : ''}
+  <p class="src-note" style="margin-bottom:0">
+    <button class="mini" data-act="b-cancel">cancel</button></p>
+  </div>`;
+}
+
+function bProvenance(sub, conn) {
+  const srcs = new Set((sub.members || []).map(m => m.source));
+  const bits = [];
+  if (conn) {
+    if (conn.last_sync_at) {
+      bits.push((conn.last_sync_ok
+        ? `users synced via API ${when(conn.last_sync_at)}`
+        : `last API sync failed ${when(conn.last_sync_at)}: ${esc(conn.last_sync_detail)}`));
+    } else bits.push('API connection saved, never synced');
+  }
+  if (srcs.has('csv')) {
+    const at = (sub.members.filter(m => m.source === 'csv')
+      .map(m => m.updated_at).sort().pop() || '');
+    bits.push(`imported from CSV ${when(at)}`);
+  }
+  if (srcs.has('manual')) bits.push('manual entries');
+  return bits.join(' · ');
+}
+
+function budgetCard(sub) {
+  const ro = AUTH && AUTH.role === 'viewer';
+  const conn = ((BUDGET.connections || []).find(c => c.tool_id === sub.tool_id)) || null;
+  const tiers = sub.seat_tiers || [];
+  const monthly = tiers.reduce((a, t) => a + (t.seats || 0) * (t.unit_price_monthly || 0), 0);
+  const seats = tiers.reduce((a, t) => a + (t.seats || 0), 0);
+  const obs = bObserved(sub.tool_id);
+  const {matched, unobserved, strangers} = bMatch(sub.members || [], obs);
+  const days = sub.renewal_date
+    ? Math.ceil((Date.parse(sub.renewal_date) - Date.now()) / 86400000) : null;
+  const tierOf = {};
+  (sub.members || []).forEach(m => {
+    tierOf[m.seat_tier] = (tierOf[m.seat_tier] || 0) + 1;
+  });
+  const usageBits = m => {
+    const u = m.usage || {};
+    const b = [];
+    if (u.transcripts != null) b.push(u.transcripts + ' transcripts');
+    if (u.minutes != null) b.push(u.minutes + ' min');
+    return b.join(', ');
+  };
+  const memberRow = m => `<tr>
+    <td>${esc(m.email)}${m.name ? `<br><span style="font-size:11px;color:var(--mut)">${esc(m.name)}</span>` : ''}</td>
+    <td>${esc(m.role || '—')}</td><td>${esc(m.seat_tier || '—')}</td>
+    <td>${esc(usageBits(m) || '')}</td>
+    <td>${m.source === 'manual' && !ro
+      ? `<button class="mini" data-act="b-mdel" data-tool="${esc(sub.tool_id)}" data-key="${esc(m.email)}">remove</button>`
+      : `<span class="pill p-mut">${esc(m.source)}</span>`}</td></tr>`;
+  return `<div class="wcard" style="margin-bottom:12px"><h3>${esc(sub.tool_id)}
+    ${sub.plan ? `<span class="pill p-acc">${esc(sub.plan)}</span>` : ''}</h3>
+  <dl class="stats">
+    <div><dt>${bMoney(monthly, sub.currency)}</dt><dd>per month, ${seats} seats</dd></div>
+    <div><dt>${(sub.members || []).length}</dt><dd>on the company account</dd></div>
+    <div><dt>${matched.length}</dt><dd>of them observed by ai-guard</dd></div>
+    <div><dt${unobserved.length ? ' style="color:var(--warn)"' : ''}>${unobserved.length}</dt><dd>paid seats never observed</dd></div>
+    <div><dt${strangers.length ? ' style="color:var(--warn)"' : ''}>${strangers.length}</dt><dd>observed users not matched to a seat</dd></div>
+    <div><dt${obs.personal.length ? ' style="color:var(--dstr)"' : ''}>${obs.personal.length}</dt><dd>personal-account uses</dd></div>
+  </dl>
+  ${days != null ? `<p class="src-note">renews ${when(sub.renewal_date)}
+    ${days <= 30 ? `<span class="pill p-amb">${days <= 0 ? 'past due' : 'in ' + days + 'd'}</span>` : ''}
+    ${sub.owner ? ' · owner: ' + esc(sub.owner) : ''}</p>` : ''}
+  ${tiers.length ? `<table class="plain"><tr><th>tier</th><th>seats paid</th><th>assigned to users</th><th>price/seat</th><th>monthly</th></tr>
+    ${tiers.map(t => `<tr><td>${esc(t.name)}</td><td class="num">${t.seats}</td>
+      <td class="num">${tierOf[t.name] || 0}</td>
+      <td class="num">${bMoney(t.unit_price_monthly, sub.currency)}</td>
+      <td class="num">${bMoney((t.seats || 0) * (t.unit_price_monthly || 0), sub.currency)}</td></tr>`).join('')}</table>` : ''}
+  ${(sub.members || []).length ? `<details style="margin-top:8px"><summary>Users
+      (${(sub.members || []).length}) — ${bProvenance(sub, conn) || 'manual'}</summary>
+    <table><tr><th>member</th><th>role</th><th>seat</th><th>vendor usage</th><th>source</th></tr>
+    ${(sub.members || []).map(memberRow).join('')}</table></details>`
+    : `<p class="src-note">No users yet${conn ? ' - run a sync' : ''}.</p>`}
+  ${unobserved.length ? `<details><summary>${unobserved.length} paid
+      ${unobserved.length === 1 ? 'seat' : 'seats'} with no observed use — downgrade candidates</summary>
+    <p class="src-note">"Never observed" means no detection surface has
+    matched this member to activity on ${esc(sub.tool_id)} in the current
+    window. Coverage gaps look the same as absence: check the Sources view
+    before acting on this list.</p>
+    <ul>${unobserved.map(m => `<li>${esc(m.email)}${m.seat_tier ? ` <span class="pill p-mut">${esc(m.seat_tier)}</span>` : ''}</li>`).join('')}</ul></details>` : ''}
+  ${strangers.length ? `<details><summary>${strangers.length} observed
+      ${strangers.length === 1 ? 'user' : 'users'} not matched to any seat</summary>
+    <p class="src-note">Observed identities that matched nobody on the
+    user list. Matching is by name, and a miss is "unmatched", not proof
+    someone is unlicensed - but several of these alongside personal
+    accounts below is the shadow-spend picture this page exists for.</p>
+    <ul>${strangers.map(n => `<li>${esc(n)}</li>`).join('')}</ul></details>` : ''}
+  ${obs.personal.length ? `<details><summary style="color:var(--dstr)">${obs.personal.length}
+      personal-account ${obs.personal.length === 1 ? 'use' : 'uses'} of ${esc(sub.tool_id)}</summary>
+    <table><tr><th>who</th><th>account domain</th><th>device</th><th>last seen</th></tr>
+    ${obs.personal.map(r => `<tr><td>${esc(r.user || '—')}</td>
+      <td class="mono">${esc(r.account_domain)}</td>
+      <td>${esc(r.device_name || r.device || '—')}</td>
+      <td>${when(r.last_seen)}</td></tr>`).join('')}</table>
+    <p class="src-note">These are on the Personal accounts view too; they
+    appear here because paying for seats while personal accounts carry the
+    same tool is exactly the spend question.</p></details>` : ''}
+  ${obs.unlinked ? `<p class="src-note">${obs.unlinked}
+    device${obs.unlinked === 1 ? '' : 's'} run${obs.unlinked === 1 ? 's' : ''}
+    ${esc(sub.tool_id)} with no person attached - not counted anywhere
+    above. An identity map (Sources view) links them.</p>` : ''}
+  ${ro ? '' : `<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
+    ${conn ? `<button class="mini" data-act="b-sync" data-key="${esc(sub.tool_id)}">sync users now</button>` : ''}
+    <button class="mini" data-act="b-edit" data-key="${esc(sub.tool_id)}">edit</button>
+    <button class="mini" data-act="b-import" data-key="${esc(sub.tool_id)}">import users</button>
+    <button class="mini" data-act="b-unlink" data-key="${esc(sub.tool_id)}">unlink</button>
+  </div>
+  <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+    <input id="bm-email-${esc(sub.tool_id)}" class="mfield" placeholder="add member: email" autocomplete="off">
+    <input id="bm-tier-${esc(sub.tool_id)}" class="mfield" style="min-width:110px" placeholder="seat tier">
+    <button class="mini" data-act="b-madd" data-key="${esc(sub.tool_id)}">add</button>
+  </div>`}
+  </div>`;
+}
+
+function budgetImport() {
+  const parsed = BCSV && BCSV.parsed;
+  return `<h2>Import users — ${esc(BCSV.tool_id)}</h2>
+  <p class="lede">Paste the member export from the vendor's admin page
+  (ChatGPT Business: Workspace settings → Members; Claude: Organization
+  settings → Members). A header row with email / name / role / seat
+  columns is understood; so is a plain list of addresses.</p>
+  ${BMSG ? `<div class="note">${esc(BMSG)}</div>` : ''}
+  <div class="wcard" style="max-width:760px">
+  <textarea id="b-csv" class="mfield" style="width:100%;min-height:140px;font-family:var(--monofont,monospace)"
+    placeholder="email,role,seat type&#10;jane@corp.example,member,premium">${esc(BCSV.text || '')}</textarea>
+  <div style="margin-top:8px;display:flex;gap:6px">
+    <button class="mini" data-act="b-csv-parse">preview</button>
+    <button class="mini" data-act="b-csv-cancel">cancel</button>
+    ${parsed && parsed.members.length ? `<button class="mini" data-act="b-csv-save">import ${parsed.members.length} members</button>` : ''}
+  </div>
+  ${parsed ? `<p class="src-note">${parsed.members.length} rows understood,
+    ${parsed.skipped} skipped (no address, or a duplicate). Importing
+    replaces the previous CSV import for this tool; API-synced and manual
+    rows are untouched.</p>
+    ${parsed.members.length ? `<table><tr><th>email</th><th>role</th><th>seat</th></tr>
+    ${parsed.members.slice(0, 8).map(m => `<tr><td>${esc(m.email)}</td>
+      <td>${esc(m.role || '—')}</td><td>${esc(m.seat_tier || '—')}</td></tr>`).join('')}
+    ${parsed.members.length > 8 ? `<tr><td colspan="3" style="color:var(--mut)">… and ${parsed.members.length - 8} more</td></tr>` : ''}</table>` : ''}` : ''}
+  </div>`;
+}
+
+async function budget() {
+  const gate = managedGate('Budget'); if (gate) return gate;
+  if (!BUDGET) {
+    const r = await mfetch('/api/budget');
+    if (!r.ok) return managedError(r, 'Budget');
+    BUDGET = await r.json();
+  }
+  if (!REGTOOLS) {
+    const r = await fetch('/api/registry-tools');
+    REGTOOLS = r.ok ? (await r.json()).tools || [] : [];
+  }
+  if (BCSV) return budgetImport();
+  if (BWIZ) return budgetWizard();
+  const ro = AUTH && AUTH.role === 'viewer';
+  const subs = BUDGET.subscriptions || [];
+  const total = subs.reduce((a, s) => a + (s.seat_tiers || []).reduce(
+    (x, t) => x + (t.seats || 0) * (t.unit_price_monthly || 0), 0), 0);
+  // One headline number is only honest when everything is priced in one
+  // currency; a £ sign over a sum that mixes currencies would be a number
+  // that lies. Mixed gets the bare figure and says why.
+  const curs = new Set(subs.map(s => (s.currency || '').toUpperCase()));
+  const mixed = curs.size > 1;
+  const cur = mixed ? '' : [...curs][0] || '';
+  return `<h2>Budget</h2>
+  <p class="lede">The AI tools the organisation pays for, against what the
+  estate is observed doing: seats nobody uses, users no seat covers, and
+  personal accounts running alongside paid ones. User lists come from a
+  vendor's admin API where one exists, or a CSV export where one does not -
+  the numbers work the same either way and each card says which it is.</p>
+  ${BMSG ? `<div class="note">${esc(BMSG)}</div>` : ''}
+  ${subs.length ? `<dl class="stats" style="margin-bottom:14px">
+    <div><dt>${bMoney(total, cur)}</dt><dd>tracked spend / month${mixed ? ' (mixed currencies)' : ''}</dd></div>
+    <div><dt>${subs.length}</dt><dd>tools linked</dd></div>
+  </dl>` : ''}
+  ${subs.map(budgetCard).join('')}
+  ${subs.length ? '' : `<div class="note">Nothing linked yet. Link a tool
+    to record what it costs and see the users-versus-reality picture the
+    detection data already holds.</div>`}
+  ${ro ? '' : `<p style="margin-top:10px">
+    <button class="mini" data-act="b-open">Link a tool</button></p>`}
+  <p class="src-note">Automatic user sync currently supports
+  ${ents((BUDGET.providers) || {}).map(([, p]) => esc(p.label)).join(' and ') || 'no vendors yet'}.
+  More vendors will be added for automatic configuration - if you want a
+  particular tool, please raise an issue on
+  <a href="https://github.com/AmanSK5/shadow-ai-guard/issues" target="_blank" rel="noopener">GitHub</a>.
+  ChatGPT Business has no admin API on that plan, so it uses the CSV
+  import.</p>`;
+}
+
+async function budgetAction(act, el) {
+  const key = el ? el.getAttribute('data-key') : '';
+  const post = async (path, body) => {
+    const r = await mfetch(path, {method: 'POST', body: JSON.stringify(body)});
+    if (r.status === 401) { sessionLost(); return null; }
+    return r;
+  };
+  if (act === 'b-open') {
+    BMSG = '';
+    BWIZ = {step: 1, tool_id: (REGTOOLS || [])[0] ? REGTOOLS[0].id : '',
+            source: 'csv', provider: 'anthropic', tiers: [], api_key: ''};
+    render(); return;
+  }
+  if (act === 'b-edit') {
+    const sub = (BUDGET.subscriptions || []).find(s => s.tool_id === key);
+    const conn = (BUDGET.connections || []).find(c => c.tool_id === key);
+    BMSG = '';
+    BWIZ = {step: 1, editing: true, tool_id: key, vendor: sub.vendor,
+            plan: sub.plan, source: conn ? 'api' : 'csv',
+            provider: conn ? conn.provider : 'anthropic', api_key: '',
+            key_set: !!conn, tiers: sub.seat_tiers || [],
+            currency: sub.currency, renewal: sub.renewal_date,
+            owner: sub.owner};
+    render(); return;
+  }
+  if (act === 'b-cancel') { BWIZ = null; BMSG = ''; render(); return; }
+  if (act === 'b-step') { bStash(); BWIZ.step = parseInt(key, 10); render(); return; }
+  if (act === 'b-save') {
+    bStash();
+    const w = BWIZ;
+    if (!w.tool_id) { BMSG = 'Pick a tool first.'; render(); return; }
+    let r = await post('/api/budget/subscription', {
+      tool_id: w.tool_id, vendor: w.vendor || '', plan: w.plan || '',
+      currency: (w.currency || '').toUpperCase(), renewal_date: w.renewal || '',
+      owner: w.owner || '', seat_tiers: w.tiers || []});
+    if (!r) return;
+    if (!r.ok) { BMSG = 'Not saved: ' + await _refusal(r); render(); return; }
+    if (w.source === 'api' && w.api_key) {
+      r = await post('/api/budget/connection', {
+        tool_id: w.tool_id, provider: w.provider, api_key: w.api_key});
+      if (!r) return;
+      if (!r.ok) { BMSG = 'Subscription saved, but the connection was refused: '
+        + await _refusal(r); BUDGET = null; BWIZ = null; render(); return; }
+      const s = await post('/api/budget/sync', {tool_id: w.tool_id});
+      if (!s) return;
+      const out = s.ok ? await s.json() : {ok: false, detail: await _refusal(s)};
+      BMSG = out.ok ? `Linked. Synced ${out.count} members from the vendor.`
+        : 'Linked, but the first sync failed: ' + out.detail;
+    } else if (w.source === 'csv' && !w.editing) {
+      BWIZ = null; BUDGET = null;
+      BCSV = {tool_id: w.tool_id, text: '', parsed: null};
+      BMSG = '';
+      render(); return;
+    } else BMSG = w.editing ? 'Saved.' : 'Linked. Add users from the card.';
+    BWIZ = null; BUDGET = null; render(); return;
+  }
+  if (act === 'b-sync') {
+    const r = await post('/api/budget/sync', {tool_id: key});
+    if (!r) return;
+    const out = r.ok ? await r.json() : {ok: false, detail: await _refusal(r)};
+    BMSG = out.ok ? `Synced ${out.count} members for ${key}.`
+      : `Sync failed for ${key}: ` + out.detail;
+    BUDGET = null; render(); return;
+  }
+  if (act === 'b-unlink') {
+    const r = await post('/api/budget/subscription-delete', {tool_id: key});
+    if (!r) return;
+    BMSG = r.ok ? `Unlinked ${key}. Its users and any stored key went with it.`
+      : 'Not unlinked: ' + await _refusal(r);
+    BUDGET = null; render(); return;
+  }
+  if (act === 'b-import') {
+    BMSG = ''; BCSV = {tool_id: key, text: '', parsed: null};
+    render(); return;
+  }
+  if (act === 'b-csv-parse') {
+    BCSV.text = document.getElementById('b-csv').value;
+    BCSV.parsed = parseUsersCsv(BCSV.text);
+    BMSG = ''; render(); return;
+  }
+  if (act === 'b-csv-cancel') { BCSV = null; BMSG = ''; render(); return; }
+  if (act === 'b-csv-save') {
+    const r = await post('/api/budget/members', {
+      tool_id: BCSV.tool_id, source: 'csv', members: BCSV.parsed.members});
+    if (!r) return;
+    BMSG = r.ok ? `Imported ${BCSV.parsed.members.length} members for ${BCSV.tool_id}.`
+      : 'Not imported: ' + await _refusal(r);
+    if (r.ok) { BCSV = null; BUDGET = null; }
+    render(); return;
+  }
+  if (act === 'b-madd') {
+    const email = _val('bm-email-' + key), tier = _val('bm-tier-' + key);
+    if (!email) return;
+    const sub = (BUDGET.subscriptions || []).find(s => s.tool_id === key);
+    const manual = (sub.members || []).filter(m => m.source === 'manual')
+      .map(m => ({email: m.email, name: m.name, role: m.role,
+                  seat_tier: m.seat_tier}));
+    manual.push({email, seat_tier: tier});
+    const r = await post('/api/budget/members',
+                         {tool_id: key, source: 'manual', members: manual});
+    if (!r) return;
+    BMSG = r.ok ? '' : 'Not added: ' + await _refusal(r);
+    if (r.ok) BUDGET = null;
+    render(); return;
+  }
+  if (act === 'b-mdel') {
+    const tool = el.getAttribute('data-tool');
+    const sub = (BUDGET.subscriptions || []).find(s => s.tool_id === tool);
+    const manual = (sub.members || [])
+      .filter(m => m.source === 'manual' && m.email !== key)
+      .map(m => ({email: m.email, name: m.name, role: m.role,
+                  seat_tier: m.seat_tier}));
+    const r = await post('/api/budget/members',
+                         {tool_id: tool, source: 'manual', members: manual});
+    if (!r) return;
+    if (r.ok) BUDGET = null;
+    render(); return;
+  }
+}
+
 // Set, accept or clear a finding's lifecycle status, then refresh the
 // local copy so the row shows the answer that was just recorded.
 async function paWrite(key, status, reason) {
@@ -2742,6 +3289,7 @@ async function _refusal(r) {
 }
 
 async function managedAction(act, el) {
+  if (act.startsWith('b-')) return budgetAction(act, el);
   if (act === 'user-create') {
     const role = (document.getElementById('user-role') || {}).value || 'viewer';
     const r = await mfetch('/api/users', {method: 'POST', body: JSON.stringify(
@@ -3206,6 +3754,7 @@ async function render() {
   if (view === 'wizard') { app.innerHTML = await wizard(); return; }
   if (view === 'extsetup') { app.innerHTML = await extSetup(); return; }
   if (view === 'registry') { app.innerHTML = tb + await registryView(); return; }
+  if (view === 'budget') { app.innerHTML = tb + await budget(); return; }
   app.innerHTML = tb + ({setup, overview, devices, people, tools, coverage,
                          dashboard, personal, mcp})[view]();
 }

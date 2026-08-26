@@ -156,6 +156,41 @@ CREATE TABLE IF NOT EXISTS finding_status (
   actor  TEXT NOT NULL DEFAULT '',
   at     TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS budget_subscriptions (
+  tool_id      TEXT PRIMARY KEY,
+  vendor       TEXT NOT NULL DEFAULT '',
+  plan         TEXT NOT NULL DEFAULT '',
+  currency     TEXT NOT NULL DEFAULT '',
+  renewal_date TEXT NOT NULL DEFAULT '',
+  owner        TEXT NOT NULL DEFAULT '',
+  notes        TEXT NOT NULL DEFAULT '',
+  seat_tiers   TEXT NOT NULL DEFAULT '[]',
+  created_at   TEXT NOT NULL,
+  updated_at   TEXT NOT NULL,
+  updated_by   TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS budget_members (
+  tool_id    TEXT NOT NULL,
+  email      TEXT NOT NULL,
+  name       TEXT NOT NULL DEFAULT '',
+  role       TEXT NOT NULL DEFAULT '',
+  seat_tier  TEXT NOT NULL DEFAULT '',
+  source     TEXT NOT NULL DEFAULT 'manual',
+  usage      TEXT NOT NULL DEFAULT '{}',
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (tool_id, email)
+);
+CREATE TABLE IF NOT EXISTS budget_connections (
+  tool_id          TEXT PRIMARY KEY,
+  provider         TEXT NOT NULL,
+  api_key          TEXT NOT NULL,
+  last_sync_at     TEXT,
+  last_sync_ok     INTEGER NOT NULL DEFAULT 0,
+  last_sync_detail TEXT NOT NULL DEFAULT '',
+  members_synced   INTEGER NOT NULL DEFAULT 0,
+  created_at       TEXT NOT NULL,
+  updated_by       TEXT NOT NULL DEFAULT ''
+);
 """
 
 # Columns added after the first release, applied to databases that predate
@@ -710,6 +745,187 @@ class State:
                 self._event("decision_cleared", {"tool": tool_id, "by": by})
             self._db.commit()
         return bool(cur.rowcount)
+
+    # ---------------------------------------------- budget (managed) --
+    # What the organisation pays for, per tool: the subscription (plan,
+    # renewal, seat tiers with pricing), the list of members that plan
+    # covers, and - where a vendor exposes an admin API - the connection
+    # that syncs the members automatically. The vendor API key follows the
+    # log-store password's documented trade (SECURITY.md): recoverable by
+    # design, because the receiver must present it outward to sync, unlike
+    # fleet credentials, which are hashes. It is never echoed by any list
+    # or GET; sync_connection_key below is its only reader.
+
+    def list_budget(self) -> dict:
+        """Everything the budget view shows: subscriptions with their
+        members, and each connection's metadata - provider, sync history,
+        whether a key is stored - never the key itself."""
+        with self._lock:
+            subs = self._db.execute(
+                "SELECT tool_id, vendor, plan, currency, renewal_date,"
+                " owner, notes, seat_tiers, created_at, updated_at,"
+                " updated_by FROM budget_subscriptions ORDER BY tool_id"
+            ).fetchall()
+            members = self._db.execute(
+                "SELECT tool_id, email, name, role, seat_tier, source,"
+                " usage, updated_at FROM budget_members"
+                " ORDER BY tool_id, email"
+            ).fetchall()
+            conns = self._db.execute(
+                "SELECT tool_id, provider, last_sync_at, last_sync_ok,"
+                " last_sync_detail, members_synced, created_at, updated_by"
+                " FROM budget_connections ORDER BY tool_id"
+            ).fetchall()
+        by_tool: dict[str, list] = {}
+        for m in members:
+            by_tool.setdefault(m["tool_id"], []).append({
+                "email": m["email"], "name": m["name"], "role": m["role"],
+                "seat_tier": m["seat_tier"], "source": m["source"],
+                "usage": json.loads(m["usage"] or "{}"),
+                "updated_at": m["updated_at"],
+            })
+        return {
+            "subscriptions": [dict(
+                r, seat_tiers=json.loads(r["seat_tiers"] or "[]"),
+                members=by_tool.get(r["tool_id"], [])) for r in subs],
+            "connections": [{
+                "tool_id": c["tool_id"], "provider": c["provider"],
+                "key_set": True, "last_sync_at": c["last_sync_at"],
+                "last_sync_ok": bool(c["last_sync_ok"]),
+                "last_sync_detail": c["last_sync_detail"],
+                "members_synced": c["members_synced"],
+                "created_at": c["created_at"], "updated_by": c["updated_by"],
+            } for c in conns],
+        }
+
+    def upsert_budget_subscription(self, tool_id: str, fields: dict,
+                                   by: str = ""):
+        now = _now()
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO budget_subscriptions (tool_id, vendor, plan,"
+                " currency, renewal_date, owner, notes, seat_tiers,"
+                " created_at, updated_at, updated_by)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                " ON CONFLICT(tool_id) DO UPDATE SET"
+                " vendor = excluded.vendor, plan = excluded.plan,"
+                " currency = excluded.currency,"
+                " renewal_date = excluded.renewal_date,"
+                " owner = excluded.owner, notes = excluded.notes,"
+                " seat_tiers = excluded.seat_tiers,"
+                " updated_at = excluded.updated_at,"
+                " updated_by = excluded.updated_by",
+                (tool_id, fields.get("vendor", ""), fields.get("plan", ""),
+                 fields.get("currency", ""), fields.get("renewal_date", ""),
+                 fields.get("owner", ""), fields.get("notes", ""),
+                 json.dumps(fields.get("seat_tiers") or []), now, now, by),
+            )
+            self._event("budget_subscription_saved",
+                        {"tool": tool_id, "by": by})
+            self._db.commit()
+
+    def delete_budget_subscription(self, tool_id: str, by: str = "") -> bool:
+        """The subscription and everything hanging off it: a member list or a
+        stored vendor key with no subscription is orphaned data nobody can
+        see or manage, which is the worst kind to keep."""
+        with self._lock:
+            cur = self._db.execute(
+                "DELETE FROM budget_subscriptions WHERE tool_id = ?",
+                (tool_id,))
+            self._db.execute(
+                "DELETE FROM budget_members WHERE tool_id = ?", (tool_id,))
+            self._db.execute(
+                "DELETE FROM budget_connections WHERE tool_id = ?", (tool_id,))
+            if cur.rowcount:
+                self._event("budget_subscription_deleted",
+                            {"tool": tool_id, "by": by})
+            self._db.commit()
+        return bool(cur.rowcount)
+
+    def replace_budget_members(self, tool_id: str, members: list[dict],
+                               source: str, by: str = "") -> int:
+        """Replace the member rows this source owns; other sources' rows
+        stay. A CSV re-import replaces the previous import, an API sync
+        replaces the previous sync, and neither clobbers a manual entry.
+        The event carries counts, never addresses - the audit trail's
+        ids-only rule covers people most of all."""
+        now = _now()
+        with self._lock:
+            self._db.execute(
+                "DELETE FROM budget_members WHERE tool_id = ? AND source = ?",
+                (tool_id, source))
+            for m in members:
+                self._db.execute(
+                    "INSERT INTO budget_members (tool_id, email, name, role,"
+                    " seat_tier, source, usage, updated_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+                    " ON CONFLICT(tool_id, email) DO UPDATE SET"
+                    " name = excluded.name, role = excluded.role,"
+                    " seat_tier = excluded.seat_tier,"
+                    " source = excluded.source, usage = excluded.usage,"
+                    " updated_at = excluded.updated_at",
+                    (tool_id, m["email"], m.get("name", ""),
+                     m.get("role", ""), m.get("seat_tier", ""), source,
+                     json.dumps(m.get("usage") or {}), now),
+                )
+            self._event("budget_members_replaced",
+                        {"tool": tool_id, "source": source,
+                         "count": len(members), "by": by})
+            self._db.commit()
+        return len(members)
+
+    def set_budget_connection(self, tool_id: str, provider: str,
+                              api_key: str, by: str = ""):
+        """Store or replace the vendor connection. A replaced key resets
+        the sync history: what the old key last did says nothing about
+        what the new one can do."""
+        with self._lock:
+            self._db.execute(
+                "INSERT INTO budget_connections (tool_id, provider, api_key,"
+                " last_sync_at, last_sync_ok, last_sync_detail,"
+                " members_synced, created_at, updated_by)"
+                " VALUES (?, ?, ?, NULL, 0, '', 0, ?, ?)"
+                " ON CONFLICT(tool_id) DO UPDATE SET"
+                " provider = excluded.provider, api_key = excluded.api_key,"
+                " last_sync_at = NULL, last_sync_ok = 0,"
+                " last_sync_detail = '', members_synced = 0,"
+                " updated_by = excluded.updated_by",
+                (tool_id, provider, api_key, _now(), by),
+            )
+            self._event("budget_connection_saved",
+                        {"tool": tool_id, "provider": provider, "by": by})
+            self._db.commit()
+
+    def delete_budget_connection(self, tool_id: str, by: str = "") -> bool:
+        with self._lock:
+            cur = self._db.execute(
+                "DELETE FROM budget_connections WHERE tool_id = ?", (tool_id,))
+            if cur.rowcount:
+                self._event("budget_connection_deleted",
+                            {"tool": tool_id, "by": by})
+            self._db.commit()
+        return bool(cur.rowcount)
+
+    def sync_connection_key(self, tool_id: str) -> tuple[str, str] | None:
+        """(provider, api_key) for the sync call, or None. The only reader
+        of the key's plaintext; every other query masks it."""
+        with self._lock:
+            row = self._db.execute(
+                "SELECT provider, api_key FROM budget_connections"
+                " WHERE tool_id = ?", (tool_id,)).fetchone()
+        return (row["provider"], row["api_key"]) if row else None
+
+    def record_budget_sync(self, tool_id: str, ok: bool, detail: str,
+                           count: int, by: str = ""):
+        with self._lock:
+            self._db.execute(
+                "UPDATE budget_connections SET last_sync_at = ?,"
+                " last_sync_ok = ?, last_sync_detail = ?, members_synced = ?"
+                " WHERE tool_id = ?",
+                (_now(), int(ok), detail, count, tool_id))
+            self._event("budget_sync", {"tool": tool_id, "ok": ok,
+                                        "count": count, "by": by})
+            self._db.commit()
 
     # -------------------------------------- custom registry (managed) --
     # Portal-defined tools, the same shape as a shipped registry entry.

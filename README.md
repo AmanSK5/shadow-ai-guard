@@ -258,6 +258,7 @@ not a fork; if you are not sure which you want, start with managed. The
 | Operate the portal | [Portal](portal/README.md) |
 | Configure the receiver | [Receiver](receiver/README.md) |
 | Record approvals, owners and review dates | [Governance decisions](docs/governance.md) |
+| Track paid seats against observed use | [Budget](docs/budget.md) |
 | Produce evidence for an AI management system | [Evidence](docs/evidence.md) |
 | Deploy macOS collection | [macOS collector](endpoint/macos/README.md) |
 | Deploy Windows collection | [Windows collector](endpoint/windows/README.md) |

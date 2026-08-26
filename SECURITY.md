@@ -87,8 +87,9 @@ A word on what the state DB holds, because it changed in 0.9.8. **Fleet
 credentials** - enrollment tokens, device credentials, sessions, the admin
 password - are stored as hashes only; a copied database file cannot
 impersonate anything. **Integration secrets** are different: a log store
-password saved in the portal, and a notification webhook URL (itself a
-bearer capability - whoever holds it can post to the channel), are stored
+password saved in the portal, a notification webhook URL (itself a
+bearer capability - whoever holds it can post to the channel), and a
+vendor admin API key saved for a Budget user sync, are stored
 recoverable, because the receiver must present them outward. Both are
 masked everywhere in the UI and in the ordinary settings API. The log-store
 plaintext exists on exactly one admin-only route the portal uses
@@ -124,6 +125,9 @@ http(s) locations, including internal ones, and the log-store test button
 makes that an authenticated network probe. That is the price of supporting
 private, self-hosted stores; it is an *admin* capability, gated like every
 other write, and worth knowing when deciding who gets an admin account.
+The Budget user sync is deliberately narrower: its outbound
+destinations are the vendors' API hosts, hardcoded in the receiver, so a
+stored key can only ever be presented to the vendor it belongs to.
 
 The chart's public receiver ingress carries only the reporting surfaces
 (/report, /flag, /enroll, /registry, /candidates, /healthz) by default;
