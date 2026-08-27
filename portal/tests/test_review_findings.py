@@ -505,9 +505,15 @@ def test_the_settings_tab_from_the_url_cannot_dispatch_into_the_prototype():
     page with it."""
     index = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     html = open(os.path.join(index, "app", "static", "index.html")).read()
-    assert "Object.prototype.hasOwnProperty.call(SGROUPS, SETTAB)" in html
-    # The truthiness form must not come back.
+    # A Map has no inherited keys, and what is called is a plain
+    # function value rather than a member looked up by a name from the
+    # URL - the shape is gone, not annotated.
+    assert "const SGROUPS = new Map([" in html
+    assert "if (!SGROUPS.has(SETTAB)) SETTAB = 'fleet';" in html
+    assert "${settingsGroup()}" in html
+    # Neither earlier form may come back.
     assert "if (!SGROUPS[SETTAB])" not in html
+    assert "SGROUPS[SETTAB]()" not in html
 
 
 def test_a_spelling_that_exists_only_via_the_map_still_merges():
