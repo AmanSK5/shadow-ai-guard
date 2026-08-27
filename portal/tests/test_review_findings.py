@@ -234,3 +234,53 @@ def test_an_ambiguous_or_short_key_is_left_alone():
     devices, _i, _t, _b, _u = derive.build(findings, {}, {})
     assert set(devices) == {"AB1", "TGT-AB1", "SERIAL7",
                             "TGT-SERIAL7", "TNG-SERIAL7"}
+
+
+# ---------------------------------------- one definition of a tool in use --
+
+
+def test_an_mcp_finding_is_the_tool_it_configures():
+    """The register folds <tool>-mcp into its parent and the estate views
+    did not, so the two pages disagreed about how many tools exist: "23
+    in use, 0 not in registry" beside "26 tools", three of which were in
+    no registry."""
+    findings = [
+        _f(tool="claude-code", surface="cli", device="D1"),
+        _f(tool="claude-code-mcp", surface="mcp", device="D1",
+           evidence=".claude.json mcpServers: figma"),
+        _f(tool="cursor-mcp:figma", surface="mcp", device="D2",
+           evidence=".cursor/mcp.json mcpServers"),
+    ]
+    graph = derive.graph_from(findings, {}, {})
+    assert set(graph["tools"]) == {"claude-code", "cursor"}
+    # The surface still lands, so "claude-code, seen on cli and mcp" is
+    # still sayable - it is the pseudo-tool that goes, not the evidence.
+    assert set(graph["tools"]["claude-code"]["surfaces"]) == {"cli", "mcp"}
+    # And the servers keep their own view, keyed as the collectors report.
+    assert [r["server"] for r in graph["mcp_servers"]] == ["figma"]
+
+
+# ------------------------------------- a failed read is not a clean estate --
+
+
+def test_the_shell_says_so_when_the_read_failed():
+    """Five viewer accounts on the reviewed deployment were refused by
+    the log store and shown zeros under "None seen. That is a result,
+    not an absence of one." - the product reporting a clean estate it
+    had never looked at."""
+    index = (os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    html = open(os.path.join(index, "app", "static", "index.html")).read()
+    # A banner above every view, not on the one page that checked.
+    assert "function loadBanner()" in html
+    assert "this page is not an answer" in html
+    assert "const tb = tabbar() + loadBanner();" in html
+    # The confident lines are gated on the read having worked.
+    assert "const dataOk = () => !loadError;" in html
+    for gated in ("None seen. That is a result",
+                  "also has a collector reporting",
+                  "Nothing outstanding in this window",
+                  "That is a real answer for a small estate"):
+        before = html.split(gated)[0]
+        assert "dataOk()" in before[-400:], gated
+    # And it names the fix a self-hoster would otherwise have to find.
+    assert "RECEIVER_ADMIN_TOKEN" in html
