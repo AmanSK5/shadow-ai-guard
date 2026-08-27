@@ -456,6 +456,10 @@ def build(findings, domain_map=None, identity_map=None):
         "tool_accounts": defaultdict(set),
         "person": "", "collector_seen": False, "scanner_seen": False,
         "collector_version": "",
+        # Other keys the same machine arrived under. Kept so the detail
+        # view can show what each source called it, and so a lookup by
+        # any of them still finds the device.
+        "aliases": set(),
     })
     identities = defaultdict(lambda: {
         "tools": set(), "surfaces": set(), "sources": set(),
@@ -578,6 +582,42 @@ def build(findings, domain_map=None, identity_map=None):
                 "evidence": f.get("evidence", ""),
             })
 
+    # One machine, one device. Sources disagree about the key: an
+    # endpoint collector reports an asset-tagged serial (TGT-XXXX) and a
+    # browser extension reports the bare one (XXXX), so the same laptop
+    # arrived as two devices - two cards under one hostname, its tools
+    # split across both, and a personal-account row that could not find
+    # the person the other half already knew. Merge before anything is
+    # counted or attributed.
+    for bare, canon in _device_aliases(devices).items():
+        src, dst = devices.pop(bare), devices[canon]
+        for field in ("os", "tools", "surfaces", "local_users", "sources",
+                      "accounts", "personal_accounts"):
+            dst[field] |= src[field]
+        for tool, accts in src["tool_accounts"].items():
+            dst["tool_accounts"].setdefault(tool, set())
+            dst["tool_accounts"][tool] |= accts
+        dst["findings"] += src["findings"]
+        dst["device_name"] = dst["device_name"] or src["device_name"]
+        dst["collector_seen"] = dst["collector_seen"] or src["collector_seen"]
+        dst["scanner_seen"] = dst["scanner_seen"] or src["scanner_seen"]
+        dst["collector_version"] = (dst["collector_version"]
+                                    or src["collector_version"])
+        dst["aliases"].add(bare)
+        # Every tool edge pointed at the key that just went away.
+        for t in tools.values():
+            if bare in t["devices"]:
+                t["devices"].discard(bare)
+                t["devices"].add(canon)
+            for surf, ds in t["devices_by_surface"].items():
+                if bare in ds:
+                    ds.discard(bare)
+                    ds.add(canon)
+        for b in bridges.values():
+            if bare in b["devices"]:
+                b["devices"].discard(bare)
+                b["devices"].add(canon)
+
     # Attach a person to each device, if the deployer supplied a mapping.
     # Device key first, then any local username: an MDM keys on the serial, a
     # spreadsheet is more likely to key on the name someone logs in with.
@@ -597,6 +637,49 @@ def build(findings, domain_map=None, identity_map=None):
             i["surfaces"] |= d["surfaces"]
 
     return devices, identities, tools, bridges, unattributed
+
+
+# Long enough that a shared suffix means something. Six characters of
+# serial matching by accident is a stretch; two or three is not, and
+# merging a junk key like "A" into "TGT-A" would be worse than the split
+# it fixes.
+_MIN_ALIAS_KEY = 6
+_ALIAS_SEPARATORS = ("-", "_", ".", ":")
+
+
+def _device_aliases(devices):
+    """{bare key: canonical key} where one key is another with a source
+    prefix on the front.
+
+    Only prefix-and-separator relationships count, and only where the
+    bare key is long enough to be an identifier rather than a label. An
+    ambiguous bare key - one that is the tail of two different prefixed
+    keys - is left alone: merging the wrong pair of machines is worse
+    than showing two cards.
+    """
+    keys = [k for k in devices if k]
+    lowered = {k: k.lower() for k in keys}
+    out, ambiguous = {}, set()
+    for bare in keys:
+        low = lowered[bare]
+        if len(low) < _MIN_ALIAS_KEY:
+            continue
+        for other in keys:
+            if other == bare:
+                continue
+            o = lowered[other]
+            if len(o) <= len(low):
+                continue
+            if any(o.endswith(sep + low) for sep in _ALIAS_SEPARATORS):
+                if bare in out:
+                    ambiguous.add(bare)
+                out[bare] = other
+    for k in ambiguous:
+        out.pop(k, None)
+    # A key cannot be both a bare form and a canonical one: A -> B while
+    # B -> C would drop A's findings onto a key that is itself merging
+    # away. Rare, but cheap to refuse.
+    return {b: c for b, c in out.items() if c not in out}
 
 
 def jsonable(d):
@@ -622,7 +705,7 @@ def _domain_matches(account, listed):
 
 
 def personal_accounts_from(findings, domain_map=None, corp_domains=None,
-                           tool_domains=None):
+                           tool_domains=None, device_person=None):
     """One row per personal account seen on a tool, with when it was first and
     last observed.
 
@@ -640,6 +723,14 @@ def personal_accounts_from(findings, domain_map=None, corp_domains=None,
     domain_map = domain_map or {}
     corp_domains = corp_domains or []
     tool_domains = tool_domains or {}
+    # {device key (canonical or alias): (canonical key, person)}. A
+    # browser extension reports no user, so its rows read "no identity"
+    # even where the estate had already attached a person to that exact
+    # machine through the identity map - the same person named on the
+    # cli row directly above. Nothing here invents an identity: it
+    # resolves the one the device inventory already holds, and says the
+    # attribution came from the device rather than the source.
+    device_person = device_person or {}
     rows = {}
     for f in findings:
         if (f.get("severity") or "") != "warn":
@@ -676,11 +767,20 @@ def personal_accounts_from(findings, domain_map=None, corp_domains=None,
 
         device = (f.get("device") or "").strip()
         user = (f.get("user") or "").strip()
+        canon, via = device, ""
+        if device in device_person:
+            canon, person = device_person[device]
+            if not user and person:
+                user, via = person, "device"
+        device = canon
         key = (user, acct, tool, device)
         r = rows.get(key)
         if r is None:
             r = rows[key] = {
                 "user": user, "account_domain": acct, "tool": tool,
+                # "" when the source named the person, "device" when the
+                # identity map named them through the machine.
+                "user_via": via,
                 "device": device, "device_name": "", "os": "",
                 "surfaces": set(), "sources": set(),
                 "first_seen": "", "last_seen": "", "findings": 0,
@@ -864,6 +964,19 @@ def tool_domains_from(reg):
     return out
 
 
+def device_person_map(devices):
+    """Every key a device answers to - canonical and alias - pointing at
+    (canonical key, person). Built after the merge, so a row keyed on
+    whichever spelling its source used still resolves."""
+    out = {}
+    for k, d in devices.items():
+        entry = (k, d.get("person") or "")
+        out[k] = entry
+        for alias in d.get("aliases") or ():
+            out[alias] = entry
+    return out
+
+
 def graph_from(findings, domain_map=None, identity_map=None, hours=168,
                corp_domains=None, reg=None):
     """Everything above, assembled into the shape the API and the UI read."""
@@ -886,7 +999,8 @@ def graph_from(findings, domain_map=None, identity_map=None, hours=168,
         "bridges": {k: jsonable(v) for k, v in bridges.items()},
         "unattributed": unattributed,
         "personal_accounts": personal_accounts_from(
-            findings, domain_map, corp_domains, tool_domains_from(reg)),
+            findings, domain_map, corp_domains, tool_domains_from(reg),
+            device_person_map(devices)),
         "mcp_servers": mcp_from(findings),
         "trends": trends_from(findings, domain_map, hours),
         "counts": {
