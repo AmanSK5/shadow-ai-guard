@@ -30,6 +30,7 @@ pretending a connector could exist.
 """
 
 import json
+import time
 
 import httpx
 
@@ -203,3 +204,51 @@ async def sync_fireflies(api_key: str) -> list[dict]:
 
 
 SYNCERS = {"anthropic": sync_anthropic, "fireflies": sync_fireflies}
+
+
+# ----------------------------------------------------------------- fx --
+# Daily ECB reference rates via the Frankfurter API: keyless, free, one
+# fixed host - the same no-request-supplied-URL rule as the vendor syncs.
+# The portal uses them to show the Budget headline in the preferred
+# currency, always naming the rate's date inline, and falls back to
+# per-currency figures when this cannot answer. ECB publishes once per
+# working day around 16:00 CET, so a half-day cache never serves a rate
+# the source itself has moved past.
+
+FRANKFURTER_URL = "https://api.frankfurter.dev/v1/latest"
+_FX_TTL = 12 * 3600
+_fx_cache: dict = {}
+
+
+async def fx_rates(base: str) -> dict:
+    """{"base", "date", "rates"} - units of each currency per one `base`,
+    per the ECB's latest daily reference fixing. Cached per base."""
+    now = time.time()
+    hit = _fx_cache.get(base)
+    if hit and now - hit[0] < _FX_TTL:
+        return hit[1]
+    async with httpx.AsyncClient(timeout=10) as client:
+        try:
+            r = await client.get(FRANKFURTER_URL, params={"base": base})
+        except httpx.HTTPError as e:
+            raise SyncError("could not reach the exchange-rate source (%s)"
+                            % type(e).__name__)
+    if r.status_code == 404:
+        # Frankfurter answers 404 for a currency the ECB does not fix.
+        raise SyncError("the ECB publishes no reference rate for %s" % base)
+    if r.status_code != 200:
+        raise _refusal(r.status_code, "the exchange-rate source")
+    try:
+        body = r.json()
+    except json.JSONDecodeError:
+        raise SyncError("the exchange-rate source answered 200, but not "
+                        "with JSON")
+    rates = {}
+    for k, v in (body.get("rates") or {}).items():
+        if isinstance(k, str) and len(k) == 3 and isinstance(v, (int, float)) \
+                and v > 0 and len(rates) < 64:
+            rates[k.upper()] = float(v)
+    out = {"base": base, "date": str(body.get("date") or "")[:10],
+           "rates": rates}
+    _fx_cache[base] = (now, out)
+    return out
