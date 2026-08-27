@@ -603,7 +603,26 @@ def jsonable(d):
     return {k: (sorted(v) if isinstance(v, set) else v) for k, v in d.items()}
 
 
-def personal_accounts_from(findings, domain_map=None):
+def _domain_matches(account, listed):
+    """Is `account` this domain, or a subdomain of it?
+
+    Both sides are normalised - trimmed, lowercased, leading dots and a
+    leading www. removed - because the two lists are typed by different
+    people at different times: corporate domains come from an operator in
+    Settings, the account domain from whatever the reporting agent read.
+    Suffix rather than equality so mail.corp.example matches corp.example.
+    """
+    a = (account or "").strip().lower().lstrip(".")
+    b = (listed or "").strip().lower().lstrip(".")
+    if not a or not b:
+        return False
+    if a.startswith("www."):
+        a = a[4:]
+    return a == b or a.endswith("." + b)
+
+
+def personal_accounts_from(findings, domain_map=None, corp_domains=None,
+                           tool_domains=None):
     """One row per personal account seen on a tool, with when it was first and
     last observed.
 
@@ -619,6 +638,8 @@ def personal_accounts_from(findings, domain_map=None):
     of attributes.
     """
     domain_map = domain_map or {}
+    corp_domains = corp_domains or []
+    tool_domains = tool_domains or {}
     rows = {}
     for f in findings:
         if (f.get("severity") or "") != "warn":
@@ -633,6 +654,25 @@ def personal_accounts_from(findings, domain_map=None):
         if source in BRIDGE_SOURCES:
             continue
         tool = normalise_tool(tool, domain_map)
+
+        # Severity is the reporter's judgement, made against the corporate
+        # domain list IT HELD AT THE TIME. A browser extension carries that
+        # list baked into its policy, so a domain added in Settings after
+        # the last policy push keeps arriving flagged as personal - and a
+        # domain that is literally in the operator's own list then appears
+        # under "personal accounts", including in the shareable budget
+        # report. The reporter is not re-judged here (that would be two
+        # definitions of personal); the row is simply not presented as
+        # personal when the current list says otherwise.
+        if any(_domain_matches(acct, d) for d in corp_domains):
+            continue
+
+        # A tool's own sign-in domain is not a personal account on that
+        # tool. Signing into the meeting-notes product with an account on
+        # the meeting-notes product's domain was being reported as
+        # personal use of the licence being paid for.
+        if any(_domain_matches(acct, d) for d in tool_domains.get(tool, ())):
+            continue
 
         device = (f.get("device") or "").strip()
         user = (f.get("user") or "").strip()
@@ -718,9 +758,14 @@ def mcp_from(findings):
         device = (f.get("device") or "").strip()
         ts = f.get("reported_at") or ""
         for srv in servers:
-            r = rows.get(srv)
+            # Keyed case-folded: "Figma" and "figma" are one server
+            # configured by two people, and listing them separately
+            # inflated the server count. The first spelling seen is the
+            # one shown, because that is what somebody wrote.
+            key = srv.lower()
+            r = rows.get(key)
             if r is None:
-                r = rows[srv] = {"server": srv, "tools": set(), "devices": set(),
+                r = rows[key] = {"server": srv, "tools": set(), "devices": set(),
                                  "device_names": set(), "findings": 0,
                                  "first_seen": "", "last_seen": ""}
             r["findings"] += 1
@@ -808,7 +853,19 @@ def trends_from(findings, domain_map=None, hours=168):
     }
 
 
-def graph_from(findings, domain_map=None, identity_map=None, hours=168):
+def tool_domains_from(reg):
+    """tool id -> the domains the registry says are that tool's own, used
+    to keep a tool's own sign-in domain out of its personal-account rows."""
+    out = {}
+    for t in (reg or {}).get("tools") or []:
+        tid = t.get("id")
+        if tid and t.get("domains"):
+            out[tid] = [d for d in t["domains"] if d]
+    return out
+
+
+def graph_from(findings, domain_map=None, identity_map=None, hours=168,
+               corp_domains=None, reg=None):
     """Everything above, assembled into the shape the API and the UI read."""
     devices, identities, tools, bridges, unattributed = build(
         findings, domain_map, identity_map)
@@ -828,7 +885,8 @@ def graph_from(findings, domain_map=None, identity_map=None, hours=168):
         },
         "bridges": {k: jsonable(v) for k, v in bridges.items()},
         "unattributed": unattributed,
-        "personal_accounts": personal_accounts_from(findings, domain_map),
+        "personal_accounts": personal_accounts_from(
+            findings, domain_map, corp_domains, tool_domains_from(reg)),
         "mcp_servers": mcp_from(findings),
         "trends": trends_from(findings, domain_map, hours),
         "counts": {

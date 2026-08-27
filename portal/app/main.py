@@ -440,6 +440,11 @@ STARTED_AT = time.time()
 # happening", and only this tells them apart.
 _last_loki_ok: float = 0.0
 _last_loki_error: str = ""
+# When the last failure happened. Without it Diagnostics could only age
+# the last SUCCESS, so a portal whose reads had been failing for a day
+# looked identical to one nobody had opened - on the page a self-hoster
+# opens precisely when the portal looks empty.
+_last_loki_error_at: float = 0.0
 # Whether the most recent Loki read stopped at LOKI_MAX_FINDINGS. Reported
 # on every derived response and in the evidence manifest, because a count
 # computed over a sample must never present itself as a total (issue #104).
@@ -579,6 +584,24 @@ def _custom_registry_entries(request) -> list:
     return entries
 
 
+def _corp_domains(request) -> list:
+    """The corporate domains this deployment currently claims.
+
+    Read from the receiver's settings (managed mode), which is the same
+    list the collectors are served at runtime. It is used to stop a
+    domain the operator has since added from still being presented as a
+    personal account by an agent carrying an older copy - a browser
+    extension bakes the list into its policy, so it can lag by a whole
+    redeploy. Quiet on failure: the list only ever removes rows, so an
+    unreadable one shows more than it should rather than hiding
+    something.
+    """
+    entry = (_remote_settings(request) or {}).get("corp_domains")
+    if isinstance(entry, dict):
+        return [d for d in (entry.get("value") or []) if d]
+    return []
+
+
 def _registry(request) -> dict:
     """The registry every portal view should reason over: the shipped file
     plus the portal-defined entries, merged exactly as the receiver serves
@@ -613,6 +636,7 @@ def _findings(hours, request=None):
                    "store the receiver writes to.",
         )
     global _last_loki_ok, _last_loki_error, _last_read_truncated
+    global _last_loki_error_at
     try:
         out = derive.fetch_from_loki(
             # The bearer token is env configuration and belongs to the env
@@ -633,6 +657,7 @@ def _findings(hours, request=None):
             exc_info=True,
         )
         _last_loki_error = type(e).__name__
+        _last_loki_error_at = time.time()
         # Say which of the two this is. A portal that shows an empty graph
         # when it cannot reach Loki is indistinguishable from one reporting a
         # clean estate, which is the failure this project keeps finding. The
@@ -813,6 +838,7 @@ def diagnostics(_=Depends(require_auth)):
             "loki_configured": bool(LOKI_URL),
             "loki_last_success": _last_loki_ok or None,
             "loki_last_error": _last_loki_error,
+            "loki_last_error_at": _last_loki_error_at or None,
             "loki_last_read_truncated": _last_read_truncated,
             "lookback_hours": LOOKBACK_HOURS,
             "cache_ttl_seconds": CACHE_TTL,
@@ -852,9 +878,11 @@ def graph(request: Request,
         _cache.pop("graph", None)
     def build():
         findings = _findings(hours, request)
-        domain_map = derive.load_domain_map_from(_registry(request))
+        reg = _registry(request)
+        domain_map = derive.load_domain_map_from(reg)
         identity_map = derive.load_identity_map(IDENTITY_MAP) if IDENTITY_MAP else {}
-        return derive.graph_from(findings, domain_map, identity_map, hours)
+        return derive.graph_from(findings, domain_map, identity_map, hours,
+                                 corp_domains=_corp_domains(request), reg=reg)
 
     value, at = _cached("graph", hours, build)
     return JSONResponse(dict(value, derived_at=at, hours=hours,
@@ -901,7 +929,9 @@ def evidence_snapshot(request: Request,
     doc = evidence.evidence_from(
         derive.register_from(findings, reg, domain_map, gov, exceptions),
         derive.status_from(findings),
-        derive.personal_accounts_from(findings, domain_map),
+        derive.personal_accounts_from(
+            findings, domain_map, _corp_domains(request),
+            derive.tool_domains_from(reg)),
         derive.mcp_from(findings),
         paste_guard.paste_guard_from(findings, domain_map),
         registry_path=REGISTRY_PATH,

@@ -118,7 +118,13 @@ def test_actions_are_counted_separately():
     ])
 
     assert (out["warned"], out["overridden"], out["blocked"]) == (2, 1, 1)
-    assert out["events"] == 4
+    # Three pastes, not four. extension/src/guard.js reports the
+    # interception ("warned") and then a SECOND finding ("overridden")
+    # for the same paste when the person proceeds, so overridden is a
+    # subset of warned rather than a fourth action. Adding all three
+    # counted every override twice, and the ISO evidence document
+    # inherited it: "8 paste events, 4 overridden" for four pastes.
+    assert out["events"] == 3
 
 
 def test_rows_are_per_tool_and_keep_both_events_and_devices():
@@ -267,7 +273,8 @@ def test_the_endpoint_returns_metadata_and_excludes_heartbeats():
         pm._cache.clear()
         body = _json.loads(bytes(pm.paste_guard_events(None, hours=168).body))
 
-    assert body["events"] == 2
+    # One interception, which was overridden - not two events.
+    assert body["events"] == 1
     assert body["overridden"] == 1
     # Both findings resolve to one tool through the domain map.
     assert [r["tool"] for r in body["rows"]] == ["chatgpt"]
