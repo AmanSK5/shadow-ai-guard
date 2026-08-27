@@ -2580,7 +2580,7 @@ function connectionSettings() {
 }
 
 function alertingSettings() {
-  return `<div class="wcard" style="margin-bottom:10px"><h3>Alerting and Grafana</h3>
+  return `<div class="wcard" style="margin-bottom:10px"><h3>Display and alerting</h3>
   <dl class="kv">
     ${settingRow('alertmanager_url', 'Alertmanager URL',
       'http://alertmanager.<namespace>.svc:9093',
@@ -2785,7 +2785,7 @@ async function settings() {
                    alerting: alertingSettings, account: accountSettings,
                    diagnostics: diagnosticsCards};
   const STABS = [['fleet', 'Fleet'], ['connection', 'Receiver & log store'],
-                 ['alerting', 'Alerting & Grafana'], ['account', 'Account'],
+                 ['alerting', 'Display & alerting'], ['account', 'Account'],
                  ['diagnostics', 'Diagnostics']];
   // Own properties only. SETTAB became reachable from the URL when the
   // settings sub-tab moved into the fragment, and a truthiness check
@@ -3283,6 +3283,35 @@ function bConverted(subs) {
     else return null;
   }
   return {total, date: BFX.date || ''};
+}
+
+// Why the headline is showing two currencies instead of one. Silence
+// here was the wrong kind of graceful: an operator who never set a
+// preferred currency, and one whose cluster cannot reach the rate
+// source, saw exactly the same thing - two figures and no explanation.
+function bConversionNote(subs) {
+  const curs = new Set((subs || []).map(s => (s.currency || '').toUpperCase())
+    .filter(Boolean));
+  if (curs.size < 2) return '';
+  const pref = bPrefCur();
+  if (!pref) {
+    return `Set a preferred currency under Settings to see one total: these
+      are counted separately because nothing says which to convert into.`;
+  }
+  if (!BFX || !BFX.ok) {
+    return `Not converted into ${esc(pref)}: the exchange-rate source could
+      not be reached${BFX && BFX.detail ? ` (${esc(BFX.detail)})` : ''}. The
+      receiver fetches the ECB's daily rates from api.frankfurter.dev - if
+      this deployment restricts outbound traffic, that host needs to be
+      reachable.`;
+  }
+  const missing = [...curs].filter(c =>
+    c !== pref && !((BFX.rates || {})[c]));
+  if (missing.length) {
+    return `Not converted: the ECB publishes no reference rate for
+      ${missing.map(esc).join(', ')}.`;
+  }
+  return '';
 }
 
 async function bFetchFx() {
@@ -4039,6 +4068,8 @@ async function budget() {
   vendor's admin API where one exists, or a CSV export where one does not -
   the numbers work the same either way and each card says which it is.</p>
   ${BMSG ? `<div class="note">${esc(BMSG)}</div>` : ''}
+  ${(() => { const n = conv ? '' : bConversionNote(subs);
+     return n ? `<p class="src-note" style="margin-bottom:10px">${n}</p>` : ''; })()}
   ${subs.length ? `<dl class="stats" style="margin-bottom:14px">
     <div><dt>${spend}</dt><dd>tracked spend / month${conv
       ? ` · ${spendParts.join(' + ')} at ECB ${esc(conv.date)}` : ''}</dd></div>
