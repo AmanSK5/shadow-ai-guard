@@ -866,11 +866,20 @@ def diagnostics(_=Depends(require_auth)):
     No secret values, ever. Whether a credential is configured is useful.
     What it is, is not.
     """
-    reg_ok, reg_tools, reg_err = False, 0, ""
+    reg_ok, reg_tools, reg_domain_tools, reg_err = False, 0, 0, ""
     try:
-        dm = derive.load_domain_map(REGISTRY_PATH)
-        reg_ok = bool(dm)
-        reg_tools = len(set(dm.values())) if dm else 0
+        # Tools, and separately the tools that carry a domain. This row
+        # used to report only the second and call it "Tools", so a
+        # registry of 32 whose 4 CLI-only entries have no domain read as
+        # 28 - and a review of a live deployment spent real time hunting
+        # a stale registry file that did not exist. Both numbers, both
+        # named.
+        loaded = derive.load_registry(REGISTRY_PATH)
+        tools = (loaded or {}).get("tools") or []
+        dm = derive.load_domain_map_from(loaded)
+        reg_ok = bool(tools)
+        reg_tools = len(tools)
+        reg_domain_tools = len(set(dm.values())) if dm else 0
     except Exception as e:  # pragma: no cover - defensive
         # A parse failure names the file, the line and the column. That is the
         # right thing in a log and the wrong thing in a response body: the path
@@ -909,6 +918,10 @@ def diagnostics(_=Depends(require_auth)):
             "auth_configured": bool(PORTAL_AUTH != "none"),
             "registry_loaded": reg_ok,
             "registry_tools": reg_tools,
+            # Detection by domain only covers tools that have one; a CLI
+            # tool is found by its config file instead. A gap between
+            # these two is normal, not a fault.
+            "registry_tools_with_domains": reg_domain_tools,
             "registry_error": reg_err,
             "registry_path": REGISTRY_PATH,
             "identity_map_configured": bool(
