@@ -528,6 +528,32 @@ def test_the_settings_tab_from_the_url_cannot_dispatch_into_the_prototype():
         assert gone not in html
 
 
+def test_a_map_keyed_on_the_bare_serial_still_finds_the_machine():
+    """Found while explaining why a mapped person still read as unmapped.
+    One machine reported twice - TGT-<serial> by the collector, the bare
+    serial by the extension - merges onto the longer key, and the shorter
+    one survives only in aliases. Attribution checked the canonical key
+    and local usernames, never the aliases. An MDM export lists the bare
+    serial, so a map built from one looked right, said "matches" in the
+    preview because the preview does count aliases, and attached to
+    nobody."""
+    finds = [_f(device="TGT-C02ABCD", source="collector-macos",
+                device_name="sam-mbp", user="sam"),
+             _f(device="C02ABCD", source="extension", device_name="sam-mbp")]
+    dm = derive.load_domain_map_from(REG)
+
+    def person(imap):
+        devices, _i, _t, _b, _u = derive.build(list(finds), dm, imap)
+        assert len(devices) == 1, "the two reports are one machine"
+        return list(devices.values())[0].get("person")
+
+    assert person({"C02ABCD": "Sam Patel"}) == "Sam Patel"
+    assert person({"TGT-C02ABCD": "Sam Patel"}) == "Sam Patel"
+    assert person({"sam": "Sam Patel"}) == "Sam Patel"
+    # The key the device is actually filed under still wins the tie.
+    assert person({"C02ABCD": "Wrong", "TGT-C02ABCD": "Sam Patel"}) == "Sam Patel"
+
+
 def test_the_identity_import_names_the_rows_it_drops():
     """A bare count ("58 rows understood, 4 skipped (no key, no person or
     duplicate)") sent a maintainer hunting through the file for four rows
