@@ -240,6 +240,30 @@ table.plain td{border-bottom:0;padding:4.5px 10px 4.5px 0;vertical-align:middle}
 .cardhead{display:flex;align-items:center;gap:10px;padding:10px 0 4px}
 .cardhead h3{margin:0;font-size:12px;font-weight:600;color:var(--mut);
   text-transform:uppercase;letter-spacing:.06em}
+/* The share view exists to leave this browser: printed, saved as PDF and
+   sent to someone who will never open the portal. So printing drops the
+   furniture (sidebar, topbar, buttons, inspector), forces the light
+   palette whatever the viewer's theme, and keeps a subscription whole on
+   one page where it fits. */
+@media print {
+  @page { margin: 14mm; }
+  html, body { background: #fff !important; color: #111 !important; }
+  .shell { display: block !important; }
+  aside, .topbar, .drawer, .overlay, .mini, .back, .tabs,
+  [data-act], .noprint { display: none !important; }
+  main#app { padding: 0 !important; }
+  .wcard, table, .rep-block {
+    break-inside: avoid; page-break-inside: avoid;
+    box-shadow: none !important; background: #fff !important;
+    border-color: #bbb !important;
+  }
+  .rep-head { break-after: avoid; page-break-after: avoid; }
+  h2, h3 { break-after: avoid; page-break-after: avoid; color: #111 !important; }
+  a { color: #111 !important; text-decoration: none; }
+  .stats div { border: 1px solid #ddd !important; }
+  dt, dd, td, th, p, li, span { color: #111 !important; }
+  .src-note { color: #555 !important; }
+}
 </style>
 <div class="overlay" id="overlay"></div>
 <div class="drawer" id="drawer"></div>
@@ -300,6 +324,11 @@ let WIZSTORE = 'self', TESTS = {};
 // (null = closed), the last action's one-line outcome, and a parsed CSV
 // preview waiting for confirmation.
 let BUDGET = null, BWIZ = null, BMSG = '', BCSV = null, BFX = null;
+// The share view's one choice: whether people are named. A finance
+// recipient needs the names to act; a board pack does not, and the page
+// names individuals and their personal account domains, so withholding
+// them has to be one click rather than a careful edit afterwards.
+let BRNAMES = true;
 // Whether the register's watchlist section is expanded. Tracked because a
 // decision re-renders the view, and a <details> that snaps shut under the
 // operator mid-triage would lose their place.
@@ -352,7 +381,7 @@ function showLogin(msg) {
   GOVEDIT = null; GOVPRE = null; GOVERR = ''; SETMSG = '';
   REGTOOLS = null; GOVDECS = null; TESTS = {}; WLOPEN = false;
   RENTRIES = null; REDIT = null; RPRE = null; RERR = ''; RADV = false;
-  BUDGET = null; BWIZ = null; BMSG = ''; BCSV = null; BFX = null;
+  BUDGET = null; BWIZ = null; BMSG = ''; BCSV = null; BFX = null; BRNAMES = true;
   chrome(false);
   const create = AUTH && AUTH.setup_needed;
   app.innerHTML = `<div style="max-width:470px;margin:9vh auto 0">
@@ -536,7 +565,7 @@ const NAVICONS = {
 // 'wizard' is reachable by fragment but absent from the nav: it is a door
 // you walk through once, not a place to live.
 const VIEWS = NAV.flatMap(sec => sec.items.map(([id]) => id))
-  .concat(['wizard', 'extsetup']);
+  .concat(['wizard', 'extsetup', 'budget-report']);
 const fromHash = () => {
   const h = (location.hash || '').replace(/^#/, '');
   return VIEWS.includes(h) ? h : 'setup';
@@ -3578,6 +3607,180 @@ function budgetImport() {
   </div>`;
 }
 
+// A cell that cannot be read as a formula by a spreadsheet. The server
+// side has csv_safe for the same reason: an exported address beginning
+// with = is a live formula in Excel, and this file is written to be
+// opened in one.
+const B_FORMULA_LEAD = ['=', '+', '-', '@', '\t', '\r'];
+function bCsvCell(v) {
+  let out = String(v == null ? '' : v);
+  if (out && B_FORMULA_LEAD.includes(out[0])) out = "'" + out;
+  return /[",\n]/.test(out) ? '"' + out.replace(/"/g, '""') + '"' : out;
+}
+
+// One flat table, because the thing a recipient does with this is pivot
+// it. row_type says which question each row answers, so seats, the
+// people no seat covers, and personal-account use all live in one file
+// without pretending to be the same kind of row.
+function budgetCsv() {
+  const rows = [['row_type', 'licence', 'tool', 'person', 'name', 'role',
+                 'seat_tier', 'status', 'seen_on', 'account_domain',
+                 'device', 'last_seen', 'source']];
+  const who = e => BRNAMES ? e : 'withheld';
+  (BUDGET.subscriptions || []).forEach(sub => {
+    const {eff, obs, matched, unobserved, strangers} = bReconcile(sub);
+    const cov = eff.join(' + ');
+    matched.forEach(x => rows.push(['seat', cov, sub.tool_id,
+      who(x.m.email), who(x.m.name || ''), x.m.role || '',
+      x.m.seat_tier || (x.tier || {}).name || '', 'observed',
+      x.seenOn.join(' '), '', '', '', x.m.source || '']));
+    unobserved.forEach(x => rows.push(['seat', cov, sub.tool_id,
+      who(x.m.email), who(x.m.name || ''), x.m.role || '',
+      x.m.seat_tier || (x.tier || {}).name || '', 'never observed',
+      '', '', '', '', x.m.source || '']));
+    strangers.forEach(n => rows.push(['unmatched_user', cov, sub.tool_id,
+      who(n), '', '', '', 'no seat matched', '', '', '', '', 'observed']));
+    obs.personal.forEach(r => rows.push(['personal_account', cov, r.tool,
+      who(r.user || ''), '', '', '', 'personal account', '',
+      r.account_domain || '', who(r.device_name || r.device || ''),
+      (r.last_seen || '').slice(0, 10), (r.sources || []).join(' ')]));
+  });
+  return rows.map(r => r.map(bCsvCell).join(',')).join('\n') + '\n';
+}
+
+// The same page, arranged to leave the building: everything expanded,
+// nothing behind a click, and enough provenance on it that a reader who
+// has never seen the portal knows what window it covers and what the
+// numbers do and do not claim.
+function budgetReport() {
+  const gate = managedGate('Budget report'); if (gate) return gate;
+  const subs = BUDGET.subscriptions || [];
+  const spendParts = bSpendParts(subs);
+  const conv = bConverted(subs);
+  const hours = CFG.lookback_hours || 168;
+  const days = Math.round(hours / 24);
+  const stamp = new Date().toISOString().replace('T', ' ').slice(0, 16);
+  const who = e => BRNAMES ? esc(e) : '<span style="color:var(--mut)">withheld</span>';
+  const totals = subs.reduce((a, s) => {
+    const r = bReconcile(s);
+    a.members += (s.members || []).length;
+    a.observed += r.matched.length;
+    a.unobserved += r.unobserved.length;
+    a.strangers += r.strangers.length;
+    a.personal += r.obs.personal.length;
+    a.seats += (s.seat_tiers || []).reduce((x, t) => x + (t.seats || 0), 0);
+    return a;
+  }, {members: 0, observed: 0, unobserved: 0, strangers: 0, personal: 0, seats: 0});
+
+  const block = sub => {
+    const {eff, obs, matched, unobserved, strangers, findings} = bReconcile(sub);
+    const tiers = sub.seat_tiers || [];
+    const monthly = bSubMonthly(sub);
+    const list = (title, rows, note) => rows.length ? `<div class="rep-block" style="margin-top:12px">
+      <strong>${esc(title)}</strong>
+      ${note ? `<p class="src-note" style="margin:2px 0 6px">${note}</p>` : ''}
+      ${BRNAMES ? `<ul style="margin:4px 0">${rows.map(r => `<li>${r}</li>`).join('')}</ul>`
+        : `<p class="src-note">${rows.length} ${rows.length === 1 ? 'person' : 'people'}, names withheld.</p>`}
+    </div>` : '';
+    return `<div class="wcard" style="margin-bottom:14px">
+    <h3 style="margin-top:0">${esc(sub.tool_id)}
+      ${sub.plan ? `<span class="pill p-acc">${esc(sub.plan)}</span>` : ''}
+      ${eff.length > 1 ? `<span style="font-size:12px;color:var(--mut);font-weight:normal">covers ${eff.map(esc).join(' + ')}</span>` : ''}</h3>
+    <p class="src-note" style="margin-top:0">
+      ${bMoney(monthly, sub.currency)} per month
+      ${sub.renewal_date ? ` · renews ${esc(sub.renewal_date)}` : ''}
+      ${sub.owner ? ` · owner ${esc(sub.owner)}` : ''}
+      · ${bProvenance(sub, (BUDGET.connections || [])
+          .find(c => c.tool_id === sub.tool_id) || null) || 'manual entries'}</p>
+    <table class="plain"><tr><th>on the licence</th><th>observed using it</th>
+      <th>never observed</th><th>using it without a seat</th><th>personal accounts</th></tr>
+      <tr><td class="num">${(sub.members || []).length}</td>
+      <td class="num">${matched.length}</td>
+      <td class="num">${unobserved.length}</td>
+      <td class="num">${strangers.length}</td>
+      <td class="num">${obs.personal.length}</td></tr></table>
+    ${tiers.length ? `<table class="plain" style="margin-top:10px"><tr><th>tier</th><th>seats paid</th>
+      <th>assigned</th><th>price/seat</th><th>monthly</th>${eff.length > 1 ? '<th>covers</th>' : ''}</tr>
+      ${tiers.map(t => `<tr><td>${esc(t.name)}</td><td class="num">${t.seats}</td>
+        <td class="num">${(sub.members || []).filter(m =>
+          bNorm(m.seat_tier).includes(bNorm(t.name))
+          || (tiers.length === 1 && !bNorm(m.seat_tier))).length}</td>
+        <td class="num">${bMoney(t.unit_price_monthly, sub.currency)}</td>
+        <td class="num">${bMoney((t.seats || 0) * (t.unit_price_monthly || 0), sub.currency)}</td>
+        ${eff.length > 1 ? `<td>${bTierCovers(t, eff).map(esc).join(', ')}</td>` : ''}</tr>`).join('')}</table>` : ''}
+    ${list('Paid seats never observed - downgrade candidates',
+      unobserved.map(x => `${who(x.m.email)}${x.m.seat_tier ? ` <span class="pill p-mut">${esc(x.m.seat_tier)}</span>` : ''}`),
+      'No detection surface matched these people to activity on ' +
+      (eff.length > 1 ? 'any tool this licence covers' : esc(sub.tool_id)) +
+      ' in the window. A coverage gap looks the same as absence.')}
+    ${findings.map(f => list(
+      f.kind === 'unused'
+        ? `${esc(f.tier)} seats never observed on ${esc(f.tool)} - the ${esc(f.tier)} delta may be unused`
+        : `${esc(f.tier)} seats observed on ${esc(f.tool)}, which that tier does not cover`,
+      f.members.map(e => who(e)),
+      f.kind === 'unused'
+        ? esc(f.tool) + ' access is what this tier buys over the ones without it. These people still count as observed.'
+        : 'Either the tier coverage is recorded too narrowly, or these seats grant more than intended.')).join('')}
+    ${list('Observed using it, matched to no seat', strangers.map(n => who(n)),
+      'Identities seen on this licence that matched nobody on the user list. Matching is by name, so a miss is unmatched, not proof of an unlicensed user.')}
+    ${obs.personal.length ? `<div class="rep-block" style="margin-top:12px">
+      <strong>Personal-account use alongside the paid plan</strong>
+      ${BRNAMES ? `<table style="margin-top:4px"><tr><th>who</th>${eff.length > 1 ? '<th>tool</th>' : ''}<th>account domain</th><th>last seen</th></tr>
+        ${obs.personal.map(r => `<tr><td>${who(r.user || '-')}</td>
+          ${eff.length > 1 ? `<td>${esc(r.tool)}</td>` : ''}
+          <td class="mono">${esc(r.account_domain)}</td>
+          <td>${esc((r.last_seen || '').slice(0, 10))}</td></tr>`).join('')}</table>`
+        : `<p class="src-note">${obs.personal.length} personal-account
+           ${obs.personal.length === 1 ? 'use' : 'uses'} across
+           ${new Set(obs.personal.map(r => r.account_domain)).size} domains, names withheld.</p>`}
+    </div>` : ''}
+    ${obs.unlinked ? `<p class="src-note">${obs.unlinked}
+      device${obs.unlinked === 1 ? '' : 's'} using this licence with no person
+      attached, counted nowhere above.</p>` : ''}
+    </div>`;
+  };
+
+  return `<div class="noprint" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;align-items:center">
+    <button class="mini" data-act="b-report-back">back to Budget</button>
+    <button class="mini" data-act="b-report-print">print / save as PDF</button>
+    <button class="mini" data-act="b-report-csv">download CSV</button>
+    <button class="mini" data-act="b-report-names">${BRNAMES ? 'withhold names' : 'show names'}</button>
+    <span class="src-note" style="margin:0">${BRNAMES
+      ? 'Names are shown. Withhold them for wider circulation - the counts stay.'
+      : 'Names are withheld: counts only, in the page and in the CSV.'}</span>
+  </div>
+  <div class="rep-head">
+    <h2 style="margin-bottom:4px">AI spend and seat use</h2>
+    <p class="src-note" style="margin-top:0">Generated ${esc(stamp)} UTC from
+    Shadow AI Guard ${esc(CFG.version || '')} · observations cover the last
+    ${days} day${days === 1 ? '' : 's'}${BRNAMES ? '' : ' · names withheld'}</p>
+  </div>
+  <dl class="stats">
+    <div><dt>${conv ? bMoney(conv.total, bPrefCur()) : (spendParts.join(' + ') || '0')}</dt>
+      <dd>tracked spend / month${conv ? ` · ${spendParts.join(' + ')} at ECB ${esc(conv.date)}` : ''}</dd></div>
+    <div><dt>${subs.length}</dt><dd>licences tracked</dd></div>
+    <div><dt>${totals.seats}</dt><dd>seats paid for</dd></div>
+    <div><dt>${totals.observed} / ${totals.members}</dt><dd>people on a licence, observed using it</dd></div>
+    <div><dt${totals.unobserved ? ' style="color:var(--warn)"' : ''}>${totals.unobserved}</dt><dd>paid seats never observed</dd></div>
+    <div><dt${totals.personal ? ' style="color:var(--dstr)"' : ''}>${totals.personal}</dt><dd>personal-account uses</dd></div>
+  </dl>
+  ${subs.length ? subs.map(block).join('')
+    : '<div class="note">No licences linked yet.</div>'}
+  <div class="wcard" style="margin-top:14px"><h3 style="margin-top:0">How to read this</h3>
+  <p class="src-note" style="margin-top:0">
+  Spend is what the organisation records paying. Everything else is
+  observed: the platform detects AI tools across browsers, CLIs, IDEs,
+  desktops, the network and cloud sign-ins, and matches those observations
+  to the people on each licence by name. <strong>Observed</strong> means a
+  person was seen on at least one tool the licence covers inside the window
+  above - being quiet on one tool of a bundle is not being unobserved.
+  <strong>Never observed</strong> means no surface matched them at all, which
+  is a strong hint about an unused seat and not proof: a detection source
+  that is not deployed everywhere looks exactly like absence, and someone on
+  leave looks the same as someone who never signs in. Treat these as leads to
+  check, not verdicts to bill against.</p></div>`;
+}
+
 async function budget() {
   const gate = managedGate('Budget'); if (gate) return gate;
   if (!BUDGET) {
@@ -3614,8 +3817,9 @@ async function budget() {
   ${subs.length ? '' : `<div class="note">Nothing linked yet. Link a tool
     to record what it costs and see the users-versus-reality picture the
     detection data already holds.</div>`}
-  ${ro ? '' : `<p style="margin-top:10px">
-    <button class="mini" data-act="b-open">Link a tool</button></p>`}
+  <p style="margin-top:10px">
+    ${ro ? '' : '<button class="mini" data-act="b-open">Link a tool</button>'}
+    ${subs.length ? '<button class="mini" data-act="b-report">share / export</button>' : ''}</p>
   <p class="src-note">Automatic user sync currently supports
   ${ents((BUDGET.providers) || {}).map(([, p]) => esc(p.label)).join(' and ') || 'no vendors yet'}.
   More vendors will be added for automatic configuration - if you want a
@@ -3655,6 +3859,28 @@ async function budgetAction(act, el) {
             currency: sub.currency, renewal: sub.renewal_date,
             owner: sub.owner};
     render(); return;
+  }
+  if (act === 'b-report') {
+    view = 'budget-report'; detail = null;
+    history.replaceState(null, '', '#budget-report');
+    drawNav(); render(); return;
+  }
+  if (act === 'b-report-back') {
+    view = 'budget'; detail = null;
+    history.replaceState(null, '', '#budget');
+    drawNav(); render(); return;
+  }
+  if (act === 'b-report-names') { BRNAMES = !BRNAMES; render(); return; }
+  if (act === 'b-report-print') { window.print(); return; }
+  if (act === 'b-report-csv') {
+    const stamp = new Date().toISOString().slice(0, 10);
+    const blob = new Blob([budgetCsv()], {type: 'text/csv;charset=utf-8'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `ai-guard-budget-${stamp}${BRNAMES ? '' : '-anonymised'}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    return;
   }
   if (act === 'b-cancel') { BWIZ = null; BMSG = ''; render(); return; }
   if (act === 'b-source') {
@@ -4282,6 +4508,18 @@ async function render() {
   if (view === 'extsetup') { app.innerHTML = await extSetup(); return; }
   if (view === 'registry') { app.innerHTML = tb + await registryView(); return; }
   if (view === 'budget') { app.innerHTML = tb + await budget(); return; }
+  if (view === 'budget-report') {
+    // The report needs the same data the page does, and is linkable, so
+    // it fetches for itself rather than assuming someone came via Budget.
+    if (!BUDGET) {
+      const r = await mfetch('/api/budget');
+      if (!r.ok) { app.innerHTML = await managedError(r, 'Budget report'); return; }
+      BUDGET = await r.json();
+    }
+    await bFetchFx();
+    app.innerHTML = budgetReport();
+    return;
+  }
   app.innerHTML = tb + ({setup, overview, devices, people, tools, coverage,
                          dashboard, personal, mcp})[view]();
 }
