@@ -6,14 +6,14 @@ type: application
 # independently of appVersion: a repo index uses this to decide whether an
 # upgrade exists, so a chart change that leaves it alone is a change nobody
 # is offered.
-version: 0.13.0
+version: 0.13.1
 # The application version this chart installs by default. values.yaml derives
 # image.tag from it, so this IS what gets pulled unless someone overrides it.
 #
 # It sat at 0.2.0 through the 0.3.0 release: nothing checked it, so `helm
 # install` quietly deployed a receiver a full release behind what the tag
 # claimed. CI now fails a tag build if this and the tag disagree.
-appVersion: "0.13.0"
+appVersion: "0.13.1"
 home: https://github.com/AmanSK5/shadow-ai-guard
 sources:
   - https://github.com/AmanSK5/shadow-ai-guard
