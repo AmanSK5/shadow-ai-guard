@@ -402,3 +402,68 @@ def test_diagnostics_counts_tools_not_tools_with_domains(tmp_path, monkeypatch):
     assert runtime["registry_tools"] == 3
     assert runtime["registry_tools_with_domains"] == 2
     assert runtime["registry_loaded"] is True
+
+
+def test_one_person_spelled_two_ways_is_one_identity():
+    """A cloud source supplies a UPN local part and another a display
+    name, so the estate carried one colleague as two people: two rows on
+    People, one of them "unmapped" because the identity map attached the
+    device to the other spelling."""
+    findings = [
+        _f(tool="claude", surface="cloud", device="", user="jeff.gillings"),
+        _f(tool="chatgpt", surface="cloud", device="", user="jeff gillings"),
+        _f(tool="chatgpt", surface="cloud", device="", user="jeff gillings"),
+    ]
+    graph = derive.graph_from(findings, {}, {})
+    ids = graph["identities"]
+    # The spelling the estate saw most often is the one shown.
+    assert list(ids) == ["jeff gillings"]
+    assert ids["jeff gillings"]["aliases"] == ["jeff.gillings"]
+    assert set(ids["jeff gillings"]["tools"]) == {"claude", "chatgpt"}
+    assert ids["jeff gillings"]["findings"] == 3
+    # The tool edge follows, or a tool page links to a person who is gone.
+    assert graph["tools"]["claude"]["identities"] == ["jeff gillings"]
+
+
+def test_a_device_mapped_to_either_spelling_reaches_the_same_person():
+    findings = [
+        _f(tool="claude", surface="cloud", device="", user="jeff.gillings"),
+        _f(tool="chatgpt", surface="cloud", device="", user="jeff gillings"),
+        _f(tool="claude-code", surface="cli", device="LAPTOP-1",
+           user="jgillings"),
+    ]
+    graph = derive.graph_from(findings, {}, {"LAPTOP-1": "jeff gillings"})
+    ids = graph["identities"]
+    assert len(ids) == 1
+    person = list(ids)[0]
+    assert ids[person]["devices"] == ["LAPTOP-1"]
+
+
+def test_personal_account_rows_use_the_same_spelling_as_people():
+    findings = [
+        _f(tool="claude", surface="cloud", device="", user="jeff gillings"),
+        _f(tool="claude", surface="cloud", device="", user="jeff gillings"),
+        _f(tool="chatgpt", surface="browser", device="D1",
+           user="jeff.gillings", severity="warn",
+           account_domain="gmail.example"),
+    ]
+    graph = derive.graph_from(findings, {}, {})
+    assert [r["user"] for r in graph["personal_accounts"]] == ["jeff gillings"]
+
+
+def test_the_map_in_effect_can_be_exported(monkeypatch, tmp_path):
+    """An operator moving a mounted map into the portal had no way to
+    get the current one out: the only download was the proposal, which
+    is a set of suggestions, not what is being resolved with."""
+    from app import main as pm
+
+    f = tmp_path / "identity-map.csv"
+    f.write_text("key,identity\nC02XXXX,jo.bloggs\nWEIRD=KEY,x\n")
+    monkeypatch.setattr(pm, "IDENTITY_MAP", str(f))
+    monkeypatch.setattr(pm, "LOGIN_MODE", False)
+    body = bytes(pm.api_identity_map_csv(None, _=None).body).decode()
+    assert "C02XXXX,jo.bloggs" in body
+    # It round-trips through the parser it is written for.
+    assert derive.load_identity_map(str(f))["C02XXXX"] == "jo.bloggs"
+    # A formula-shaped value is neutralised rather than exported live.
+    assert "\n=" not in body

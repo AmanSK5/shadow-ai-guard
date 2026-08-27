@@ -976,6 +976,7 @@ function identityMapPanel(unattributed) {
   ${unattributed} device${unattributed === 1 ? '' : 's'} still ${unattributed === 1 ? 'has' : 'have'} no person attached.</p>
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
     <button class="mini" data-act="id-download">download the proposed map (CSV)</button>
+    <button class="mini" data-act="id-export">download the map in effect (CSV)</button>
     ${ro ? '' : `<button class="mini" data-act="id-open">${IDPARSE ? 'editing…' : 'upload or paste a map'}</button>`}
     ${!ro && saved.length ? `<button class="mini" data-act="id-clear">clear the saved map</button>` : ''}
   </div>
@@ -1057,7 +1058,9 @@ async function people() {
   than machines. Devices appear here only where an identity map attaches them.</p>
   ${identityMapPanel(unattributed)}
   <div class="tcard"><table><tr><th>identity</th><th>tools</th><th>devices</th></tr>
-  ${rows.map(([k,i]) => `<tr><td>${esc(k)}</td>
+  ${rows.map(([k,i]) => `<tr><td>${esc(k)}${(i.aliases||[]).length
+    ? `<br><span class="src-note" style="font-style:normal">also seen as
+       ${(i.aliases).map(a => esc(a)).join(', ')}</span>` : ''}</td>
     <td>${(i.tools||[]).map(t=>`<span class="pill p-mut">${esc(t)}</span>`).join('')}</td>
     <td>${(i.devices||[]).map(d=>`<span class="pill p-acc">${esc(d)}</span>`).join('') || '<span class="pill p-mut">unmapped</span>'}</td></tr>`).join('')}
   </table></div>`;
@@ -4232,6 +4235,10 @@ async function managedAction(act, el) {
   if (act.startsWith('b-')) return budgetAction(act, el);
   if (act === 'id-download') {
     window.location = '/api/suggest-identities?fmt=csv';
+    return;
+  }
+  if (act === 'id-export') {
+    window.location = '/api/identity-map.csv';
     return;
   }
   if (act === 'id-open') {
