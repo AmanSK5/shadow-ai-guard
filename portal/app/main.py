@@ -738,9 +738,10 @@ KNOWN_WIDGETS = {
     "source_health": "Sources reporting versus silent",
     "paste_guard": "Pastes warned, overridden and blocked",
     "review_queue": "Observed tools awaiting a governance decision",
+    "budget_spend": "Tracked AI spend against observed use (managed mode)",
 }
 
-DEFAULT_WIDGETS = ["stat_row", "review_queue", "top_tools",
+DEFAULT_WIDGETS = ["stat_row", "review_queue", "budget_spend", "top_tools",
                    "recent_personal_accounts", "detection_coverage"]
 
 
@@ -1376,6 +1377,7 @@ class SettingsWrite(BaseModel):
     firefox_extension_id: str | None = Field(default=None, max_length=128)
     classification_markings: list[str] | None = Field(default=None,
                                                       max_length=50)
+    budget_currency: str | None = Field(default=None, max_length=8)
 
 
 class DecisionWrite(BaseModel):
