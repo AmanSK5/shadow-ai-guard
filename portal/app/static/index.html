@@ -989,6 +989,9 @@ function deviceDetail(k) {
   const bridges = ents(G.bridges||{}).filter(([,b]) => (b.devices||[]).includes(k)).map(([n])=>n);
   return `<h2>${esc(label(k,d))}</h2>
   <p class="lede">${esc(k)} · ${esc((d.os||[]).join(', ')) || 'os unknown'} · ${d.findings} findings</p>
+  ${(d.aliases||[]).length ? `<p class="src-note" style="margin-top:-6px">Also
+    reported as ${(d.aliases).map(a => `<span class="mono">${esc(a)}</span>`).join(', ')}
+    — one machine, merged here because sources key it differently.</p>` : ''}
   <table>
     <tr><th>person</th><td>${d.person ? esc(d.person) : '<span class="pill p-mut">unattributed</span>'}</td></tr>
     <tr><th>local users</th><td>${esc((d.local_users||[]).join(', ')) || '—'}</td></tr>
@@ -1125,7 +1128,10 @@ function personal() {
   <th>surface</th><th>first seen</th><th>last seen</th><th>source</th>
   ${lifecycle ? '<th>status</th>' : ''}</tr>
   ${rows.map(r => `<tr${paStatus(r) ? ' style="opacity:.6"' : ''}>
-    <td>${r.user ? esc(r.user) : '<span class="pill p-mut">no identity</span>'}</td>
+    <td>${r.user
+      ? esc(r.user) + (r.user_via === 'device'
+        ? ' <span class="pill p-mut" title="This source reported no account name. The person is the one the identity map attaches to this machine.">via device</span>' : '')
+      : '<span class="pill p-mut">no identity</span>'}</td>
     <td><span class="pill p-warn">${esc(r.account_domain)}</span></td>
     <td>${esc(r.tool)}</td>
     <td>${esc(r.device_name || r.device || '—')}</td>
