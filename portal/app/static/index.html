@@ -299,6 +299,7 @@ let G = {devices:{},identities:{},tools:{},bridges:{},unattributed:[],counts:{}}
 // Declared here rather than beside their views: load() clears them and let
 // is not hoisted, so declaring them lower down is a TDZ error on first
 // refresh.
+let SETTAB = 'fleet';
 let DIAG = null;
 let REG = null;
 let EV = null;
@@ -436,6 +437,10 @@ async function boot() {
 }
 
 async function load(force) {
+  // Draw the furniture first: navigation comes from NAV, not from
+  // findings, so it has no reason to wait for a read that may take
+  // seconds on a large estate.
+  drawNav();
   app.innerHTML = '<p class="lede">Reading findings…</p>';
   const q = force ? '?refresh=true' : '';
   // Refresh must clear the views that read a second endpoint too, or the
@@ -572,6 +577,12 @@ const VIEWS = NAV.flatMap(sec => sec.items.map(([id]) => id))
   .concat(['wizard', 'extsetup', 'budget-report']);
 const fromHash = () => {
   const h = (location.hash || '').replace(/^#/, '');
+  // #settings/account addresses a sub-tab; the view is still settings.
+  if (h.startsWith('settings/')) {
+    const tab = h.split('/')[1];
+    if (tab) SETTAB = tab;
+    return 'settings';
+  }
   return VIEWS.includes(h) ? h : 'setup';
 };
 let view = fromHash(), detail = null, filter = '';
@@ -596,6 +607,23 @@ const match = s => !filter || String(s).toLowerCase().includes(filter);
 // all because the ReferenceError fired while building the HTML.
 const num = n => n ? String(n) : '<span class="z">0</span>';
 const when = t => t ? `<span class="nw">${esc(String(t).slice(0, 10))}</span>` : '—';
+// One timestamp format, whatever a source sent. Findings arrive with
+// four spellings of "now" - naive, offset-aware, seconds, microseconds -
+// and a column showing all four reads as four different kinds of thing.
+// Rendered as a relative age with the absolute time on hover, because
+// the question these columns answer is "how long ago", not "when".
+function stamp(t) {
+  if (!t) return '—';
+  const ms = Date.parse(String(t).includes('T') ? t
+    : String(t).replace(' ', 'T') + (/[+Z]/.test(t) ? '' : 'Z'));
+  if (!ms) return esc(String(t));
+  const secs = Math.max(0, Math.round((Date.now() - ms) / 1000));
+  const rel = secs < 90 ? secs + 's ago'
+    : secs < 5400 ? Math.round(secs / 60) + 'm ago'
+    : secs < 172800 ? Math.round(secs / 3600) + 'h ago'
+    : Math.round(secs / 86400) + 'd ago';
+  return `<span title="${esc(new Date(ms).toISOString().replace('T', ' ').slice(0, 19))} UTC">${rel}</span>`;
+}
 
 // A tiny inline chart: the shape of the week, not a chart to read values
 // off. Bars rather than a line, because seven integer points joined by a
@@ -647,7 +675,7 @@ const WIDGETS = {
         <dd${open.length !== pa.length
           ? ` title="${pa.length - open.length} more accepted with a reason"` : ''}>
         open personal accounts</dd>${spark(tr.personal, true)}</div>
-      <div><dt>${fresh}</dt><dd>new this week</dd></div>
+      <div><dt>${fresh}</dt><dd title="First seen in the last 7 days, within the current lookback window">new this week</dd></div>
       ${(() => {
         // People and unattributed devices, counted apart. This was one
         // tile of `user || device`, so an unattributed laptop counted as
@@ -731,12 +759,21 @@ const WIDGETS = {
     // One square per source, filled when it reports: 1/5 should look like
     // four dark squares, not a bar length to squint at.
     return `<div class="wcard w4"><h3>Detection coverage</h3>
+    <p class="src-note" style="margin:0 0 8px">Dedicated sources reporting per
+    surface. A surface can still be covered by another source: MCP servers turn
+    up in endpoint collector findings whether or not the MCP scanner runs.</p>
     ${(S.groups||[]).map(g=>{
       const dots = g.total <= 14
         ? `<span class="dots">${Array.from({length: g.total}, (_, i) =>
             `<i class="${i < g.reporting ? 'on' : ''}"></i>`).join('')}</span>`
         : spark([g.reporting, g.total - g.reporting]);
-      return `<div class="covrow"><span>${esc(g.group)}</span>${dots}
+      // A surface's dedicated SOURCES, not the surface itself: the
+      // estate can see MCP servers through endpoint collectors while
+      // the dedicated mcp scanner is not deployed, and "mcp 0/1" read
+      // as "we have no MCP visibility" when the product was showing
+      // eight servers two views away.
+      return `<div class="covrow" title="Dedicated sources for the ${esc(g.group)} surface that are reporting. Other sources can still produce findings for it.">
+        <span>${esc(g.group)}</span>${dots}
         <b>${g.reporting}/${g.total}</b></div>`;
     }).join('')}</div>`;
   },
@@ -1057,13 +1094,23 @@ function tools() {
     });
   return `<h2>Tools</h2><p class="lede">Surfaces are kept apart on purpose: the same
   tool in a browser, a desktop app and a CLI are different exposures. The ones
-  needing a look sort first - open a tool to see exactly why it is flagged.</p>
-  <div class="tcard"><table><tr><th>tool</th><th></th><th>devices</th><th>identities</th><th>by surface</th></tr>
+  needing a look sort first, marked <span class="pill p-warn">attention</span>
+  when several factors stack up and <span class="pill p-amb">watch</span> for
+  one - open a tool to see exactly which. "Identities from sources" counts
+  people a source named directly; the AI register counts those plus the people
+  the identity map attaches through a device, so the two differ for tools found
+  on endpoints.</p>
+  <div class="tcard"><table><tr><th>tool</th><th></th><th>devices</th>
+    <th title="People a SOURCE named on this tool. A cloud sign-in carries a person; an endpoint finding carries a machine, and the person behind it comes from the identity map - so this is lower than the register's user count for tools found on endpoints.">identities from sources</th>
+    <th>by surface</th></tr>
   ${rows.map(([k,t,a]) => `<tr data-open="tool" data-key="${esc(k)}" style="cursor:pointer">
     <td>${esc(k)}</td><td>${attnPill(a)}</td>
     <td>${(t.devices||[]).length}</td><td>${(t.identities||[]).length}</td>
     <td>${ents(t.devices_by_surface||{}).sort((a2,b2)=>b2[1].length-a2[1].length)
-      .map(([s,v])=>`<span class="pill p-acc">${esc(s||'none')} ${v.length}</span>`).join('')}</td>
+      .map(([s,v])=>`<span class="pill p-acc">${esc(s||'none')} ${v.length}</span>`).join('')
+      || (t.surfaces||[]).filter(Boolean).map(s2 =>
+        `<span class="pill p-mut">${esc(s2)}</span>`).join('')
+      || '<span class="src-note">seen in cloud sign-ins only - no device attribution</span>'}</td>
   </tr>`).join('')}</table></div>
   ${ents(G.bridges||{}).length ? `<div class="tcard">
   <div class="cardhead"><h3>Bridge targets</h3></div>
@@ -1682,7 +1729,7 @@ async function register() {
         personal ${r.personal_accounts
           ? `<span class="pill p-warn">${r.personal_accounts}</span>` : num(0)}</dd>
       <dt>surfaces</dt><dd>${r.surfaces.length ? esc(r.surfaces.join(', ')) : '—'}</dd>
-      <dt>risk</dt><dd>${risk(r.risk_tier)}</dd>
+      <dt title="The registry's own risk_tier for this tool - a shipped default about the tool's category and data reach, not an assessment of how you use it. Editable per tool in the Tool registry.">risk</dt><dd>${risk(r.risk_tier) || '<span class="src-note">not set in the registry</span>'}</dd>
       <dt>last seen</dt><dd>${when(r.last_seen)}</dd>
     </dl>
     <hr>
@@ -2455,7 +2502,10 @@ async function wizard() {
 // The managed settings, as small groups the Settings tabs show one at a
 // time. Every group used to stack on one page, and the page had become a
 // wall nobody could scan for the one field they came to change.
-let SETTAB = 'fleet';
+// SETTAB lives with the other globals: fromHash() sets it when the
+// fragment addresses a sub-tab, and fromHash runs while the module is
+// still initialising - a `let` further down the file is a TDZ error on
+// the first load, not a style preference.
 
 function fleetSettings() {
   const s = SETTINGS.settings || {};
@@ -2574,9 +2624,13 @@ function accountSettings() {
            <button class="mini" data-act="user-delete" data-key="${esc(u.id)}">delete</button>`}</td>
     </tr>`).join('')}</table>
     <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-      <input id="user-name" class="mfield" placeholder="username" autocomplete="off">
+      <input id="user-name" class="mfield" placeholder="username"
+        name="ai-guard-new-account" autocomplete="off"
+        data-lpignore="true" data-1p-ignore data-bwignore>
       <input id="user-pass" class="mfield" type="password"
-        placeholder="password (12+ characters)" autocomplete="new-password">
+        placeholder="password (12+ characters)"
+        name="ai-guard-new-account-secret" autocomplete="new-password"
+        data-lpignore="true" data-1p-ignore data-bwignore>
       <select id="user-role" class="mfield" style="min-width:110px">
         <option value="viewer">viewer</option><option value="admin">admin</option>
       </select>
@@ -2748,14 +2802,14 @@ const docUrl = d => 'https://github.com/AmanSK5/shadow-ai-guard/blob/'
   + '/' + d;
 
 function setup() {
-  if (loadError) return `<h2>Setup</h2>
+  if (loadError) return `<h2>Sources</h2>
     <div class="note">Could not read findings: ${esc(loadError)}</div>
     <p class="lede">The portal reads from Loki; it does not collect anything
     itself. Set <code>LOKI_URL</code> to the same Loki the receiver writes to.</p>`;
-  if (!S) return '<h2>Setup</h2><p class="lede">No status available.</p>';
+  if (!S) return '<h2>Sources</h2><p class="lede">No status available.</p>';
 
   const g = S.groups || [];
-  return `<h2>Setup</h2>
+  return `<h2>Sources</h2>
   <p class="lede">What's reporting and what isn't, worked out from actual
   findings - not from whether something is configured. Every silent source
   carries a fold-out with exactly what it needs to start reporting.</p>
@@ -2785,7 +2839,7 @@ function setup() {
       <td>${r.reporting ? '<span class="pill p-ok">reporting</span>'
                         : '<span class="pill p-mut">not reporting</span>'}</td>
       <td>${r.findings || '—'}</td><td>${r.devices || '—'}</td>
-      <td>${esc((r.last_seen || '—').replace('T',' ').replace('Z',''))}</td>
+      <td class="nw">${stamp(r.last_seen)}</td>
     </tr>`).join('')}</table></div>`).join('')}
 
   <div class="tcard" style="padding-bottom:14px">
@@ -2798,7 +2852,14 @@ function setup() {
   your MDM, RMM, CMDB, or a spreadsheet. The portal helps you build that
   file below.</p>
   ${CFG.identity_map_configured ? `<p class="lede">A map is configured.
-  Devices it doesn't cover show as unattributed, which is fine.</p>`
+  ${(() => {
+    const un = ents(G.devices || {}).filter(([, d]) => !d.person);
+    if (!un.length) return 'Every device it covers has a person attached.';
+    return `It does not cover <strong>${un.length}</strong> of
+      ${ents(G.devices || {}).length} devices, which show as unattributed -
+      a legitimate answer, and one you can shorten:
+      <button class="mini" data-nav="people">edit the map on People</button>`;
+  })()}</p>`
   : `<details class="how" style="margin:0 0 14px"><summary>how to build the map</summary><div>
   <ol style="padding-left:18px;line-height:2;margin:6px 0">
     <li><a href="/api/suggest-identities?fmt=csv" style="color:var(--pri)">Download
@@ -2941,7 +3002,17 @@ async function fleet() {
                        : '<span class="pill p-ok">active</span>'}</td>
     <td>${d.revoked_at ? '' : `<button class="mini" data-act="revoke-device" data-key="${esc(d.id)}">revoke</button>`}</td>
   </tr>`).join('')}</table>`
-  : `<div class="note">No devices enrolled yet. Mint an enrollment token in
+  : `<div class="note">${(() => {
+      // An empty enrollment list beside a reporting fleet is not a
+      // contradiction - collectors configured before enrollment existed
+      // report without ever holding a device credential - but nothing
+      // said so, and the two pages looked like they disagreed.
+      const reporting = ents(G.devices || {}).length;
+      return reporting ? `No devices are enrolled here, but <strong>${reporting}</strong>
+        ${reporting === 1 ? 'device is' : 'devices are'} reporting findings: they were
+        configured outside the enrollment-token flow, which works and gives up
+        per-device revocation. Enroll them to get it back.<br><br>` : '';
+    })()}No devices enrolled yet. Mint an enrollment token in
     the Enrollment tokens view, or download a pre-configured collector from
     Setup, and machines appear here as they enroll.</div>`}`;
 }
@@ -2974,7 +3045,9 @@ async function tokens() {
        </div>`) : ''}
   <div style="margin:10px 0 16px">
     <input id="mint-note" class="mfield" placeholder="note, e.g. macOS Jamf rollout">
-    <input id="mint-ttl" class="mfield" style="min-width:90px" value="180" title="days until expiry">
+    <label style="font-size:12px;color:var(--mut)">expires in
+      <input id="mint-ttl" class="mfield" style="min-width:74px" value="180"
+        title="days until this token stops working"> days</label>
     <button class="mini" data-act="mint">Mint token</button>
   </div>
   ${ts.length ? `<table><tr><th>id</th><th>note</th><th>created</th><th>expires</th><th>status</th><th></th></tr>
@@ -3590,7 +3663,7 @@ function budgetCard(sub) {
   const memberRow = m => `<tr>
     <td>${esc(m.email)}${m.name ? `<br><span style="font-size:11px;color:var(--mut)">${esc(m.name)}</span>` : ''}${pills(m)}</td>
     <td>${esc(m.role || '—')}</td><td>${esc(m.seat_tier || '—')}</td>
-    <td>${esc(usageBits(m) || '')}</td>
+    <td>${esc(usageBits(m)) || '<span class="src-note">—</span>'}</td>
     <td>${m.source === 'manual' && !ro
       ? `<button class="mini" data-act="b-mdel" data-tool="${esc(sub.tool_id)}" data-key="${esc(m.email)}">remove</button>`
       : `<span class="pill p-mut">${esc(m.source)}</span>`}</td></tr>`;
@@ -3632,10 +3705,14 @@ function budgetCard(sub) {
     <div><dt>${bMoney(monthly, sub.currency)}</dt><dd>per month, ${seats} seats</dd></div>
     <div><dt>${(sub.members || []).length}</dt><dd>on the company account</dd></div>
     <div><dt>${matched.length}</dt><dd>of them observed by ai-guard</dd></div>
-    <div><dt${unobserved.length ? ' style="color:var(--warn)"' : ''}>${unobserved.length}</dt><dd>paid seats never observed</dd></div>
+    <div><dt${unobserved.length ? ' style="color:var(--warn)"' : ''}>${unobserved.length}</dt><dd>people on this licence never observed</dd></div>
     <div><dt${strangers.length ? ' style="color:var(--warn)"' : ''}>${strangers.length}</dt><dd>observed users not matched to a seat</dd></div>
     <div><dt${obs.personal.length ? ' style="color:var(--dstr)"' : ''}>${obs.personal.length}</dt><dd>personal-account uses</dd></div>
   </dl>
+  ${seats > (sub.members || []).length ? `<p class="src-note">${seats - (sub.members || []).length}
+    of the ${seats} paid seats ${seats - (sub.members || []).length === 1 ? 'is' : 'are'}
+    assigned to nobody on the user list - the cheapest saving here, and not
+    counted in any figure above.</p>` : ''}
   ${eff.length > 1 && matched.length ? `<p class="src-note">observed on:
     ${eff.map(t => `${esc(t)} ${matched.filter(x => x.seenOn.includes(t)).length}`).join(' · ')}
     — one licence, several surfaces; a member seen on any of them counts
@@ -3653,7 +3730,8 @@ function budgetCard(sub) {
   ${ents(oddTiers).length ? `<p class="src-note" style="color:var(--warn)">User tiers matching no tier above: ${ents(oddTiers).map(([v, n]) => `"${esc(v)}" (${n})`).join(', ')}. Rename a tier in edit, or re-import, to line them up.</p>` : ''}
   ${(sub.members || []).length ? `<details style="margin-top:8px"><summary>Users
       (${(sub.members || []).length}) — ${bProvenance(sub, conn) || 'manual'}</summary>
-    <table><tr><th>member</th><th>role</th><th>seat</th><th>vendor usage</th><th>source</th></tr>
+    <table><tr><th>member</th><th>role</th><th>seat</th>
+      <th title="Usage the vendor's own API reports. Only some vendors expose it, and a licence whose users come from a CSV import has none.">vendor usage</th><th>source</th></tr>
     ${(sub.members || []).map(memberRow).join('')}</table></details>`
     : `<p class="src-note">No users yet${conn ? ' - run a sync' : ''}.</p>`}
   ${unobserved.length ? `<details><summary>${unobserved.length} paid
@@ -3865,7 +3943,8 @@ function budgetReport() {
     ${obs.personal.length ? `<div class="rep-block" style="margin-top:12px">
       <strong>Personal-account use alongside the paid plan</strong>
       ${BRNAMES ? `<table style="margin-top:4px"><tr><th>who</th>${eff.length > 1 ? '<th>tool</th>' : ''}<th>account domain</th><th>last seen</th></tr>
-        ${obs.personal.map(r => `<tr><td>${who(r.user || '-')}</td>
+        ${obs.personal.map(r => `<tr><td>${r.user ? who(r.user)
+      : '<span class="pill p-mut">no identity</span>'}</td>
           ${eff.length > 1 ? `<td>${esc(r.tool)}</td>` : ''}
           <td class="mono">${esc(r.account_domain)}</td>
           <td>${esc((r.last_seen || '').slice(0, 10))}</td></tr>`).join('')}</table>`
@@ -3898,10 +3977,11 @@ function budgetReport() {
     <div><dt>${conv ? bMoney(conv.total, bPrefCur()) : (spendParts.join(' + ') || '0')}</dt>
       <dd>tracked spend / month${conv ? ` · ${spendParts.join(' + ')} at ECB ${esc(conv.date)}` : ''}</dd></div>
     <div><dt>${subs.length}</dt><dd>licences tracked</dd></div>
-    <div><dt>${totals.seats}</dt><dd>seats paid for</dd></div>
+    <div><dt>${totals.seats}</dt><dd>seats paid for${totals.seats > totals.members
+      ? ` · ${totals.seats - totals.members} assigned to nobody` : ''}</dd></div>
     <div><dt>${totals.observed} / ${totals.members}</dt><dd>people on a licence, observed using it</dd></div>
-    <div><dt${totals.unobserved ? ' style="color:var(--warn)"' : ''}>${totals.unobserved}</dt><dd>paid seats never observed</dd></div>
-    <div><dt${totals.personal ? ' style="color:var(--dstr)"' : ''}>${totals.personal}</dt><dd>personal-account uses</dd></div>
+    <div><dt${totals.unobserved ? ' style="color:var(--warn)"' : ''}>${totals.unobserved}</dt><dd>people never observed</dd></div>
+    <div><dt${totals.personal ? ' style="color:var(--dstr)"' : ''}>${totals.personal}</dt><dd>personal-account uses on tracked licences</dd></div>
   </dl>
   ${subs.length ? subs.map(block).join('')
     : '<div class="note">No licences linked yet.</div>'}
@@ -4640,12 +4720,14 @@ function drawNav() {
   const n = document.getElementById('nav');
   const cur = sectionOf(view);
   n.innerHTML = NAV.map(sec => {
+    // Personal accounts outstanding. An unexplained number on a nav
+    // item reads as a notification of something unspecified.
     const c = sec.id === 'inventory' ? (G.personal_accounts||[]).length : null;
     return `<button data-s="${sec.id}" class="${cur && cur.id===sec.id ? 'on':''}" title="${sec.lbl}">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
         stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${NAVICONS[sec.id]}</svg>
       <span class="lbl">${sec.lbl}</span>` +
-      (c ? `<span class="count">${c}</span>` : '') + `</button>`;
+      (c ? `<span class="count" title="${c} personal account${c === 1 ? '' : 's'} seen in this window">${c}</span>` : '') + `</button>`;
   }).join('');
   n.querySelectorAll('button').forEach(b => b.onclick = () => {
     const sec = NAV.find(s => s.id === b.dataset.s);
@@ -4799,6 +4881,9 @@ app.addEventListener('click', e => {
   const el = e.target.closest('[data-settab]');
   if (!el) return;
   SETTAB = el.getAttribute('data-settab');
+  // In the fragment like every other navigation in this page, so a
+  // reload keeps the tab and a colleague can be sent the one you mean.
+  history.replaceState(null, '', '#settings/' + SETTAB);
   render();
 });
 // The per-field i: toggles the note in the field's own dd. Delegated on
