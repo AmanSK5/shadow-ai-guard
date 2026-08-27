@@ -451,19 +451,46 @@ def test_personal_account_rows_use_the_same_spelling_as_people():
     assert [r["user"] for r in graph["personal_accounts"]] == ["jeff gillings"]
 
 
-def test_the_map_in_effect_can_be_exported(monkeypatch, tmp_path):
-    """An operator moving a mounted map into the portal had no way to
-    get the current one out: the only download was the proposal, which
-    is a set of suggestions, not what is being resolved with."""
+def test_the_map_in_use_downloads_as_a_working_copy(monkeypatch, tmp_path):
+    """One file that round-trips: the rows in effect, then every machine
+    with nobody attached - proposed where something suggests a name,
+    blank where nothing does. The two used to be separate downloads, so
+    a new laptop meant merging two files by hand."""
+    from unittest.mock import patch
+
     from app import main as pm
 
     f = tmp_path / "identity-map.csv"
-    f.write_text("key,identity\nC02XXXX,jo.bloggs\nWEIRD=KEY,x\n")
+    f.write_text("key,identity\nC02MAPPED,jo.bloggs\n")
     monkeypatch.setattr(pm, "IDENTITY_MAP", str(f))
     monkeypatch.setattr(pm, "LOGIN_MODE", False)
-    body = bytes(pm.api_identity_map_csv(None, _=None).body).decode()
-    assert "C02XXXX,jo.bloggs" in body
-    # It round-trips through the parser it is written for.
-    assert derive.load_identity_map(str(f))["C02XXXX"] == "jo.bloggs"
-    # A formula-shaped value is neutralised rather than exported live.
-    assert "\n=" not in body
+    monkeypatch.setattr(pm, "REGISTRY_PATH", "")
+
+    findings = [
+        # Already mapped: stays as a live row, never re-proposed.
+        _f(device="C02MAPPED", tool="claude", surface="cli"),
+        # Unattributed, but the hostname names someone the estate knows.
+        _f(device="C02NEW", device_name="Jo-Bloggs-MacBook", tool="claude"),
+        # Unattributed with nothing to go on.
+        _f(device="DESKTOP-9Z1", tool="claude", user=""),
+        _f(tool="claude", surface="cloud", device="", user="jo.bloggs"),
+    ]
+    with patch.object(pm, "_findings", lambda h, request=None: findings):
+        body = bytes(pm.api_identity_map_csv(None, _=None).body).decode()
+
+    lines = body.splitlines()
+    live = [l for l in lines if l and not l.startswith("#")]
+    assert "C02MAPPED,jo.bloggs" in live
+    # The mapped device is not offered again.
+    assert not any("C02MAPPED" in l for l in lines if l.startswith("#"))
+    # The new one arrives proposed, commented, with its reason.
+    assert any(l.startswith("# C02NEW,jo.bloggs") and "via hostname" in l
+               for l in lines)
+    # And the one nothing can name arrives blank, with a hint.
+    assert any(l.startswith("# DESKTOP-9Z1,") for l in lines)
+    # Every proposal is inert until a human uncomments it: feeding this
+    # straight back changes nothing.
+    round_trip = tmp_path / "round-trip.csv"
+    round_trip.write_text(body)
+    assert derive.load_identity_map(str(round_trip)) == {
+        "C02MAPPED": "jo.bloggs"}

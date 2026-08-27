@@ -975,18 +975,19 @@ function identityMapPanel(unattributed) {
       ? ` · a file is also mounted, and rows saved here win over it` : ''}.
   ${unattributed} device${unattributed === 1 ? '' : 's'} still ${unattributed === 1 ? 'has' : 'have'} no person attached.</p>
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
-    <button class="mini" data-act="id-download">download the proposed map (CSV)</button>
-    <button class="mini" data-act="id-export">download the map in effect (CSV)</button>
+    <button class="mini" data-act="id-export">download map in use (CSV)</button>
     ${ro ? '' : `<button class="mini" data-act="id-open">${IDPARSE ? 'editing…' : 'upload or paste a map'}</button>`}
     ${!ro && saved.length ? `<button class="mini" data-act="id-clear">clear the saved map</button>` : ''}
   </div>
   ${IDMSG ? `<div class="note">${esc(IDMSG)}</div>` : ''}
-  <p class="src-note" style="margin-top:0">The proposal matches local
-  usernames, and machine names where a hostname spells out a known
-  person, against identities the cloud sources supplied. They are string
-  matches: review them before saving. Nothing here is applied on its own -
-  a mapping this platform invented and then acted on is how the wrong
-  name lands on a report.</p>
+  <p class="src-note" style="margin-top:0">The download is the working
+  copy: the rows in effect now, then every machine with nobody attached,
+  commented out - with a name filled in where a local username or the
+  machine's own name suggests one, and blank where nothing does.
+  Uncomment what you believe, delete the rest, upload it back. Those
+  proposals are string matches: nothing is applied on its own, because a
+  mapping this platform invented and then acted on is how the wrong name
+  lands on a report.</p>
   ${IDPARSE ? identityMapEditor() : ''}
   ${saved.length ? `<details style="margin-top:8px"><summary>Saved rows (${saved.length})</summary>
     <table><tr><th>key</th><th>person</th><th>changed</th><th>by</th></tr>
