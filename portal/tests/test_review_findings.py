@@ -494,3 +494,17 @@ def test_the_map_in_use_downloads_as_a_working_copy(monkeypatch, tmp_path):
     round_trip.write_text(body)
     assert derive.load_identity_map(str(round_trip)) == {
         "C02MAPPED": "jo.bloggs"}
+
+
+def test_the_settings_tab_from_the_url_cannot_dispatch_into_the_prototype():
+    """CodeQL js/unvalidated-dynamic-method-call, introduced when the
+    settings sub-tab moved into the URL fragment: the guard tested
+    truthiness, and every object inherits callable properties, so
+    #settings/constructor and #settings/__defineGetter__ dispatched into
+    Object.prototype - rendering nonsense, or throwing and taking the
+    page with it."""
+    index = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    html = open(os.path.join(index, "app", "static", "index.html")).read()
+    assert "Object.prototype.hasOwnProperty.call(SGROUPS, SETTAB)" in html
+    # The truthiness form must not come back.
+    assert "if (!SGROUPS[SETTAB])" not in html

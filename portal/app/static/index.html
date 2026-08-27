@@ -2787,7 +2787,15 @@ async function settings() {
   const STABS = [['fleet', 'Fleet'], ['connection', 'Receiver & log store'],
                  ['alerting', 'Alerting & Grafana'], ['account', 'Account'],
                  ['diagnostics', 'Diagnostics']];
-  if (!SGROUPS[SETTAB]) SETTAB = 'fleet';
+  // Own properties only. SETTAB became reachable from the URL when the
+  // settings sub-tab moved into the fragment, and a truthiness check
+  // passes every name an object inherits: #settings/constructor,
+  // #settings/toString and #settings/__defineGetter__ all resolved to
+  // something callable, so the page dispatched into Object.prototype and
+  // rendered nonsense or threw. Nothing attacker-supplied can become a
+  // function here, but a crafted link could break the page for whoever
+  // opened it.
+  if (!Object.prototype.hasOwnProperty.call(SGROUPS, SETTAB)) SETTAB = 'fleet';
   return `<h2>Settings</h2>
   <p class="lede">Central settings are editable and reach the fleet at
   runtime - a value saved here overrides the matching environment variable.
