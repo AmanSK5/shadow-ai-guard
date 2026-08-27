@@ -282,6 +282,16 @@ def suggest_identity_rows(devices, identities):
             if cand:
                 hit = (lu, cand)
                 break
+        if not hit:
+            # Nothing in the local usernames, so try what the machine is
+            # called. A review of a live estate found five devices whose
+            # hostname spelled out their owner's name - two of them
+            # people already in the identity list - sitting unattributed
+            # because the only rule looked at local users. Containment
+            # rather than equality: a hostname is a name inside a label
+            # ("firstname-lastname-macbook", "FIRSTNAMEs-MacBook-Pro"),
+            # never the name alone.
+            hit = _hostname_match(d, by_norm)
         if hit:
             matched.append({"key": dev, "identity": hit[1], "via": hit[0],
                             "device_name": d["device_name"]})
@@ -289,6 +299,35 @@ def suggest_identity_rows(devices, identities):
             unmatched.append({"key": dev, "local_users": sorted(d["local_users"]),
                               "device_name": d["device_name"]})
     return matched, unmatched
+
+
+# Short normalised names match inside a hostname by accident - "al" is
+# in "Alienware", "sam" is in "SAMSUNG". Long enough that a hit means
+# something, and a proposal is reviewed before it is used anyway.
+_MIN_HOSTNAME_NAME = 6
+
+
+def _hostname_match(d, by_norm):
+    """(what matched, identity) where a device's own name contains a
+    known person's name, or None.
+
+    The longest matching identity wins, so "jo.smith" is not proposed for
+    a machine that names "jo.smithson". Ambiguity - two different people
+    matching one hostname - proposes neither: the point of this file is
+    that somebody reviews it, and a proposal that is wrong half the time
+    costs more review than it saves.
+    """
+    hay = _norm_person(d.get("device_name") or "")
+    if not hay:
+        return None
+    hits = [(norm, ident) for norm, ident in by_norm.items()
+            if len(norm) >= _MIN_HOSTNAME_NAME and norm in hay]
+    if not hits:
+        return None
+    hits.sort(key=lambda ni: len(ni[0]), reverse=True)
+    if len(hits) > 1 and len(hits[0][0]) == len(hits[1][0]):
+        return None
+    return ("hostname %s" % (d.get("device_name") or ""), hits[0][1])
 
 
 # A cell that a spreadsheet would run rather than display. csv handles commas

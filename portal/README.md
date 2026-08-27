@@ -195,6 +195,23 @@ that finds none.
 The portal does not resolve identity. It carries enough for you to resolve it
 against whatever you run.
 
+In managed mode the map lives in the portal: Inventory > People has an
+Identity map panel that downloads the proposal, takes the corrected file
+back by upload or paste, previews which keys match a device the estate has
+actually seen, and saves. A mounted file still works and still applies -
+rows saved in the portal win over it per key, the same rule every other
+setting follows - so a deployment that keeps a large CSV in a ConfigMap can
+still correct a handful of rows in the product. Saving replaces the whole
+map, because that is how an operator edits it: in a spreadsheet, not row by
+row. Admins write it; viewers read the names it produces anyway, so they can
+read it too.
+
+The proposal matches local usernames against known identities, and machine
+names where a hostname spells out a person the estate already knows - a
+review of a live deployment found five machines named after their owners
+sitting unattributed. Both are string matches, both are proposals, and
+nothing is applied until somebody saves it.
+
 One machine is one device even when its sources disagree about the key. An
 endpoint collector reports an asset-tagged serial and a browser extension
 reports the bare one, so the same laptop used to arrive as two devices with

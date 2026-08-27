@@ -61,7 +61,7 @@ spec:
           # the field bounds. Anyone copying this file got materially weaker
           # ingestion than the chart gives them, from a file offered as the
           # simpler alternative.
-          image: ghcr.io/amansk5/shadow-ai-guard/receiver:0.14.3
+          image: ghcr.io/amansk5/shadow-ai-guard/receiver:0.15.0
           imagePullPolicy: IfNotPresent
           # The receiver writes nothing to disk: findings go to stdout and,
           # optionally, straight to Loki. An emptyDir covers /tmp for anything
