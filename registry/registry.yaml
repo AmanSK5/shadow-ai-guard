@@ -20,6 +20,7 @@ tools:
     name: Claude
     vendor: Anthropic
     category: assistant
+    license_group: anthropic-claude
     approved: false
     added_by: manual
     domains: [claude.ai, anthropic.com, api.anthropic.com, claude.com, claudeusercontent.com, console.anthropic.com]
@@ -41,6 +42,7 @@ tools:
     name: Claude Code
     vendor: Anthropic
     category: coding
+    license_group: anthropic-claude
     approved: false
     added_by: manual
     domains: []
@@ -60,6 +62,7 @@ tools:
     name: ChatGPT
     vendor: OpenAI
     category: assistant
+    license_group: openai-chatgpt
     approved: false
     added_by: manual
     domains: [chat.openai.com, chatgpt.com, openai.com, api.openai.com, cdn.oaistatic.com, auth0.openai.com]
@@ -76,6 +79,7 @@ tools:
     name: Codex CLI
     vendor: OpenAI
     category: coding
+    license_group: openai-chatgpt
     approved: false
     added_by: manual
     domains: []
@@ -92,6 +96,7 @@ tools:
     name: Gemini
     vendor: Google
     category: assistant
+    license_group: google-gemini
     approved: false
     added_by: manual
     domains: [gemini.google.com, aistudio.google.com, generativelanguage.googleapis.com]
@@ -102,6 +107,7 @@ tools:
     name: Gemini CLI
     vendor: Google
     category: coding
+    license_group: google-gemini
     approved: false
     added_by: manual
     domains: []
