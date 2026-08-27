@@ -2973,6 +2973,7 @@ function bCsvRow(line, delim) {
 }
 
 const B_EMAIL_RE = /^[^@\s]+@[^@\s]+$/;
+const ordinal = n => n + ({1: 'st', 2: 'nd', 3: 'rd'}[n % 10 > 3 || (n % 100 >= 11 && n % 100 <= 13) ? 0 : n % 10] || 'th');
 
 // A pasted member export from any vendor's admin page. The delimiter is
 // detected, not assumed: a saved .csv pastes with commas, but copying
@@ -2986,7 +2987,7 @@ const B_EMAIL_RE = /^[^@\s]+@[^@\s]+$/;
 // silently dropped, because an import that quietly lost three rows reads
 // as three people who left.
 function parseUsersCsv(text) {
-  const lines = String(text || '').replace(/^\uFEFF/, '').split(/\r?\n/)
+  const lines = String(text || '').replace(/^\uFEFF/, '').split(/\r\n|\r|\n/)
     .filter(l => l.trim() && !l.trim().startsWith('#'));
   if (!lines.length) return {members: [], skipped: 0};
   const delim = lines[0].includes('\t') ? '\t'
@@ -3031,7 +3032,13 @@ function parseUsersCsv(text) {
   // an assigned-seats table reads 0 under a full member list.
   return {members, skipped,
           headerless: !hasHeader && extra > 0,
-          missing: hasHeader ? {role: iRole < 0, tier: iTier < 0} : null};
+          missing: hasHeader ? {role: iRole < 0, tier: iTier < 0} : null,
+          // How the paste was read, for the preview to show: guessing at
+          // a delimiter mismatch over a support thread is slower than the
+          // page just saying what it decided.
+          map: {delim: delim === '\t' ? 'tabs' : delim === ';' ? 'semicolons' : 'commas',
+                header: hasHeader,
+                cols: {email: iEmail, name: iName, role: iRole, tier: iTier}}};
 }
 
 const BPROVIDER_NONE = `ChatGPT Business (Team) has no admin API - OpenAI
@@ -3361,6 +3368,11 @@ function budgetImport() {
     ${parsed.missing && parsed.missing.tier ? `<p class="src-note" style="color:var(--warn)">No
     seat/tier column recognised in the header, so seat tiers will import
     empty and the tier table cannot count these users against seats.</p>` : ''}
+    ${parsed.map ? `<p class="src-note">Read as: ${parsed.map.delim},
+    ${parsed.map.header ? 'header row found' : 'no header row'};
+    ${ents(parsed.map.cols).map(([f, i]) =>
+      `${f === 'tier' ? 'seat tier' : f} ${i >= 0 ? ordinal(i + 1) + ' column' : 'not found'}`)
+      .join(', ')}.</p>` : ''}
     <p class="src-note">${parsed.members.length} rows understood,
     ${parsed.skipped} skipped (no address, or a duplicate). Importing
     replaces the previous CSV import for this tool; API-synced and manual
