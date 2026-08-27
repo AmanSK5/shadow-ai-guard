@@ -75,7 +75,10 @@ def test_subscription_round_trip(managed):
     assert len(subs) == 1
     assert subs[0]["tool_id"] == "claude"
     assert subs[0]["seat_tiers"][1] == {
-        "name": "premium", "seats": 5, "unit_price_monthly": 100}
+        "name": "premium", "seats": 5, "unit_price_monthly": 100,
+        "covers": []}
+    # A subscription always covers at least its own tool.
+    assert subs[0]["covers"] == ["claude"]
     assert subs[0]["members"] == []
     # The provider catalogue rides along for the wizard.
     assert "anthropic" in r.json()["providers"]
@@ -397,3 +400,59 @@ def test_replaced_key_resets_sync_history(managed, monkeypatch):
         "api_key": "sk-ant-api01-two"})
     conn = client.get("/admin/budget", headers=ADMIN).json()["connections"][0]
     assert conn["last_sync_at"] is None and conn["members_synced"] == 0
+
+
+# ---------------------------------------------------------------- covers --
+
+
+def test_one_licence_cannot_be_two_subscriptions(managed):
+    r = client.put("/admin/budget/subscription", headers=ADMIN,
+                   json=dict(SUB, covers=["claude-code"]))
+    assert r.status_code == 200
+    assert r.json()["subscriptions"][0]["covers"] == ["claude",
+                                                      "claude-code"]
+    # Linking claude-code on its own now names the clash...
+    r = client.put("/admin/budget/subscription", headers=ADMIN,
+                   json=dict(SUB, tool_id="claude-code", covers=[]))
+    assert r.status_code == 422
+    assert "claude-code is already covered" in r.json()["detail"]
+    # ...and so does covering it from a third subscription.
+    r = client.put("/admin/budget/subscription", headers=ADMIN,
+                   json=dict(SUB, tool_id="chatgpt", covers=["claude-code"]))
+    assert r.status_code == 422
+
+
+def test_tier_covers_must_be_a_subset(managed):
+    bad = dict(SUB, covers=["claude-code"], seat_tiers=[
+        {"name": "premium", "seats": 5, "unit_price_monthly": 100,
+         "covers": ["claude", "codex-cli"]}])
+    r = client.put("/admin/budget/subscription", headers=ADMIN, json=bad)
+    assert r.status_code == 422 and "codex-cli" in r.json()["detail"]
+    good = dict(SUB, covers=["claude-code"], seat_tiers=[
+        {"name": "standard", "seats": 6, "unit_price_monthly": 19,
+         "covers": ["claude"]},
+        {"name": "premium", "seats": 7, "unit_price_monthly": 94,
+         "covers": ["claude", "claude-code"]}])
+    r = client.put("/admin/budget/subscription", headers=ADMIN, json=good)
+    assert r.status_code == 200
+    tiers = r.json()["subscriptions"][0]["seat_tiers"]
+    assert tiers[0]["covers"] == ["claude"]
+    assert tiers[1]["covers"] == ["claude", "claude-code"]
+
+
+def test_covers_survives_a_database_from_before_it(tmp_path, monkeypatch):
+    """A 0.12.x database gains the column on open and its rows read as
+    covering their own tool."""
+    from app import main
+
+    db = str(tmp_path / "state.db")
+    st = state_mod.State(db)
+    with st._lock:
+        st._db.execute("ALTER TABLE budget_subscriptions DROP COLUMN covers")
+        st._db.execute(
+            "INSERT INTO budget_subscriptions (tool_id, created_at,"
+            " updated_at) VALUES ('claude', 'x', 'x')")
+        st._db.commit()
+    st2 = state_mod.State(db)
+    sub = st2.list_budget()["subscriptions"][0]
+    assert sub["covers"] == []

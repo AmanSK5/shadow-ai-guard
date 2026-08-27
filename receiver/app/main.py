@@ -1865,6 +1865,10 @@ class SeatTierWrite(BaseModel):
     name: str = Field(min_length=1, max_length=64)
     seats: int = Field(default=0, ge=0, le=100000)
     unit_price_monthly: float = Field(default=0, ge=0, le=1000000)
+    # Which of the subscription's covered tools this tier entitles. Empty
+    # means all of them; a narrower list is how "premium includes
+    # claude-code, standard does not" is said.
+    covers: list[str] = Field(default_factory=list, max_length=10)
 
 
 class BudgetSubscriptionWrite(BaseModel):
@@ -1878,6 +1882,10 @@ class BudgetSubscriptionWrite(BaseModel):
     notes: str = Field(default="", max_length=1000)
     seat_tiers: list[SeatTierWrite] = Field(default_factory=list,
                                             max_length=10)
+    # Every tool this licence entitles. One seat on Claude Team covers
+    # claude AND claude-code; modelling them as two subscriptions bills
+    # the same licence twice and halves every observed-use answer.
+    covers: list[str] = Field(default_factory=list, max_length=10)
 
 
 class BudgetMemberWrite(BaseModel):
@@ -1939,14 +1947,47 @@ def put_budget_subscription(req: BudgetSubscriptionWrite,
             raise HTTPException(422, "malformed seat tier name")
     if len(set(n.lower() for n in names)) != len(names):
         raise HTTPException(422, "seat tier names must be unique")
+
+    # The covered set: the subscription's own tool always belongs to it,
+    # every id is a well-formed tool id, and no tool may be covered by two
+    # subscriptions - that is the same licence billed twice, refused here
+    # by name rather than discovered later as double-counted spend.
+    covers = [req.tool_id]
+    for c in req.covers:
+        c = c.strip()
+        if not _TOOL_ID_RE.match(c):
+            raise HTTPException(422, "malformed tool id in covers: %s"
+                                % c[:60])
+        if c not in covers:
+            covers.append(c)
+    for other in STATE.list_budget()["subscriptions"]:
+        if other["tool_id"] == req.tool_id:
+            continue
+        theirs = set(other.get("covers") or []) | {other["tool_id"]}
+        clash = sorted(set(covers) & theirs)
+        if clash:
+            raise HTTPException(
+                422, "%s is already covered by the %s subscription - one "
+                     "licence, one subscription; fold them together "
+                     "instead" % (", ".join(clash), other["tool_id"]))
+    for t in req.seat_tiers:
+        for c in t.covers:
+            if c.strip() not in covers:
+                raise HTTPException(
+                    422, "tier %r covers %s, which the subscription does "
+                         "not - a tier can only narrow the subscription's "
+                         "own coverage" % (t.name[:40], c.strip()[:60]))
+
     STATE.upsert_budget_subscription(
         req.tool_id,
         {"vendor": req.vendor.strip(), "plan": req.plan.strip(),
          "currency": req.currency.strip(),
          "renewal_date": req.renewal_date, "owner": req.owner.strip(),
          "notes": req.notes.strip(),
+         "covers": covers,
          "seat_tiers": [{"name": n, "seats": t.seats,
-                         "unit_price_monthly": t.unit_price_monthly}
+                         "unit_price_monthly": t.unit_price_monthly,
+                         "covers": [c.strip() for c in t.covers]}
                         for n, t in zip(names, req.seat_tiers)]},
         _admin_actor(authorization))
     return get_budget(authorization)
