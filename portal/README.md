@@ -195,6 +195,17 @@ that finds none.
 The portal does not resolve identity. It carries enough for you to resolve it
 against whatever you run.
 
+One machine is one device even when its sources disagree about the key. An
+endpoint collector reports an asset-tagged serial and a browser extension
+reports the bare one, so the same laptop used to arrive as two devices with
+its tools split across both. Keys that differ only by a prefix are merged,
+the other spellings are listed on the device's detail, and a personal-account
+row whose source reported no account name takes the person the identity map
+attaches to that machine - labelled "via device", because it was inferred
+from the hardware rather than read from the source. An ambiguous key (the
+tail of two prefixed keys) or one too short to be an identifier is left
+alone: merging the wrong two machines is worse than showing two cards.
+
 Endpoint findings carry a device and a local username. The username is a hint,
 not a key: it is `firstname.lastname` on a Jamf Connect Mac, a local account on
 a Mac enrolled before that, the work account on Autopilot Windows, and whatever
