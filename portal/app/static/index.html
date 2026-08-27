@@ -843,8 +843,8 @@ function overview() {
   const rest = ws.filter(w => w.kind !== 'stat_row');
   return `<h2>Overview</h2>
   ${truncNote(G.findings_truncated)}
-  <p class="lede">You can choose which widgets appear here: the overview
-  widgets setting takes a comma-separated list.</p>
+  <p class="lede">You can choose which widgets appear here: they are
+  toggles under Settings.</p>
   ${stat.map(w => WIDGETS.stat_row(w)).join('')}
   <div class="grid">${rest.map(w =>
     (WIDGETS[w.kind] ? WIDGETS[w.kind](w) : WIDGETS.error({error:'no renderer for '+w.kind}))
@@ -1776,6 +1776,47 @@ function settingRow(key, label, placeholder, note) {
 // re-push. Split in two: behaviour (what the guard does) and delivery
 // (where the packed extension lives), because the guide puts them on
 // different pages while Settings shows everything flat.
+// The overview's widgets as toggles. The stored value underneath is
+// still the comma-separated overview_widgets string an env-configured
+// deployment sets, but a managed operator should never have to know the
+// tokens: every widget the portal can draw is offered here by name, and
+// one added in a release shows up as an unchecked option instead of
+// hiding behind a list saved before it existed. Configured Grafana
+// panels ride along as their own toggles.
+function widgetPickerRow() {
+  const catalog = CFG.overview_widget_catalog || {};
+  const eff = CFG.overview_widgets || [];
+  const on = new Set(eff.filter(w => w.kind && w.kind !== 'grafana'
+    && w.kind !== 'error').map(w => w.kind));
+  const refs = new Set(eff.filter(w => w.kind === 'grafana')
+    .map(w => String(w.ref)));
+  const box = (id, checked, ref, label, desc) => `
+    <label style="display:flex;align-items:baseline;gap:8px;margin-bottom:5px;cursor:pointer">
+      <input type="checkbox" id="${id}" ${ref ? `data-ref="${esc(ref)}"` : ''}
+        style="min-width:0;margin:0;accent-color:var(--pri)" ${checked ? 'checked' : ''}>
+      <span>${label}${desc ? ` <span style="color:var(--mut)">— ${esc(desc)}</span>` : ''}</span>
+    </label>`;
+  const panels = (CFG.grafana_panels || []).filter(p => !p.error);
+  const panelRef = p => p.title || String(p.panel_id);
+  const orphans = [...refs].filter(r =>
+    !panels.some(p => r === p.title || r === String(p.panel_id)));
+  return `<dt>Overview widgets${INFO}</dt><dd>
+    ${ents(catalog).map(([k, d]) => box('ow-' + k, on.has(k), '',
+      `<span class="mono">${esc(k)}</span>`, d)).join('')}
+    ${panels.map((p, i) => box('owg-' + i,
+      refs.has(p.title) || refs.has(String(p.panel_id)), panelRef(p),
+      `<span class="mono">grafana:${esc(panelRef(p))}</span>`,
+      'embedded Grafana panel')).join('')}
+    ${orphans.map((r, i) => box('owo-' + i, true, r,
+      `<span class="mono">grafana:${esc(r)}</span>`,
+      'saved panel reference (no longer in the panels list)')).join('')}
+    <button class="mini" data-act="save-widgets" style="margin-top:4px">save</button>
+    <div class="src-note fnote">What the overview draws, in this order.
+    Unticking everything is refused rather than saved: an empty list falls
+    back to the default set, which is probably not what you meant.</div>
+  </dd>`;
+}
+
 function pasteGuardBehaviourFields() {
   const s = (SETTINGS && SETTINGS.settings) || {};
   const mode = (s.paste_guard_mode || {}).value || '';
@@ -2353,8 +2394,7 @@ function alertingSettings() {
     ${settingRow('budget_currency', 'Preferred currency',
       'GBP',
       'The Budget headline converts into it at the ECB daily reference rate, naming the rate date inline; newly linked tools default to it.')}
-    ${settingRow('overview_widgets', 'Overview widgets',
-      'stat_row, top_tools, …  (empty = sensible default)', '')}
+    ${widgetPickerRow()}
   </dl></div>`;
 }
 
@@ -3752,6 +3792,38 @@ async function managedAction(act, el) {
     if (r.ok) { SETTINGS = await r.json(); SETMSG = 'Saved. Regenerate the extension artifacts to roll it out.'; }
     else if (r.status === 401) { sessionLost(); return; }
     else { let d = r.statusText; try { d = (await r.json()).detail || d; } catch (e) {} SETMSG = 'Not saved: ' + d; }
+    render(); return;
+  }
+  if (act === 'save-widgets') {
+    const catalog = CFG.overview_widget_catalog || {};
+    const parts = Object.keys(catalog)
+      .filter(k => document.getElementById('ow-' + k)?.checked);
+    document.querySelectorAll('[id^="owg-"],[id^="owo-"]').forEach(el => {
+      if (el.checked) parts.push('grafana:' + el.getAttribute('data-ref'));
+    });
+    if (!parts.length) {
+      SETMSG = 'Pick at least one widget: an empty list falls back to the '
+        + 'default set, which is probably not what unticking everything meant.';
+      render(); return;
+    }
+    const r = await mfetch('/api/settings', {method: 'POST',
+      body: JSON.stringify({overview_widgets: parts.join(',')})});
+    if (r.status === 401) { sessionLost(); return; }
+    if (!r.ok) { SETMSG = 'Not saved: ' + await _refusal(r); render(); return; }
+    SETTINGS = await r.json();
+    SETMSG = 'Saved. The overview draws these from now on.';
+    // The overview reads the effective list from config, and a freshly
+    // enabled spend tile needs its data - refetch both so the change is
+    // visible on the very next click, not the next full reload.
+    try {
+      CFG = await (await fetch('/api/config')).json();
+      if ((CFG.overview_widgets || []).some(w => w.kind === 'budget_spend')
+          && CFG.managed && CFG.managed.enabled && !BUDGET) {
+        const br = await mfetch('/api/budget');
+        if (br.ok) BUDGET = await br.json();
+        await bFetchFx();
+      }
+    } catch (e) { /* the overview picks it up on its next load */ }
     render(); return;
   }
   if (act === 'save-setting') {
