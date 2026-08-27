@@ -503,6 +503,8 @@ def build(findings, domain_map=None, identity_map=None):
     identities = defaultdict(lambda: {
         "tools": set(), "surfaces": set(), "sources": set(),
         "accounts": set(), "findings": 0, "devices": set(),
+        # Other spellings of this person that sources reported.
+        "aliases": set(),
     })
     # Tool nodes are keyed on the tool, with surface as an attribute. Merging
     # surfaces into one number would lose the distinction the platform exists
@@ -666,6 +668,19 @@ def build(findings, domain_map=None, identity_map=None):
                 b["devices"].discard(bare)
                 b["devices"].add(canon)
 
+    # One person, one identity. Do this before devices are attributed,
+    # so a device mapped to either spelling lands on the same person.
+    for variant, canon in _identity_aliases(identities).items():
+        src, dst = identities.pop(variant), identities[canon]
+        for field in ("tools", "surfaces", "sources", "accounts", "devices"):
+            dst[field] = (dst.get(field) or set()) | (src.get(field) or set())
+        dst["findings"] += src["findings"]
+        dst["aliases"].add(variant)
+        for t in tools.values():
+            if variant in t["identities"]:
+                t["identities"].discard(variant)
+                t["identities"].add(canon)
+
     # Attach a person to each device, if the deployer supplied a mapping.
     # Device key first, then any local username: an MDM keys on the serial, a
     # spreadsheet is more likely to key on the name someone logs in with.
@@ -693,6 +708,41 @@ def build(findings, domain_map=None, identity_map=None):
 # it fixes.
 _MIN_ALIAS_KEY = 6
 _ALIAS_SEPARATORS = ("-", "_", ".", ":")
+
+
+def _identity_aliases(identities):
+    """{variant: canonical} where two identity strings are the same
+    person spelled differently.
+
+    A cloud source supplies a UPN local part (jeff.gillings), another
+    supplies a display name (jeff gillings), and the estate carried them
+    as two people: two rows on People, one of them "unmapped" because
+    the identity map attached the device to the other spelling, and both
+    reaching a finance report as separate unlicensed users.
+
+    Normalisation is the existing one - lowercase, alphanumerics only,
+    local part of an address - so a merge needs the letters to be
+    identical. Two genuinely different people would have to share a name
+    exactly, and no source could tell them apart either.
+    """
+    by_norm = {}
+    for name in identities:
+        norm = _norm_person(name)
+        if norm:
+            by_norm.setdefault(norm, []).append(name)
+    out = {}
+    for names in by_norm.values():
+        if len(names) < 2:
+            continue
+        # The spelling the estate saw most wins, so the name on screen is
+        # the one most sources use; alphabetical to keep it deterministic
+        # when they tie.
+        canon = sorted(names,
+                       key=lambda n: (-identities[n]["findings"], n))[0]
+        for n in names:
+            if n != canon:
+                out[n] = canon
+    return out
 
 
 def _device_aliases(devices):
@@ -753,7 +803,8 @@ def _domain_matches(account, listed):
 
 
 def personal_accounts_from(findings, domain_map=None, corp_domains=None,
-                           tool_domains=None, device_person=None):
+                           tool_domains=None, device_person=None,
+                           identity_canon=None):
     """One row per personal account seen on a tool, with when it was first and
     last observed.
 
@@ -779,6 +830,14 @@ def personal_accounts_from(findings, domain_map=None, corp_domains=None,
     # resolves the one the device inventory already holds, and says the
     # attribution came from the device rather than the source.
     device_person = device_person or {}
+    # Normalised name -> the spelling People shows, so the two views
+    # cannot name the same person differently. Keyed on the normalised
+    # form rather than on known variants: the spelling that reaches a
+    # personal-account row often comes from a finding that carries a
+    # device, which never becomes an identity of its own, so there is no
+    # variant to look up - only a name that normalises to the same
+    # person.
+    identity_canon = identity_canon or {}
     rows = {}
     for f in findings:
         if (f.get("severity") or "") != "warn":
@@ -815,6 +874,8 @@ def personal_accounts_from(findings, domain_map=None, corp_domains=None,
 
         device = (f.get("device") or "").strip()
         user = (f.get("user") or "").strip()
+        if user:
+            user = identity_canon.get(_norm_person(user), user)
         canon, via = device, ""
         if device in device_person:
             canon, person = device_person[device]
@@ -1048,7 +1109,8 @@ def graph_from(findings, domain_map=None, identity_map=None, hours=168,
         "unattributed": unattributed,
         "personal_accounts": personal_accounts_from(
             findings, domain_map, corp_domains, tool_domains_from(reg),
-            device_person_map(devices)),
+            device_person_map(devices),
+            {_norm_person(k): k for k in identities}),
         "mcp_servers": mcp_from(findings),
         "trends": trends_from(findings, domain_map, hours),
         "counts": {

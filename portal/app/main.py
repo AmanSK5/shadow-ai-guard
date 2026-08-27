@@ -2329,6 +2329,84 @@ def api_identity_map(_=Depends(require_auth),
     return _receiver("GET", "/admin/identity-map", token)
 
 
+@app.get("/api/identity-map.csv")
+def api_identity_map_csv(request: Request,
+                         hours: float = Query(default=None, gt=0, le=24 * 90),
+                         _=Depends(require_auth)):
+    """The working copy of the identity map: what is in effect, plus
+    every machine still without a person.
+
+    One file that round-trips. The rows already mapped come back
+    unchanged, anything newly seen and unattributed arrives commented
+    out - with a proposal filled in where local usernames or the
+    hostname suggest one, and blank where nothing does. Uncomment the
+    lines you believe, delete the rest, upload it back.
+
+    The two halves used to be separate downloads: the map lived only in
+    a mounted file with no way out, and the proposal was a list of
+    suggestions with none of your existing work in it. Keeping them
+    apart meant merging two files by hand every time a laptop appeared.
+    """
+    hours = hours or LOOKBACK_HOURS
+    in_use = _identity_map(request)
+    findings = _findings(hours, request)
+    domain_map = derive.load_domain_map_from(_registry(request))
+    devices, identities, _t, _b, _u = derive.build(
+        findings, domain_map, in_use)
+    unmapped = {k for k, d in devices.items() if not d.get("person")}
+    matched, unmatched = derive.suggest_identity_rows(devices, identities)
+
+    def row(key, identity):
+        # The characters the loader refuses. A value that cannot survive
+        # the round trip is named rather than written as a row that
+        # would not come back.
+        if derive._UNSAFE_IN_KEY.search(key) or \
+                derive._UNSAFE_IN_KEY.search(identity):
+            return "# skipped, unsafe characters: %s" % derive.csv_safe(key)[:60]
+        return "%s,%s" % (derive.csv_safe(key), derive.csv_safe(identity))
+
+    out = [
+        "# The identity map in use, and every machine still without a",
+        "# person. Edit and upload it back on Inventory > People.",
+        "#",
+        "# Rows below the header are in effect now. Below them, commented",
+        "# lines are machines with nobody attached: uncomment the ones you",
+        "# believe and fill in the blanks. Proposals are string matches on",
+        "# local usernames and machine names - they are suggestions, and a",
+        "# name you accept without checking is a wrong name on a report.",
+        "key,identity",
+    ]
+    out += [row(k, v) for k, v in sorted(in_use.items())]
+
+    proposed = [m for m in matched if m["key"] in unmapped]
+    if proposed:
+        out += ["#", "# --- proposed: uncomment to accept ---"]
+        for m in proposed:
+            # Say what matched, not just the string that matched: "via
+            # local user jo" and "via hostname JO-MBP" are different
+            # kinds of evidence, and one is much weaker than the other.
+            why = (m["via"] if m["via"].startswith("hostname")
+                   else "local user %s" % m["via"])
+            out.append("# %s  # via %s%s" % (
+                row(m["key"], m["identity"]), why,
+                " on %s" % m["device_name"] if m["device_name"] else ""))
+
+    blank = [u for u in unmatched if u["key"] in unmapped]
+    if blank:
+        out += ["#", "# --- no person known: fill in and uncomment ---"]
+        for u in blank:
+            hint = ", ".join(u["local_users"][:3])
+            out.append("# %s,  # %s%s" % (
+                derive.csv_safe(u["key"]),
+                u["device_name"] or "no machine name",
+                " · local users: %s" % hint if hint else ""))
+
+    return PlainTextResponse(
+        "\n".join(out) + "\n",
+        headers={"Content-Disposition":
+                 'attachment; filename="identity-map.csv"'})
+
+
 @app.post("/api/identity-map")
 def api_identity_map_write(req: IdentityMapWrite, _=Depends(require_auth),
                            token: str = Depends(_admin_forward)):
