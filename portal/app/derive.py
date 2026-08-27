@@ -674,6 +674,17 @@ def build(findings, domain_map=None, identity_map=None):
     for key, d in devices.items():
         person = identity_map.get(key)
         if not person:
+            # Then the keys this device was merged from. The canonical key
+            # is the longer, prefixed one, so a machine the collector calls
+            # TGT-C02ABCD swallows the C02ABCD the extension reports - and
+            # an MDM export lists the bare serial, which is what a deployer
+            # builds the map from. Mapping the serial looked right, matched
+            # in the preview, and attached to nothing.
+            for alias in d["aliases"]:
+                if alias in identity_map:
+                    person = identity_map[alias]
+                    break
+        if not person:
             for lu in d["local_users"]:
                 if lu in identity_map:
                     person = identity_map[lu]
