@@ -163,6 +163,13 @@ tr[data-open]:hover td{background:color-mix(in srgb,var(--pri-soft) 45%,transpar
 .gov-owner{white-space:nowrap}
 .inputs{margin:0 0 18px;padding-left:20px;font-size:13.5px;line-height:1.9}
 .inputs a{color:var(--warn)}
+/* Links in page content follow the palette, like every control does. A
+   bare anchor was falling back to the browser's default blue, which is
+   near-unreadable on the dark theme and belongs to no part of this
+   design. A rule rather than a style on each link, so the next one
+   added cannot miss it: anything wanting a different colour still says
+   so inline, and the two more specific rules above still win. */
+main a{color:var(--pri)}
 /* No fill, barely-there text. Absence of governance, not a state with equal
    weight to approved or reviewing. */
 .none{color:color-mix(in srgb,var(--mut) 70%,transparent);font-size:12px;white-space:nowrap}
