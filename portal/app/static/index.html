@@ -1029,12 +1029,22 @@ function identityMapEditor() {
       <button class="mini" data-act="id-cancel">cancel</button>
       ${(p.rows || []).length ? `<button class="mini" data-act="id-save">save ${p.rows.length} ${p.rows.length === 1 ? 'row' : 'rows'}</button>` : ''}
     </div>
-    ${p.rows ? `<p class="src-note">${p.rows.length} rows understood, ${p.skipped}
-      skipped (no key, no person, or a duplicate). Saving REPLACES the map
-      saved here; a mounted file is untouched.
+    ${p.rows ? `<p class="src-note">${p.rows.length} rows understood${
+      (p.skipped || []).length ? ', ' + p.skipped.length + ' skipped' : ''}.
+      Saving REPLACES the map saved here; a mounted file is untouched.
       ${unknown.length ? `<span style="color:var(--warn)">${unknown.length}
         ${unknown.length === 1 ? 'key matches' : 'keys match'} no device or local
         user in the current window - kept, in case the machine reports later.</span>` : ''}</p>
+      ${(p.skipped || []).length ? `<p class="src-note" style="color:var(--warn)">
+        Not saved: ${p.skipped.map(s =>
+          `line ${s.n} <span class="mono">${esc(s.key)}</span> (${esc(s.why)})`)
+          .join(', ')}.</p>` : ''}
+      ${(p.commented || []).length ? `<p class="src-note">
+        ${p.commented.length} commented ${p.commented.length === 1 ? 'row carries' : 'rows carry'}
+        a name and ${p.commented.length === 1 ? 'is' : 'are'} not saved - the download writes
+        proposals and blanks commented out, so remove the leading # from any you meant to keep:
+        ${p.commented.slice(0, 6).map(c => `line ${c.n} <span class="mono">${esc(c.key)}</span>`).join(', ')}${
+          p.commented.length > 6 ? ', and ' + (p.commented.length - 6) + ' more' : ''}.</p>` : ''}
       ${p.rows.length ? `<table><tr><th>key</th><th>person</th><th></th></tr>
       ${p.rows.slice(0, 8).map(r => `<tr><td class="mono">${esc(r.key)}</td><td>${esc(r.identity)}</td>
         <td>${known.has(r.key) ? '<span class="pill p-ok">matches</span>' : '<span class="pill p-mut">not seen yet</span>'}</td></tr>`).join('')}
@@ -1046,20 +1056,39 @@ function identityMapEditor() {
 // straight back in. Comments and the header row are dropped exactly as the
 // server-side loader drops them.
 function parseIdentityCsv(text) {
-  const out = [], seen = new Set();
-  let skipped = 0;
-  String(text || '').replace(/^\uFEFF/, '').split(/\r\n|\r|\n/).forEach(line => {
+  const out = [], seen = new Map();
+  // A count alone sent someone hunting through 62 rows for four of them,
+  // so each dropped row says which line and why. The commented list is
+  // separate and is not a fault: the download writes proposals and blanks
+  // commented out, on purpose. It is here because a row that was filled
+  // in and never uncommented is otherwise invisible - split('#')[0] makes
+  // it an empty line, so it is not saved and was not even counted.
+  const skipped = [], commented = [];
+  const cut = s => bCsvRow(s, s.includes('\t') ? '\t' : ',')
+    .slice(0, 2).map(c => (c || '').trim());
+  String(text || '').replace(/^\uFEFF/, '').split(/\r\n|\r|\n/).forEach((line, i) => {
+    const n = i + 1;
     const bare = line.split('#')[0].trim();
-    if (!bare) return;
-    const cells = bCsvRow(bare, bare.includes('\t') ? '\t' : ',');
-    const [key, identity] = [(cells[0] || '').trim(), (cells[1] || '').trim()];
-    if (!key || !identity) { if (bare) skipped++; return; }
+    if (!bare) {
+      const [k, ident] = cut(line.replace(/^[\s#]+/, '').split('#')[0].trim());
+      if (k && ident) commented.push({n, key: k, identity: ident});
+      return;
+    }
+    const [key, identity] = cut(bare);
     if (['key', 'device', 'local_user'].includes(key.toLowerCase())) return;
-    if (seen.has(key.toLowerCase())) { skipped++; return; }
-    seen.add(key.toLowerCase());
+    if (!key) { skipped.push({n, key: bare, why: 'no key'}); return; }
+    if (!identity) { skipped.push({n, key, why: 'no person'}); return; }
+    const dup = seen.get(key.toLowerCase());
+    if (dup) {
+      // First wins, which is worth saying outright: when the corrected row
+      // is the lower one, the edit is the half that gets dropped.
+      skipped.push({n, key, why: 'same key as line ' + dup});
+      return;
+    }
+    seen.set(key.toLowerCase(), n);
     out.push({key, identity});
   });
-  return {rows: out, skipped};
+  return {rows: out, skipped, commented};
 }
 
 async function people() {
