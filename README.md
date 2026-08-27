@@ -37,7 +37,8 @@
 
 Shadow AI Guard detects AI usage across the places it actually appears, then
 correlates the findings so you can see the tools, accounts, users, devices and
-sources behind it.
+sources behind it - and, for the tools you pay for, whether the seats on the
+invoice match the people actually using them.
 
 You install it once and run the whole thing from the portal: connect your log
 store, set your corporate domains, approve tools, review what discovery finds,
@@ -133,6 +134,12 @@ is operated:
   and what was decided about it: owner, status, review date. Personal-account
   findings carry their own lifecycle - acknowledge one, or accept it with a
   reason and it leaves the open count.
+- **Budget.** What each AI tool costs, joined against what the estate is
+  observed doing: seats nobody uses, people using a tool no seat covers, and
+  personal accounts running alongside paid ones. User lists sync from a
+  vendor's admin API where one exists and import from its member export where
+  it does not, and one subscription covers every tool its licence entitles,
+  so a Claude seat is counted once across Claude and Claude Code.
 - **The fleet.** Devices enroll with their own credential and can be revoked
   individually. Enrollment tokens are invitations; devices are badges; both
   are managed here.

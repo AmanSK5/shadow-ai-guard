@@ -116,3 +116,29 @@ def test_the_wizard_names_the_honest_provider_set():
     assert "no admin API" in INDEX
     # The roadmap note: automatic setup grows by request, on GitHub.
     assert "github.com/AmanSK5/shadow-ai-guard/issues" in INDEX
+
+
+# ---------------------------------------------------------- the report --
+
+
+def test_the_shell_ships_the_share_view():
+    # Reachable from the page and by fragment, and rendered by its own
+    # function - a report nobody can link to is a report nobody sends.
+    assert "'budget-report'" in INDEX
+    assert "function budgetReport()" in INDEX
+    assert "data-act=\"b-report\"" in INDEX
+
+
+def test_the_report_can_withhold_names_and_guards_the_csv():
+    # The page names individuals and their personal account domains, so
+    # withholding them is one control, in the page and in the export.
+    assert "BRNAMES" in INDEX and "withhold names" in INDEX
+    assert "-anonymised.csv" in INDEX or "'-anonymised'" in INDEX
+    # An exported address starting with = is a live formula in Excel.
+    assert "B_FORMULA_LEAD" in INDEX and "function bCsvCell" in INDEX
+
+
+def test_printing_drops_the_furniture():
+    assert "@media print" in INDEX
+    for hidden in ("aside", ".topbar", ".drawer", "[data-act]"):
+        assert hidden in INDEX.split("@media print")[1][:600], hidden

@@ -261,7 +261,7 @@ effect within `CACHE_TTL_SECONDS` (default 30) without a restart.
 
 ## Sections
 
-The sidebar is six sections; each holds its pages as tabs. Details open in
+The sidebar is seven sections; each holds its pages as tabs. Details open in
 an inspector beside the list rather than a separate page, and the theme
 toggle (light or dark) is remembered per browser.
 
@@ -270,6 +270,7 @@ toggle (light or dark) is remembered per browser.
 | Overview | Overview, Grafana | how the estate looks and which way the week went, in widgets you choose |
 | Inventory | Tools, People, Devices, Personal accounts, MCP servers | what is in use, by whom, on what, signed into which account |
 | Governance | AI register, Tool registry, Paste guard, ISO 42001 evidence | what each tool is, what was decided, what the guard stopped |
+| Budget | Budget | what each AI tool costs, and whether the seats paid for match the people observed using them |
 | Health | Sources, Uncovered devices | which detection sources are reporting, which are silent, and which machines nothing covers |
 | Fleet | Devices, Enrollment tokens | who is enrolled with their own credential, and the invitations that enroll them |
 | Settings | Settings tabs, Diagnostics | central settings, accounts, the audit trail, and what the portal verified about itself |
@@ -332,7 +333,10 @@ a snapshot and the page it summarises cannot disagree.
 
 ## Overview widgets
 
-`OVERVIEW_WIDGETS` is a comma separated list, drawn in order:
+In managed mode these are toggles under Settings, one per widget with its
+description, and a widget added in a release appears there as an unticked
+option. Classic deployments set the same list as `OVERVIEW_WIDGETS`, a comma
+separated list drawn in order:
 
 ```
 OVERVIEW_WIDGETS=stat_row,top_tools,recent_personal_accounts,detection_coverage
@@ -346,6 +350,7 @@ OVERVIEW_WIDGETS=stat_row,top_tools,recent_personal_accounts,detection_coverage
 | `detection_coverage` | how much of each surface is reporting |
 | `source_health` | sources listed as silent |
 | `review_queue` | observed tools awaiting a governance decision |
+| `budget_spend` | tracked AI spend, tools linked, paid seats never observed and the next renewal (managed mode) |
 | `paste_guard` | pastes warned, overridden and blocked - and what block mode would have stopped |
 | `grafana:<panel title>` | a panel named in `GRAFANA_PANELS` |
 
@@ -355,6 +360,39 @@ panels arrive in Grafana's styling and look out of place next to the cards.
 Leaving it unset gives you a sensible default. A typo in a widget name shows
 an error card listing the valid names, so you find out immediately instead of
 wondering where your widget went.
+
+## Budget
+
+Link a tool to the licence you pay for - plan, seat tiers, per-seat price,
+renewal date - and give it the list of people that licence covers. The card
+then joins that list against the findings the portal already holds: paid
+seats never observed, observed users no seat covers, and personal-account
+use running alongside the paid plan.
+
+User lists come from a vendor's admin API where one exists (Anthropic's
+Claude Enterprise and Console organisations, Fireflies), and from the member
+export the vendor's admin page produces where one does not (ChatGPT
+Business, Claude Team). Imports and syncs enrich rather than erase, so seat
+tiers assigned by import survive a sync that cannot report them.
+
+A subscription is a licence, not a tool: it records every tool the licence
+entitles, so one Claude seat is counted once across Claude and Claude Code
+and a person seen on either counts as observed. Per-tier coverage carries
+the seat economics - which tier buys which tool - and the two findings that
+follow it: a tier's exclusive tool its holders are never seen on, and a
+person seen on a tool their tier does not cover.
+
+**Share / export** opens the same numbers as a report meant to leave the
+browser: everything expanded, its own provenance and a plain-language note
+on how to read it, printable to PDF (the print stylesheet drops the
+furniture and forces a light palette), downloadable as one flat CSV, and
+with a single control that withholds every name in both the page and the
+file for wider circulation.
+
+Admins link, edit and import; viewers read - including the report, which is
+what an auditor or a finance owner usually needs. Vendor API keys are held
+by the receiver, spent server-side and never returned to any page.
+[Budget](../docs/budget.md) covers the whole feature.
 
 ## Personal accounts
 
