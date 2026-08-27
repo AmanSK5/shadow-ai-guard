@@ -138,6 +138,39 @@ these members still count as observed) and its inverse, *"standard seat
 observed on claude-code"* (either the coverage is recorded too narrowly
 or the seat grants more than it should).
 
+## Sharing it
+
+The people who need this page mostly do not have a portal login: a
+finance owner approving the renewal, a manager deciding on a downgrade,
+a board pack. **Share / export** opens a report view of the same
+numbers, arranged to leave the browser:
+
+- Everything is expanded. Nothing a recipient needs sits behind a click
+  they cannot make on paper.
+- It carries its own provenance: when it was generated, which version
+  produced it, the observation window, and each licence's user-list
+  source and date.
+- It closes with a "how to read this" note in plain language, so a
+  recipient who has never seen the portal knows that spend is recorded,
+  everything else is observed, and "never observed" is a lead rather
+  than a verdict.
+- **Print / save as PDF** uses the browser's own print, with a
+  stylesheet that drops the sidebar, topbar and buttons and forces a
+  light palette, so a dark-theme portal does not produce a black PDF.
+- **Download CSV** writes one flat table for pivoting: a `row_type`
+  column separates seats, observed users matched to no seat, and
+  personal-account use. Cells that could be read as spreadsheet
+  formulas are neutralised on the way out.
+- **Withhold names** replaces every person and device with a count, in
+  the page and in the CSV (the file is named `-anonymised`). The report
+  names individuals and their personal account domains, so circulating
+  it more widely than the seat owner deserves one deliberate click
+  rather than careful editing afterwards.
+
+The report is a view, not a stored artifact: it is generated from
+current data each time it is opened, and `#budget-report` links
+straight to it for anyone with a login.
+
 ## Currency
 
 Each subscription records its own currency - the one the vendor actually
