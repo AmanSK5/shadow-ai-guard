@@ -2401,6 +2401,24 @@ def api_identity_map_csv(request: Request,
                 u["device_name"] or "no machine name",
                 " · local users: %s" % hint if hint else ""))
 
+    # The other half of the same gap, and the half this file could not
+    # show: people the cloud sources know with no machine attached. They
+    # cannot be rows - the map is keyed on a device or a username, and
+    # these have neither - but the work is matching them against the
+    # machines above, and doing that from two separate screens is how
+    # the join stays undone. A service account or someone on leave
+    # belongs here permanently, which is a real answer rather than a gap.
+    orphans = sorted(k for k, i in identities.items()
+                     if not (i.get("devices") or ()))
+    if orphans:
+        out += ["#",
+                "# --- people with no machine attached (for reference) ---",
+                "# Not rows: the map is keyed on a machine or a username,",
+                "# and these have neither. If one of them owns a machine",
+                "# listed above, put their name against it there."]
+        for name in orphans:
+            out.append("# %s" % derive.csv_safe(name))
+
     return PlainTextResponse(
         "\n".join(out) + "\n",
         headers={"Content-Disposition":
