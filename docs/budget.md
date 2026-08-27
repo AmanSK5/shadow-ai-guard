@@ -102,6 +102,16 @@ it"*; an unmatched observed user is *"not matched to a seat"*, not
 counted separately and excluded from both lists - an identity map (Sources
 view) is what turns those into names.
 
+## Currency
+
+Each subscription records its own currency - the one the vendor actually
+invoices in. The headline reports one total per currency ("£934 + $546")
+rather than converting: a converted number would drift with the exchange
+rate while the invoices it summarises would not, so the portal never
+invents one. A **preferred currency** (Settings, or step 3 of the setup
+wizard) orders the headline and prefills newly linked tools; it converts
+nothing.
+
 ## Seat tiers
 
 Vendors sell mixed plans (Claude Team and ChatGPT Business both split
@@ -110,4 +120,8 @@ tiers, each with a seat count and a per-seat monthly price. Tier names
 matter: a user row whose seat tier matches a tier's name counts against
 that tier's seats, which is how "8 premium seats paid, 3 assigned" falls
 out. The vendor APIs do not expose per-user tiers, so tier assignment
-comes from the CSV import or the card either way.
+comes from the CSV import or the card either way. Tier matching is
+forgiving: an imported "Premium seat" counts against a tier named
+"premium" (the tier's name just has to appear in the value), and
+whatever matches nothing is named under the table with a count, never
+silently dropped to zero.

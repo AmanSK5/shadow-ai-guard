@@ -432,6 +432,17 @@ async function load(force) {
         }
       } catch (e) { /* open rows are the honest fallback */ }
     }
+    // The spend tile needs the budget data, fetched only when the widget
+    // is configured and this is a signed-in managed portal - everywhere
+    // else the tile renders as nothing rather than an error.
+    if ((CFG.overview_widgets || []).some(w => w.kind === 'budget_spend')
+        && CFG.managed && CFG.managed.enabled && AUTH
+        && AUTH.mode === 'login' && !BUDGET) {
+      try {
+        const br = await mfetch('/api/budget');
+        if (br.ok) BUDGET = await br.json();
+      } catch (e) { /* the tile simply stays absent */ }
+    }
     // Same again for the review queue: it draws from the register, and in
     // managed mode from the discovery candidates queue too.
     if ((CFG.overview_widgets || []).some(w => w.kind === 'review_queue')) {
@@ -605,6 +616,31 @@ const WIDGETS = {
       <div><dt>${ents(G.tools).length}</dt><dd>tools</dd></div>
       <div><dt${gaps.length ? ' style="color:var(--warn)"' : ''}>${gaps.length}</dt><dd>coverage gaps</dd></div>
     </dl>`;
+  },
+
+  budget_spend: () => {
+    // Managed mode only, and quiet until the budget has been fetched
+    // (load() fetches it when this widget is configured). A tile of
+    // zeros on a deployment that never linked a tool would be noise.
+    if (!BUDGET) return '';
+    const subs = BUDGET.subscriptions || [];
+    if (!subs.length) {
+      return `<div class="wcard w6"><h3>AI spend</h3>
+      <p class="lede">Nothing linked yet. The Budget view records what
+      each AI tool costs and joins it against observed use.</p>
+      <p class="src-note"><button class="mini" data-nav="budget">open Budget</button></p></div>`;
+    }
+    const next = subs.filter(s => s.renewal_date)
+      .sort((a, b) => a.renewal_date.localeCompare(b.renewal_date))[0];
+    const unob = subs.reduce((a, s) =>
+      a + bMatch(s.members || [], bObserved(s.tool_id)).unobserved.length, 0);
+    return `<div class="wcard w6"><h3>AI spend</h3>
+    <dl class="stats" style="margin-bottom:0">
+      <div><dt>${bSpendParts(subs).join(' + ')}</dt><dd>tracked / month</dd></div>
+      <div><dt>${subs.length}</dt><dd>tools linked</dd></div>
+      <div><dt${unob ? ' style="color:var(--warn)"' : ''}>${unob}</dt><dd>paid seats never observed</dd></div>
+    </dl>
+    <p class="src-note">${next ? `next renewal: ${esc(next.tool_id)} ${when(next.renewal_date)} · ` : ''}<button class="mini" data-nav="budget">open Budget</button></p></div>`;
   },
 
   top_tools: () => {
@@ -2133,7 +2169,16 @@ async function wizard() {
   <input id="set-domains" class="mfield" style="min-width:340px"
     placeholder="example.com, example.co.uk"
     value="${esc((cd.value || []).join(', '))}">
-  <button class="mini" data-act="save-domains">save</button></div>
+  <button class="mini" data-act="save-domains">save</button>
+  <div style="margin-top:12px">
+    <input id="set-budget_currency" class="mfield" style="min-width:120px"
+      placeholder="GBP"
+      value="${esc(((s.budget_currency || {}).value) || '')}">
+    <button class="mini" data-act="save-setting" data-key="budget_currency">save</button>
+    <div class="src-note">Preferred currency, for the Budget view: its
+    headline reports in it and newly linked tools default to it. A display
+    preference - nothing is ever converted.</div>
+  </div></div>
 
   <div class="wcard" style="margin-bottom:10px"><h3>4 · Governance baseline</h3>
   <p class="lede" style="margin-bottom:10px">Which AI tools your organisation
@@ -2296,6 +2341,9 @@ function alertingSettings() {
     ${settingRow('grafana_dashboard_uid', 'Grafana dashboard UID',
       'the /d/ segment of the dashboard URL',
       'Embeds one whole dashboard instead of panels. Pasting the full dashboard URL works: it is trimmed to the UID.')}
+    ${settingRow('budget_currency', 'Preferred currency',
+      'GBP',
+      'The Budget headline reports in it and newly linked tools default to it. Display preference only - nothing is converted.')}
     ${settingRow('overview_widgets', 'Overview widgets',
       'stat_row, top_tools, …  (empty = sensible default)', '')}
   </dl></div>`;
@@ -2797,6 +2845,32 @@ function bMoney(n, cur) {
   return sign ? sign + v : (cur ? esc(cur) + ' ' + v : v);
 }
 
+// The preferred currency saved in Settings, or ''. A display preference:
+// it orders the headline and prefills the wizard, and nothing is ever
+// converted - a converted number would drift with the exchange rate
+// while the invoices it summarises would not.
+const bPrefCur = () => (((SETTINGS && SETTINGS.settings || {})
+  .budget_currency || {}).value || '').toUpperCase();
+
+const bSubMonthly = s => (s.seat_tiers || []).reduce(
+  (x, t) => x + (t.seats || 0) * (t.unit_price_monthly || 0), 0);
+
+// Monthly totals per currency, preferred first: "£934 + $546" is the
+// honest spelling of a mixed estate - one summed number over two
+// currencies would be a figure that lies.
+function bSpendParts(subs) {
+  const byCur = {};
+  (subs || []).forEach(s => {
+    const c = (s.currency || '').toUpperCase();
+    byCur[c] = (byCur[c] || 0) + bSubMonthly(s);
+  });
+  const pref = bPrefCur();
+  return ents(byCur)
+    .sort((a, b) => (b[0] === pref) - (a[0] === pref)
+      || a[0].localeCompare(b[0]))
+    .map(([c, v]) => bMoney(v, c));
+}
+
 // One delimited row, with just enough quote handling for "Last, First"
 // name cells. Not a general CSV parser and not trying to be one.
 function bCsvRow(line, delim) {
@@ -3056,13 +3130,23 @@ function budgetCard(sub) {
   const {matched, unobserved, strangers} = bMatch(sub.members || [], obs);
   const days = sub.renewal_date
     ? Math.ceil((Date.parse(sub.renewal_date) - Date.now()) / 86400000) : null;
-  // Keyed lowercase: the CSV import normalises tiers to lowercase and
-  // the wizard stores whatever the operator typed, and "Premium" not
-  // counting against "premium" would be a silent zero.
-  const tierOf = {};
+  // A member's tier string rarely equals the tier's name byte for byte:
+  // exports write "Premium seat" where the wizard says "premium".
+  // Resolve by normalised equality first, then by the tier's name
+  // appearing inside the member's value (longest tier name wins). What
+  // resolves to nothing is counted and said below the table, because
+  // "assigned 0" beside thirteen imported users was exactly this
+  // mismatch presenting as silence.
+  const tierKeys = tiers.map(t => bNorm(t.name)).filter(Boolean)
+    .sort((a, b) => b.length - a.length);
+  const tierOf = {}; let noTier = 0; const oddTiers = {};
   (sub.members || []).forEach(m => {
-    const k = (m.seat_tier || '').toLowerCase();
-    tierOf[k] = (tierOf[k] || 0) + 1;
+    const k = bNorm(m.seat_tier);
+    if (!k) { noTier++; return; }
+    const hit = tierKeys.find(tk => k === tk)
+      || tierKeys.find(tk => k.includes(tk));
+    if (hit) tierOf[hit] = (tierOf[hit] || 0) + 1;
+    else oddTiers[m.seat_tier] = (oddTiers[m.seat_tier] || 0) + 1;
   });
   const usageBits = m => {
     const u = m.usage || {};
@@ -3093,9 +3177,11 @@ function budgetCard(sub) {
     ${sub.owner ? ' · owner: ' + esc(sub.owner) : ''}</p>` : ''}
   ${tiers.length ? `<table class="plain"><tr><th>tier</th><th>seats paid</th><th>assigned to users</th><th>price/seat</th><th>monthly</th></tr>
     ${tiers.map(t => `<tr><td>${esc(t.name)}</td><td class="num">${t.seats}</td>
-      <td class="num">${tierOf[(t.name || '').toLowerCase()] || 0}</td>
+      <td class="num">${tierOf[bNorm(t.name)] || 0}</td>
       <td class="num">${bMoney(t.unit_price_monthly, sub.currency)}</td>
       <td class="num">${bMoney((t.seats || 0) * (t.unit_price_monthly || 0), sub.currency)}</td></tr>`).join('')}</table>` : ''}
+  ${tiers.length && noTier ? `<p class="src-note">${noTier} user${noTier === 1 ? '' : 's'} carr${noTier === 1 ? 'ies' : 'y'} no seat tier${conn && conn.last_sync_at ? ' - the vendor API does not report tiers; a CSV import or the add-member row sets them' : ''}.</p>` : ''}
+  ${ents(oddTiers).length ? `<p class="src-note" style="color:var(--warn)">User tiers matching no tier above: ${ents(oddTiers).map(([v, n]) => `"${esc(v)}" (${n})`).join(', ')}. Rename a tier in edit, or re-import, to line them up.</p>` : ''}
   ${(sub.members || []).length ? `<details style="margin-top:8px"><summary>Users
       (${(sub.members || []).length}) — ${bProvenance(sub, conn) || 'manual'}</summary>
     <table><tr><th>member</th><th>role</th><th>seat</th><th>vendor usage</th><th>source</th></tr>
@@ -3187,14 +3273,7 @@ async function budget() {
   if (BWIZ) return budgetWizard();
   const ro = AUTH && AUTH.role === 'viewer';
   const subs = BUDGET.subscriptions || [];
-  const total = subs.reduce((a, s) => a + (s.seat_tiers || []).reduce(
-    (x, t) => x + (t.seats || 0) * (t.unit_price_monthly || 0), 0), 0);
-  // One headline number is only honest when everything is priced in one
-  // currency; a £ sign over a sum that mixes currencies would be a number
-  // that lies. Mixed gets the bare figure and says why.
-  const curs = new Set(subs.map(s => (s.currency || '').toUpperCase()));
-  const mixed = curs.size > 1;
-  const cur = mixed ? '' : [...curs][0] || '';
+  const spend = bSpendParts(subs).join(' + ') || '0';
   return `<h2>Budget</h2>
   <p class="lede">The AI tools the organisation pays for, against what the
   estate is observed doing: seats nobody uses, users no seat covers, and
@@ -3203,7 +3282,7 @@ async function budget() {
   the numbers work the same either way and each card says which it is.</p>
   ${BMSG ? `<div class="note">${esc(BMSG)}</div>` : ''}
   ${subs.length ? `<dl class="stats" style="margin-bottom:14px">
-    <div><dt>${bMoney(total, cur)}</dt><dd>tracked spend / month${mixed ? ' (mixed currencies)' : ''}</dd></div>
+    <div><dt>${spend}</dt><dd>tracked spend / month</dd></div>
     <div><dt>${subs.length}</dt><dd>tools linked</dd></div>
   </dl>` : ''}
   ${subs.map(budgetCard).join('')}
@@ -3235,7 +3314,8 @@ async function budgetAction(act, el) {
       .sort((a, b) => a.name.localeCompare(b.name))
       .find(t => seen.has(t.id)) || (REGTOOLS || [])[0];
     BWIZ = {step: 1, tool_id: first ? first.id : '',
-            source: 'csv', provider: 'anthropic', tiers: [], api_key: ''};
+            source: 'csv', provider: 'anthropic', tiers: [], api_key: '',
+            currency: bPrefCur()};
     render(); return;
   }
   if (act === 'b-edit') {
