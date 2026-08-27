@@ -508,3 +508,30 @@ def test_the_settings_tab_from_the_url_cannot_dispatch_into_the_prototype():
     assert "Object.prototype.hasOwnProperty.call(SGROUPS, SETTAB)" in html
     # The truthiness form must not come back.
     assert "if (!SGROUPS[SETTAB])" not in html
+
+
+def test_a_spelling_that_exists_only_via_the_map_still_merges():
+    """The shape that survived the first attempt at this fix. One
+    spelling comes from a cloud sign-in and becomes an identity
+    directly; the other exists ONLY because the identity map attaches it
+    to a device. Merging before attribution compared the first against a
+    name that did not exist yet, and left both rows on People - one of
+    them showing "unmapped" while its owner's machine sat on the other.
+    """
+    findings = [
+        _f(tool="claude", surface="cloud", device="", user="jeff.gillings"),
+        _f(tool="chatgpt", surface="browser", device="WIN-JEFF",
+           source="browser_extension"),
+    ]
+    graph = derive.graph_from(findings, {}, {"WIN-JEFF": "jeff gillings"})
+    ids = graph["identities"]
+    assert len(ids) == 1
+    # The spelling the operator typed into the map is the one shown: that
+    # is a decision about what to call a colleague, where a source's
+    # spelling is an accident of how it stores names.
+    assert list(ids) == ["jeff gillings"]
+    assert ids["jeff gillings"]["aliases"] == ["jeff.gillings"]
+    assert ids["jeff gillings"]["devices"] == ["WIN-JEFF"]
+    assert set(ids["jeff gillings"]["tools"]) == {"claude", "chatgpt"}
+    # And the device names the same person the rest of the product does.
+    assert graph["devices"]["WIN-JEFF"]["person"] == "jeff gillings"
