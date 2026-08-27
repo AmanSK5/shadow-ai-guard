@@ -307,6 +307,13 @@ let G = {devices:{},identities:{},tools:{},bridges:{},unattributed:[],counts:{}}
 // is not hoisted, so declaring them lower down is a TDZ error on first
 // refresh.
 let SETTAB = 'fleet';
+// The Settings sub-tabs, up here with SETTAB for the same reason: SETTAB is
+// set from the URL fragment by fromHash(), which runs while the module is
+// still evaluating, so the list it is checked against has to exist by then.
+const STABS = [['fleet', 'Fleet'], ['connection', 'Receiver & log store'],
+               ['alerting', 'Display & alerting'], ['account', 'Account'],
+               ['diagnostics', 'Diagnostics']];
+const SETTABS = STABS.map(([id]) => id);
 let DIAG = null;
 let REG = null;
 let EV = null;
@@ -586,8 +593,10 @@ const fromHash = () => {
   const h = (location.hash || '').replace(/^#/, '');
   // #settings/account addresses a sub-tab; the view is still settings.
   if (h.startsWith('settings/')) {
+    // Checked against the known tabs exactly like the view below it. This
+    // is the point the value stops being a fragment and starts being a tab.
     const tab = h.split('/')[1];
-    if (tab) SETTAB = tab;
+    if (SETTABS.includes(tab)) SETTAB = tab;
     return 'settings';
   }
   return VIEWS.includes(h) ? h : 'setup';
@@ -2788,24 +2797,16 @@ async function settings() {
   if (!managed || !SETTINGS) return `<h2>Settings and diagnostics</h2>
     ${diagnosticsCards()}`;
 
-  // A Map, not an object literal. SETTAB is reachable from the URL
-  // (#settings/<tab>), and an object carries every name it inherits:
-  // constructor, toString and __defineGetter__ all resolved to something
-  // callable, so a crafted link dispatched into Object.prototype and
-  // rendered nonsense or threw. An own-property guard fixed the
-  // behaviour but left the shape - obj[userControlled]() - which is
-  // worth removing rather than annotating: a Map has no inherited keys,
-  // has() answers the question honestly, and what gets called below is a
-  // plain function value rather than a member looked up by name.
-  const SGROUPS = new Map([
-    ['fleet', fleetSettings], ['connection', connectionSettings],
-    ['alerting', alertingSettings], ['account', accountSettings],
-    ['diagnostics', diagnosticsCards]]);
-  const STABS = [['fleet', 'Fleet'], ['connection', 'Receiver & log store'],
-                 ['alerting', 'Display & alerting'], ['account', 'Account'],
-                 ['diagnostics', 'Diagnostics']];
-  if (!SGROUPS.has(SETTAB)) SETTAB = 'fleet';
-  const settingsGroup = SGROUPS.get(SETTAB);
+  // Named outright rather than looked up by a key that came from the URL.
+  // SETTAB is allow-listed where it enters, in fromHash(), so it can only
+  // be one of these; spelling the branches out means there is no name to
+  // dispatch on here at all, and nothing to get wrong twice.
+  let body;
+  if (SETTAB === 'connection') body = connectionSettings();
+  else if (SETTAB === 'alerting') body = alertingSettings();
+  else if (SETTAB === 'account') body = accountSettings();
+  else if (SETTAB === 'diagnostics') body = diagnosticsCards();
+  else { SETTAB = 'fleet'; body = fleetSettings(); }
   return `<h2>Settings</h2>
   <p class="lede">Central settings are editable and reach the fleet at
   runtime - a value saved here overrides the matching environment variable.
@@ -2813,7 +2814,7 @@ async function settings() {
   ${SETMSG ? `<div class="note">${esc(SETMSG)}</div>` : ''}
   <div class="tabs">${STABS.map(([id, lbl]) =>
     `<button data-settab="${id}" class="${SETTAB===id?'on':''}">${lbl}</button>`).join('')}</div>
-  ${settingsGroup()}`;
+  ${body}`;
 }
 
 // Repo docs as real links, pinned to the release this portal runs - the
@@ -4937,7 +4938,9 @@ app.addEventListener('change', e => {
 app.addEventListener('click', e => {
   const el = e.target.closest('[data-settab]');
   if (!el) return;
-  SETTAB = el.getAttribute('data-settab');
+  const tab = el.getAttribute('data-settab');
+  if (!SETTABS.includes(tab)) return;
+  SETTAB = tab;
   // In the fragment like every other navigation in this page, so a
   // reload keeps the tab and a colleague can be sent the one you mean.
   history.replaceState(null, '', '#settings/' + SETTAB);
