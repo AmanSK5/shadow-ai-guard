@@ -175,14 +175,16 @@ straight to it for anyone with a login.
 
 Each subscription records its own currency - the one the vendor actually
 invoices in - and those per-currency totals are always shown. Set a
-**preferred currency** (Settings, or step 3 of the setup wizard) and the
-headline additionally converts into it using the ECB's daily reference
+**preferred currency** (Settings > Display and alerting, or step 3 of the
+setup wizard) and the headline additionally converts into it using the ECB's daily reference
 rate, fetched by the receiver from the keyless Frankfurter API and
 cached for half a day. The conversion never hides its working: the rate
 date and the unconverted per-currency figures sit right beside the
 converted number, and if the rate source cannot answer - or a
 subscription uses a currency the ECB does not fix - the headline simply
-falls back to the per-currency breakdown. Newly linked tools default to
+falls back to the per-currency breakdown, and says which of those it
+is: no preferred currency set, a rate source the deployment cannot
+reach, or a currency the ECB does not fix. Newly linked tools default to
 the preferred currency.
 
 ## Seat tiers
