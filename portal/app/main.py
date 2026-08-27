@@ -2031,6 +2031,7 @@ def registry_tools(request: Request, _=Depends(require_auth)):
     return {"tools": [
         {"id": t["id"], "name": t.get("name") or t["id"],
          "vendor": t.get("vendor") or "", "approved": bool(t.get("approved")),
+         "license_group": t.get("license_group") or "",
          "custom": t.get("added_by") == "portal"}
         for t in (reg.get("tools") or []) if t.get("id")]}
 
@@ -2096,6 +2097,7 @@ class BudgetSeatTier(BaseModel):
     name: str = Field(min_length=1, max_length=64)
     seats: int = Field(default=0, ge=0, le=100000)
     unit_price_monthly: float = Field(default=0, ge=0, le=1000000)
+    covers: list[str] = Field(default_factory=list, max_length=10)
 
 
 class BudgetSubscriptionWrite(BaseModel):
@@ -2109,6 +2111,7 @@ class BudgetSubscriptionWrite(BaseModel):
     notes: str = Field(default="", max_length=1000)
     seat_tiers: list[BudgetSeatTier] = Field(default_factory=list,
                                              max_length=10)
+    covers: list[str] = Field(default_factory=list, max_length=10)
 
 
 class BudgetMemberWrite(BaseModel):

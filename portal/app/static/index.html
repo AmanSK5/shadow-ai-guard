@@ -638,7 +638,7 @@ const WIDGETS = {
     const next = subs.filter(s => s.renewal_date)
       .sort((a, b) => a.renewal_date.localeCompare(b.renewal_date))[0];
     const unob = subs.reduce((a, s) =>
-      a + bMatch(s.members || [], bObserved(s.tool_id)).unobserved.length, 0);
+      a + bReconcile(s).unobserved.length, 0);
     return `<div class="wcard w6"><h3>AI spend</h3>
     <dl class="stats" style="margin-bottom:0">
       <div><dt>${(() => { const c = bConverted(subs);
@@ -2840,18 +2840,6 @@ const bNorm = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 // Findings never carry full addresses - the platform stores account
 // DOMAINS and identity hints, deliberately - so a user's email is matched
 // on its local part against the observed identities and mapped persons.
-function bObserved(toolId) {
-  const t = (G.tools || {})[toolId] || {};
-  const names = new Set(t.identities || []);
-  let devices = 0, unlinked = 0;
-  ents(G.devices).forEach(([k, d]) => {
-    if (!(d.tools || []).includes(toolId)) return;
-    devices++;
-    if (d.person) names.add(d.person); else unlinked++;
-  });
-  const personal = (G.personal_accounts || []).filter(r => r.tool === toolId);
-  return {names: [...names], devices, unlinked, personal};
-}
 
 // Every key a person can be recognised by: the whole string normalised,
 // plus the local part normalised when it is an address. The shapes in
@@ -2872,19 +2860,116 @@ function bKeys(s) {
   return out;
 }
 
-function bMatch(members, obs) {
-  const seen = new Map();
-  obs.names.forEach(n => bKeys(n).forEach(k => seen.set(k, n)));
+// The tools a subscription's licence entitles: its own tool plus the
+// stored covers list. Older rows carry an empty covers and mean exactly
+// what they always meant - the one tool.
+const bCovers = sub => {
+  const out = [sub.tool_id];
+  (sub.covers || []).forEach(t => { if (!out.includes(t)) out.push(t); });
+  return out;
+};
+
+// A tier's effective coverage: its own list when it has one, else
+// everything the subscription covers.
+const bTierCovers = (t, eff) =>
+  (t && t.covers && t.covers.length) ? t.covers : eff;
+
+// bObserved across the whole covered set, keeping the per-tool split so
+// the card can say HOW the licence is used, not just that it is.
+function bObservedMulti(tools) {
+  const perTool = {};
+  tools.forEach(t => {
+    perTool[t] = new Set((((G.tools || {})[t]) || {}).identities || []);
+  });
+  let devices = 0, unlinked = 0;
+  ents(G.devices).forEach(([k, d]) => {
+    const hits = tools.filter(t => (d.tools || []).includes(t));
+    if (!hits.length) return;
+    devices++;
+    if (d.person) hits.forEach(t => perTool[t].add(d.person));
+    else unlinked++;
+  });
+  const names = new Set();
+  tools.forEach(t => perTool[t].forEach(n => names.add(n)));
+  const personal = (G.personal_accounts || [])
+    .filter(r => tools.includes(r.tool));
+  return {names: [...names], perTool, devices, unlinked, personal};
+}
+
+// Which tier a member sits on, by the same forgiving name containment
+// the tier table counts with. A single-tier plan claims everyone.
+function bTierResolver(tiers, eff) {
+  const entries = (tiers || []).map(t => ({t, key: bNorm(t.name)}))
+    .filter(e => e.key).sort((a, b) => b.key.length - a.key.length);
+  const sole = entries.length === 1 ? entries[0].t : null;
+  return m => {
+    const k = bNorm(m.seat_tier);
+    if (!k) return sole;
+    const hit = entries.find(e => k === e.key)
+      || entries.find(e => k.includes(e.key));
+    return hit ? hit.t : sole;
+  };
+}
+
+// The whole join for one subscription. "Never observed" is one verdict
+// judged against the whole covered set: only someone invisible on every
+// covered tool lands in unobserved. Per-tool presence survives on the
+// positive side (seenOn), and the entitlement findings are the one place
+// per-tool absence appears - framed as seat economics, not absence:
+//   unused    - a tier's exclusive tool (premium's claude-code) that a
+//               member of that tier has never been seen on
+//   uncovered - a member seen on a tool their tier does not cover
+function bReconcile(sub) {
+  const eff = bCovers(sub);
+  const obs = bObservedMulti(eff);
+  const keysByTool = {};
+  eff.forEach(t => {
+    const map = new Map();
+    obs.perTool[t].forEach(n => bKeys(n).forEach(k => map.set(k, n)));
+    keysByTool[t] = map;
+  });
+  const tiers = sub.seat_tiers || [];
+  const resolveTier = bTierResolver(tiers, eff);
   const matched = [], unobserved = [];
   const usedNames = new Set();
-  members.forEach(m => {
+  (sub.members || []).forEach(m => {
     const keys = [...bKeys(m.email), ...bKeys(m.name)];
-    const hit = keys.find(k => seen.has(k));
-    if (hit) { matched.push(m); usedNames.add(seen.get(hit)); }
-    else unobserved.push(m);
+    const seenOn = eff.filter(t => keys.some(k => keysByTool[t].has(k)));
+    seenOn.forEach(t => keys.forEach(k => {
+      const n = keysByTool[t].get(k);
+      if (n) usedNames.add(n);
+    }));
+    const tier = resolveTier(m);
+    if (seenOn.length) matched.push({m, tier, seenOn});
+    else unobserved.push({m, tier});
   });
   const strangers = obs.names.filter(n => !usedNames.has(n));
-  return {matched, unobserved, strangers};
+  const findings = [];
+  if (tiers.length > 1) {
+    eff.forEach(tool => {
+      const covering = tiers.filter(t => bTierCovers(t, eff).includes(tool));
+      tiers.forEach(T => {
+        const covers = bTierCovers(T, eff).includes(tool);
+        if (covers && covering.length < tiers.length) {
+          const ms = matched
+            .filter(x => x.tier === T && !x.seenOn.includes(tool))
+            .map(x => x.m.email)
+            .concat(unobserved.filter(x => x.tier === T)
+              .map(x => x.m.email));
+          if (ms.length) findings.push(
+            {tier: T.name, tool, kind: 'unused', members: ms});
+        }
+        if (!covers) {
+          const ms = matched
+            .filter(x => x.tier === T && x.seenOn.includes(tool))
+            .map(x => x.m.email);
+          if (ms.length) findings.push(
+            {tier: T.name, tool, kind: 'uncovered', members: ms});
+        }
+      });
+    });
+  }
+  return {eff, obs, matched, unobserved, strangers, findings};
 }
 
 const CURRENCY_SIGNS = {GBP: '£', USD: '$', EUR: '€'};
@@ -3046,9 +3131,16 @@ const BPROVIDER_NONE = `ChatGPT Business (Team) has no admin API - OpenAI
   through the guided import below. That is the vendor's boundary, not this
   page's.`;
 
-function bTierRows(tiers) {
+function bTierRows(tiers, eff) {
   const rows = [...(tiers || [])];
   while (rows.length < Math.min(4, (tiers || []).length + 2)) rows.push({});
+  const covRow = (t, i) => (eff || []).length < 2 ? '' :
+    `<div style="margin:-2px 0 8px 2px;font-size:11.5px;color:var(--mut)">covers:
+      ${eff.map(tool => `<label style="margin-right:12px;cursor:pointer">
+        <input type="checkbox" id="bt-cov-${i}-${esc(tool)}"
+          style="min-width:0;margin:0 4px 0 0;accent-color:var(--pri)"
+          ${!t.covers || !t.covers.length || t.covers.includes(tool) ? 'checked' : ''}>${esc(tool)}</label>`).join('')}
+    </div>`;
   return rows.map((t, i) => `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px">
     <input id="bt-name-${i}" class="mfield" style="min-width:140px" placeholder="tier, e.g. premium"
       value="${esc(t.name || '')}">
@@ -3056,17 +3148,26 @@ function bTierRows(tiers) {
       value="${t.seats != null ? esc(String(t.seats)) : ''}">
     <input id="bt-price-${i}" class="mfield" style="min-width:120px" placeholder="price / seat / month"
       value="${t.unit_price_monthly != null ? esc(String(t.unit_price_monthly)) : ''}">
-  </div>`).join('');
+  </div>${covRow(t, i)}`).join('');
 }
 
-function bReadTiers() {
+function bReadTiers(eff) {
   const tiers = [];
   for (let i = 0; i < 6; i++) {
     const name = _val('bt-name-' + i);
     if (!name) continue;
-    tiers.push({name,
+    const tier = {name,
       seats: parseInt(_val('bt-seats-' + i), 10) || 0,
-      unit_price_monthly: parseFloat(_val('bt-price-' + i)) || 0});
+      unit_price_monthly: parseFloat(_val('bt-price-' + i)) || 0};
+    if ((eff || []).length > 1
+        && document.getElementById('bt-cov-' + i + '-' + eff[0])) {
+      const cs = eff.filter(tool =>
+        document.getElementById('bt-cov-' + i + '-' + tool)?.checked);
+      // Everything ticked - or nothing, which cannot mean "covers
+      // nothing" - reads as the subscription's full coverage.
+      tier.covers = (cs.length && cs.length < eff.length) ? cs : [];
+    } else tier.covers = (tiers[i] || {}).covers || [];
+    tiers.push(tier);
   }
   return tiers;
 }
@@ -3078,6 +3179,11 @@ function bStash() {
   if (document.getElementById('bw-tool')) w.tool_id = _val('bw-tool');
   if (document.getElementById('bw-vendor')) {
     w.vendor = _val('bw-vendor'); w.plan = _val('bw-plan');
+    const boxes = document.querySelectorAll('[id^="bwc-"]');
+    if (boxes.length) {
+      w.covers = [...boxes].filter(el => el.checked && !el.disabled)
+        .map(el => el.id.slice(4));
+    }
   }
   if (document.getElementById('bw-source')) {
     w.source = (document.querySelector('input[name="bw-source"]:checked') || {}).value || w.source;
@@ -3085,7 +3191,7 @@ function bStash() {
     if (document.getElementById('bw-key')) w.api_key = _val('bw-key');
   }
   if (document.getElementById('bt-name-0')) {
-    w.tiers = bReadTiers();
+    w.tiers = bReadTiers([w.tool_id].concat(w.covers || []));
     w.currency = _val('bw-currency'); w.renewal = _val('bw-renewal');
     w.owner = _val('bw-owner');
   }
@@ -3112,10 +3218,21 @@ function budgetWizard() {
           // one the estate already uses, and 38 registry entries in one
           // flat list buries it.
           const seen = new Set(Object.keys(G.tools || {}));
-          const opt = t => `<option value="${esc(t.id)}"
+          const coveredBy = {};
+          (BUDGET.subscriptions || []).forEach(o => {
+            bCovers(o).forEach(t => { coveredBy[t] = o.tool_id; });
+          });
+          const opt = t => {
+            const taken = t.id !== w.tool_id
+              && (linked.has(t.id) || coveredBy[t.id]);
+            const label = !taken ? ''
+              : linked.has(t.id) ? ' (linked)'
+              : ` (covered by ${coveredBy[t.id]})`;
+            return `<option value="${esc(t.id)}"
             ${t.id === w.tool_id ? 'selected' : ''}
-            ${linked.has(t.id) && t.id !== w.tool_id ? 'disabled' : ''}>
-            ${esc(t.name)}${linked.has(t.id) && t.id !== w.tool_id ? ' (linked)' : ''}</option>`;
+            ${taken ? 'disabled' : ''}>
+            ${esc(t.name)}${esc(label)}</option>`;
+          };
           const obs = tools.filter(t => seen.has(t.id));
           const rest = tools.filter(t => !seen.has(t.id));
           return `<select id="bw-tool" class="mfield" style="min-width:220px">
@@ -3128,6 +3245,43 @@ function budgetWizard() {
         and spend stay one list.</div>`; })()}</dd>
       <dt>Vendor</dt><dd><input id="bw-vendor" class="mfield" value="${esc(w.vendor || '')}" placeholder="e.g. Anthropic"></dd>
       <dt>Plan</dt><dd><input id="bw-plan" class="mfield" value="${esc(w.plan || '')}" placeholder="e.g. Team (standard + premium seats)"></dd>
+      ${(() => {
+        // One licence often entitles several tools - a Claude seat covers
+        // claude AND claude-code - and linking them separately bills the
+        // same licence twice while halving every observed-use answer.
+        // Tools sharing the primary's licence group arrive pre-ticked.
+        const primary = w.tool_id;
+        const byId = {};
+        (REGTOOLS || []).forEach(t => { byId[t.id] = t; });
+        const group = (byId[primary] || {}).license_group || '';
+        const vendor = (byId[primary] || {}).vendor || '';
+        const coveredBy = {};
+        (BUDGET.subscriptions || []).forEach(o => {
+          if (o.tool_id === primary) return;
+          bCovers(o).forEach(t => { coveredBy[t] = o.tool_id; });
+        });
+        const others = (REGTOOLS || []).filter(t => t.id !== primary);
+        const mates = others.filter(t => group && t.license_group === group);
+        const kin = others.filter(t => !mates.includes(t) && vendor && t.vendor === vendor);
+        const rest = others.filter(t => !mates.includes(t) && !kin.includes(t));
+        const on = new Set(w.covers == null
+          ? mates.filter(t => !coveredBy[t.id]).map(t => t.id)
+          : w.covers);
+        const box = t => `<label style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px;cursor:pointer">
+          <input type="checkbox" id="bwc-${esc(t.id)}"
+            style="min-width:0;margin:0;accent-color:var(--pri)"
+            ${on.has(t.id) ? 'checked' : ''} ${coveredBy[t.id] ? 'disabled' : ''}>
+          <span><span class="mono">${esc(t.id)}</span>${coveredBy[t.id]
+            ? ` <span style="color:var(--mut)">(covered by ${esc(coveredBy[t.id])})</span>`
+            : mates.includes(t) ? ' <span class="pill p-acc">same licence</span>' : ''}</span>
+        </label>`;
+        return `<dt>Also covers</dt><dd>
+          ${mates.map(box).join('')}${kin.map(box).join('')}
+          ${rest.length ? `<details><summary style="font-size:12px;color:var(--mut);cursor:pointer">more tools…</summary>${rest.map(box).join('')}</details>` : ''}
+          <div class="src-note">Every tool this one licence entitles. One
+          subscription per licence: a member seen on any covered tool
+          counts as observed, and the spend is counted once.</div></dd>`;
+      })()}
     </dl>
     <button class="mini" data-act="b-step" data-key="2">next</button>` : ''}
   ${step(2) ? `
@@ -3170,7 +3324,7 @@ function budgetWizard() {
     <button class="mini" data-act="b-step" data-key="3">next</button>` : ''}
   ${step(3) ? `
     <p style="margin-top:0"><strong>Seats and pricing</strong></p>
-    ${bTierRows(w.tiers)}
+    ${bTierRows(w.tiers, [w.tool_id].concat(w.covers || []))}
     <dl class="kv">
       <dt>Currency</dt><dd><input id="bw-currency" class="mfield" style="min-width:80px"
         value="${esc(w.currency || '')}" placeholder="GBP"></dd>
@@ -3181,7 +3335,10 @@ function budgetWizard() {
     </dl>
     <p class="src-note">Tier names matter: a user row whose seat tier
     matches a name here is counted against that tier's seats. The vendor
-    APIs do not expose per-user tiers, so tiers come from you either way.</p>
+    APIs do not expose per-user tiers, so tiers come from you either way.
+    ${(w.covers || []).length ? 'Per-tier coverage is how "premium includes '
+      + 'claude-code, standard does not" is said - it powers the '
+      + 'seat-economics findings on the card.' : ''}</p>
     <button class="mini" data-act="b-step" data-key="2">back</button>
     <button class="mini" data-act="b-save">${w.editing ? 'save changes' : 'link tool'}</button>` : ''}
   <p class="src-note" style="margin-bottom:0">
@@ -3227,26 +3384,14 @@ function budgetCard(sub) {
   const tiers = sub.seat_tiers || [];
   const monthly = tiers.reduce((a, t) => a + (t.seats || 0) * (t.unit_price_monthly || 0), 0);
   const seats = tiers.reduce((a, t) => a + (t.seats || 0), 0);
-  const obs = bObserved(sub.tool_id);
-  const {matched, unobserved, strangers} = bMatch(sub.members || [], obs);
+  const {eff, obs, matched, unobserved, strangers, findings} = bReconcile(sub);
   const days = sub.renewal_date
     ? Math.ceil((Date.parse(sub.renewal_date) - Date.now()) / 86400000) : null;
-  // A member's tier string rarely equals the tier's name byte for byte:
-  // exports write "Premium seat" where the wizard says "premium".
-  // Resolve by normalised equality first, then by the tier's name
-  // appearing inside the member's value (longest tier name wins). What
-  // resolves to nothing is counted and said below the table, because
-  // "assigned 0" beside thirteen imported users was exactly this
-  // mismatch presenting as silence.
+  // The tier table counts by the same forgiving containment the
+  // resolver matches with; what resolves to nothing is counted and said
+  // below the table rather than silently dropped to zero.
   const tierKeys = tiers.map(t => bNorm(t.name)).filter(Boolean)
     .sort((a, b) => b.length - a.length);
-  // A single-tier plan needs no per-user tier data at all: everyone on
-  // the plan is on that tier by definition, so members with none
-  // recorded count against it automatically. That is exactly the case
-  // the vendor APIs leave behind - they report members but no seats -
-  // and it is the one derivation that needs no vendor data to be true.
-  // Multi-tier plans cannot guess, so there the no-tier members stay
-  // counted and named below the table.
   const soleTier = tierKeys.length === 1 ? tierKeys[0] : null;
   const tierOf = {}; let noTier = 0; const oddTiers = {};
   (sub.members || []).forEach(m => {
@@ -3268,15 +3413,53 @@ function budgetCard(sub) {
     if (u.minutes != null) b.push(u.minutes + ' min');
     return b.join(', ');
   };
+  const seenOnByEmail = {};
+  matched.forEach(x => { seenOnByEmail[x.m.email] = x.seenOn; });
+  const pills = m => eff.length > 1 && (seenOnByEmail[m.email] || []).length
+    ? `<br>${seenOnByEmail[m.email].map(t =>
+        `<span class="pill p-ok" style="font-size:10px">${esc(t)}</span>`).join(' ')}`
+    : '';
   const memberRow = m => `<tr>
-    <td>${esc(m.email)}${m.name ? `<br><span style="font-size:11px;color:var(--mut)">${esc(m.name)}</span>` : ''}</td>
+    <td>${esc(m.email)}${m.name ? `<br><span style="font-size:11px;color:var(--mut)">${esc(m.name)}</span>` : ''}${pills(m)}</td>
     <td>${esc(m.role || '—')}</td><td>${esc(m.seat_tier || '—')}</td>
     <td>${esc(usageBits(m) || '')}</td>
     <td>${m.source === 'manual' && !ro
       ? `<button class="mini" data-act="b-mdel" data-tool="${esc(sub.tool_id)}" data-key="${esc(m.email)}">remove</button>`
       : `<span class="pill p-mut">${esc(m.source)}</span>`}</td></tr>`;
+  // The same licence linked twice, from before covers existed: name the
+  // fold-together steps on the card rather than leave the double count
+  // for someone to notice in a spreadsheet.
+  const groupOf = {};
+  (REGTOOLS || []).forEach(t => { if (t.license_group) groupOf[t.id] = t.license_group; });
+  const myGroups = new Set(eff.map(t => groupOf[t]).filter(Boolean));
+  const twins = (BUDGET.subscriptions || []).filter(o =>
+    o.tool_id !== sub.tool_id && myGroups.has(groupOf[o.tool_id]));
+  const findingBlock = f => f.kind === 'unused'
+    ? `<details><summary>${f.members.length} ${esc(f.tier)}
+        ${f.members.length === 1 ? 'seat' : 'seats'} never observed on
+        ${esc(f.tool)} — the ${esc(f.tier)} delta may be unused</summary>
+      <p class="src-note">${esc(f.tool)} access is what a ${esc(f.tier)}
+      seat buys over the tiers that lack it. A member using the rest of
+      the licence but never this counts as observed - this list is seat
+      economics, not absence.</p>
+      <ul>${f.members.map(e => `<li>${esc(e)}</li>`).join('')}</ul></details>`
+    : `<details><summary style="color:var(--warn)">${f.members.length}
+        ${esc(f.tier)} ${f.members.length === 1 ? 'seat' : 'seats'} observed
+        on ${esc(f.tool)}, which that tier does not cover</summary>
+      <p class="src-note">Either the tier's coverage here is recorded too
+      narrowly, or these people have access their seat should not grant -
+      worth knowing which.</p>
+      <ul>${f.members.map(e => `<li>${esc(e)}</li>`).join('')}</ul></details>`;
   return `<div class="wcard" style="margin-bottom:12px"><h3>${esc(sub.tool_id)}
-    ${sub.plan ? `<span class="pill p-acc">${esc(sub.plan)}</span>` : ''}</h3>
+    ${sub.plan ? `<span class="pill p-acc">${esc(sub.plan)}</span>` : ''}
+    ${eff.length > 1 ? `<span style="font-size:12px;color:var(--mut);font-weight:normal">covers ${eff.map(esc).join(' + ')}</span>` : ''}</h3>
+  ${twins.length ? `<div class="note">${twins.map(o => esc(o.tool_id)).join(', ')}
+    ${twins.length === 1 ? 'is' : 'are'} linked separately but
+    ${twins.length === 1 ? 'shares' : 'share'} this licence. One licence,
+    one subscription: unlink ${twins.map(o => esc(o.tool_id)).join(', ')},
+    then edit this one and tick ${twins.length === 1 ? 'it' : 'them'} under
+    "also covers" - the spend stops double-counting and observed use
+    unifies.</div>` : ''}
   <dl class="stats">
     <div><dt>${bMoney(monthly, sub.currency)}</dt><dd>per month, ${seats} seats</dd></div>
     <div><dt>${(sub.members || []).length}</dt><dd>on the company account</dd></div>
@@ -3285,14 +3468,19 @@ function budgetCard(sub) {
     <div><dt${strangers.length ? ' style="color:var(--warn)"' : ''}>${strangers.length}</dt><dd>observed users not matched to a seat</dd></div>
     <div><dt${obs.personal.length ? ' style="color:var(--dstr)"' : ''}>${obs.personal.length}</dt><dd>personal-account uses</dd></div>
   </dl>
+  ${eff.length > 1 && matched.length ? `<p class="src-note">observed on:
+    ${eff.map(t => `${esc(t)} ${matched.filter(x => x.seenOn.includes(t)).length}`).join(' · ')}
+    — one licence, several surfaces; a member seen on any of them counts
+    as observed.</p>` : ''}
   ${days != null ? `<p class="src-note">renews ${when(sub.renewal_date)}
     ${days <= 30 ? `<span class="pill p-amb">${days <= 0 ? 'past due' : 'in ' + days + 'd'}</span>` : ''}
     ${sub.owner ? ' · owner: ' + esc(sub.owner) : ''}</p>` : ''}
-  ${tiers.length ? `<table class="plain"><tr><th>tier</th><th>seats paid</th><th>assigned to users</th><th>price/seat</th><th>monthly</th></tr>
+  ${tiers.length ? `<table class="plain"><tr><th>tier</th><th>seats paid</th><th>assigned to users</th><th>price/seat</th><th>monthly</th>${eff.length > 1 ? '<th>covers</th>' : ''}</tr>
     ${tiers.map(t => `<tr><td>${esc(t.name)}</td><td class="num">${t.seats}</td>
       <td class="num">${tierOf[bNorm(t.name)] || 0}</td>
       <td class="num">${bMoney(t.unit_price_monthly, sub.currency)}</td>
-      <td class="num">${bMoney((t.seats || 0) * (t.unit_price_monthly || 0), sub.currency)}</td></tr>`).join('')}</table>` : ''}
+      <td class="num">${bMoney((t.seats || 0) * (t.unit_price_monthly || 0), sub.currency)}</td>
+      ${eff.length > 1 ? `<td>${bTierCovers(t, eff).map(esc).join(', ')}</td>` : ''}</tr>`).join('')}</table>` : ''}
   ${tiers.length && noTier ? `<p class="src-note">${noTier} user${noTier === 1 ? '' : 's'} carr${noTier === 1 ? 'ies' : 'y'} no seat tier${conn && conn.last_sync_at ? ' - the vendor API does not report tiers; a CSV import or the add-member row sets them' : ''}.</p>` : ''}
   ${ents(oddTiers).length ? `<p class="src-note" style="color:var(--warn)">User tiers matching no tier above: ${ents(oddTiers).map(([v, n]) => `"${esc(v)}" (${n})`).join(', ')}. Rename a tier in edit, or re-import, to line them up.</p>` : ''}
   ${(sub.members || []).length ? `<details style="margin-top:8px"><summary>Users
@@ -3303,10 +3491,13 @@ function budgetCard(sub) {
   ${unobserved.length ? `<details><summary>${unobserved.length} paid
       ${unobserved.length === 1 ? 'seat' : 'seats'} with no observed use — downgrade candidates</summary>
     <p class="src-note">"Never observed" means no detection surface has
-    matched this member to activity on ${esc(sub.tool_id)} in the current
+    matched this member to activity on ${eff.length > 1
+      ? 'any tool this licence covers (' + eff.map(esc).join(', ') + ')'
+      : esc(sub.tool_id)} in the current
     window. Coverage gaps look the same as absence: check the Sources view
     before acting on this list.</p>
-    <ul>${unobserved.map(m => `<li>${esc(m.email)}${m.seat_tier ? ` <span class="pill p-mut">${esc(m.seat_tier)}</span>` : ''}</li>`).join('')}</ul></details>` : ''}
+    <ul>${unobserved.map(x => `<li>${esc(x.m.email)}${x.m.seat_tier ? ` <span class="pill p-mut">${esc(x.m.seat_tier)}</span>` : ''}</li>`).join('')}</ul></details>` : ''}
+  ${findings.map(findingBlock).join('')}
   ${strangers.length ? `<details><summary>${strangers.length} observed
       ${strangers.length === 1 ? 'user' : 'users'} not matched to any seat</summary>
     <p class="src-note">Observed identities that matched nobody on the
@@ -3315,9 +3506,10 @@ function budgetCard(sub) {
     accounts below is the shadow-spend picture this page exists for.</p>
     <ul>${strangers.map(n => `<li>${esc(n)}</li>`).join('')}</ul></details>` : ''}
   ${obs.personal.length ? `<details><summary style="color:var(--dstr)">${obs.personal.length}
-      personal-account ${obs.personal.length === 1 ? 'use' : 'uses'} of ${esc(sub.tool_id)}</summary>
-    <table><tr><th>who</th><th>account domain</th><th>device</th><th>last seen</th></tr>
+      personal-account ${obs.personal.length === 1 ? 'use' : 'uses'} of ${eff.length > 1 ? 'this licence' : esc(sub.tool_id)}</summary>
+    <table><tr><th>who</th>${eff.length > 1 ? '<th>tool</th>' : ''}<th>account domain</th><th>device</th><th>last seen</th></tr>
     ${obs.personal.map(r => `<tr><td>${esc(r.user || '—')}</td>
+      ${eff.length > 1 ? `<td>${esc(r.tool)}</td>` : ''}
       <td class="mono">${esc(r.account_domain)}</td>
       <td>${esc(r.device_name || r.device || '—')}</td>
       <td>${when(r.last_seen)}</td></tr>`).join('')}</table>
@@ -3326,7 +3518,8 @@ function budgetCard(sub) {
     same tool is exactly the spend question.</p></details>` : ''}
   ${obs.unlinked ? `<p class="src-note">${obs.unlinked}
     device${obs.unlinked === 1 ? '' : 's'} run${obs.unlinked === 1 ? 's' : ''}
-    ${esc(sub.tool_id)} with no person attached - not counted anywhere
+    ${eff.length > 1 ? 'tools this licence covers' : esc(sub.tool_id)}
+    with no person attached - not counted anywhere
     above. An identity map (Sources view) links them.</p>` : ''}
   ${ro ? '' : `<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
     ${conn ? `<button class="mini" data-act="b-sync" data-key="${esc(sub.tool_id)}">sync users now</button>` : ''}
@@ -3447,7 +3640,7 @@ async function budgetAction(act, el) {
       .find(t => seen.has(t.id)) || (REGTOOLS || [])[0];
     BWIZ = {step: 1, tool_id: first ? first.id : '',
             source: 'csv', provider: 'anthropic', tiers: [], api_key: '',
-            currency: bPrefCur()};
+            covers: null, currency: bPrefCur()};
     render(); return;
   }
   if (act === 'b-edit') {
@@ -3458,6 +3651,7 @@ async function budgetAction(act, el) {
             plan: sub.plan, source: conn ? 'api' : 'csv',
             provider: conn ? conn.provider : 'anthropic', api_key: '',
             key_set: !!conn, tiers: sub.seat_tiers || [],
+            covers: bCovers(sub).filter(t => t !== key),
             currency: sub.currency, renewal: sub.renewal_date,
             owner: sub.owner};
     render(); return;
@@ -3479,7 +3673,8 @@ async function budgetAction(act, el) {
     let r = await post('/api/budget/subscription', {
       tool_id: w.tool_id, vendor: w.vendor || '', plan: w.plan || '',
       currency: (w.currency || '').toUpperCase(), renewal_date: w.renewal || '',
-      owner: w.owner || '', seat_tiers: w.tiers || []});
+      owner: w.owner || '', covers: w.covers || [],
+      seat_tiers: w.tiers || []});
     if (!r) return;
     if (!r.ok) { BMSG = 'Not saved: ' + await _refusal(r); render(); return; }
     if (w.source === 'api' && w.api_key) {
@@ -4141,6 +4336,15 @@ app.addEventListener('click', e => {
   view = el.getAttribute('data-nav'); detail = null;
   history.replaceState(null, '', '#' + view);
   drawNav(); render();
+});
+// Changing the wizard's tool re-suggests what the licence covers: the
+// checkboxes belong to the selected tool's licence group, not the page.
+app.addEventListener('change', e => {
+  if (e.target && e.target.id === 'bw-tool' && BWIZ) {
+    BWIZ.tool_id = e.target.value;
+    BWIZ.covers = null;
+    render();
+  }
 });
 // The Settings sub-tabs, delegated like everything else in #app.
 app.addEventListener('click', e => {

@@ -165,6 +165,7 @@ CREATE TABLE IF NOT EXISTS budget_subscriptions (
   owner        TEXT NOT NULL DEFAULT '',
   notes        TEXT NOT NULL DEFAULT '',
   seat_tiers   TEXT NOT NULL DEFAULT '[]',
+  covers       TEXT NOT NULL DEFAULT '[]',
   created_at   TEXT NOT NULL,
   updated_at   TEXT NOT NULL,
   updated_by   TEXT NOT NULL DEFAULT ''
@@ -208,6 +209,12 @@ _DEVICE_COLUMNS_ADDED = (
 # existing account as admin, which is exactly what those accounts were.
 _ADMIN_COLUMNS_ADDED = (
     ("role", "TEXT NOT NULL DEFAULT 'admin'"),
+)
+
+# A subscription from before licence coverage covers exactly its own tool,
+# which is what an empty list means to every reader.
+_BUDGET_SUB_COLUMNS_ADDED = (
+    ("covers", "TEXT NOT NULL DEFAULT '[]'"),
 )
 
 
@@ -297,6 +304,13 @@ class State:
                 if name not in have:
                     self._db.execute(
                         f"ALTER TABLE admin_users ADD COLUMN {name} {decl}")
+            have = {r["name"] for r in self._db.execute(
+                "PRAGMA table_info(budget_subscriptions)")}
+            for name, decl in _BUDGET_SUB_COLUMNS_ADDED:
+                if name not in have:
+                    self._db.execute(
+                        f"ALTER TABLE budget_subscriptions"
+                        f" ADD COLUMN {name} {decl}")
             self._db.commit()
 
     def _event(self, kind: str, detail: dict):
@@ -763,7 +777,7 @@ class State:
         with self._lock:
             subs = self._db.execute(
                 "SELECT tool_id, vendor, plan, currency, renewal_date,"
-                " owner, notes, seat_tiers, created_at, updated_at,"
+                " owner, notes, seat_tiers, covers, created_at, updated_at,"
                 " updated_by FROM budget_subscriptions ORDER BY tool_id"
             ).fetchall()
             members = self._db.execute(
@@ -787,6 +801,7 @@ class State:
         return {
             "subscriptions": [dict(
                 r, seat_tiers=json.loads(r["seat_tiers"] or "[]"),
+                covers=json.loads(r["covers"] or "[]"),
                 members=by_tool.get(r["tool_id"], [])) for r in subs],
             "connections": [{
                 "tool_id": c["tool_id"], "provider": c["provider"],
@@ -804,21 +819,23 @@ class State:
         with self._lock:
             self._db.execute(
                 "INSERT INTO budget_subscriptions (tool_id, vendor, plan,"
-                " currency, renewal_date, owner, notes, seat_tiers,"
+                " currency, renewal_date, owner, notes, seat_tiers, covers,"
                 " created_at, updated_at, updated_by)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 " ON CONFLICT(tool_id) DO UPDATE SET"
                 " vendor = excluded.vendor, plan = excluded.plan,"
                 " currency = excluded.currency,"
                 " renewal_date = excluded.renewal_date,"
                 " owner = excluded.owner, notes = excluded.notes,"
                 " seat_tiers = excluded.seat_tiers,"
+                " covers = excluded.covers,"
                 " updated_at = excluded.updated_at,"
                 " updated_by = excluded.updated_by",
                 (tool_id, fields.get("vendor", ""), fields.get("plan", ""),
                  fields.get("currency", ""), fields.get("renewal_date", ""),
                  fields.get("owner", ""), fields.get("notes", ""),
-                 json.dumps(fields.get("seat_tiers") or []), now, now, by),
+                 json.dumps(fields.get("seat_tiers") or []),
+                 json.dumps(fields.get("covers") or []), now, now, by),
             )
             self._event("budget_subscription_saved",
                         {"tool": tool_id, "by": by})

@@ -107,6 +107,37 @@ it"*; an unmatched observed user is *"not matched to a seat"*, not
 counted separately and excluded from both lists - an identity map (Sources
 view) is what turns those into names.
 
+## One licence, several tools
+
+A subscription is a licence, and a licence often entitles more than one
+tool: a Claude seat covers claude **and** claude-code, a ChatGPT
+Business seat covers chatgpt and codex. Each subscription therefore
+records what it **covers**, and the receiver refuses a tool covered by
+two subscriptions - one licence billed twice stops being a mistake
+anyone can make.
+
+"Never observed" is one verdict judged against the whole covered set:
+a member seen on *any* covered tool is observed, full stop. Someone
+dark on claude but living in claude-code is not a downgrade candidate.
+The per-tool detail survives on the positive side - seen-on pills per
+member, and an "observed on: claude 8 · claude-code 5" line - telling
+you how the licence is used, never who is "missing" from one surface.
+
+Tools sold as one licence share a `license_group` in the registry
+(shipped for the known bundles; the Tool registry view sets it on your
+own entries), which is how the wizard pre-ticks claude-code when you
+link claude, and how the page spots the same licence linked twice and
+says how to fold the two together: unlink the secondary first, then
+edit the primary and tick it under "also covers".
+
+**Per-tier coverage** is how mixed plans are said precisely: premium
+covers claude and claude-code, standard covers claude alone. Two
+seat-economics findings follow from it - *"premium seats never observed
+on claude-code"* (the premium delta may be unused; framed as economics,
+these members still count as observed) and its inverse, *"standard seat
+observed on claude-code"* (either the coverage is recorded too narrowly
+or the seat grants more than it should).
+
 ## Currency
 
 Each subscription records its own currency - the one the vendor actually

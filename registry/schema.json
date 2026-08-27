@@ -53,6 +53,12 @@
               "unreviewed"
             ]
           },
+          "license_group": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*$",
+            "maxLength": 64,
+            "description": "Tools sold as one licence share a group: a seat that covers one of them covers the others (claude and claude-code, chatgpt and codex-cli). The portal's Budget view uses it to suggest what a subscription covers and to spot the same licence linked twice. Absence means the tool is licensed alone."
+          },
           "approved": {
             "type": "boolean",
             "description": "true = sanctioned in your organisation. Records a governance position and does not affect finding severity: severity depends on the account domain, not on approval."
