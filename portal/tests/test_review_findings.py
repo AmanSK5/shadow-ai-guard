@@ -528,6 +528,28 @@ def test_the_settings_tab_from_the_url_cannot_dispatch_into_the_prototype():
         assert gone not in html
 
 
+def test_the_identity_import_names_the_rows_it_drops():
+    """A bare count ("58 rows understood, 4 skipped (no key, no person or
+    duplicate)") sent a maintainer hunting through the file for four rows
+    it would not name. Worse, the count was not even complete: the
+    download writes blanks and proposals commented out under "fill in and
+    uncomment", and a row filled in with the # left on becomes an empty
+    line at split('#')[0] - not saved, and not counted either. And where
+    a key appears twice the FIRST wins, so a corrected row below an older
+    one is the half that gets discarded, silently."""
+    index = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    html = open(os.path.join(index, "app", "static", "index.html")).read()
+    # Every dropped row carries a line number and a reason.
+    assert "skipped.push({n, key, why: 'no person'})" in html
+    assert "skipped.push({n, key: bare, why: 'no key'})" in html
+    assert "why: 'same key as line ' + dup" in html
+    # The filled-in-but-still-commented row is surfaced rather than lost.
+    assert "if (k && ident) commented.push({n, key: k, identity: ident});" in html
+    assert "remove the leading # from any you meant to keep" in html
+    # The old count-only phrasing may not come back.
+    assert "skipped (no key, no person, or a duplicate)" not in html
+
+
 def test_a_spelling_that_exists_only_via_the_map_still_merges():
     """The shape that survived the first attempt at this fix. One
     spelling comes from a cloud sign-in and becomes an identity
