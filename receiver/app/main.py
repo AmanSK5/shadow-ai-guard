@@ -1154,6 +1154,10 @@ _STR_SETTINGS = (
     # Fired on a NEW discovery candidate - the moment a human decision
     # becomes needed - and never per finding, which would be a firehose.
     ("webhook_url", True, 500),
+    # The currency the Budget view's headline reports in, and the default
+    # for newly linked tools. A display preference, not money math: the
+    # portal never converts between currencies.
+    ("budget_currency", False, 8),
 )
 
 # What the paste guard does when a marked document is pasted into an AI
@@ -1184,6 +1188,7 @@ class SettingsUpdate(BaseModel):
     extension_crx_url: str | None = Field(default=None, max_length=500)
     extension_xpi_url: str | None = Field(default=None, max_length=500)
     webhook_url: str | None = Field(default=None, max_length=500)
+    budget_currency: str | None = Field(default=None, max_length=8)
     paste_guard_mode: str | None = Field(default=None, max_length=8)
     firefox_extension_id: str | None = Field(default=None, max_length=128)
     classification_markings: list[str] | None = Field(default=None,
@@ -1248,6 +1253,7 @@ def get_settings(authorization: str = Header(default="")):
         "extension_crx_url": plain("extension_crx_url"),
         "extension_xpi_url": plain("extension_xpi_url"),
         "paste_guard_mode": plain("paste_guard_mode"),
+        "budget_currency": plain("budget_currency"),
         "firefox_extension_id": plain("firefox_extension_id"),
         # An incoming webhook URL is itself a bearer capability - whoever
         # holds it can post to the channel - so it is masked like the log
