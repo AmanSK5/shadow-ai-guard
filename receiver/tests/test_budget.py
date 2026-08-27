@@ -311,6 +311,41 @@ def test_sync_without_a_connection_is_a_404(managed):
     assert r.status_code == 404
 
 
+def test_fx_rates_relay_and_cache(managed, monkeypatch):
+    calls = []
+
+    def handler(request):
+        calls.append(str(request.url))
+        assert request.url.host == "api.frankfurter.dev"
+        return httpx.Response(200, json={
+            "amount": 1.0, "base": "GBP", "date": "2026-08-27",
+            "rates": {"USD": 1.27, "EUR": 1.17, "bad": "x"}})
+
+    monkeypatch.setattr(budget_mod.httpx, "AsyncClient",
+                        _mock_async_client(handler))
+    monkeypatch.setattr(budget_mod, "_fx_cache", {})
+    out = client.get("/admin/budget/fx?to=gbp", headers=ADMIN).json()
+    assert out["ok"] is True and out["base"] == "GBP"
+    assert out["rates"]["USD"] == 1.27 and "bad" not in out["rates"]
+    # Second read answers from the cache, not the network.
+    client.get("/admin/budget/fx?to=gbp", headers=ADMIN)
+    assert len(calls) == 1
+
+
+def test_fx_refusals_are_answers(managed, monkeypatch):
+    monkeypatch.setattr(budget_mod, "_fx_cache", {})
+
+    def handler(request):
+        return httpx.Response(404, json={"message": "not found"})
+
+    monkeypatch.setattr(budget_mod.httpx, "AsyncClient",
+                        _mock_async_client(handler))
+    out = client.get("/admin/budget/fx?to=XXX", headers=ADMIN).json()
+    assert out["ok"] is False and "no reference rate" in out["detail"]
+    assert client.get("/admin/budget/fx?to=pounds",
+                      headers=ADMIN).status_code == 422
+
+
 def test_replaced_key_resets_sync_history(managed, monkeypatch):
     def handler(request):
         return httpx.Response(200, json={"data": [], "has_more": False})
