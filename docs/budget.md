@@ -128,8 +128,11 @@ standard from premium seats), so a subscription holds up to ten named
 tiers, each with a seat count and a per-seat monthly price. Tier names
 matter: a user row whose seat tier matches a tier's name counts against
 that tier's seats, which is how "8 premium seats paid, 3 assigned" falls
-out. The vendor APIs do not expose per-user tiers, so tier assignment
-comes from the CSV import or the card either way. Tier matching is
+out. The vendor APIs do not expose per-user tiers - a plan with a
+**single tier** therefore counts every member against it automatically
+(everyone on the plan is on that tier by definition, the one derivation
+that needs no vendor data). On multi-tier plans tier assignment comes
+from the CSV import or the card. Tier matching is
 forgiving: an imported "Premium seat" counts against a tier named
 "premium" (the tier's name just has to appear in the value), and
 whatever matches nothing is named under the table with a count, never
