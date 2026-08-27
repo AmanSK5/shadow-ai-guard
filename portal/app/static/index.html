@@ -324,6 +324,9 @@ let WIZSTORE = 'self', TESTS = {};
 // (null = closed), the last action's one-line outcome, and a parsed CSV
 // preview waiting for confirmation.
 let BUDGET = null, BWIZ = null, BMSG = '', BCSV = null, BFX = null;
+// The identity map editor on People: the saved rows, a parsed upload
+// waiting for confirmation, and the last outcome.
+let IDMAP = null, IDPARSE = null, IDMSG = '';
 // The share view's one choice: whether people are named. A finance
 // recipient needs the names to act; a board pack does not, and the page
 // names individuals and their personal account domains, so withholding
@@ -382,6 +385,7 @@ function showLogin(msg) {
   REGTOOLS = null; GOVDECS = null; TESTS = {}; WLOPEN = false;
   RENTRIES = null; REDIT = null; RPRE = null; RERR = ''; RADV = false;
   BUDGET = null; BWIZ = null; BMSG = ''; BCSV = null; BFX = null; BRNAMES = true;
+  IDMAP = null; IDPARSE = null; IDMSG = '';
   chrome(false);
   const create = AUTH && AUTH.setup_needed;
   app.innerHTML = `<div style="max-width:470px;margin:9vh auto 0">
@@ -911,13 +915,110 @@ function devices() {
   ${rows.map(([k,d]) => card(k,d)).join('')}`;
 }
 
-function people() {
+// The identity map, editable here. It used to be the last piece of
+// configuration that still needed kubectl: the portal generated the
+// proposal and could not accept the corrected version back, so the loop
+// ended at a ConfigMap. A file mounted by the deployment still works and
+// still shows here - what is saved in the portal wins per key.
+function identityMapPanel(unattributed) {
+  const ro = AUTH && AUTH.role === 'viewer';
+  const saved = (IDMAP && IDMAP.entries) || [];
+  const managed = CFG.managed && CFG.managed.enabled;
+  if (!managed) return `<div class="wcard" style="margin-bottom:12px">
+    <h3>Identity map</h3><p class="src-note" style="margin-top:0">Classic
+    mode: the map is the file at <span class="mono">IDENTITY_MAP</span>.
+    ${CFG.identity_map_configured ? 'One is configured.' : 'None is configured.'}</p></div>`;
+  const last = saved.map(e => e.updated_at).sort().pop() || '';
+  return `<div class="wcard" style="margin-bottom:12px"><h3>Identity map</h3>
+  <p class="src-note" style="margin-top:0">Who is behind a device key or a
+  local username. ${saved.length
+    ? `<strong>${saved.length}</strong> ${saved.length === 1 ? 'row' : 'rows'} saved
+       here${last ? `, last changed ${when(last)}` : ''}`
+    : 'Nothing saved here yet'}${CFG.identity_map_configured
+      ? ` · a file is also mounted, and rows saved here win over it` : ''}.
+  ${unattributed} device${unattributed === 1 ? '' : 's'} still ${unattributed === 1 ? 'has' : 'have'} no person attached.</p>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+    <button class="mini" data-act="id-download">download the proposed map (CSV)</button>
+    ${ro ? '' : `<button class="mini" data-act="id-open">${IDPARSE ? 'editing…' : 'upload or paste a map'}</button>`}
+    ${!ro && saved.length ? `<button class="mini" data-act="id-clear">clear the saved map</button>` : ''}
+  </div>
+  ${IDMSG ? `<div class="note">${esc(IDMSG)}</div>` : ''}
+  <p class="src-note" style="margin-top:0">The proposal matches local
+  usernames, and machine names where a hostname spells out a known
+  person, against identities the cloud sources supplied. They are string
+  matches: review them before saving. Nothing here is applied on its own -
+  a mapping this platform invented and then acted on is how the wrong
+  name lands on a report.</p>
+  ${IDPARSE ? identityMapEditor() : ''}
+  ${saved.length ? `<details style="margin-top:8px"><summary>Saved rows (${saved.length})</summary>
+    <table><tr><th>key</th><th>person</th><th>changed</th><th>by</th></tr>
+    ${saved.slice(0, 200).map(e => `<tr><td class="mono">${esc(e.key)}</td>
+      <td>${esc(e.identity)}</td><td>${when(e.updated_at)}</td>
+      <td style="color:var(--mut)">${esc(e.updated_by || '')}</td></tr>`).join('')}
+    </table>${saved.length > 200 ? `<p class="src-note">Showing the first 200 of ${saved.length}.</p>` : ''}</details>` : ''}
+  </div>`;
+}
+
+function identityMapEditor() {
+  const p = IDPARSE;
+  const known = new Set(Object.keys(G.devices || {}));
+  ents(G.devices || {}).forEach(([, d]) => (d.local_users || []).forEach(u => known.add(u)));
+  ents(G.devices || {}).forEach(([, d]) => (d.aliases || []).forEach(a => known.add(a)));
+  const unknown = (p.rows || []).filter(r => !known.has(r.key));
+  return `<div style="border-top:1px solid var(--bd);padding-top:10px;margin-top:6px">
+    <textarea id="id-csv" class="mfield" style="width:100%;min-height:130px;font-family:ui-monospace,monospace"
+      placeholder="key,identity&#10;C02XXXX,jo.bloggs&#10;jo.bloggs,Jo Bloggs">${esc(p.text || '')}</textarea>
+    <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+      <input type="file" id="id-file" accept=".csv,text/csv,text/plain" class="mfield" style="min-width:0">
+      <button class="mini" data-act="id-parse">preview</button>
+      <button class="mini" data-act="id-cancel">cancel</button>
+      ${(p.rows || []).length ? `<button class="mini" data-act="id-save">save ${p.rows.length} ${p.rows.length === 1 ? 'row' : 'rows'}</button>` : ''}
+    </div>
+    ${p.rows ? `<p class="src-note">${p.rows.length} rows understood, ${p.skipped}
+      skipped (no key, no person, or a duplicate). Saving REPLACES the map
+      saved here; a mounted file is untouched.
+      ${unknown.length ? `<span style="color:var(--warn)">${unknown.length}
+        ${unknown.length === 1 ? 'key matches' : 'keys match'} no device or local
+        user in the current window - kept, in case the machine reports later.</span>` : ''}</p>
+      ${p.rows.length ? `<table><tr><th>key</th><th>person</th><th></th></tr>
+      ${p.rows.slice(0, 8).map(r => `<tr><td class="mono">${esc(r.key)}</td><td>${esc(r.identity)}</td>
+        <td>${known.has(r.key) ? '<span class="pill p-ok">matches</span>' : '<span class="pill p-mut">not seen yet</span>'}</td></tr>`).join('')}
+      ${p.rows.length > 8 ? `<tr><td colspan="3" style="color:var(--mut)">… and ${p.rows.length - 8} more</td></tr>` : ''}</table>` : ''}` : ''}
+  </div>`;
+}
+
+// key,identity - the format the proposal downloads in, so the file can go
+// straight back in. Comments and the header row are dropped exactly as the
+// server-side loader drops them.
+function parseIdentityCsv(text) {
+  const out = [], seen = new Set();
+  let skipped = 0;
+  String(text || '').replace(/^\uFEFF/, '').split(/\r\n|\r|\n/).forEach(line => {
+    const bare = line.split('#')[0].trim();
+    if (!bare) return;
+    const cells = bCsvRow(bare, bare.includes('\t') ? '\t' : ',');
+    const [key, identity] = [(cells[0] || '').trim(), (cells[1] || '').trim()];
+    if (!key || !identity) { if (bare) skipped++; return; }
+    if (['key', 'device', 'local_user'].includes(key.toLowerCase())) return;
+    if (seen.has(key.toLowerCase())) { skipped++; return; }
+    seen.add(key.toLowerCase());
+    out.push({key, identity});
+  });
+  return {rows: out, skipped};
+}
+
+async function people() {
+  if (CFG.managed && CFG.managed.enabled && AUTH && AUTH.mode === 'login'
+      && IDMAP === null) {
+    const r = await mfetch('/api/identity-map');
+    IDMAP = r.ok ? await r.json() : {entries: []};
+  }
   const rows = ents(G.identities).filter(([k]) => match(k))
     .sort((a,b) => (b[1].tools||[]).length - (a[1].tools||[]).length);
+  const unattributed = ents(G.devices).filter(([,d]) => !d.person).length;
   return `<h2>People</h2><p class="lede">Identities come from cloud sources, which know people rather
-  than machines. Devices appear here only where an identity map attaches them —
-  see <a href="/api/suggest-identities?fmt=csv" style="color:var(--pri)">a
-  proposed map</a> to start one.</p>
+  than machines. Devices appear here only where an identity map attaches them.</p>
+  ${identityMapPanel(unattributed)}
   <div class="tcard"><table><tr><th>identity</th><th>tools</th><th>devices</th></tr>
   ${rows.map(([k,i]) => `<tr><td>${esc(k)}</td>
     <td>${(i.tools||[]).map(t=>`<span class="pill p-mut">${esc(t)}</span>`).join('')}</td>
@@ -4038,6 +4139,45 @@ async function _refusal(r) {
 
 async function managedAction(act, el) {
   if (act.startsWith('b-')) return budgetAction(act, el);
+  if (act === 'id-download') {
+    window.location = '/api/suggest-identities?fmt=csv';
+    return;
+  }
+  if (act === 'id-open') {
+    IDMSG = '';
+    IDPARSE = IDPARSE || {text: '', rows: null, skipped: 0};
+    render(); return;
+  }
+  if (act === 'id-cancel') { IDPARSE = null; IDMSG = ''; render(); return; }
+  if (act === 'id-parse') {
+    const file = (document.getElementById('id-file') || {}).files;
+    const text = file && file[0]
+      ? await file[0].text()
+      : (document.getElementById('id-csv') || {}).value || '';
+    IDPARSE = Object.assign({text}, parseIdentityCsv(text));
+    IDMSG = ''; render(); return;
+  }
+  if (act === 'id-save' || act === 'id-clear') {
+    const entries = act === 'id-clear' ? [] : (IDPARSE.rows || []);
+    if (act === 'id-clear'
+        && !confirm('Clear the identity map saved in the portal? Devices it '
+                    + 'attributed become unattributed. A mounted file, if any, '
+                    + 'still applies.')) return;
+    const r = await mfetch('/api/identity-map', {method: 'POST',
+      body: JSON.stringify({entries})});
+    if (r.status === 401) { sessionLost(); return; }
+    if (!r.ok) { IDMSG = 'Not saved: ' + await _refusal(r); render(); return; }
+    const out = await r.json();
+    IDMSG = act === 'id-clear'
+      ? 'Cleared. Attribution falls back to the mounted file, if there is one.'
+      : `Saved ${out.count} rows. Every page re-derives with them now.`;
+    IDPARSE = null; IDMAP = null;
+    // Attribution runs through the graph, so the page must re-read it
+    // rather than re-render yesterday's answer with today's map.
+    await load(true);
+    return;
+  }
+
   if (act === 'user-create') {
     const role = (document.getElementById('user-role') || {}).value || 'viewer';
     const r = await mfetch('/api/users', {method: 'POST', body: JSON.stringify(
@@ -4578,7 +4718,8 @@ async function render() {
     app.innerHTML = budgetReport();
     return;
   }
-  app.innerHTML = tb + ({setup, overview, devices, people, tools, coverage,
+  if (view === 'people') { app.innerHTML = tb + await people(); return; }
+  app.innerHTML = tb + ({setup, overview, devices, tools, coverage,
                          dashboard, personal, mcp})[view]();
 }
 // A detail opens in the inspector beside the list rather than replacing it.

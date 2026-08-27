@@ -284,3 +284,41 @@ def test_the_shell_says_so_when_the_read_failed():
         assert "dataOk()" in before[-400:], gated
     # And it names the fix a self-hoster would otherwise have to find.
     assert "RECEIVER_ADMIN_TOKEN" in html
+
+
+# ------------------------------------------------- the identity map, in app --
+
+
+def test_a_hostname_that_names_its_owner_is_proposed():
+    """Five devices on the reviewed estate had their owner's name in the
+    hostname - two of those people already in the identity list - and sat
+    unattributed because the only rule looked at local usernames."""
+    devices = {
+        "D1": {"local_users": set(), "device_name": "Jo-Bloggs-MacBook-Pro"},
+        "D2": {"local_users": set(), "device_name": "DESKTOP-9Z1"},
+        # Too short a name to match inside a label by anything but luck.
+        "D3": {"local_users": set(), "device_name": "ALIENWARE-15"},
+    }
+    matched, unmatched = derive.suggest_identity_rows(
+        devices, {"jo.bloggs": {}, "al": {}})
+    assert [(m["key"], m["identity"]) for m in matched] == [("D1", "jo.bloggs")]
+    assert {u["key"] for u in unmatched} == {"D2", "D3"}
+    # The proposal says why, so a reviewer can judge it.
+    assert "hostname" in matched[0]["via"]
+
+
+def test_two_people_matching_one_hostname_propose_neither():
+    devices = {"D1": {"local_users": set(),
+                      "device_name": "jo.bloggs-and-sam.smith-shared"}}
+    matched, unmatched = derive.suggest_identity_rows(
+        devices, {"jo.bloggs": {}, "sam.smith": {}})
+    assert matched == []
+    assert [u["key"] for u in unmatched] == ["D1"]
+
+
+def test_a_local_username_still_wins_over_the_hostname():
+    devices = {"D1": {"local_users": {"sam.smith"},
+                      "device_name": "Jo-Bloggs-MacBook"}}
+    matched, _u = derive.suggest_identity_rows(
+        devices, {"jo.bloggs": {}, "sam.smith": {}})
+    assert matched[0]["identity"] == "sam.smith"

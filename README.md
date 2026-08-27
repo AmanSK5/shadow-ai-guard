@@ -140,6 +140,10 @@ is operated:
   vendor's admin API where one exists and import from its member export where
   it does not, and one subscription covers every tool its licence entitles,
   so a Claude seat is counted once across Claude and Claude Code.
+- **Identity.** The platform never guesses who owns a machine, but it will
+  propose: download the suggested device-to-person map, correct it, and
+  upload it back in the portal. A mounted file still works; what you save in
+  the portal wins over it.
 - **The fleet.** Devices enroll with their own credential and can be revoked
   individually. Enrollment tokens are invitations; devices are badges; both
   are managed here.
