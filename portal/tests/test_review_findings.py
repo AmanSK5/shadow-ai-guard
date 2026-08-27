@@ -322,3 +322,61 @@ def test_a_local_username_still_wins_over_the_hostname():
     matched, _u = derive.suggest_identity_rows(
         devices, {"jo.bloggs": {}, "sam.smith": {}})
     assert matched[0]["identity"] == "sam.smith"
+
+
+# ------------------------------------- reading without the operator's seat --
+
+
+def test_a_viewer_falls_back_to_the_portals_own_log_store():
+    """The 403 message has always said "or set LOKI_URL by env" as the
+    fix, and raising instead meant that advice did not work: a portal
+    with its own store still refused every read-only account."""
+    from unittest.mock import patch
+
+    from app import main as pm
+    from app import managed as mg
+
+    def refuse(*a, **k):
+        raise mg.ReceiverError(403, "read-only")
+
+    with patch.object(pm, "LOGIN_MODE", True), \
+            patch.object(pm, "RECEIVER_URL", "http://receiver:8080"), \
+            patch.object(pm, "RECEIVER_ADMIN_TOKEN", ""), \
+            patch.object(pm, "LOKI_URL", "http://loki:3100"), \
+            patch.object(pm, "LOKI_USERNAME", "reader"), \
+            patch.object(pm.managed, "receiver_request", refuse):
+        pm._log_store_cache.update(at=0.0, data=None)
+
+        class Req:
+            cookies = {"aiguard_session": "aigt_viewer"}
+
+        url, user, _pw, source = pm._log_store(Req())
+    assert (url, user, source) == ("http://loki:3100", "reader", "env")
+
+
+def test_without_any_store_of_its_own_it_still_says_what_to_configure():
+    from unittest.mock import patch
+
+    import pytest
+    from fastapi import HTTPException
+
+    from app import main as pm
+    from app import managed as mg
+
+    def refuse(*a, **k):
+        raise mg.ReceiverError(403, "read-only")
+
+    with patch.object(pm, "LOGIN_MODE", True), \
+            patch.object(pm, "RECEIVER_URL", "http://receiver:8080"), \
+            patch.object(pm, "RECEIVER_ADMIN_TOKEN", ""), \
+            patch.object(pm, "LOKI_URL", ""), \
+            patch.object(pm.managed, "receiver_request", refuse):
+        pm._log_store_cache.update(at=0.0, data=None)
+
+        class Req:
+            cookies = {"aiguard_session": "aigt_viewer"}
+
+        with pytest.raises(HTTPException) as e:
+            pm._log_store(Req())
+    assert e.value.status_code == 403
+    assert "RECEIVER_ADMIN_TOKEN" in e.value.detail
