@@ -299,7 +299,7 @@ let WIZSTORE = 'self', TESTS = {};
 // The budget view: the fetched spend data, the link-a-tool wizard's state
 // (null = closed), the last action's one-line outcome, and a parsed CSV
 // preview waiting for confirmation.
-let BUDGET = null, BWIZ = null, BMSG = '', BCSV = null;
+let BUDGET = null, BWIZ = null, BMSG = '', BCSV = null, BFX = null;
 // Whether the register's watchlist section is expanded. Tracked because a
 // decision re-renders the view, and a <details> that snaps shut under the
 // operator mid-triage would lose their place.
@@ -352,7 +352,7 @@ function showLogin(msg) {
   GOVEDIT = null; GOVPRE = null; GOVERR = ''; SETMSG = '';
   REGTOOLS = null; GOVDECS = null; TESTS = {}; WLOPEN = false;
   RENTRIES = null; REDIT = null; RPRE = null; RERR = ''; RADV = false;
-  BUDGET = null; BWIZ = null; BMSG = ''; BCSV = null;
+  BUDGET = null; BWIZ = null; BMSG = ''; BCSV = null; BFX = null;
   chrome(false);
   const create = AUTH && AUTH.setup_needed;
   app.innerHTML = `<div style="max-width:470px;margin:9vh auto 0">
@@ -407,7 +407,7 @@ async function load(force) {
   const q = force ? '?refresh=true' : '';
   // Refresh must clear the views that read a second endpoint too, or the
   // button refreshes some of the page and silently not the rest.
-  if (force) { DIAG = null; REG = null; EV = null; PG = null; FLEET = null; TOKENS = null; SETTINGS = null; REGTOOLS = null; GOVDECS = null; RENTRIES = null; CAND = null; PSTAT = null; AUDITLOG = null; USERS = null; BUDGET = null; }
+  if (force) { DIAG = null; REG = null; EV = null; PG = null; FLEET = null; TOKENS = null; SETTINGS = null; REGTOOLS = null; GOVDECS = null; RENTRIES = null; CAND = null; PSTAT = null; AUDITLOG = null; USERS = null; BUDGET = null; BFX = null; }
   try {
     const cr = await fetch('/api/config');
     if (cr.status === 401 && AUTH && AUTH.mode === 'login') { sessionLost(); return; }
@@ -441,6 +441,11 @@ async function load(force) {
       try {
         const br = await mfetch('/api/budget');
         if (br.ok) BUDGET = await br.json();
+        if (!SETTINGS) {
+          const wr = await mfetch('/api/settings');
+          if (wr.ok) SETTINGS = await wr.json();
+        }
+        await bFetchFx();
       } catch (e) { /* the tile simply stays absent */ }
     }
     // Same again for the review queue: it draws from the register, and in
@@ -636,7 +641,10 @@ const WIDGETS = {
       a + bMatch(s.members || [], bObserved(s.tool_id)).unobserved.length, 0);
     return `<div class="wcard w6"><h3>AI spend</h3>
     <dl class="stats" style="margin-bottom:0">
-      <div><dt>${bSpendParts(subs).join(' + ')}</dt><dd>tracked / month</dd></div>
+      <div><dt>${(() => { const c = bConverted(subs);
+        return c ? bMoney(c.total, bPrefCur()) : bSpendParts(subs).join(' + '); })()}</dt>
+        <dd>tracked / month${(() => { const c = bConverted(subs);
+        return c ? ` (${bSpendParts(subs).join(' + ')}, ECB ${esc(c.date)})` : ''; })()}</dd></div>
       <div><dt>${subs.length}</dt><dd>tools linked</dd></div>
       <div><dt${unob ? ' style="color:var(--warn)"' : ''}>${unob}</dt><dd>paid seats never observed</dd></div>
     </dl>
@@ -2175,9 +2183,10 @@ async function wizard() {
       placeholder="GBP"
       value="${esc(((s.budget_currency || {}).value) || '')}">
     <button class="mini" data-act="save-setting" data-key="budget_currency">save</button>
-    <div class="src-note">Preferred currency, for the Budget view: its
-    headline reports in it and newly linked tools default to it. A display
-    preference - nothing is ever converted.</div>
+    <div class="src-note">Preferred currency, for the Budget view: the
+    headline converts into it at the ECB's daily reference rate (the rate's
+    date is named right beside the number), newly linked tools default to
+    it, and the per-currency figures stay visible.</div>
   </div></div>
 
   <div class="wcard" style="margin-bottom:10px"><h3>4 · Governance baseline</h3>
@@ -2343,7 +2352,7 @@ function alertingSettings() {
       'Embeds one whole dashboard instead of panels. Pasting the full dashboard URL works: it is trimmed to the UID.')}
     ${settingRow('budget_currency', 'Preferred currency',
       'GBP',
-      'The Budget headline reports in it and newly linked tools default to it. Display preference only - nothing is converted.')}
+      'The Budget headline converts into it at the ECB daily reference rate, naming the rate date inline; newly linked tools default to it.')}
     ${settingRow('overview_widgets', 'Overview widgets',
       'stat_row, top_tools, …  (empty = sensible default)', '')}
   </dl></div>`;
@@ -2871,6 +2880,44 @@ function bSpendParts(subs) {
     .map(([c, v]) => bMoney(v, c));
 }
 
+// The per-currency totals folded into the preferred currency at the
+// ECB's daily reference rate (fetched by the receiver, cached half a
+// day). Null when there is nothing to convert - no preference, a single
+// currency, no rates, or a currency the ECB does not fix - and callers
+// then fall back to the per-currency parts, so a rate source that
+// cannot answer degrades to the honest breakdown rather than an error.
+// A subscription with no currency recorded counts as already-preferred:
+// the preference is exactly the currency this organisation thinks in.
+function bConverted(subs) {
+  const pref = bPrefCur();
+  if (!pref || !BFX || !BFX.ok || BFX.base !== pref) return null;
+  const byCur = {};
+  (subs || []).forEach(s => {
+    const c = (s.currency || '').toUpperCase();
+    byCur[c] = (byCur[c] || 0) + bSubMonthly(s);
+  });
+  const foreign = Object.keys(byCur).filter(c => c && c !== pref);
+  if (!foreign.length) return null;
+  let total = 0;
+  for (const [c, v] of ents(byCur)) {
+    if (!c || c === pref) total += v;
+    else if ((BFX.rates || {})[c]) total += v / BFX.rates[c];
+    else return null;
+  }
+  return {total, date: BFX.date || ''};
+}
+
+async function bFetchFx() {
+  const pref = bPrefCur();
+  if (!pref || (BFX && BFX.base === pref)) return;
+  try {
+    const r = await mfetch('/api/budget/fx?to=' + encodeURIComponent(pref));
+    // The base is kept even on a refusal, so a source that cannot answer
+    // is asked once per session, not once per render.
+    if (r.ok) BFX = Object.assign({base: pref}, await r.json());
+  } catch (e) { /* the per-currency parts are the fallback */ }
+}
+
 // One delimited row, with just enough quote handling for "Last, First"
 // name cells. Not a general CSV parser and not trying to be one.
 function bCsvRow(line, delim) {
@@ -3269,11 +3316,15 @@ async function budget() {
     const r = await fetch('/api/registry-tools');
     REGTOOLS = r.ok ? (await r.json()).tools || [] : [];
   }
+  await bFetchFx();
   if (BCSV) return budgetImport();
   if (BWIZ) return budgetWizard();
   const ro = AUTH && AUTH.role === 'viewer';
   const subs = BUDGET.subscriptions || [];
-  const spend = bSpendParts(subs).join(' + ') || '0';
+  const spendParts = bSpendParts(subs);
+  const conv = bConverted(subs);
+  const spend = conv ? bMoney(conv.total, bPrefCur())
+    : spendParts.join(' + ') || '0';
   return `<h2>Budget</h2>
   <p class="lede">The AI tools the organisation pays for, against what the
   estate is observed doing: seats nobody uses, users no seat covers, and
@@ -3282,7 +3333,8 @@ async function budget() {
   the numbers work the same either way and each card says which it is.</p>
   ${BMSG ? `<div class="note">${esc(BMSG)}</div>` : ''}
   ${subs.length ? `<dl class="stats" style="margin-bottom:14px">
-    <div><dt>${spend}</dt><dd>tracked spend / month</dd></div>
+    <div><dt>${spend}</dt><dd>tracked spend / month${conv
+      ? ` · ${spendParts.join(' + ')} at ECB ${esc(conv.date)}` : ''}</dd></div>
     <div><dt>${subs.length}</dt><dd>tools linked</dd></div>
   </dl>` : ''}
   ${subs.map(budgetCard).join('')}

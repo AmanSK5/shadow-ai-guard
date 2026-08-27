@@ -126,8 +126,9 @@ makes that an authenticated network probe. That is the price of supporting
 private, self-hosted stores; it is an *admin* capability, gated like every
 other write, and worth knowing when deciding who gets an admin account.
 The Budget user sync is deliberately narrower: its outbound
-destinations are the vendors' API hosts, hardcoded in the receiver, so a
-stored key can only ever be presented to the vendor it belongs to.
+destinations are the vendors' API hosts plus the keyless ECB
+exchange-rate source, all hardcoded in the receiver, so a stored key can
+only ever be presented to the vendor it belongs to.
 
 The chart's public receiver ingress carries only the reporting surfaces
 (/report, /flag, /enroll, /registry, /candidates, /healthz) by default;

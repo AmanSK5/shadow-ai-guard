@@ -2181,6 +2181,15 @@ def api_budget_sync(req: BudgetToolRef, _=Depends(require_auth),
     return _receiver("POST", "/admin/budget/sync", token, req.model_dump())
 
 
+@app.get("/api/budget/fx")
+def api_budget_fx(to: str = Query(min_length=3, max_length=3,
+                                  pattern="^[A-Za-z]{3}$"),
+                  _=Depends(require_auth),
+                  token: str = Depends(_admin_forward)):
+    return _receiver("GET", "/admin/budget/fx?to=%s"
+                     % urllib.parse.quote(to), token)
+
+
 @app.get("/")
 def index(_=Depends(require_page_auth)):
     return FileResponse(STATIC / "index.html")

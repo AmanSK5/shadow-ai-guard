@@ -2017,6 +2017,25 @@ def delete_budget_connection(req: BudgetToolRef,
     return {"ok": True}
 
 
+_CURRENCY_RE = re.compile(r"^[A-Za-z]{3}$")
+
+
+@app.get("/admin/budget/fx")
+async def budget_fx(to: str = "", authorization: str = Header(default="")):
+    """The ECB's latest daily reference rates into the named currency,
+    for the portal's converted headline. Read-only and cached; a source
+    that cannot answer is a rendered fallback (ok: false), not a 5xx -
+    the page shows per-currency figures instead."""
+    _admin_auth(authorization)
+    if not _CURRENCY_RE.match(to or ""):
+        raise HTTPException(422, "to must be a 3-letter currency code")
+    try:
+        out = await _budget.fx_rates(to.upper())
+    except _budget.SyncError as e:
+        return {"ok": False, "detail": e.detail}
+    return dict(out, ok=True)
+
+
 @app.post("/admin/budget/sync")
 async def budget_sync(req: BudgetToolRef,
                       authorization: str = Header(default="")):
