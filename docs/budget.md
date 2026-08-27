@@ -105,12 +105,16 @@ view) is what turns those into names.
 ## Currency
 
 Each subscription records its own currency - the one the vendor actually
-invoices in. The headline reports one total per currency ("£934 + $546")
-rather than converting: a converted number would drift with the exchange
-rate while the invoices it summarises would not, so the portal never
-invents one. A **preferred currency** (Settings, or step 3 of the setup
-wizard) orders the headline and prefills newly linked tools; it converts
-nothing.
+invoices in - and those per-currency totals are always shown. Set a
+**preferred currency** (Settings, or step 3 of the setup wizard) and the
+headline additionally converts into it using the ECB's daily reference
+rate, fetched by the receiver from the keyless Frankfurter API and
+cached for half a day. The conversion never hides its working: the rate
+date and the unconverted per-currency figures sit right beside the
+converted number, and if the rate source cannot answer - or a
+subscription uses a currency the ECB does not fix - the headline simply
+falls back to the per-currency breakdown. Newly linked tools default to
+the preferred currency.
 
 ## Seat tiers
 

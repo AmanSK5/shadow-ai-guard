@@ -62,6 +62,7 @@ def test_each_route_forwards_the_right_verb_and_path(receiver_spy):
                                       token=token)
     main.api_budget_subscription_delete(main.BudgetToolRef(tool_id="claude"),
                                         token=token)
+    main.api_budget_fx("GBP", token=token)
 
     got = [(c["method"], c["path"]) for c in receiver_spy]
     assert got == [
@@ -72,6 +73,7 @@ def test_each_route_forwards_the_right_verb_and_path(receiver_spy):
         ("POST", "/admin/budget/sync"),
         ("POST", "/admin/budget/connection/delete"),
         ("POST", "/admin/budget/subscription/delete"),
+        ("GET", "/admin/budget/fx?to=GBP"),
     ]
     # The operator's own session rides every call - the portal holds no
     # credential of its own for this.
