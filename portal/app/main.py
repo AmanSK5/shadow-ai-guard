@@ -698,6 +698,12 @@ def config(request: Request, _=Depends(require_auth)):
         "version": APP_VERSION,
         "overview_widgets": _widgets(_remote_value(rs, "overview_widgets",
                                                    OVERVIEW_WIDGETS)),
+        # The full catalogue, name and description, so the Settings page
+        # can offer widgets as toggles instead of a comma-separated string
+        # an operator has to know the tokens for - and so a widget added
+        # in a release shows up as an option instead of staying invisible
+        # behind whatever list was saved before it existed.
+        "overview_widget_catalog": KNOWN_WIDGETS,
         # enabled says the portal can reach an admin API; artifacts_ready
         # says downloads can bake a URL agents can reach. Separate flags,
         # because a deployment can sensibly have the first without the
