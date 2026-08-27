@@ -13,6 +13,7 @@ report gave, so a regression fails with the same sum the reviewer
 noticed rather than a vague inequality.
 """
 
+import json
 import os
 
 os.environ.setdefault("PORTAL_AUTH", "none")
@@ -380,3 +381,24 @@ def test_without_any_store_of_its_own_it_still_says_what_to_configure():
             pm._log_store(Req())
     assert e.value.status_code == 403
     assert "RECEIVER_ADMIN_TOKEN" in e.value.detail
+
+
+def test_diagnostics_counts_tools_not_tools_with_domains(tmp_path, monkeypatch):
+    """Reported as "the registry is 28 here and 32 there", and it cost a
+    reviewer and a maintainer real time hunting a stale file. Both
+    numbers were right: this row counted only the tools carrying a
+    domain, and called it "Tools"."""
+    from app import main as pm
+
+    reg = tmp_path / "registry.json"
+    reg.write_text(json.dumps({"version": 1, "tools": [
+        {"id": "chatgpt", "name": "ChatGPT", "domains": ["chatgpt.com"]},
+        {"id": "claude", "name": "Claude", "domains": ["claude.ai"]},
+        # Found by its config file, not by a domain - and still a tool.
+        {"id": "claude-code", "name": "Claude Code", "domains": []},
+    ]}))
+    monkeypatch.setattr(pm, "REGISTRY_PATH", str(reg))
+    runtime = pm.diagnostics(_=None)["runtime"]
+    assert runtime["registry_tools"] == 3
+    assert runtime["registry_tools_with_domains"] == 2
+    assert runtime["registry_loaded"] is True
