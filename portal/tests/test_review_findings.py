@@ -535,3 +535,13 @@ def test_a_spelling_that_exists_only_via_the_map_still_merges():
     assert set(ids["jeff gillings"]["tools"]) == {"claude", "chatgpt"}
     # And the device names the same person the rest of the product does.
     assert graph["devices"]["WIN-JEFF"]["person"] == "jeff gillings"
+
+
+def test_content_links_follow_the_palette():
+    """A bare anchor fell back to the browser's default blue, which is
+    near-unreadable on the dark theme and belongs to no part of this
+    design. A rule rather than a style on each link, so the next link
+    added cannot miss it."""
+    index = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    html = open(os.path.join(index, "app", "static", "index.html")).read()
+    assert "main a{color:var(--pri)}" in html
