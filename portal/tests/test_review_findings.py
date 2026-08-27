@@ -175,3 +175,62 @@ def test_servers_differing_only_in_case_are_one_server():
     assert rows[0]["devices"] == ["D1", "D2"]
     # The spelling somebody actually wrote is the one shown.
     assert rows[0]["server"] == "Figma"
+
+
+# ------------------------------------------------- one machine, one device --
+
+
+def test_a_machine_reported_under_two_keys_is_one_device():
+    """The endpoint collector reports an asset-tagged serial and the
+    browser extension reports the bare one, so one laptop arrived as two
+    devices: two cards under one hostname, tools split across both, and
+    the review counted 69 cards over 65 distinct names."""
+    findings = [
+        _f(device="TGT-ABC123", device_name="LAPTOP-1", tool="claude-code",
+           surface="cli", source="collector-macos"),
+        _f(device="ABC123", device_name="LAPTOP-1", tool="chatgpt",
+           surface="browser", source="browser_extension"),
+    ]
+    devices, identities, tools, _b, _u = derive.build(findings, {}, {})
+    assert list(devices) == ["TGT-ABC123"]
+    d = devices["TGT-ABC123"]
+    assert d["tools"] == {"claude-code", "chatgpt"}
+    assert d["aliases"] == {"ABC123"}
+    assert d["findings"] == 2
+    # The tool edges follow the surviving key, or a tool page would link
+    # to a device that no longer exists.
+    assert tools["chatgpt"]["devices"] == {"TGT-ABC123"}
+
+
+def test_the_person_the_estate_already_knows_is_not_no_identity():
+    """15 of 34 personal-account rows read "no identity" for machines the
+    Devices view named on the row above - the browser extension reports
+    no user, and the join never asked the device."""
+    findings = [
+        _f(device="TGT-ABC123", user="alice", tool="claude-code",
+           surface="cli", source="collector-macos"),
+        _f(device="ABC123", tool="chatgpt", surface="browser",
+           severity="warn", account_domain="gmail.example",
+           source="browser_extension"),
+    ]
+    graph = derive.graph_from(findings, {}, {"TGT-ABC123": "alice"})
+    rows = graph["personal_accounts"]
+    assert len(rows) == 1
+    assert rows[0]["user"] == "alice"
+    # And it says the attribution came from the machine, not the source.
+    assert rows[0]["user_via"] == "device"
+    assert rows[0]["device"] == "TGT-ABC123"
+
+
+def test_an_ambiguous_or_short_key_is_left_alone():
+    """Merging the wrong two machines is worse than showing two cards."""
+    findings = [
+        _f(device="AB1", tool="claude"),          # too short to be an id
+        _f(device="TGT-AB1", tool="claude"),
+        _f(device="SERIAL7", tool="claude"),      # tail of two prefixed keys
+        _f(device="TGT-SERIAL7", tool="claude"),
+        _f(device="TNG-SERIAL7", tool="claude"),
+    ]
+    devices, _i, _t, _b, _u = derive.build(findings, {}, {})
+    assert set(devices) == {"AB1", "TGT-AB1", "SERIAL7",
+                            "TGT-SERIAL7", "TNG-SERIAL7"}
