@@ -62,7 +62,12 @@ Organization settings → Members has a CSV export (name, email, role,
 status, seat tier), and the import understands it directly - the seat
 tier column maps onto the subscription's tiers by name. Pasting the
 rows out of a spreadsheet works too; the parser handles tabs as well
-as commas. Everything downstream behaves identically.
+as commas. **Include the header row in the paste**: without it only the
+addresses can be mapped, and roles and seat tiers import empty (the
+preview warns when that is about to happen). Imports and syncs enrich
+rather than erase - a blank role, seat tier or name never overwrites a
+value already stored, which is also how tiers assigned by import
+survive an API sync that does not report them. Everything downstream behaves identically.
 
 Select **read-only scopes** when creating it. The sync only ever lists
 members; a key that can also write members is more credential than this

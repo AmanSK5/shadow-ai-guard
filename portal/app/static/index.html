@@ -3010,10 +3010,11 @@ function parseUsersCsv(text) {
     // address.
     iEmail = Math.max(0, row(lines[0]).findIndex(c => B_EMAIL_RE.test(c)));
   }
-  const members = []; let skipped = 0;
+  const members = []; let skipped = 0, extra = 0;
   const seen = new Set();
   lines.slice(hasHeader ? 1 : 0).forEach(l => {
     const cells = row(l);
+    if (!hasHeader) extra = Math.max(extra, cells.filter(c => c).length - 1);
     const email = (cells[iEmail] || '').toLowerCase();
     if (!B_EMAIL_RE.test(email) || seen.has(email)) { skipped++; return; }
     seen.add(email);
@@ -3024,7 +3025,13 @@ function parseUsersCsv(text) {
       seat_tier: iTier >= 0 ? (cells[iTier] || '').toLowerCase() : '',
     });
   });
-  return {members, skipped};
+  // headerless: rows carried columns beyond the addresses that nothing
+  // could name - the import kept only the emails, and the preview says
+  // so out loud, because roles and seat tiers vanishing silently is how
+  // an assigned-seats table reads 0 under a full member list.
+  return {members, skipped,
+          headerless: !hasHeader && extra > 0,
+          missing: hasHeader ? {role: iRole < 0, tier: iTier < 0} : null};
 }
 
 const BPROVIDER_NONE = `ChatGPT Business (Team) has no admin API - OpenAI
@@ -3334,10 +3341,19 @@ function budgetImport() {
     <button class="mini" data-act="b-csv-cancel">cancel</button>
     ${parsed && parsed.members.length ? `<button class="mini" data-act="b-csv-save">import ${parsed.members.length} members</button>` : ''}
   </div>
-  ${parsed ? `<p class="src-note">${parsed.members.length} rows understood,
+  ${parsed ? `${parsed.headerless ? `<p class="src-note" style="color:var(--warn)">These
+    rows carry more columns than the addresses, but with no header line to
+    name them only the emails can be kept. Paste again with the header row
+    included (e.g. name, email, role, seat tier) and role and seat tier
+    come through.</p>` : ''}
+    ${parsed.missing && parsed.missing.tier ? `<p class="src-note" style="color:var(--warn)">No
+    seat/tier column recognised in the header, so seat tiers will import
+    empty and the tier table cannot count these users against seats.</p>` : ''}
+    <p class="src-note">${parsed.members.length} rows understood,
     ${parsed.skipped} skipped (no address, or a duplicate). Importing
     replaces the previous CSV import for this tool; API-synced and manual
-    rows are untouched.</p>
+    rows are untouched, and a blank role or seat tier never overwrites a
+    value already stored for that person.</p>
     ${parsed.members.length ? `<table><tr><th>email</th><th>role</th><th>seat</th></tr>
     ${parsed.members.slice(0, 8).map(m => `<tr><td>${esc(m.email)}</td>
       <td>${esc(m.role || '—')}</td><td>${esc(m.seat_tier || '—')}</td></tr>`).join('')}
