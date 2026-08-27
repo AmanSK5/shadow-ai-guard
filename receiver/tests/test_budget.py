@@ -311,6 +311,41 @@ def test_sync_without_a_connection_is_a_404(managed):
     assert r.status_code == 404
 
 
+def test_an_empty_field_never_erases_a_stored_one(managed, monkeypatch):
+    """The APIs report no seat tiers, so a sync after an operator
+    assigned tiers by import must keep them; symmetrically a tier-only
+    CSV over a synced list keeps the synced names and roles."""
+    def handler(request):
+        return httpx.Response(200, json={"data": {"users": [
+            {"name": "Ash", "email": "ash@corp.example", "is_admin": True,
+             "num_transcripts": 5, "minutes_consumed": 60}]}})
+
+    monkeypatch.setattr(budget_mod.httpx, "AsyncClient",
+                        _mock_async_client(handler))
+    client.put("/admin/budget/subscription", headers=ADMIN,
+               json=dict(SUB, tool_id="fireflies"))
+    client.put("/admin/budget/connection", headers=ADMIN, json={
+        "tool_id": "fireflies", "provider": "fireflies",
+        "api_key": "ff-key-123"})
+    client.post("/admin/budget/sync", headers=ADMIN,
+                json={"tool_id": "fireflies"})
+    # Tier assigned by a tier-only import over the synced row...
+    client.put("/admin/budget/members", headers=ADMIN, json={
+        "tool_id": "fireflies", "source": "csv",
+        "members": [{"email": "ash@corp.example", "seat_tier": "premium"}]})
+    m = client.get("/admin/budget", headers=ADMIN).json()[
+        "subscriptions"][0]["members"][0]
+    # ...keeps the synced name, role and usage.
+    assert m["seat_tier"] == "premium" and m["name"] == "Ash"
+    assert m["role"] == "admin" and m["usage"]["transcripts"] == 5
+    # ...and survives the next sync, which reports no tiers.
+    client.post("/admin/budget/sync", headers=ADMIN,
+                json={"tool_id": "fireflies"})
+    m = client.get("/admin/budget", headers=ADMIN).json()[
+        "subscriptions"][0]["members"][0]
+    assert m["seat_tier"] == "premium" and m["source"] == "api"
+
+
 def test_fx_rates_relay_and_cache(managed, monkeypatch):
     calls = []
 

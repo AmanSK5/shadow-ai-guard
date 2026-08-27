@@ -848,8 +848,18 @@ class State:
         stay. A CSV re-import replaces the previous import, an API sync
         replaces the previous sync, and neither clobbers a manual entry.
         The event carries counts, never addresses - the audit trail's
-        ids-only rule covers people most of all."""
+        ids-only rule covers people most of all.
+
+        A write enriches, it does not erase what it does not know: an
+        incoming empty name, role, seat tier or usage keeps whatever the
+        row already holds. The case this exists for is real - the
+        Anthropic and Fireflies APIs report no seat tiers, so a sync
+        running after an operator assigned tiers by import must not wipe
+        the money math it cannot see. An explicit value still overwrites.
+        """
         now = _now()
+        keep = ("CASE WHEN excluded.{c} = '{empty}' THEN"
+                " budget_members.{c} ELSE excluded.{c} END")
         with self._lock:
             self._db.execute(
                 "DELETE FROM budget_members WHERE tool_id = ? AND source = ?",
@@ -860,9 +870,11 @@ class State:
                     " seat_tier, source, usage, updated_at)"
                     " VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
                     " ON CONFLICT(tool_id, email) DO UPDATE SET"
-                    " name = excluded.name, role = excluded.role,"
-                    " seat_tier = excluded.seat_tier,"
-                    " source = excluded.source, usage = excluded.usage,"
+                    " name = " + keep.format(c="name", empty="") + ","
+                    " role = " + keep.format(c="role", empty="") + ","
+                    " seat_tier = " + keep.format(c="seat_tier", empty="") + ","
+                    " usage = " + keep.format(c="usage", empty="{}") + ","
+                    " source = excluded.source,"
                     " updated_at = excluded.updated_at",
                     (tool_id, m["email"], m.get("name", ""),
                      m.get("role", ""), m.get("seat_tier", ""), source,
