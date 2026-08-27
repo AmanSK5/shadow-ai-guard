@@ -156,6 +156,12 @@ CREATE TABLE IF NOT EXISTS finding_status (
   actor  TEXT NOT NULL DEFAULT '',
   at     TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS identity_map (
+  key        TEXT PRIMARY KEY,
+  identity   TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  updated_by TEXT NOT NULL DEFAULT ''
+);
 CREATE TABLE IF NOT EXISTS budget_subscriptions (
   tool_id      TEXT PRIMARY KEY,
   vendor       TEXT NOT NULL DEFAULT '',
@@ -759,6 +765,48 @@ class State:
                 self._event("decision_cleared", {"tool": tool_id, "by": by})
             self._db.commit()
         return bool(cur.rowcount)
+
+    # ------------------------------------------ identity map (managed) --
+    # Which person is behind a device key or a local username. The one
+    # piece of configuration that still needed kubectl: it lived only as
+    # a file the deployment mounted, while the portal generated the
+    # proposal for it and could not accept the corrected version back.
+    #
+    # Personal data, and the most personal this platform holds - names
+    # against machines. Stored plainly because the portal must resolve
+    # names to render them, replaced wholesale rather than patched
+    # (an operator edits the list in a spreadsheet, not row by row), and
+    # written by admins only.
+
+    def list_identity_map(self) -> list[dict]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT key, identity, updated_at, updated_by"
+                " FROM identity_map ORDER BY key").fetchall()
+        return [dict(r) for r in rows]
+
+    def replace_identity_map(self, entries: list[dict], by: str = "") -> int:
+        """The whole map, replacing whatever was there. An empty list
+        clears it, which is how a deployment falls back to the mounted
+        file - the same shape as clearing any other setting."""
+        now = _now()
+        with self._lock:
+            self._db.execute("DELETE FROM identity_map")
+            for e in entries:
+                self._db.execute(
+                    "INSERT INTO identity_map (key, identity, updated_at,"
+                    " updated_by) VALUES (?, ?, ?, ?)"
+                    " ON CONFLICT(key) DO UPDATE SET"
+                    " identity = excluded.identity,"
+                    " updated_at = excluded.updated_at,"
+                    " updated_by = excluded.updated_by",
+                    (e["key"], e["identity"], now, by))
+            # Counts, never names: the audit trail's ids-only rule covers
+            # people most of all, and this table is nothing but people.
+            self._event("identity_map_replaced",
+                        {"count": len(entries), "by": by})
+            self._db.commit()
+        return len(entries)
 
     # ---------------------------------------------- budget (managed) --
     # What the organisation pays for, per tool: the subscription (plan,

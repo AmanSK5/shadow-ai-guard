@@ -233,6 +233,10 @@ portal:
   # invented and then acted on is how the wrong name lands on a report.
   #
   # This is personal data. A Secret is a defensible choice instead.
+  # Optional since 0.15.0: in managed mode the map is editable in the portal
+  # (Inventory > People), stored with the receiver's other state, and rows
+  # saved there win over this file per key. Mount one here when you generate
+  # it from an MDM or CMDB in CI, or when you run classic mode.
   identityMap:
     existingConfigMap: ""
 

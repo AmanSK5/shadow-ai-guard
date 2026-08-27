@@ -584,6 +584,40 @@ def _custom_registry_entries(request) -> list:
     return entries
 
 
+_identity_map_cache: dict = {"at": 0.0, "data": None}
+
+
+def _identity_map(request) -> dict:
+    """The effective device/username -> person map.
+
+    The mounted file as ever, with the map saved in the portal merged
+    over it per key - the same DB-wins-when-set rule every other setting
+    follows, so a deployment can keep a large CSV in a ConfigMap and
+    still correct a handful of rows in the product.
+
+    Quiet on failure: a map that cannot be read leaves devices
+    unattributed, which is a state this product renders honestly, and
+    refusing to draw the estate over it would be worse.
+    """
+    out = derive.load_identity_map(IDENTITY_MAP) if IDENTITY_MAP else {}
+    if not LOGIN_MODE or request is None:
+        return out
+    now = time.time()
+    if (_identity_map_cache["data"] is None
+            or now - _identity_map_cache["at"] >= SETTINGS_CACHE_TTL):
+        token = request.cookies.get(SESSION_COOKIE, "")
+        try:
+            saved = managed.receiver_request(
+                RECEIVER_URL, "GET", "/admin/identity-map", token)
+        except managed.ReceiverError:
+            return out
+        _identity_map_cache.update(
+            at=now, data={e["key"]: e["identity"]
+                          for e in saved.get("entries", [])})
+    out.update(_identity_map_cache["data"] or {})
+    return out
+
+
 def _corp_domains(request) -> list:
     """The corporate domains this deployment currently claims.
 
@@ -880,8 +914,8 @@ def graph(request: Request,
         findings = _findings(hours, request)
         reg = _registry(request)
         domain_map = derive.load_domain_map_from(reg)
-        identity_map = derive.load_identity_map(IDENTITY_MAP) if IDENTITY_MAP else {}
-        return derive.graph_from(findings, domain_map, identity_map, hours,
+        return derive.graph_from(findings, domain_map,
+                                 _identity_map(request), hours,
                                  corp_domains=_corp_domains(request), reg=reg)
 
     value, at = _cached("graph", hours, build)
@@ -1091,7 +1125,8 @@ def suggest_identities(request: Request,
     hours = hours or LOOKBACK_HOURS
     findings = _findings(hours, request)
     domain_map = derive.load_domain_map_from(_registry(request))
-    devices, identities, _t, _b, _u = derive.build(findings, domain_map, {})
+    devices, identities, _t, _b, _u = derive.build(
+        findings, domain_map, _identity_map(request))
     matched, unmatched = derive.suggest_identity_rows(devices, identities)
 
     if fmt == "csv":
@@ -2227,6 +2262,42 @@ def api_budget_fx(to: str = Query(min_length=3, max_length=3,
                   token: str = Depends(_admin_forward)):
     return _receiver("GET", "/admin/budget/fx?to=%s"
                      % urllib.parse.quote(to), token)
+
+
+# -------------------------------------------------------- identity map --
+# Who is behind a device key or a local username. The portal generates
+# the proposal (/api/suggest-identities), an operator corrects it, and
+# this is where the corrected version goes - so the loop closes in the
+# product rather than ending at a ConfigMap somebody has to kubectl.
+
+
+class IdentityRow(BaseModel):
+    model_config = {"extra": "forbid"}
+    key: str = Field(min_length=1, max_length=256)
+    identity: str = Field(min_length=1, max_length=200)
+
+
+class IdentityMapWrite(BaseModel):
+    model_config = {"extra": "forbid"}
+    entries: list[IdentityRow] = Field(default_factory=list, max_length=10000)
+
+
+@app.get("/api/identity-map")
+def api_identity_map(_=Depends(require_auth),
+                     token: str = Depends(_admin_forward)):
+    return _receiver("GET", "/admin/identity-map", token)
+
+
+@app.post("/api/identity-map")
+def api_identity_map_write(req: IdentityMapWrite, _=Depends(require_auth),
+                           token: str = Depends(_admin_forward)):
+    """Replace the map, then drop every derived cache: attribution runs
+    through the graph, so every page is a view of the world before this
+    write."""
+    out = _receiver("PUT", "/admin/identity-map", token, req.model_dump())
+    _identity_map_cache.update(at=0.0, data=None)
+    _cache.clear()
+    return out
 
 
 @app.get("/")
