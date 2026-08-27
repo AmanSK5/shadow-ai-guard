@@ -126,8 +126,14 @@ def paste_guard_from(findings, domain_map=None):
     # from the event counts on purpose: a heartbeat is not something somebody
     # tried to paste.
     guard_devices = set()
-    guard_versions = defaultdict(set)
-    guard_modes = defaultdict(set)
+    # device -> (timestamp, version) and (timestamp, mode): the LATEST
+    # heartbeat wins. Keeping a set of devices per version instead put a
+    # device that upgraded during the window in two buckets, so the split
+    # summed past the device count ("39 devices running the guard" over a
+    # breakdown of 41) - and a rollout view wants where the fleet is now,
+    # not everywhere it has been.
+    guard_device_version = {}
+    guard_device_mode = {}
 
     for f in findings:
         if (f.get("source") or "") != "paste_guard":
@@ -138,10 +144,15 @@ def paste_guard_from(findings, domain_map=None):
         if version is not None:
             if device:
                 guard_devices.add(device)
+                ts = f.get("reported_at") or ""
                 if version:
-                    guard_versions[version].add(device)
+                    prev = guard_device_version.get(device)
+                    if prev is None or ts >= prev[0]:
+                        guard_device_version[device] = (ts, version)
                 if mode:
-                    guard_modes[mode].add(device)
+                    prev = guard_device_mode.get(device)
+                    if prev is None or ts >= prev[0]:
+                        guard_device_mode[device] = (ts, mode)
             continue
 
         action, detectors = _parse(f.get("evidence"))
@@ -182,7 +193,14 @@ def paste_guard_from(findings, domain_map=None):
             "warned": t["warned"],
             "blocked": t["blocked"],
             "overridden": t["overridden"],
-            "events": t["warned"] + t["blocked"] + t["overridden"],
+            # warned + blocked, NOT + overridden. guard.js reports the
+            # interception ("warned") and then, if the person proceeds,
+            # a second finding ("overridden") for the same paste - so
+            # adding all three counted every override twice, and the ISO
+            # evidence document inherited it ("8 paste events, 4
+            # overridden" for four pastes). Overridden is a subset of
+            # warned, and is reported as its own number beside this one.
+            "events": t["warned"] + t["blocked"],
             "devices": len(t["devices"]),
             # Which detectors fired here, commonest first. Identifiers only:
             # "aws_access_key", never what matched it.
@@ -202,7 +220,7 @@ def paste_guard_from(findings, domain_map=None):
         "warned": counts["warned"],
         "blocked": counts["blocked"],
         "overridden": counts["overridden"],
-        "events": sum(counts.values()),
+        "events": counts["warned"] + counts["blocked"],
         "devices": len(devices),
         "tools": len(rows),
         "detectors": [
@@ -215,12 +233,17 @@ def paste_guard_from(findings, domain_map=None):
         # and an estate where the extension was never deployed, and those are
         # the same number.
         "guard_devices": len(guard_devices),
-        "guard_versions": [
-            {"version": v, "devices": len(d)}
-            for v, d in sorted(guard_versions.items(), reverse=True)
-        ],
-        "guard_modes": [
-            {"mode": m, "devices": len(d)}
-            for m, d in sorted(guard_modes.items())
-        ],
+        "guard_versions": _split(guard_device_version, "version"),
+        "guard_modes": _split(guard_device_mode, "mode"),
     }
+
+
+def _split(by_device, field):
+    """One device, one bucket: the value from its latest heartbeat. These
+    splits are read as "where the fleet is", so they have to sum to the
+    number of devices running the guard."""
+    counts = defaultdict(int)
+    for _ts, value in by_device.values():
+        counts[value] += 1
+    return [{field: v, "devices": n} for v, n in
+            sorted(counts.items(), reverse=(field == "version"))]
