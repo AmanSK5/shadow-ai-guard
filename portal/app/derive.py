@@ -668,19 +668,6 @@ def build(findings, domain_map=None, identity_map=None):
                 b["devices"].discard(bare)
                 b["devices"].add(canon)
 
-    # One person, one identity. Do this before devices are attributed,
-    # so a device mapped to either spelling lands on the same person.
-    for variant, canon in _identity_aliases(identities).items():
-        src, dst = identities.pop(variant), identities[canon]
-        for field in ("tools", "surfaces", "sources", "accounts", "devices"):
-            dst[field] = (dst.get(field) or set()) | (src.get(field) or set())
-        dst["findings"] += src["findings"]
-        dst["aliases"].add(variant)
-        for t in tools.values():
-            if variant in t["identities"]:
-                t["identities"].discard(variant)
-                t["identities"].add(canon)
-
     # Attach a person to each device, if the deployer supplied a mapping.
     # Device key first, then any local username: an MDM keys on the serial, a
     # spreadsheet is more likely to key on the name someone logs in with.
@@ -699,6 +686,29 @@ def build(findings, domain_map=None, identity_map=None):
             i["tools"] |= d["tools"]
             i["surfaces"] |= d["surfaces"]
 
+    # One person, one identity - AFTER attribution, not before. A cloud
+    # sign-in creates an identity directly; the other spelling of the
+    # same colleague often exists only because the identity map attached
+    # it to a device just above, so merging any earlier compares one
+    # spelling against a name that does not exist yet and leaves the two
+    # rows the merge was written to collapse.
+    for variant, canon in _identity_aliases(
+            identities, set(identity_map.values())).items():
+        src, dst = identities.pop(variant), identities[canon]
+        for field in ("tools", "surfaces", "sources", "accounts", "devices"):
+            dst[field] = (dst.get(field) or set()) | (src.get(field) or set())
+        dst["findings"] += src["findings"]
+        dst["aliases"].add(variant)
+        for t in tools.values():
+            if variant in t["identities"]:
+                t["identities"].discard(variant)
+                t["identities"].add(canon)
+        # A device attributed to the variant now names the person the
+        # rest of the product shows.
+        for d in devices.values():
+            if d.get("person") == variant:
+                d["person"] = canon
+
     return devices, identities, tools, bridges, unattributed
 
 
@@ -710,7 +720,7 @@ _MIN_ALIAS_KEY = 6
 _ALIAS_SEPARATORS = ("-", "_", ".", ":")
 
 
-def _identity_aliases(identities):
+def _identity_aliases(identities, preferred=()):
     """{variant: canonical} where two identity strings are the same
     person spelled differently.
 
@@ -725,6 +735,7 @@ def _identity_aliases(identities):
     identical. Two genuinely different people would have to share a name
     exactly, and no source could tell them apart either.
     """
+    preferred = set(preferred or ())
     by_norm = {}
     for name in identities:
         norm = _norm_person(name)
@@ -734,11 +745,14 @@ def _identity_aliases(identities):
     for names in by_norm.values():
         if len(names) < 2:
             continue
-        # The spelling the estate saw most wins, so the name on screen is
-        # the one most sources use; alphabetical to keep it deterministic
-        # when they tie.
-        canon = sorted(names,
-                       key=lambda n: (-identities[n]["findings"], n))[0]
+        # A spelling somebody typed into the identity map wins: that is a
+        # deliberate choice about what to call a colleague, and a source's
+        # spelling is an accident of how the source stores names. After
+        # that, the spelling seen most often, then alphabetically so the
+        # answer does not move between reads.
+        canon = sorted(names, key=lambda n: (n not in preferred,
+                                             -identities[n]["findings"],
+                                             n))[0]
         for n in names:
             if n != canon:
                 out[n] = canon
