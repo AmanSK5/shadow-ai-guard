@@ -716,7 +716,9 @@ const WIDGETS = {
       <td>${esc(r.tool)}</td>
       <td style="color:var(--mut)">${esc((r.last_seen||'').slice(0,10))}</td>
     </tr>`).join('')}</table>`
-    : '<p class="lede">None seen. That is a result, not an absence of one.</p>'}
+    : dataOk()
+      ? '<p class="lede">None seen. That is a result, not an absence of one.</p>'
+      : '<p class="lede">Nothing to show: the findings could not be read.</p>'}
     </div>`;
   },
 
@@ -981,7 +983,9 @@ function coverage() {
   ${gaps.map(([k,d])=>`<tr><td>${esc(label(k,d))}</td>
     <td>${(d.sources||[]).map(s=>`<span class="pill p-mut">${esc(s)}</span>`).join('')}</td>
     <td>${(d.tools||[]).length}</td></tr>`).join('')}</table></div>`
-  : '<p class="lede">Every device with a scanner finding also has a collector reporting.</p>'}`;
+  : dataOk()
+    ? '<p class="lede">Every device with a scanner finding also has a collector reporting.</p>'
+    : '<p class="lede">Nothing to compare: the findings could not be read.</p>'}`;
 }
 
 function deviceDetail(k) {
@@ -1594,7 +1598,8 @@ async function register() {
         data-key="${esc(r.id)}">add to registry</button>` : ''}</div>` : ''}`}
     ${exceptionBlock(r)}
   </div>`).join('')}
-  </div>` : `<p class="lede">No AI tools observed in the last ${esc(win)}.
+  </div>` : !dataOk() ? `<p class="lede">No AI tools to show: the findings
+  could not be read. This is not an empty estate.</p>` : `<p class="lede">No AI tools observed in the last ${esc(win)}.
   That is a real answer for a small estate, and it is also what a fleet with no
   collectors deployed looks like: check Setup before reading it as a clean
   one.</p>`}
@@ -1766,7 +1771,8 @@ async function iso() {
   ${inputs.length ? `<ul class="inputs">
     ${inputs.map(([, text, target]) =>
       `<li><a href="#${target}">${esc(text)}</a></li>`).join('')}
-  </ul>` : `<p class="lede">Nothing outstanding in this window. Sanity check:
+  </ul>` : !dataOk() ? `<p class="lede">Nothing to review: the findings
+  could not be read.</p>` : `<p class="lede">Nothing outstanding in this window. Sanity check:
   ${e.sources_reporting} of ${e.sources_known} expected sources are reporting -
   an estate with nothing reporting looks "clean" too.</p>`}
 
@@ -2973,7 +2979,10 @@ function bReconcile(sub) {
   const keysByTool = {};
   eff.forEach(t => {
     const map = new Map();
-    obs.perTool[t].forEach(n => bKeys(n).forEach(k => map.set(k, n)));
+    obs.perTool[t].forEach(n => bKeys(n).forEach(k => {
+      if (!map.has(k)) map.set(k, new Set());
+      map.get(k).add(n);
+    }));
     keysByTool[t] = map;
   });
   const tiers = sub.seat_tiers || [];
@@ -2984,8 +2993,7 @@ function bReconcile(sub) {
     const keys = [...bKeys(m.email), ...bKeys(m.name)];
     const seenOn = eff.filter(t => keys.some(k => keysByTool[t].has(k)));
     seenOn.forEach(t => keys.forEach(k => {
-      const n = keysByTool[t].get(k);
-      if (n) usedNames.add(n);
+      (keysByTool[t].get(k) || []).forEach(n => usedNames.add(n));
     }));
     const tier = resolveTier(m);
     if (seenOn.length) matched.push({m, tier, seenOn});
@@ -4509,13 +4517,44 @@ function tabbar() {
     `<button data-nav="${id}" class="${view===id?'on':''}">${lbl}</button>`).join('')}</div>`;
 }
 
+// Did the estate data actually arrive? Every "none seen, and that is a
+// real answer" line on this page is a claim about the ESTATE, and it is
+// only true if the read succeeded. A viewer account whose reads are
+// refused used to get those same confident sentences over zeros, which
+// is the worst failure this product can have: it reports a clean estate
+// it never looked at.
+const dataOk = () => !loadError;
+
+// The banner that says so, above every view rather than on the one page
+// that happened to check.
+function loadBanner() {
+  if (!loadError) return '';
+  const denied = /401|403|login|permission|read-only|forbidden/i.test(loadError);
+  return `<div class="note" style="border-color:var(--dstr);margin-bottom:14px">
+    <strong>The findings could not be read, so this page is not an answer.</strong>
+    <div class="src-note" style="margin-top:4px;font-style:normal">${esc(loadError)}</div>
+    <div class="src-note" style="margin-top:6px">${denied
+      ? `This account was refused. Reads go through the portal, and this
+         deployment has no log-store credential of its own, so they are
+         being made with your session - which this role cannot use. An
+         admin can fix it for every account by setting
+         <span class="mono">RECEIVER_ADMIN_TOKEN</span> on the portal, or
+         giving it <span class="mono">LOKI_URL</span> and its own
+         credentials. Until then the counts below are zeros because
+         nothing was read, not because nothing is happening.`
+      : `Every count below is missing rather than zero. Settings >
+         Diagnostics records when the last read succeeded and when the
+         last one failed.`}</div>
+  </div>`;
+}
+
 async function render() {
   const sec = sectionOf(view);
   if (sec) SECTAB[sec.id] = view;
   drawNav();
   // A full render is a change of place, so the inspector closes with it.
   if (!detail) { DSTACK = []; document.body.classList.remove('open'); }
-  const tb = tabbar();
+  const tb = tabbar() + loadBanner();
   // settings and register each read a second endpoint, so they are async.
   if (view === 'settings') { app.innerHTML = tb + await settings(); return; }
   if (view === 'register') { app.innerHTML = tb + await register(); return; }
