@@ -2329,6 +2329,39 @@ def api_identity_map(_=Depends(require_auth),
     return _receiver("GET", "/admin/identity-map", token)
 
 
+@app.get("/api/identity-map.csv")
+def api_identity_map_csv(request: Request, _=Depends(require_auth)):
+    """The map currently IN EFFECT, as the CSV this page accepts back.
+
+    Not the same thing as the proposal: this is what the portal is
+    actually resolving with, mounted file and portal-saved rows merged.
+    An operator moving a mounted map into the portal, or keeping a copy
+    of what is live, had no way to get it out - the only download was a
+    set of suggestions.
+    """
+    rows = sorted(_identity_map(request).items())
+    body = ["# key,identity",
+            "# The identity map in effect: the mounted file, with rows",
+            "# saved in the portal taking precedence. Edit and upload it",
+            "# back on Inventory > People.",
+            "key,identity"]
+    for key, identity in rows:
+        if derive._UNSAFE_IN_KEY.search(key) or \
+                derive._UNSAFE_IN_KEY.search(identity):
+            # The same characters the loader refuses. A value that
+            # cannot survive the round trip is named in a comment
+            # rather than written as a row that would not come back.
+            body.append("# skipped, unsafe characters: %s"
+                        % derive.csv_safe(key)[:60])
+            continue
+        body.append("%s,%s" % (derive.csv_safe(key),
+                               derive.csv_safe(identity)))
+    return PlainTextResponse(
+        "\n".join(body) + "\n",
+        headers={"Content-Disposition":
+                 'attachment; filename="identity-map.csv"'})
+
+
 @app.post("/api/identity-map")
 def api_identity_map_write(req: IdentityMapWrite, _=Depends(require_auth),
                            token: str = Depends(_admin_forward)):
