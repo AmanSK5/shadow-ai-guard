@@ -2651,7 +2651,9 @@ function diagnosticsCards() {
   <div class="wcard" style="margin-bottom:10px"><h3>Registry</h3>
   <dl class="kv">
     <dt>Loaded</dt><dd>${yn(r.registry_loaded)}</dd>
-    <dt>Tools</dt><dd>${esc(r.registry_tools)}</dd>
+    <dt>Tools</dt><dd>${esc(r.registry_tools)}${
+      r.registry_tools_with_domains != null && r.registry_tools_with_domains !== r.registry_tools
+        ? ` <span style="color:var(--mut)">· ${esc(r.registry_tools_with_domains)} with a domain</span>` : ''}</dd>
     <dt>Path</dt><dd>${esc(r.registry_path)}</dd>
     ${r.registry_error ? `<dt>Error</dt><dd style="color:var(--dstr)">${esc(r.registry_error)}</dd>` : ''}
   </dl>
