@@ -204,10 +204,13 @@ are listed as "also seen as", and personal-account rows use the spelling
 People shows.
 
 In managed mode the map lives in the portal: Inventory > People has an
-Identity map panel that downloads the proposal, exports the map currently
-in effect (the mounted file and the portal's rows merged, in the format the
-upload accepts), takes the corrected file back by upload or paste, previews
-which keys match a device the estate has actually seen, and saves. A mounted file still works and still applies -
+Identity map panel whose download is a working copy - the rows in effect
+now, then every machine with nobody attached, commented out, with a name
+filled in where a local username or the machine's own name suggests one and
+blank where nothing does. Uncomment what you believe, delete the rest,
+upload or paste it back; the panel previews which keys match a device the
+estate has actually seen, and saves. Feeding the file straight back changes
+nothing, because every proposal is inert until a human uncomments it. A mounted file still works and still applies -
 rows saved in the portal win over it per key, the same rule every other
 setting follows - so a deployment that keeps a large CSV in a ConfigMap can
 still correct a handful of rows in the product. Saving replaces the whole
