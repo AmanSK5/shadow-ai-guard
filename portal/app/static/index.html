@@ -644,7 +644,16 @@ const WIDGETS = {
           ? ` title="${pa.length - open.length} more accepted with a reason"` : ''}>
         open personal accounts</dd>${spark(tr.personal, true)}</div>
       <div><dt>${fresh}</dt><dd>new this week</dd></div>
-      <div><dt>${new Set(pa.map(r=>r.user||r.device)).size}</dt><dd>affected people</dd></div>
+      ${(() => {
+        // People and unattributed devices, counted apart. This was one
+        // tile of `user || device`, so an unattributed laptop counted as
+        // a person - and a person seen on two surfaces, named on one and
+        // unresolved on the other, counted twice in the same number.
+        const named = new Set(pa.filter(r => r.user).map(r => r.user));
+        const anon = new Set(pa.filter(r => !r.user && r.device).map(r => r.device));
+        return `<div><dt>${named.size}</dt><dd>affected people</dd></div>
+      ${anon.size ? `<div><dt>${anon.size}</dt><dd title="Personal-account rows whose device no identity map covers - counted apart, because a device is not a person">unattributed devices</dd></div>` : ''}`;
+      })()}
       <div><dt>${new Set(pa.map(r=>r.tool)).size}</dt><dd>affected tools</dd></div>
       <div><dt>${devs.length}</dt><dd>devices</dd>${spark(tr.devices)}</div>
       <div><dt>${ents(G.tools).length}</dt><dd>tools</dd></div>
@@ -2508,7 +2517,11 @@ function diagnosticsCards() {
   <dl class="kv">
     <dt>Configured</dt><dd>${yn(r.loki_configured)}</dd>
     <dt>Last successful read</dt><dd>${ago(r.loki_last_success)}</dd>
-    ${r.loki_last_error ? `<dt>Last error</dt><dd style="color:var(--dstr)">${esc(r.loki_last_error)}</dd>` : ''}
+    ${r.loki_last_error ? `<dt>Last error</dt><dd style="color:var(--dstr)">${esc(r.loki_last_error)}${r.loki_last_error_at ? ` · ${ago(r.loki_last_error_at)}` : ''}</dd>` : ''}
+    ${r.loki_last_error && r.loki_last_error_at && r.loki_last_error_at > (r.loki_last_success || 0)
+      ? `<dt></dt><dd class="src-note" style="color:var(--warn)">The last read
+         attempt FAILED. Anything this portal shows is from the last
+         successful read above, or is empty because there was none.</dd>` : ''}
     <dt>Lookback window</dt><dd>${esc(r.lookback_hours)}h</dd>
     <dt>Cache TTL</dt><dd>${esc(r.cache_ttl_seconds)}s</dd>
   </dl></div>
