@@ -3233,10 +3233,22 @@ function budgetCard(sub) {
   // mismatch presenting as silence.
   const tierKeys = tiers.map(t => bNorm(t.name)).filter(Boolean)
     .sort((a, b) => b.length - a.length);
+  // A single-tier plan needs no per-user tier data at all: everyone on
+  // the plan is on that tier by definition, so members with none
+  // recorded count against it automatically. That is exactly the case
+  // the vendor APIs leave behind - they report members but no seats -
+  // and it is the one derivation that needs no vendor data to be true.
+  // Multi-tier plans cannot guess, so there the no-tier members stay
+  // counted and named below the table.
+  const soleTier = tierKeys.length === 1 ? tierKeys[0] : null;
   const tierOf = {}; let noTier = 0; const oddTiers = {};
   (sub.members || []).forEach(m => {
     const k = bNorm(m.seat_tier);
-    if (!k) { noTier++; return; }
+    if (!k) {
+      if (soleTier) tierOf[soleTier] = (tierOf[soleTier] || 0) + 1;
+      else noTier++;
+      return;
+    }
     const hit = tierKeys.find(tk => k === tk)
       || tierKeys.find(tk => k.includes(tk));
     if (hit) tierOf[hit] = (tierOf[hit] || 0) + 1;
