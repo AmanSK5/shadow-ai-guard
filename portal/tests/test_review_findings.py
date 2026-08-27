@@ -502,12 +502,30 @@ def test_the_settings_tab_from_the_url_cannot_dispatch_into_the_prototype():
     truthiness, and every object inherits callable properties, so
     #settings/constructor and #settings/__defineGetter__ dispatched into
     Object.prototype - rendering nonsense, or throwing and taking the
-    page with it."""
+    page with it.
+
+    Two attempted fixes missed. An own-property guard corrected the
+    behaviour but kept the shape; a Map removed the inherited keys but
+    the call was still a value fetched with a key from the URL. The
+    fault was upstream of both: SETTAB was the one fragment-derived
+    value that was never checked against a list of what it may be,
+    while the view on the very next line always was."""
     index = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     html = open(os.path.join(index, "app", "static", "index.html")).read()
-    assert "Object.prototype.hasOwnProperty.call(SGROUPS, SETTAB)" in html
-    # The truthiness form must not come back.
-    assert "if (!SGROUPS[SETTAB])" not in html
+    # Allow-listed where it enters, like the view beside it.
+    assert "if (SETTABS.includes(tab)) SETTAB = tab;" in html
+    # And named outright at the point of use - no key, no lookup, no call.
+    assert "if (SETTAB === 'connection') body = connectionSettings();" in html
+    assert "else { SETTAB = 'fleet'; body = fleetSettings(); }" in html
+    assert "${body}`;" in html
+    # The list has to exist before fromHash() runs, or it is a TDZ error
+    # on load - the same trap SETTAB itself fell into.
+    assert html.index("const SETTABS") < html.index("SETTABS.includes(tab)")
+    # No earlier form may come back.
+    for gone in ("if (!SGROUPS[SETTAB])", "SGROUPS[SETTAB]()",
+                 "const SGROUPS = new Map([", "${settingsGroup()}",
+                 "if (tab) SETTAB = tab;"):
+        assert gone not in html
 
 
 def test_a_spelling_that_exists_only_via_the_map_still_merges():
