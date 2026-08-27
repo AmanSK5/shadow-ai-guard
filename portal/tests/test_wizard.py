@@ -196,9 +196,9 @@ def test_registry_tools_needs_no_findings(monkeypatch, tmp_path):
     out = main.registry_tools(None, _=None)
     assert out["tools"] == [
         {"id": "chatgpt", "name": "ChatGPT", "vendor": "OpenAI",
-         "approved": False, "custom": False},
+         "approved": False, "license_group": "", "custom": False},
         {"id": "claude", "name": "Claude", "vendor": "Anthropic",
-         "approved": True, "custom": False}]
+         "approved": True, "license_group": "", "custom": False}]
 
 
 def test_the_setup_rows_offer_the_extension_policy_once():
