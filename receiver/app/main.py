@@ -1847,6 +1847,65 @@ def put_governance(req: GovernanceUpdate, authorization: str = Header(default=""
     return {"decisions": STATE.list_decisions()}
 
 
+# ------------------------------------------------------- identity map --
+# Who is behind a device key or a local username. The portal generates
+# the proposal, an operator corrects it, and this is where the corrected
+# version lives - so the loop closes in the product instead of ending at
+# a ConfigMap. A deployment that mounts a file keeps working: the portal
+# merges, with what an operator saved here winning per key.
+
+# The same characters the file loader refuses, for the same reason: a
+# comma or a quote breaks the CSV round trip, and a hash starts the
+# comment the proposal generator writes after each row.
+_IDENTITY_UNSAFE = re.compile(r"[\x00-\x1f\x7f,\"'#]")
+MAX_IDENTITY_ROWS = 10000
+
+
+class IdentityRow(BaseModel):
+    model_config = {"extra": "forbid"}
+    key: str = Field(min_length=1, max_length=256)
+    identity: str = Field(min_length=1, max_length=200)
+
+
+class IdentityMapWrite(BaseModel):
+    model_config = {"extra": "forbid"}
+    entries: list[IdentityRow] = Field(default_factory=list,
+                                       max_length=MAX_IDENTITY_ROWS)
+
+
+@app.get("/admin/identity-map")
+def get_identity_map(authorization: str = Header(default="")):
+    """Readable by any account the portal authenticates: it renders these
+    names on every page that attributes a device, so withholding the map
+    from a viewer would only make the pages wrong, not private."""
+    _admin_auth(authorization)
+    return {"entries": STATE.list_identity_map()}
+
+
+@app.put("/admin/identity-map")
+def put_identity_map(req: IdentityMapWrite,
+                     authorization: str = Header(default="")):
+    """Replace the whole map. Validated as a batch before anything is
+    written, so a 422 means nothing changed."""
+    _admin_auth(authorization, write=True)
+    seen, entries = set(), []
+    for e in req.entries:
+        key, identity = e.key.strip(), e.identity.strip()
+        if not key or not identity:
+            raise HTTPException(422, "every row needs a key and an identity")
+        if _IDENTITY_UNSAFE.search(key) or _IDENTITY_UNSAFE.search(identity):
+            raise HTTPException(
+                422, "a key or identity contains a character that cannot "
+                     "survive the CSV round trip (comma, quote, hash or a "
+                     "control character): %s" % key[:60])
+        if key.lower() in seen:
+            raise HTTPException(422, "duplicate key: %s" % key[:60])
+        seen.add(key.lower())
+        entries.append({"key": key, "identity": identity})
+    count = STATE.replace_identity_map(entries, _admin_actor(authorization))
+    return {"ok": True, "count": count}
+
+
 # ------------------------------------------------------------- budget --
 # What the organisation pays for, per tool: subscription, seat tiers,
 # members, and (where a vendor has an admin API) the connection that syncs
