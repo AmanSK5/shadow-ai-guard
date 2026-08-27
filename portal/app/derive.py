@@ -521,6 +521,15 @@ def build(findings, domain_map=None, identity_map=None):
             continue
 
         tool = normalise_tool(tool, domain_map)
+        # One definition of "a tool in use", shared with the register.
+        # An MCP finding names its tool <tool>-mcp, which is evidence the
+        # tool is on that machine rather than a different tool - the
+        # register has always folded it, and the estate views did not, so
+        # the two pages disagreed about how many tools exist ("23 in use"
+        # against "26 tools", and a register "0 not in registry" beside
+        # three Inventory rows that are in no registry). The mcp surface
+        # still attaches, and the servers themselves stay their own view.
+        tool = _base_tool(tool)
 
         t = tools[tool]
         t["surfaces"].add(surface)
