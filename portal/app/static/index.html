@@ -2629,6 +2629,15 @@ function diagnosticsCards() {
   <div class="wcard" style="margin-bottom:10px"><h3>Loki</h3>
   <dl class="kv">
     <dt>Configured</dt><dd>${yn(r.loki_configured)}</dd>
+    <dt>Reads with</dt><dd>${esc(r.portal_read_credential || '')}
+      ${r.portal_read_credential === 'the signed-in account' ? `
+      <div class="src-note" style="color:var(--warn)">This portal has no
+      log-store credential of its own, so every read is made with the
+      account that is signed in. That works for an admin and is refused
+      for a viewer, so read-only accounts see an empty estate. Give it
+      <span class="mono">RECEIVER_ADMIN_TOKEN</span> (the receiver's
+      ADMIN_TOKEN), or its own <span class="mono">LOKI_URL</span> and
+      credentials.</div>` : ''}</dd>
     <dt>Last successful read</dt><dd>${ago(r.loki_last_success)}</dd>
     ${r.loki_last_error ? `<dt>Last error</dt><dd style="color:var(--dstr)">${esc(r.loki_last_error)}${r.loki_last_error_at ? ` · ${ago(r.loki_last_error_at)}` : ''}</dd>` : ''}
     ${r.loki_last_error && r.loki_last_error_at && r.loki_last_error_at > (r.loki_last_success || 0)

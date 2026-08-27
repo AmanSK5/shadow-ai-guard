@@ -538,12 +538,29 @@ def _log_store(request):
                     log.warning("receiver call failed for %s: %s",
                                 _redact_url(RECEIVER_URL), e.detail)
                 if e.status == 403:
+                    # A read-only account cannot recover the stored
+                    # credential, by design. If this portal has a log
+                    # store of its own, that is a configured source and
+                    # the right thing is to use it - the message here
+                    # has always offered exactly that as the fix, and
+                    # raising instead meant the advice did not work.
+                    # Not silent: the fallback is logged, and
+                    # Diagnostics reports which credential is in use.
+                    if LOKI_URL:
+                        log.info(
+                            "reading findings from the portal's own log "
+                            "store: this account cannot read the "
+                            "receiver-stored credentials")
+                        return (LOKI_URL, LOKI_USERNAME or "",
+                                LOKI_PASSWORD or "", "env")
                     raise HTTPException(
                         403, "this account cannot read the log-store "
-                             "credentials (read-only accounts never can). "
-                             "Give the portal RECEIVER_ADMIN_TOKEN - the "
-                             "receiver's ADMIN_TOKEN - so it reads with "
-                             "its own credential, or set LOKI_URL by env.")
+                             "credentials (read-only accounts never can), "
+                             "and this portal has no log store of its own "
+                             "to fall back to. Give it RECEIVER_ADMIN_TOKEN "
+                             "- the receiver's ADMIN_TOKEN - so it reads "
+                             "with its own credential, or set LOKI_URL and "
+                             "its credentials on the portal.")
                 raise HTTPException(
                     e.status, "could not read the log-store configuration "
                               "from the receiver (%s)" % e.detail)
@@ -870,6 +887,17 @@ def diagnostics(_=Depends(require_auth)):
             "started_at": STARTED_AT,
             "uptime_seconds": round(time.time() - STARTED_AT),
             "loki_configured": bool(LOKI_URL),
+            # Whether reads depend on who is signed in. Without a
+            # credential of its own, a managed portal reads with the
+            # operator's session - which works for an admin and is
+            # refused for a viewer, so read-only accounts see an empty
+            # estate. It is the single most confusing state this
+            # product has, and it was only discoverable by creating a
+            # viewer account and looking.
+            "portal_read_credential": (
+                "receiver admin token" if RECEIVER_ADMIN_TOKEN
+                else "own log store" if LOKI_URL
+                else "the signed-in account" if LOGIN_MODE else "env"),
             "loki_last_success": _last_loki_ok or None,
             "loki_last_error": _last_loki_error,
             "loki_last_error_at": _last_loki_error_at or None,
