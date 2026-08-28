@@ -215,7 +215,7 @@ def test_the_receiver_url_probe_warns_on_a_dotless_host(login_mode, monkeypatch)
     assert out["ok"] is True and out["version"] == "0.9.8"
     assert any("no dot" in w for w in out["warnings"])
 
-    _probe_with_saved_url(monkeypatch, "https://ai-guard.tailfc8950.ts.net")
+    _probe_with_saved_url(monkeypatch, "https://ai-guard.your-tailnet.ts.net")
     out = main.test_receiver_url(_=None, token="t")
     assert out["warnings"] == []
 
