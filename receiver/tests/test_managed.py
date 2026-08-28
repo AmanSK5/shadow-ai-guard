@@ -261,17 +261,63 @@ def test_a_database_from_before_the_added_columns_is_upgraded(tmp_path):
     assert d["id"] == "d1" and d["enrollments"] == 1 and d["reenrolled_at"] is None
 
 
-def test_a_manually_revoked_device_stays_as_history_when_it_reenrolls(managed):
-    """Revocation is a deliberate record. The stolen-credential recovery path
-    (revoke, then re-enroll from the real machine) keeps the revoked row and
-    makes a fresh one, so the audit trail still shows what was cut off."""
+def test_a_revoked_serial_cannot_enroll_itself_back(managed):
+    """Revocation has to survive the token that created the device.
+
+    The enrollment token lives in an MDM artifact, which is exactly where
+    someone being cut off would still have it. If a revoked serial could
+    enroll again, revoke would mean "until the next check-in"."""
     token = _mint()["token"]
     first = _enroll(token).json()
     client.post(f"/admin/devices/{first['device_id']}/revoke", headers=ADMIN)
+
+    resp = _enroll(token)
+    assert resp.status_code == 409
+    assert "allow" in resp.json()["detail"]
+    # Nothing was minted: the fleet still holds one row, and it is revoked.
+    devices = client.get("/admin/devices", headers=ADMIN).json()["devices"]
+    assert [bool(d["revoked_at"]) for d in devices] == [True]
+    kinds = [r["kind"] for r in managed._db.execute("SELECT kind FROM events")]
+    assert "enroll_refused_revoked" in kinds
+
+
+def test_an_admin_can_let_a_revoked_serial_back_exactly_once(managed):
+    """The reimage and the replacement machine, said deliberately. The
+    allowance is spent by the enrollment it permits, so the new credential
+    is revocable with the same finality as the one it replaces."""
+    token = _mint()["token"]
+    first = _enroll(token).json()
+    did = first["device_id"]
+    client.post(f"/admin/devices/{did}/revoke", headers=ADMIN)
+    assert client.post(f"/admin/devices/{did}/allow-reenrollment",
+                       headers=ADMIN).status_code == 200
+
     second = _enroll(token).json()
-    assert second["device_id"] != first["device_id"]
+    assert second["device_id"] != did
+    # The revoked row stays as history beside the new one.
     devices = client.get("/admin/devices", headers=ADMIN).json()["devices"]
     assert sorted(bool(d["revoked_at"]) for d in devices) == [False, True]
+    # And the allowance is gone: revoking the new row re-arms the tombstone.
+    client.post(f"/admin/devices/{second['device_id']}/revoke", headers=ADMIN)
+    assert _enroll(token).status_code == 409
+
+
+def test_allowing_reenrollment_needs_a_revoked_device(managed):
+    """An active device has nothing to allow, and a standing allowance
+    cannot be stacked up ahead of time."""
+    token = _mint()["token"]
+    did = _enroll(token).json()["device_id"]
+    assert client.post(f"/admin/devices/{did}/allow-reenrollment",
+                       headers=ADMIN).status_code == 404
+    assert client.post("/admin/devices/nope/allow-reenrollment",
+                       headers=ADMIN).status_code == 404
+
+    client.post(f"/admin/devices/{did}/revoke", headers=ADMIN)
+    assert client.post(f"/admin/devices/{did}/allow-reenrollment",
+                       headers=ADMIN).status_code == 200
+    # Twice is not two enrollments.
+    assert client.post(f"/admin/devices/{did}/allow-reenrollment",
+                       headers=ADMIN).status_code == 404
 
 
 def test_an_actively_reporting_device_cannot_be_displaced(managed):
@@ -290,9 +336,12 @@ def test_an_actively_reporting_device_cannot_be_displaced(managed):
     kinds = [r["kind"] for r in managed._db.execute("SELECT kind FROM events")]
     assert "supersede_conflict" in kinds
 
-    # Manual revoke is the documented path through the 409.
+    # Manual revoke is still the documented path through the 409, and since
+    # a revoked serial is a tombstone it takes the second deliberate step.
     did = first["device_id"]
     client.post(f"/admin/devices/{did}/revoke", headers=ADMIN)
+    assert _enroll(token).status_code == 409
+    client.post(f"/admin/devices/{did}/allow-reenrollment", headers=ADMIN)
     assert _enroll(token).status_code == 200
 
 

@@ -917,6 +917,22 @@ def revoke_device(did: str, authorization: str = Header(default="")):
     return {"ok": True}
 
 
+@app.post("/admin/devices/{did}/allow-reenrollment")
+def allow_reenrollment(did: str, authorization: str = Header(default="")):
+    """Lift the tombstone on a revoked device's serial, for one enrollment.
+
+    A revoked serial is refused at /enroll, because the enrollment token that
+    created it is usually still in the MDM artifact and would otherwise hand
+    the credential back. The reimage and the replacement machine are the real
+    reasons a serial returns, and this is the deliberate step that says so.
+    """
+    _admin_auth(authorization, write=True)
+    if not STATE.allow_reenrollment(did):
+        raise HTTPException(
+            404, "no such revoked device, or re-enrollment is already allowed")
+    return {"ok": True}
+
+
 # ------------------------------------------------------- admin accounts --
 
 
