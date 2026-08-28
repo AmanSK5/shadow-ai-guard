@@ -1,0 +1,18 @@
+# Naming that should not appear in published text: internal shorthands,
+# customer or deployment names, and the asset-tag prefixes device keys
+# carry in a particular estate. One extended-regex pattern per line;
+# blank lines and # comments ignored; matching is case-insensitive.
+#
+# Copy this to deny-list.txt and add your own. That file is not tracked -
+# a list of the things you do not want published is itself a list of the
+# things you do not want published, and it does not belong in a public
+# repository. CI reads the same content from a repository secret named
+# IDENTIFIER_DENY_LIST, one pattern per line; with no secret set the
+# check passes, which is the right answer for a fork.
+#
+# Prefer patterns that are bare rather than anchored to a character
+# class: a prefix is often written in prose in placeholder form, and
+# "<" or "*" will fall outside [a-z0-9].
+acme
+example-corp
+asset-
