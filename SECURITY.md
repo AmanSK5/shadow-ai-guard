@@ -57,9 +57,13 @@ should accept before deploying:
 
 If that is unacceptable in your threat model, use managed mode (the
 default since 0.9.9): the
-endpoint collectors then enroll for per-device credentials, one machine can
-be revoked without touching any other, and an enrollment token in an MDM
-artifact can create auditable device records but never submit findings. The
+endpoint collectors then enroll for per-device credentials, and one machine
+can be revoked without touching any other. An enrollment token in an MDM
+artifact cannot submit findings itself, but it is a credential-minting
+credential and what it mints does report - so treat it as one. Since 0.16.8
+it cannot be used to undo a revocation: a revoked serial is refused at
+`/enroll` until an admin explicitly allows it back, which is what separates
+a reimaged machine from the machine you just cut off. The
 shared token remains valid alongside (the browser extension and scanners
 still use it), so the consequences above shrink to those surfaces rather
 than disappearing - and `REQUIRE_DEVICE_CREDENTIALS=true` closes even that:
