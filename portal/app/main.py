@@ -1458,6 +1458,18 @@ def revoke_device(did: str, _=Depends(require_auth),
     return _receiver("POST", "/admin/devices/%s/revoke" % did, token)
 
 
+@app.post("/api/devices/{did}/allow-reenrollment")
+def allow_reenrollment(did: str, _=Depends(require_auth),
+                       token: str = Depends(_admin_forward)):
+    """The deliberate step that lets a revoked serial enroll once more, for
+    a reimage or a replacement machine. Role-gated by the receiver, like
+    every other write here."""
+    if not _ID_RE.match(did):
+        raise HTTPException(422, "malformed device id")
+    return _receiver(
+        "POST", "/admin/devices/%s/allow-reenrollment" % did, token)
+
+
 # Settings and governance writes. POST rather than PUT on the portal side,
 # because the CSRF rule (JSON-only POSTs) is what protects cookie-carried
 # writes and widening it to more methods is more surface than one verb

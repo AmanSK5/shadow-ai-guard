@@ -33,7 +33,11 @@ script parameters, the browser extension's managed policy, the scanner's
 Secret - and each endpoint collector, browser profile and scanner exchanges
 it once at `/enroll` for its own credential (`aigd_...`). One of them can
 then be revoked without touching any other, and the inventory knows who
-exists rather than inferring it from silence. Platforms are `macos`, `linux`,
+exists rather than inferring it from silence. Revoking is final in the
+direction that matters: the enrollment token is still sitting in the MDM
+artifact on the machine you just cut off, so a revoked serial is refused at
+`/enroll` rather than re-minted, and an admin has to allow it back for a
+genuine reimage or replacement. Platforms are `macos`, `linux`,
 `windows`, `browser` (one row per managed browser profile: serial is the MDM
 device id plus a per-profile install id) and `scanner` (serial is the
 scanner's configured id). Every authenticated request with a device
@@ -44,12 +48,13 @@ shared token off for ingest (see the configuration table).
 
 | method | path | auth | what |
 |--------|------|------|------|
-| POST | `/enroll` | enrollment token | exchange for this device's own credential; a same-serial re-enroll reissues a silent device's credential in place (same id, old credential dead, `reenrolled_at` and `enrollments` say it happened - the reimaged laptop, or a stateless scanner enrolling every run) and 409s a device seen within the hour. Platform `scanner` is exempt from that guard: it enrolls every run by design |
+| POST | `/enroll` | enrollment token | exchange for this device's own credential; a same-serial re-enroll reissues a silent device's credential in place (same id, old credential dead, `reenrolled_at` and `enrollments` say it happened - the reimaged laptop, or a stateless scanner enrolling every run) and 409s a device seen within the hour. Platform `scanner` is exempt from that guard: it enrolls every run by design. A serial whose every row is **revoked** 409s too, until an admin allows it back |
 | POST | `/admin/enrollment-tokens` | admin | mint (`note`, `ttl_days`, default 180) |
 | GET  | `/admin/enrollment-tokens` | admin | list - ids, notes and expiry, never token material |
 | POST | `/admin/enrollment-tokens/{id}/revoke` | admin | |
 | GET  | `/admin/devices` | admin | the fleet: platform, serial, hostname, enrolled / re-enrolled, last seen, agent version |
-| POST | `/admin/devices/{id}/revoke` | admin | that machine's credential stops working on its next request |
+| POST | `/admin/devices/{id}/revoke` | admin | that machine's credential stops working on its next request, and its serial is refused at `/enroll` from then on |
+| POST | `/admin/devices/{id}/allow-reenrollment` | admin | lift that refusal for one enrollment - the reimage, the replacement machine |
 | GET  | `/admin/setup` | none | one bit: does an admin account need creating? The portal chooses its first screen with it |
 | POST | `/admin/setup` | setup code | claim the boot-printed code, create the admin account, leave with a session |
 | POST | `/admin/login` | none | username + password for a session token (`aigt_...`). Throttled: past a per-username or global failure cap in a five-minute window, attempts get a cheap 429 before any password work, and the audit log records a bounded number of failures plus one throttle event |

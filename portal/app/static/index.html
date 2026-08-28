@@ -3040,9 +3040,11 @@ async function fleet() {
   return `<h2>Fleet</h2>
   <p class="lede">Every device holding a credential. (The Devices view is
   different: it shows who has actually reported findings.) Revoke cuts off
-  that one device and nothing else. Re-enrollments - a reimaged laptop, a
-  scanner that enrolls every run - keep their row and are noted under
-  "enrolled".</p>
+  that one device and nothing else, and it holds: a revoked serial is
+  refused at /enroll even by a valid enrollment token, until an admin allows
+  it back for a reimage or a replacement. Re-enrollments of a live device -
+  a reimaged laptop, a scanner that enrolls every run - keep their row and
+  are noted under "enrolled".</p>
   ${ds.length ? `<table><tr><th>device</th><th>platform</th><th>serial</th>
     <th>enrolled</th><th>last seen</th><th>agent</th><th>status</th><th></th></tr>
   ${ds.map(d => `<tr>
@@ -3050,9 +3052,14 @@ async function fleet() {
     <td>${esc(d.platform)}</td><td class="mono">${esc(d.serial)}</td>
     <td>${when(d.enrolled_at)}${d.reenrolled_at ? `<br><span style="font-size:11px;color:var(--mut)">re-enrolled ×${esc(String((d.enrollments || 1) - 1))}, last ${when(d.reenrolled_at)}</span>` : ''}</td><td>${when(d.last_seen)}</td>
     <td>${esc(d.agent_version || '—')}</td>
-    <td>${d.revoked_at ? '<span class="pill p-mut">revoked</span>'
+    <td>${d.revoked_at ? (d.reenroll_allowed_at
+                       ? '<span class="pill p-amb" title="Revoked, but this serial may enroll once more">re-enrollment allowed</span>'
+                       : '<span class="pill p-mut">revoked</span>')
                        : '<span class="pill p-ok">active</span>'}</td>
-    <td>${d.revoked_at ? '' : `<button class="mini" data-act="revoke-device" data-key="${esc(d.id)}">revoke</button>`}</td>
+    <td>${!d.revoked_at
+            ? `<button class="mini" data-act="revoke-device" data-key="${esc(d.id)}">revoke</button>`
+            : (d.reenroll_allowed_at ? ''
+               : `<button class="mini" data-act="allow-reenroll" data-key="${esc(d.id)}">allow re-enrollment</button>`)}</td>
   </tr>`).join('')}</table>`
   : `<div class="note">${(() => {
       // An empty enrollment list beside a reporting fleet is not a
@@ -4762,8 +4769,11 @@ async function managedAction(act, el) {
   if (act === 'revoke-token' || act === 'revoke-device') {
     const id = el.getAttribute('data-key');
     const what = act === 'revoke-token' ? 'enrollment token' : 'device credential';
-    if (!confirm('Revoke ' + what + ' ' + id + '? This cannot be undone; a '
-                 + 'revoked device re-enrolls with a valid enrollment token.')) return;
+    if (!confirm('Revoke ' + what + ' ' + id + '? This cannot be undone. A '
+                 + (act === 'revoke-token'
+                    ? 'revoked token stops minting devices immediately.'
+                    : "revoked device's serial is then refused at /enroll until "
+                      + 'an admin allows it back.'))) return;
     const path = act === 'revoke-token'
       ? '/api/enrollment-tokens/' + encodeURIComponent(id) + '/revoke'
       : '/api/devices/' + encodeURIComponent(id) + '/revoke';
@@ -4774,6 +4784,21 @@ async function managedAction(act, el) {
       alert('Revoke failed: ' + d);
     }
     FLEET = null; TOKENS = null; render(); return;
+  }
+  if (act === 'allow-reenroll') {
+    const id = el.getAttribute('data-key');
+    if (!confirm('Allow device ' + id + ' to enroll once more? Use this for a '
+                 + 'reimage or a replacement machine. The allowance is spent '
+                 + 'by the next enrollment, and the new credential can be '
+                 + 'revoked like any other.')) return;
+    const r = await mfetch('/api/devices/' + encodeURIComponent(id)
+                           + '/allow-reenrollment', {method: 'POST'});
+    if (!r.ok) {
+      if (r.status === 401) { sessionLost(); return; }
+      let d = r.statusText; try { d = (await r.json()).detail || d; } catch (e) {}
+      alert('Could not allow re-enrollment: ' + d);
+    }
+    FLEET = null; render(); return;
   }
   if (act === 'artifact') {
     const kind = el.getAttribute('data-key');

@@ -18,10 +18,14 @@ presented bearer without trying every table, and so a leaked string is
 identifiable in a log:
 
   aige_...  enrollment token: mints device records at /enroll and does
-            nothing else. Long-lived by default (180 days) because it sits
-            inside an MDM artifact, where a short TTL means the deployment
-            silently breaks for new machines - its safety comes from what it
-            cannot do and from instant revocation, not from a short life.
+            nothing else. It is still a credential-minting credential - what
+            it mints reports - so a revoked serial is refused rather than
+            re-minted, and revocation cannot be undone by the token that
+            created the device. Long-lived by default (180 days) because it
+            sits inside an MDM artifact, where a short TTL means the
+            deployment silently breaks for new machines - its safety comes
+            from that narrow reach and from instant revocation, not from a
+            short life.
   aigd_...  device credential: one machine's bearer for /report and
             /registry, valid until revoked.
   aigt_...  admin session: what a portal login yields, valid for hours
@@ -209,6 +213,10 @@ _DEVICE_COLUMNS_ADDED = (
     # reimaged laptop, the stateless scanner - or a displaced device).
     ("reenrolled_at", "TEXT"),
     ("enrollments", "INTEGER NOT NULL DEFAULT 1"),
+    # Set on a revoked row to let that serial enroll once more. Revocation is
+    # otherwise a tombstone: without this, whoever prompted the revoke could
+    # undo it with the enrollment token they already hold.
+    ("reenroll_allowed_at", "TEXT"),
 )
 
 # Accounts predate roles; a database from before the column gets every
@@ -402,6 +410,32 @@ class State:
                         409, "a device with this serial is actively reporting; revoke it first"
                     )
 
+            # No live row for this serial: either nothing was ever enrolled
+            # under it, or every row was revoked. The second case is an
+            # operator's explicit decision, and the enrollment token that
+            # first created the device is usually still sitting in the same
+            # MDM artifact - so re-enrolling here would hand the credential
+            # straight back and make the revoke advisory. Refuse, and say
+            # what clears it.
+            tomb = None
+            if prior is None:
+                tomb = self._db.execute(
+                    "SELECT id, reenroll_allowed_at FROM devices"
+                    " WHERE platform = ? AND serial = ? AND revoked_at IS NOT NULL"
+                    " ORDER BY revoked_at DESC LIMIT 1",
+                    (platform, serial),
+                ).fetchone()
+                if tomb is not None and tomb["reenroll_allowed_at"] is None:
+                    self._event("enroll_refused_revoked", {
+                        "device": tomb["id"], "platform": platform, "serial": serial,
+                    })
+                    self._db.commit()
+                    raise EnrollError(
+                        409,
+                        "this device was revoked; an admin must allow"
+                        " re-enrollment before it can enroll again",
+                    )
+
             cred = DEVICE_PREFIX + secrets.token_urlsafe(32)
             if prior is not None:
                 # Reissue in place: same device, new credential. The old one
@@ -434,6 +468,18 @@ class State:
                 )
                 self._event("enrolled", {"device": did, "platform": platform,
                                          "serial": serial, "with": row["id"]})
+                if tomb is not None:
+                    # The allowance was for this one enrollment. Spend it, so
+                    # revoking the new row re-arms the tombstone rather than
+                    # leaving the serial permanently open.
+                    self._db.execute(
+                        "UPDATE devices SET reenroll_allowed_at = NULL WHERE id = ?",
+                        (tomb["id"],),
+                    )
+                    self._event("reenroll_allowance_used", {
+                        "device": did, "after": tomb["id"],
+                        "platform": platform, "serial": serial,
+                    })
             self._db.commit()
         return {"device_id": did, "device_token": cred}
 
@@ -469,7 +515,8 @@ class State:
         with self._lock:
             rows = self._db.execute(
                 "SELECT id, platform, serial, hostname, enrolled_at, enrolled_with,"
-                " reenrolled_at, enrollments, last_seen, agent_version, revoked_at"
+                " reenrolled_at, enrollments, last_seen, agent_version, revoked_at,"
+                " reenroll_allowed_at"
                 " FROM devices ORDER BY enrolled_at DESC"
             ).fetchall()
         return [dict(r) for r in rows]
@@ -482,6 +529,26 @@ class State:
             )
             if cur.rowcount:
                 self._event("revoked", {"device": did})
+            self._db.commit()
+        return bool(cur.rowcount)
+
+    def allow_reenrollment(self, did: str) -> bool:
+        """Let a revoked device's serial enroll once more.
+
+        For the reimage and the replacement machine, which are the honest
+        reasons a revoked serial comes back. One enrollment, not a standing
+        permission: enroll() clears this the moment it is used, so the new
+        credential can be revoked with the same finality as the old one.
+        """
+        with self._lock:
+            cur = self._db.execute(
+                "UPDATE devices SET reenroll_allowed_at = ?"
+                " WHERE id = ? AND revoked_at IS NOT NULL"
+                " AND reenroll_allowed_at IS NULL",
+                (_now(), did),
+            )
+            if cur.rowcount:
+                self._event("reenroll_allowed", {"device": did})
             self._db.commit()
         return bool(cur.rowcount)
 
