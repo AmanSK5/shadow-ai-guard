@@ -398,10 +398,63 @@ def test_diagnostics_counts_tools_not_tools_with_domains(tmp_path, monkeypatch):
         {"id": "claude-code", "name": "Claude Code", "domains": []},
     ]}))
     monkeypatch.setattr(pm, "REGISTRY_PATH", str(reg))
-    runtime = pm.diagnostics(_=None)["runtime"]
+    runtime = pm.diagnostics(request=None, _=None)["runtime"]
     assert runtime["registry_tools"] == 3
     assert runtime["registry_tools_with_domains"] == 2
     assert runtime["registry_loaded"] is True
+
+
+def test_diagnostics_counts_portal_defined_tools_too(tmp_path, monkeypatch):
+    """A tool defined in the portal is a tool the fleet detects, so it
+    belongs in this count. Counting the mounted file alone made this page
+    read 30 while the AI register read 32 on the same estate, with nothing
+    saying why - invisible until a deployment moved its own entries out of
+    a mounted ConfigMap and into the portal, which is the supported way to
+    add one."""
+    from app import main as pm
+
+    reg = tmp_path / "registry.json"
+    reg.write_text(json.dumps({"version": 1, "tools": [
+        {"id": "chatgpt", "name": "ChatGPT", "domains": ["chatgpt.com"]},
+        {"id": "claude-code", "name": "Claude Code", "domains": []},
+    ]}))
+    monkeypatch.setattr(pm, "REGISTRY_PATH", str(reg))
+    monkeypatch.setattr(pm, "_custom_registry_entries", lambda request: [
+        {"id": "warp-terminal", "name": "Warp Terminal",
+         "domains": ["warp.dev"]},
+        {"id": "azure-machine-learning", "name": "Azure Machine Learning",
+         "domains": ["azureml.ms"]},
+    ])
+    runtime = pm.diagnostics(request=object(), _=None)["runtime"]
+    assert runtime["registry_tools"] == 4
+    assert runtime["registry_tools_with_domains"] == 3
+    assert runtime["registry_loaded"] is True
+
+
+def test_diagnostics_says_so_when_the_custom_entries_cannot_be_read(
+        tmp_path, monkeypatch):
+    """The failure this fix must not reintroduce quietly. If the receiver
+    cannot answer, the portal does not know what the portal-defined tools
+    are - and a confident file-only count is the under-report all over
+    again. Report the failure instead."""
+    from fastapi import HTTPException
+
+    from app import main as pm
+
+    reg = tmp_path / "registry.json"
+    reg.write_text(json.dumps({"version": 1, "tools": [
+        {"id": "chatgpt", "name": "ChatGPT", "domains": ["chatgpt.com"]},
+    ]}))
+    monkeypatch.setattr(pm, "REGISTRY_PATH", str(reg))
+
+    def unreachable(request):
+        raise HTTPException(502, "receiver unreachable")
+
+    monkeypatch.setattr(pm, "_custom_registry_entries", unreachable)
+    runtime = pm.diagnostics(request=object(), _=None)["runtime"]
+    assert runtime["registry_loaded"] is False
+    assert runtime["registry_error"] == "HTTPException"
+    assert runtime["registry_tools"] == 0
 
 
 def test_one_person_spelled_two_ways_is_one_identity():
