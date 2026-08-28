@@ -86,7 +86,7 @@ credentials, and it reveals nothing about your estate.
 | `DEPLOY_RELEASE` | no | as above |
 | `DEPLOY_NAMESPACE` | no | as above |
 | `DIGEST_WEBHOOK_URL` | no | Slack-compatible webhook for the weekly digest; `DIGEST_DAY` (mon..sun) and `DIGEST_HOUR` (UTC) tune when it sends |
-| `RECEIVER_ADMIN_TOKEN` | no | the receiver's `ADMIN_TOKEN`, `_FILE` supported. The portal's own service credential for the server-side log-store secrets read - needed for viewer sessions and the digest task when the log store was saved through the wizard (viewers are refused that read by design; the credential is typically write-capable). The chart mounts it automatically when `managed.adminToken` is set |
+| `RECEIVER_ADMIN_TOKEN` | no | the receiver's `ADMIN_TOKEN`, `_FILE` supported. The portal's own service credential for the server-side log-store secrets read - needed for viewer sessions and the digest task when the log store was saved through the wizard (viewers are refused that read by design). **This is a full receiver admin credential**: setting it means the portal container holds something that can mint and revoke, so a compromised portal inherits that. Leave it unset unless you need those two features. The chart mounts it automatically when `managed.adminToken` is set |
 | `RECEIVER_URL` | no | the receiver's admin API, reachable from the portal. Unset means the Managed views say so and nothing else changes |
 | `RECEIVER_PUBLIC_URL` | no | the ingest URL agents can reach, baked into downloaded deployment artifacts. Different from `RECEIVER_URL` on purpose: a cluster-internal service name baked into a Jamf script would enroll nothing |
 | `COLLECTOR_SCRIPTS_DIR` | no | verified copies of the endpoint collector scripts, shipped in the image; override for development |
@@ -167,9 +167,21 @@ with).
 
 Every one of those actions is authorized by the **receiver**, not the
 portal: the operator's own session token is forwarded per request and never
-stored anywhere in the portal. The portal holds no database and no
-credentials of its own - a compromised portal yields readable findings,
-which it always did, and nothing that can mint or revoke.
+stored anywhere in the portal, and the portal holds no database and no
+operator sessions of its own.
+
+It is not credential-free, though, and this paragraph used to say it was.
+When `RECEIVER_ADMIN_TOKEN` is set - which the two features above ask for -
+the container holds a receiver **administrator** credential, and today that
+is the receiver's full admin token rather than a narrowed one. A compromised
+portal then inherits that authority, including minting and revoking. Without
+it, the portal is what the first paragraph describes: findings a session can
+already read, and nothing that can mint or revoke.
+
+So set it deliberately, for the features that need it, and treat the portal
+container as holding an admin credential when you do. `SECURITY.md` carries
+the same trade, and a scoped service role - a token that can read the saved
+settings and nothing else - is the fix; it is not built yet.
 
 ### Reading from a hosted log store
 
