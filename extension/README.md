@@ -23,6 +23,21 @@ questions:
 
 Both map onto the standard finding schema, so no receiver change is needed.
 
+**Delivery.** The receiver returns 503 when a finding could not be stored,
+so a caller can tell "sent" from "kept". Since 1.5.0 the extension acts on
+that. An account flag's six-hour dedupe window opens when the report lands,
+not when it is attempted, so a refused one is picked up by the next
+five-minute check instead of being silenced for the rest of the window. A
+paste finding cannot be re-derived - the paste happened once - so a refused
+one goes to a bounded queue in `storage.local` (100 events, seven days,
+oldest dropped first) and is retried on a ten-minute alarm, at browser
+startup and alongside the daily heartbeat, oldest first and stopping at the
+first failure. The queue holds the same content-free fields that would have
+been POSTed: tool, surface, source, severity, detector ids and the time it
+happened. The pasted text is never sent to the service worker, so it cannot
+reach the queue either. Protection is unaffected either way - the guard warns
+and blocks locally whether or not anything is recorded.
+
 Before 1.2.0, account flags carried no `source` and nothing carried `os`. The
 receiver defaulted the missing fields, so the findings looked correct while
 being untraceable to a detector: on one fleet that was thousands a week. If
