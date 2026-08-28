@@ -1,0 +1,3 @@
+#!/usr/bin/env sh
+# Installed by: git config core.hooksPath .githooks
+exec "$(dirname -- "$0")/check-identifiers.sh" text "$1"

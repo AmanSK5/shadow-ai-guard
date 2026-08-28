@@ -110,6 +110,22 @@ Present tense, and say why rather than what: the diff already says what. The
 existing history is the style guide, particularly the commits that explain a
 decision that could have gone the other way.
 
+The best of them cite what was actually observed - the finding count that
+exposed a throttling bug, the export that would not import. Describe the
+observation, not the estate it came from: "a live deployment", and an
+asset-tag prefix written as `ASSET-<serial>`. Naming a particular
+deployment adds nothing to the reasoning and is not yours to publish.
+
+A commit message is the one thing here that cannot be corrected afterwards
+without rewriting history, so there is a hook for it:
+
+    git config core.hooksPath .githooks
+
+Copy `.githooks/deny-list.example.txt` to `deny-list.txt` and add any
+shorthand you would not want published. That file is untracked on purpose;
+CI reads the same patterns from a repository secret. With neither present
+the check passes, so a fork needs no setup.
+
 ## The bar for changes
 
 This project's argument is that you can read it and decide for yourself
