@@ -44,32 +44,135 @@ function seenStore() {
   return api.storage.session || api.storage.local;
 }
 
-// True if this tool+domain was reported inside the window. Otherwise records
-// it and returns false. Entries past the window are dropped on the way
-// through so the object cannot grow without bound.
-async function alreadyReported(key, now) {
-  const store = seenStore();
-  let seen = {};
+// Paste-guard findings outlive the tab they happened in. The guard warns or
+// blocks locally whether or not anything is recorded, so a failed POST costs
+// no protection - but it costs the audit trail, and "we blocked a card number
+// going into ChatGPT" is the half someone asks about later. Unlike a personal
+// account, which is still true at the next five-minute check, a paste happened
+// once: nothing re-derives it, so a dropped one is gone.
+//
+// storage.local, because this has to survive a browser restart - the receiver
+// being down and the browser being closed overnight are the same evening.
+// Bounded both ways so a long outage cannot grow without limit or replay
+// something stale into next week's dashboard.
+const QUEUE_KEY = "pendingFindings";
+const QUEUE_MAX = 100;
+const QUEUE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const FLUSH_ALARM = "ai-guard-flush";
+const FLUSH_RETRY_MINUTES = 10;
+
+async function readQueue(now) {
   try {
-    const state = await store.get(SEEN_KEY);
-    seen = (state && state[SEEN_KEY]) || {};
-  } catch (e) { /* unreadable state is an empty state: report rather than lose */ }
+    const state = await api.storage.local.get(QUEUE_KEY);
+    const q = (state && state[QUEUE_KEY]) || [];
+    return q.filter((e) => e && e.queued_at && now - e.queued_at < QUEUE_TTL_MS);
+  } catch (e) {
+    return [];
+  }
+}
 
-  if (seen[key] && now - seen[key] < DEDUPE_WINDOW_MS) return true;
+// The payload is built here rather than stored as handed in, so what waits on
+// disk is the same content-free shape that would have been POSTed: tool,
+// surface, source, severity, the detector ids, the time it happened. The
+// matched text never reaches this worker in the first place, and this keeps
+// it that way if anyone ever changes the message.
+async function enqueue(payload, now) {
+  const q = await readQueue(now);
+  q.push({
+    queued_at: now,
+    payload: {
+      tool: payload.tool,
+      surface: payload.surface,
+      source: payload.source,
+      severity: payload.severity,
+      evidence: payload.evidence,
+      reported_at: payload.reported_at,
+    },
+  });
+  // Newest wins. An outage long enough to overflow this has bigger problems
+  // than its oldest hundred events, and the alternative - dropping what just
+  // happened - is the wrong half to lose.
+  const kept = q.slice(-QUEUE_MAX);
+  if (kept.length < q.length) {
+    console.warn("[ai-account-guard] pending queue full, dropped "
+                 + (q.length - kept.length) + " oldest");
+  }
+  try {
+    await api.storage.local.set({ [QUEUE_KEY]: kept });
+  } catch (e) { /* nothing else to fall back to */ }
+  api.alarms.create(FLUSH_ALARM, { delayInMinutes: FLUSH_RETRY_MINUTES });
+}
 
+// Oldest first, stopping at the first failure: the receiver being down is the
+// reason there is a queue, and draining into a dead endpoint just turns one
+// outage into a hundred failed requests. Whatever did not go stays queued.
+async function flushQueue() {
+  const now = Date.now();
+  const q = await readQueue(now);
+  if (!q.length) {
+    try { await api.storage.local.remove(QUEUE_KEY); } catch (e) { /* fine */ }
+    return;
+  }
+  let sent = 0;
+  for (const entry of q) {
+    try {
+      await report({ ...entry.payload });
+      sent++;
+    } catch (e) {
+      break;
+    }
+  }
+  const left = q.slice(sent);
+  try {
+    if (left.length) await api.storage.local.set({ [QUEUE_KEY]: left });
+    else await api.storage.local.remove(QUEUE_KEY);
+  } catch (e) { /* retried on the next flush */ }
+  if (left.length) {
+    api.alarms.create(FLUSH_ALARM, { delayInMinutes: FLUSH_RETRY_MINUTES });
+  }
+}
+
+async function readSeen() {
+  try {
+    const state = await seenStore().get(SEEN_KEY);
+    return (state && state[SEEN_KEY]) || {};
+  } catch (e) {
+    // Unreadable state is an empty state: report rather than lose.
+    return {};
+  }
+}
+
+// True if this tool+domain was reported inside the window. Read-only: the
+// window opens when the finding is delivered, not when it is attempted.
+async function wasRecentlyReported(key, now) {
+  const seen = await readSeen();
+  return Boolean(seen[key] && now - seen[key] < DEDUPE_WINDOW_MS);
+}
+
+// Opens the six-hour window on a finding that actually landed. Entries past
+// the window are dropped on the way through so the object cannot grow
+// without bound.
+async function markReported(key, now) {
+  const seen = await readSeen();
   for (const k of Object.keys(seen)) {
     if (now - seen[k] >= DEDUPE_WINDOW_MS) delete seen[k];
   }
   seen[key] = now;
   try {
-    await store.set({ [SEEN_KEY]: seen });
+    await seenStore().set({ [SEEN_KEY]: seen });
   } catch (e) { /* a write that fails costs one duplicate, not a finding */ }
-  return false;
 }
 
 async function onPersonalAccount(msg) {
   const key = msg.tool + ":" + msg.domain;
-  if (await alreadyReported(key, Date.now())) return;
+  const now = Date.now();
+  if (await wasRecentlyReported(key, now)) return;
+  // Marked only once report() has resolved. It throws when the POST failed -
+  // the receiver 503s precisely so a caller knows the finding is not stored -
+  // and marking first meant a 503 silenced the flag for six hours while
+  // content.js kept re-checking every five minutes. It returns false in
+  // print-only mode, which does count: there was nothing to deliver, and the
+  // window should still stop the console filling up.
   await report({
     tool: msg.tool,
     // Absent until 1.2.0. The receiver defaults surface to "browser" and
@@ -83,6 +186,7 @@ async function onPersonalAccount(msg) {
     account_domain: msg.domain,
     reported_at: msg.ts,
   });
+  await markReported(key, now);
 }
 
 api.runtime.onMessage.addListener((msg) => {
@@ -101,14 +205,18 @@ api.runtime.onMessage.addListener((msg) => {
     // Finding schema so no receiver change is needed: source identifies the
     // guard, evidence carries "<action>: <detector ids>". The matched text
     // never reaches this worker.
-    report({
+    const payload = {
       tool: msg.tool,
       surface: "browser",
       source: "paste_guard",
       severity: "warn",
       evidence: "paste " + msg.action + ": " + msg.detectors.join(","),
       reported_at: msg.ts,
-    }).catch((e) => console.warn("[ai-account-guard] report failed", e));
+    };
+    report(payload).catch((e) => {
+      console.warn("[ai-account-guard] report failed, queued for retry", e);
+      return enqueue(payload, Date.now());
+    });
   }
 });
 
@@ -168,12 +276,20 @@ async function heartbeat(reason) {
   }
 }
 
-api.runtime.onStartup.addListener(() => heartbeat("startup"));
-api.runtime.onInstalled.addListener(() => heartbeat("installed"));
+// The heartbeat is the one thing that runs on a schedule whether or not
+// anyone browses, so it is also when a backlog gets a chance to drain. A
+// heartbeat that succeeds proves the whole chain is up, which is exactly the
+// moment the queue is worth retrying.
+const drain = () => flushQueue()
+  .catch((e) => console.warn("[ai-account-guard] flush failed", e));
+
+api.runtime.onStartup.addListener(() => { heartbeat("startup"); drain(); });
+api.runtime.onInstalled.addListener(() => { heartbeat("installed"); drain(); });
 api.alarms.create(HEARTBEAT_ALARM, { periodInMinutes: 60 * 24 });
 api.alarms.onAlarm.addListener((a) => {
-  if (a.name === HEARTBEAT_ALARM) heartbeat("alarm");
+  if (a.name === HEARTBEAT_ALARM) { heartbeat("alarm"); drain(); }
   if (a.name === HEARTBEAT_RETRY_ALARM) heartbeat("retry");
+  if (a.name === FLUSH_ALARM) drain();
 });
 
 async function getConfig() {
