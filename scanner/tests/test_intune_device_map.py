@@ -8,9 +8,9 @@ lastSyncDateTime. Nothing errors. A stale-device filter reading that timestamp
 finds every device older than any cutoff and skips the entire fleet, and a
 scanner keyed on that serialNumber gets null for every machine.
 
-Observed: nineteen apps resolved their devices, thirty nine device records came
-back, none survived the filter, and Intune reported two aggregate findings from
-a fleet with fourteen machines that had checked in that morning.
+Observed: apps resolved their devices, device records came back, none survived
+the filter, and Intune reported two aggregate findings from a fleet whose
+machines had checked in that morning.
 
 So device attributes are read from /deviceManagement/managedDevices, fetched
 once into an id-keyed map, and the sub-resource is asked only for the two fields

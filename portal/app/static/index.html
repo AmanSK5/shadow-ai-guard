@@ -3289,9 +3289,9 @@ const bPrefCur = () => (((SETTINGS && SETTINGS.settings || {})
 const bSubMonthly = s => (s.seat_tiers || []).reduce(
   (x, t) => x + (t.seats || 0) * (t.unit_price_monthly || 0), 0);
 
-// Monthly totals per currency, preferred first: "£934 + $546" is the
-// honest spelling of a mixed estate - one summed number over two
-// currencies would be a figure that lies.
+// Monthly totals per currency, preferred first. Two currencies spelled
+// out beats one summed number over both - that figure would lie, and the
+// invoices it claims to summarise do not move with an exchange rate.
 function bSpendParts(subs) {
   const byCur = {};
   (subs || []).forEach(s => {

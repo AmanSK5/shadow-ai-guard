@@ -3,8 +3,8 @@
 Deep Visibility events carry the computer name and nothing else, so findings
 used to be keyed on it. The endpoint collectors and the browser extension both
 report serials. The same machine therefore arrived twice, once as C02XK1ABCDEF
-from its collector and once as JANES-MBP from the scanner, and a fleet of about
-65 counted 73 devices.
+from its collector and once as JANES-MBP from the scanner, so the estate showed
+more device rows than it had machines.
 
 jamf.py had done this correctly since it was written and says why in its module
 docstring. This is the same rule applied to the other two sources.
