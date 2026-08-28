@@ -855,7 +855,7 @@ def _widgets(spec=None):
 
 
 @app.get("/api/diagnostics")
-def diagnostics(_=Depends(require_auth)):
+def diagnostics(request: Request, _=Depends(require_auth)):
     """What the portal can say about itself, for a support conversation.
 
     Everything under "runtime" is observed: the portal either did the thing or
@@ -874,7 +874,15 @@ def diagnostics(_=Depends(require_auth)):
         # 28 - and a review of a live deployment spent real time hunting
         # a stale registry file that did not exist. Both numbers, both
         # named.
-        loaded = derive.load_registry(REGISTRY_PATH)
+        #
+        # _registry(), not the file: a tool defined in the portal is a
+        # tool the fleet detects, and counting only what is mounted made
+        # this page disagree with the AI register on the same estate -
+        # 30 here against 32 there, with nothing saying why. Invisible
+        # until a deployment moved its own entries out of a mounted
+        # ConfigMap and into the portal, which is now the supported way
+        # to add one.
+        loaded = _registry(request)
         tools = (loaded or {}).get("tools") or []
         dm = derive.load_domain_map_from(loaded)
         reg_ok = bool(tools)
@@ -885,6 +893,10 @@ def diagnostics(_=Depends(require_auth)):
         # right thing in a log and the wrong thing in a response body: the path
         # is operator-supplied through REGISTRY_PATH. registry_loaded already
         # carries the signal, so the type is enough to act on.
+        # Includes the receiver being unreachable: without it the custom
+        # entries cannot be known, and reporting the mounted file alone
+        # would be the same quiet under-report this fixed. registry_loaded
+        # and registry_error carry that, rather than a confident number.
         log.warning(
             "registry load failed from %s: %s", REGISTRY_PATH, e, exc_info=True
         )

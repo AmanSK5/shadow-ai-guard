@@ -326,5 +326,7 @@ def test_the_page_no_longer_carries_an_admin_token_field():
 
 
 def test_diagnostics_report_the_login_mode(login_mode):
-    out = main.diagnostics(_=None)
+    # request=None: in login mode the custom entries need a session cookie
+    # to read, and this test is about auth_mode, not the registry counts.
+    out = main.diagnostics(request=None, _=None)
     assert out["runtime"]["auth_mode"] == "login"
