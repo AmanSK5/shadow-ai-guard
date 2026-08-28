@@ -187,20 +187,20 @@ def test_a_machine_reported_under_two_keys_is_one_device():
     devices: two cards under one hostname, tools split across both, and
     the review counted 69 cards over 65 distinct names."""
     findings = [
-        _f(device="TGT-ABC123", device_name="LAPTOP-1", tool="claude-code",
+        _f(device="ASSET-ABC123", device_name="LAPTOP-1", tool="claude-code",
            surface="cli", source="collector-macos"),
         _f(device="ABC123", device_name="LAPTOP-1", tool="chatgpt",
            surface="browser", source="browser_extension"),
     ]
     devices, identities, tools, _b, _u = derive.build(findings, {}, {})
-    assert list(devices) == ["TGT-ABC123"]
-    d = devices["TGT-ABC123"]
+    assert list(devices) == ["ASSET-ABC123"]
+    d = devices["ASSET-ABC123"]
     assert d["tools"] == {"claude-code", "chatgpt"}
     assert d["aliases"] == {"ABC123"}
     assert d["findings"] == 2
     # The tool edges follow the surviving key, or a tool page would link
     # to a device that no longer exists.
-    assert tools["chatgpt"]["devices"] == {"TGT-ABC123"}
+    assert tools["chatgpt"]["devices"] == {"ASSET-ABC123"}
 
 
 def test_the_person_the_estate_already_knows_is_not_no_identity():
@@ -208,33 +208,33 @@ def test_the_person_the_estate_already_knows_is_not_no_identity():
     Devices view named on the row above - the browser extension reports
     no user, and the join never asked the device."""
     findings = [
-        _f(device="TGT-ABC123", user="alice", tool="claude-code",
+        _f(device="ASSET-ABC123", user="alice", tool="claude-code",
            surface="cli", source="collector-macos"),
         _f(device="ABC123", tool="chatgpt", surface="browser",
            severity="warn", account_domain="gmail.example",
            source="browser_extension"),
     ]
-    graph = derive.graph_from(findings, {}, {"TGT-ABC123": "alice"})
+    graph = derive.graph_from(findings, {}, {"ASSET-ABC123": "alice"})
     rows = graph["personal_accounts"]
     assert len(rows) == 1
     assert rows[0]["user"] == "alice"
     # And it says the attribution came from the machine, not the source.
     assert rows[0]["user_via"] == "device"
-    assert rows[0]["device"] == "TGT-ABC123"
+    assert rows[0]["device"] == "ASSET-ABC123"
 
 
 def test_an_ambiguous_or_short_key_is_left_alone():
     """Merging the wrong two machines is worse than showing two cards."""
     findings = [
         _f(device="AB1", tool="claude"),          # too short to be an id
-        _f(device="TGT-AB1", tool="claude"),
+        _f(device="ASSET-AB1", tool="claude"),
         _f(device="SERIAL7", tool="claude"),      # tail of two prefixed keys
-        _f(device="TGT-SERIAL7", tool="claude"),
-        _f(device="TNG-SERIAL7", tool="claude"),
+        _f(device="ASSET-SERIAL7", tool="claude"),
+        _f(device="ESTATE-SERIAL7", tool="claude"),
     ]
     devices, _i, _t, _b, _u = derive.build(findings, {}, {})
-    assert set(devices) == {"AB1", "TGT-AB1", "SERIAL7",
-                            "TGT-SERIAL7", "TNG-SERIAL7"}
+    assert set(devices) == {"AB1", "ASSET-AB1", "SERIAL7",
+                            "ASSET-SERIAL7", "ESTATE-SERIAL7"}
 
 
 # ---------------------------------------- one definition of a tool in use --
@@ -530,14 +530,14 @@ def test_the_settings_tab_from_the_url_cannot_dispatch_into_the_prototype():
 
 def test_a_map_keyed_on_the_bare_serial_still_finds_the_machine():
     """Found while explaining why a mapped person still read as unmapped.
-    One machine reported twice - TGT-<serial> by the collector, the bare
+    One machine reported twice - ASSET-<serial> by the collector, the bare
     serial by the extension - merges onto the longer key, and the shorter
     one survives only in aliases. Attribution checked the canonical key
     and local usernames, never the aliases. An MDM export lists the bare
     serial, so a map built from one looked right, said "matches" in the
     preview because the preview does count aliases, and attached to
     nobody."""
-    finds = [_f(device="TGT-C02ABCD", source="collector-macos",
+    finds = [_f(device="ASSET-C02ABCD", source="collector-macos",
                 device_name="sam-mbp", user="sam"),
              _f(device="C02ABCD", source="extension", device_name="sam-mbp")]
     dm = derive.load_domain_map_from(REG)
@@ -548,10 +548,10 @@ def test_a_map_keyed_on_the_bare_serial_still_finds_the_machine():
         return list(devices.values())[0].get("person")
 
     assert person({"C02ABCD": "Sam Patel"}) == "Sam Patel"
-    assert person({"TGT-C02ABCD": "Sam Patel"}) == "Sam Patel"
+    assert person({"ASSET-C02ABCD": "Sam Patel"}) == "Sam Patel"
     assert person({"sam": "Sam Patel"}) == "Sam Patel"
     # The key the device is actually filed under still wins the tie.
-    assert person({"C02ABCD": "Wrong", "TGT-C02ABCD": "Sam Patel"}) == "Sam Patel"
+    assert person({"C02ABCD": "Wrong", "ASSET-C02ABCD": "Sam Patel"}) == "Sam Patel"
 
 
 def test_the_identity_import_names_the_rows_it_drops():

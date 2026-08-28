@@ -32,3 +32,5 @@ identity-map.csv
 
 # Tooling
 .claude/
+# Local, untracked: see .githooks/deny-list.example.txt
+.githooks/deny-list.txt
