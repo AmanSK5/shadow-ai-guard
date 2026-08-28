@@ -44,6 +44,21 @@ jobs:
             || { echo "::error::Windows collector token placeholder was replaced"; exit 1; }
           grep -q 'FALLBACK_AUTH_TOKEN = ""' extension/src/background.js \
             || { echo "::error::extension fallback token is not empty"; exit 1; }
+      - name: internal naming stays out of tracked files
+        # The other side of the same job: one catches a placeholder that
+        # went missing, this catches internal shorthand that arrived.
+        # Patterns come from a repository secret rather than the repo, since
+        # a list of strings you would rather not publish is itself one; with
+        # no secret set this passes, which is right for a fork. The same
+        # list runs over commit messages via .githooks/commit-msg, which is
+        # the half CI cannot see.
+        env:
+          DENY_LIST: ${{ secrets.IDENTIFIER_DENY_LIST }}
+        run: |
+          if [ -n "$DENY_LIST" ]; then
+            printf '%s\n' "$DENY_LIST" > .githooks/deny-list.txt
+          fi
+          .githooks/check-identifiers.sh files
 
   shellcheck:
     runs-on: ubuntu-latest

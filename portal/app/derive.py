@@ -633,7 +633,7 @@ def build(findings, domain_map=None, identity_map=None):
             })
 
     # One machine, one device. Sources disagree about the key: an
-    # endpoint collector reports an asset-tagged serial (TGT-XXXX) and a
+    # endpoint collector reports an asset-tagged serial (ASSET-XXXX) and a
     # browser extension reports the bare one (XXXX), so the same laptop
     # arrived as two devices - two cards under one hostname, its tools
     # split across both, and a personal-account row that could not find
@@ -676,7 +676,7 @@ def build(findings, domain_map=None, identity_map=None):
         if not person:
             # Then the keys this device was merged from. The canonical key
             # is the longer, prefixed one, so a machine the collector calls
-            # TGT-C02ABCD swallows the C02ABCD the extension reports - and
+            # ASSET-C02ABCD swallows the C02ABCD the extension reports - and
             # an MDM export lists the bare serial, which is what a deployer
             # builds the map from. Mapping the serial looked right, matched
             # in the preview, and attached to nothing.
@@ -725,7 +725,7 @@ def build(findings, domain_map=None, identity_map=None):
 
 # Long enough that a shared suffix means something. Six characters of
 # serial matching by accident is a stretch; two or three is not, and
-# merging a junk key like "A" into "TGT-A" would be worse than the split
+# merging a junk key like "A" into "ASSET-A" would be worse than the split
 # it fixes.
 _MIN_ALIAS_KEY = 6
 _ALIAS_SEPARATORS = ("-", "_", ".", ":")
