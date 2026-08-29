@@ -196,7 +196,7 @@ def test_the_wizard_saves_disabled_and_enables_only_after_a_sign_in():
 
 
 def test_the_wizard_is_owner_only():
-    assert "AUTH && AUTH.role === 'owner' ? `<div class=\"wcard\"" in INDEX
+    assert "AUTH && AUTH.role === 'owner' ? (SSOW ? ssoWizard()" in INDEX
 
 
 def test_the_redirect_uri_is_offered_not_asked_for():

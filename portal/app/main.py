@@ -1352,7 +1352,8 @@ def esc_attr(v) -> str:
     return html.escape(str(v), quote=True)
 
 
-def _sso_page(title: str, body: str, go: str = "") -> HTMLResponse:
+def _sso_page(title: str, body: str, go: str = "",
+              who: str = "") -> HTMLResponse:
     """The callback's own answer, as a page rather than a redirect.
 
     A redirect would be a cross-site navigation - the chain started at the
@@ -1361,10 +1362,17 @@ def _sso_page(title: str, body: str, go: str = "") -> HTMLResponse:
     back on the sign-in screen holding a valid session. Navigating from
     this page is same-site, which is the difference.
     """
+    # A test sign-in is opened from the wizard in a second tab, so its
+    # result has to travel back to the tab that started it. Same origin
+    # both ways, and the wizard ignores a message from anywhere else.
+    tell = ("<script>try{window.opener&&window.opener.postMessage("
+            + json.dumps({"ssoTest": "ok" if go else "fail",
+                          "username": who, "detail": body})
+            + ",location.origin)}catch(e){}</script>")
     onward = (f'<p><a href="{esc_attr(go)}">Continue</a></p>'
               f'<script>location.replace({json.dumps(go)})</script>') if go \
         else '<p><a href="/">Back to sign in</a></p>'
-    return HTMLResponse(
+    return HTMLResponse(tell + 
         "<!doctype html><meta charset=utf-8>"
         "<meta name=viewport content='width=device-width,initial-scale=1'>"
         f"<title>{esc_attr(title)}</title>"
@@ -1420,7 +1428,8 @@ async def sso_callback(request: Request):
     if not out.get("ok"):
         return _sso_page("Signed in, but not here",
                          str(out.get("detail") or "that sign-in was refused"))
-    resp = _sso_page("Signed in", "Taking you to the portal.", go="/")
+    resp = _sso_page("Signed in", "Taking you to the portal.", go="/",
+                     who=str(out.get("username", "")))
     resp.set_cookie(SESSION_COOKIE, str(out.get("token", "")),
                     httponly=True, samesite="strict",
                     secure=_cookie_secure(request), path="/")

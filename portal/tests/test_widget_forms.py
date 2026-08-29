@@ -129,3 +129,12 @@ def test_the_meter_fill_can_actually_render():
     empty track whatever the ratio was."""
     css = INDEX.split(".meterrow .fill {", 1)[1].split("}", 1)[0]
     assert "display: block" in css
+
+
+def test_the_form_switch_shows_a_capitalised_label_but_stores_the_id():
+    """The label is capitalised like every other button; the value written
+    to preferences stays the lowercase form id, so a saved choice keeps
+    resolving."""
+    assert "esc(f[0].toUpperCase() + f.slice(1))" in INDEX
+    assert 'data-form="${esc(f)}"' in INDEX
+
