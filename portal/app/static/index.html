@@ -10,6 +10,12 @@
   --pri:#177245; --acc:#0e6e8c; --warn:#8a5b00; --dstr:#b3261e;
   --mut:#5c636e; --bd:#e4e5e0; --line:var(--bd);
   --pri-soft:#e7f3ec; --acc-soft:#e3f0f5; --warn-soft:#fdf0d3; --dstr-soft:#fbeae9;
+  /* Data marks, deliberately not --acc. The interface palette is tuned
+     for chrome: --acc sits below the chroma floor a fill needs and reads
+     grey once it is an area rather than a 1px border. These two are the
+     nearest steps that clear the lightness band, the chroma floor and 3:1
+     against their own surface, checked per mode rather than flipped. */
+  --chart:#0a7ea4; --chart-soft:#0a7ea41f;
   --shadow:0 1px 2px rgba(20,24,28,.05),0 4px 16px rgba(20,24,28,.05);
   /* The sidebar keeps its own palette: midnight navy from the logo's hood,
      the same in both themes, so the chrome holds still while content adapts. */
@@ -21,6 +27,9 @@
   --pri:#46c07f; --acc:#67c1dd; --warn:#e3b341; --dstr:#f28b82;
   --mut:#9aa3ad; --bd:#2b313a;
   --pri-soft:#1c3328; --acc-soft:#12303a; --warn-soft:#33290f; --dstr-soft:#3a1f1d;
+  /* Its own step, not the light one lightened: the dark band is narrower
+     (0.48-0.67) and every candidate that looked right by eye sat above it. */
+  --chart:#2b9ec4; --chart-soft:#2b9ec42e;
   --shadow:none;
   --side:#0f1520; --side-line:rgba(255,255,255,.07);
 }
@@ -67,6 +76,13 @@ nav .count{margin-left:auto;font-size:12px;font-variant-numeric:tabular-nums;opa
    five columns across the whole of a 2560 screen for no gain. */
 main{padding:22px 26px 60px;max-width:1280px;margin:0 auto}
 /* Section tabs, for the views that share a sidebar entry. */
+/* The tab row carries a view's own controls on the right, so a page's
+   arrangement affordance sits on the furniture rather than in a line of
+   copy under the heading explaining what a button does. */
+.tabrow{display:flex;align-items:center;justify-content:space-between;
+  gap:12px;margin:0 0 18px;flex-wrap:wrap}
+.tabrow .tabs{margin:0}
+.tabaside{display:flex;gap:6px;margin-left:auto}
 .tabs{display:flex;gap:2px;background:var(--sf);border:1px solid var(--bd);border-radius:9px;
   padding:3px;width:max-content;max-width:100%;overflow-x:auto;margin:0 0 18px}
 .tabs button{border:0;background:none;font:inherit;font-size:13.5px;font-weight:500;color:var(--mut);
@@ -92,7 +108,7 @@ main{padding:22px 26px 60px;max-width:1280px;margin:0 auto}
 .kv dt{color:var(--mut);font-size:12.5px}
 .kv dd{margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;overflow-wrap:anywhere}
 .src-note{color:var(--mut);font-size:11.5px;font-style:italic;margin:10px 0 0}
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin:0 0 20px}
 .stats div{background:var(--sf);border:1px solid var(--bd);border-radius:12px;padding:13px 16px;box-shadow:var(--shadow)}
 .stats dt{font-size:25px;font-weight:650;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.2}
 .stats dd{margin:3px 0 0;font-size:12px;color:var(--mut)}
@@ -360,6 +376,195 @@ table.plain td{border-bottom:0;padding:4.5px 10px 4.5px 0;vertical-align:middle}
   #tour-card.step-in { animation: none; }
   #tour.wants-click #tour-ring { animation: none; }
 }
+/* ---- charts --------------------------------------------------------
+   Hand-written SVG, like spark() above: this portal ships no external
+   script, and a chart library would be the first. */
+.chart { width: 100%; display: block; overflow: visible; }
+/* preserveAspectRatio="none" is what makes a line chart fill a card of
+   any width instead of scaling uniformly and centring itself in the
+   middle with empty margins either side. It distorts anything that is
+   not a stroked path, which is why the labels below are HTML and the
+   strokes are told not to scale. */
+.tchart svg { width: 100%; height: 120px; display: block; }
+.tchart svg .line, .tchart svg .area, .tchart svg .grid,
+.tchart svg .cross { vector-effect: non-scaling-stroke; }
+.tchart { position: relative; }
+.tmax { position: absolute; top: -2px; right: 0; font-size: 10px;
+        color: var(--mut); }
+.tdays { display: flex; justify-content: space-between; font-size: 10px;
+         color: var(--mut); margin-top: 2px; }
+.chart .grid { stroke: var(--bd); stroke-width: 1; }
+.chart .axis { fill: var(--mut); font-size: 10px; }
+/* Marks carry identity; text keeps text tokens, so a value never has to
+   be read as a colour. */
+.chart .line { fill: none; stroke: var(--chart); stroke-width: 2;
+               stroke-linejoin: round; stroke-linecap: round; }
+.chart .line.ctx { stroke: color-mix(in srgb, var(--mut) 55%, transparent); }
+.chart .area { fill: var(--chart-soft); }
+.chart .dot { fill: var(--chart); stroke: var(--sf); stroke-width: 2; }
+.chart .hit { fill: transparent; cursor: crosshair; }
+.chart .cross { stroke: var(--mut); stroke-width: 1; stroke-dasharray: 3 3;
+                opacity: 0; }
+.chart g.on .cross { opacity: .8; }
+.ctip {
+  position: fixed; z-index: 60; pointer-events: none; opacity: 0;
+  background: var(--sf); color: var(--fg); border: 1px solid var(--bd);
+  border-radius: 8px; padding: 7px 10px; font-size: 12px; line-height: 1.45;
+  box-shadow: var(--shadow); transition: opacity .12s;
+}
+.ctip.on { opacity: 1; }
+.ctip b { font-weight: 600; }
+.ctip .k { color: var(--mut); }
+.ctip i { width: 8px; height: 8px; border-radius: 2px; display: inline-block;
+          margin-right: 5px; font-style: normal; }
+/* A legend whenever there is more than one series - identity is never
+   colour alone, and these are also labelled at the line ends. */
+.clegend { display: flex; gap: 12px; flex-wrap: wrap; margin: 6px 0 0;
+           font-size: 11px; color: var(--mut); }
+.clegend span { display: inline-flex; align-items: center; gap: 5px; }
+.clegend i { width: 9px; height: 9px; border-radius: 2px; display: block; }
+/* The form switch on a card that has more than one honest reading. */
+.wform { float: right; display: inline-flex; gap: 2px; margin: -2px 0 0; }
+.wform button {
+  font: inherit; font-size: 10px; text-transform: lowercase;
+  padding: 2px 8px; border-radius: 6px; cursor: pointer;
+  border: 1px solid var(--bd); background: transparent; color: var(--mut);
+}
+.wform button.on { background: var(--sf2); color: var(--fg);
+                   border-color: var(--mut); }
+/* ---- arranging the overview --------------------------------------- */
+.oedit { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+         margin: 0 0 12px; padding: 9px 12px; border-radius: 10px;
+         background: var(--sf2); border: 1px solid var(--bd);
+         font-size: 12px; }
+/* The explanation takes its own line, so the buttons stay one group on
+   the right instead of the first one wrapping away from the rest. */
+.oedit > span:first-child { flex: 1 1 100%; color: var(--mut); }
+.oedit .sp { margin-left: auto; }
+.oedit button { font: inherit; font-size: 12px; padding: 4px 11px;
+                border-radius: 7px; cursor: pointer;
+                border: 1px solid var(--bd); background: var(--sf);
+                color: var(--fg); }
+.oedit button.pri { background: var(--acc); border-color: var(--acc);
+                    color: #fff; }
+.oedit button.ghost { border-color: transparent; background: transparent;
+                      color: var(--mut); }
+/* The wrapper is the grid's flex item now, so it is the thing that
+   stretches to the row height - and the card inside stopped filling it,
+   which left a gap under every card shorter than its neighbour. Before
+   the wrapper existed the card itself was the flex item and stretched. */
+/* A slot is a column, not a card. One card is the usual case; stacking a
+   second under it is what makes a flush row work without hollowing
+   anything out - a lone short card beside a long one has to stretch to
+   reach the row's bottom, and 480px of border around 200px of content
+   reads as a card that failed to load. Two cards sharing the column
+   reach it between them.
+   The excess lands on the last card in the column, so a stack grows
+   downwards from a fixed top rather than every card in it stretching. */
+.gitem { display: flex; flex-direction: column; gap: 12px; }
+.gcard { position: relative; display: flex; flex: 0 0 auto; }
+.gcard:last-child { flex: 1 1 auto; }
+.gcard > * { flex: 1 1 auto; min-width: 0; }
+/* Only while arranging: a handle on every card the rest of the time would
+   be chrome on a page people mostly come to read. */
+.editing .gcard { cursor: grab; }
+/* On the card wrapper, not on the widget inside it. The wrapper is the
+   thing that holds the controls, so outlining the inner element drew a
+   box that excluded them - on a card with no title row, where the
+   controls sit in a strip above the content, they ended up outside the
+   card they belong to. For every other card the two boxes are identical,
+   so nothing else moves. */
+.editing .gcard { outline: 1px dashed var(--bd); outline-offset: 3px; }
+.editing .gcard.drag { opacity: .4; }
+/* The two drops read differently on purpose: a line where the card will
+   land, a filled outline where it will join. */
+.editing .gcard.over::after {
+  content: ''; position: absolute; left: 0; right: 0; height: 3px;
+  background: var(--acc); border-radius: 2px; z-index: 3; }
+.editing .gcard.over.before::after { top: -7px; }
+.editing .gcard.over.after::after { bottom: -7px; }
+.editing .gcard.into { outline: 2px solid var(--acc); }
+.editing .gcard.into > .wcard, .editing .gcard.into > .stats {
+  background: color-mix(in srgb, var(--acc) 8%, var(--sf)); }
+/* A column holding more than one card, so the pairing is visible while
+   arranging rather than only in the result. */
+.editing .gitem.stack { outline: 1px dashed var(--acc);
+                        outline-offset: 7px; border-radius: 4px; }
+/* While arranging, a card's own controls step aside: this is the one
+   time somebody is moving cards rather than reading them, and the form
+   switch sits exactly where the hide button needs to be. */
+.editing .wform { display: none; }
+/* Every other card has a title row for these to sit in. The headline
+   tiles have no title, so while arranging they are inset to make one -
+   without it the controls sit on top of a tile, or in whatever margin
+   happens to be above, which is where they looked clipped. */
+/* The strip a titleless card gets while arranging, so its controls sit
+   in a header row like every other card's rather than floating above the
+   content. */
+.gname { position: absolute; top: 8px; left: 0; z-index: 2; margin: 0;
+         font-size: 12px; font-weight: 600; color: var(--mut);
+         text-transform: uppercase; letter-spacing: .06em; line-height: 23px; }
+/* A card with a title row already has somewhere for the controls to sit.
+   One without gets a strip, and the strip has to clear both edges: the
+   outline above it and the content below. 38px holds a 23px control with
+   11px to the outline and 7px to the first tile.
+   The horizontal inset is deliberately NOT tuned per card. Aligning each
+   card's controls to its own content puts them at different offsets -
+   this card's tiles run to its edge, a titled card's content sits inside
+   17px of padding - and the controls then fail to line up with each other
+   down the page, which is the alignment somebody actually reads. One
+   gutter from the card edge, the same everywhere. */
+.gcard.notitle .gtools { top: 8px; }
+.editing .gcard.notitle > .stats { margin-top: 38px; }
+.gtools { position: absolute; top: 6px; right: 8px; z-index: 2;
+          display: flex; gap: 3px; }
+.gtools button { font: inherit; font-size: 11px; padding: 2px 8px;
+                 border-radius: 6px; cursor: pointer;
+                 border: 1px solid var(--bd); background: var(--sf);
+                 color: var(--mut); }
+.gtools button:hover { color: var(--fg); }
+.gtools button.on { background: var(--sf2); color: var(--fg);
+                    border-color: var(--mut); }
+.otray { margin: 0 0 12px; padding: 9px 12px; border-radius: 10px;
+         border: 1px dashed var(--bd); font-size: 12px; color: var(--mut); }
+.otray button { font: inherit; font-size: 11px; margin: 3px 4px 0 0;
+                padding: 3px 9px; border-radius: 6px; cursor: pointer;
+                border: 1px solid var(--bd); background: var(--sf);
+                color: var(--fg); }
+.bars { margin: 2px 0 0; }
+.barrow { display: flex; align-items: center; gap: 8px; font-size: 12px;
+          margin: 3px 0; padding: 2px 4px; border-radius: 6px;
+          cursor: pointer; }
+.barrow:hover, .barrow:focus-visible { background: var(--sf2); outline: none; }
+/* A fixed share rather than the longest name: the bars need one left edge
+   to be comparable, and a column that resizes with the data moves it. */
+/* A share while the card is narrow, capped once it is not: at full width
+   34% is 330px of empty gap between a six-letter name and its bar. */
+.barrow .bl { flex: 0 0 34%; max-width: 190px; overflow: hidden;
+              text-overflow: ellipsis; white-space: nowrap; }
+.barrow .bt { flex: 1; height: 12px; border-radius: 2px;
+              background: color-mix(in srgb, var(--mut) 10%, transparent); }
+/* Rounded at the data end only. Rounding the baseline end as well detaches
+   the bar from the edge it is measured from. */
+.barrow .bf { display: block; height: 100%; background: var(--chart);
+              border-radius: 2px 4px 4px 2px; }
+.barrow b { flex: 0 0 22px; text-align: right;
+            font-variant-numeric: tabular-nums; }
+.meterrow { display: flex; align-items: center; gap: 8px; font-size: 12px;
+            margin: 5px 0; }
+.meterrow > span:first-child { flex: 0 0 76px; color: var(--mut); }
+.meterrow .track { flex: 1; height: 8px; border-radius: 4px;
+                   background: color-mix(in srgb, var(--mut) 14%, transparent);
+                   overflow: hidden; }
+/* display:block matters: a span inside the track is inline, and an inline
+   box takes neither a percentage width nor a percentage height - every
+   meter drew as an empty track whatever the ratio was. */
+.meterrow .fill { display: block; height: 100%; border-radius: 4px;
+                  background: var(--chart); transition: width .3s ease; }
+.meterrow b { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) {
+  .meterrow .fill, .ctip { transition: none; }
+}
 </style>
 <div class="overlay" id="overlay"></div>
 <div class="drawer" id="drawer"></div>
@@ -466,6 +671,47 @@ let S = null, CFG = {}, loadError = '';
 // the portal's whole security story for the write path is that nothing
 // credential-shaped is reachable from page script.
 let AUTH = null;
+
+// ---- preferences ----------------------------------------------------
+// One person's own view of the pages: which form a widget draws in, what
+// the tour has already shown them. Read synchronously during render, so
+// they are fetched once with everything else rather than per widget.
+// Managed mode keeps them with the account; classic mode has no account
+// to keep them on and falls back to this browser.
+let PREFS = {};
+const LS_PREFS = 'aiguard-prefs';
+
+function prefsLocal() {
+  try { return JSON.parse(localStorage.getItem(LS_PREFS) || '{}') || {}; }
+  catch (e) { return {}; }
+}
+
+async function prefsLoad() {
+  if (CFG.managed && CFG.managed.enabled && AUTH && AUTH.mode === 'login') {
+    try {
+      const r = await mfetch('/api/preferences');
+      if (r.ok) { PREFS = (await r.json()).preferences || {}; return; }
+    } catch (e) { /* fall through to the browser copy */ }
+  }
+  PREFS = prefsLocal();
+}
+
+const pref = (k, dflt) => PREFS[k] === undefined ? dflt : PREFS[k];
+
+async function prefSet(k, v) {
+  if (v === null) delete PREFS[k]; else PREFS[k] = v;
+  try {
+    const all = prefsLocal();
+    if (v === null) delete all[k]; else all[k] = v;
+    localStorage.setItem(LS_PREFS, JSON.stringify(all));
+  } catch (e) { /* private window, quota - the session copy still stands */ }
+  if (CFG.managed && CFG.managed.enabled && AUTH && AUTH.mode === 'login') {
+    try {
+      await mfetch('/api/preferences', {method: 'PUT',
+        body: JSON.stringify({preferences: {[k]: v}})});
+    } catch (e) { /* the browser copy still stands */ }
+  }
+}
 // The one moment a minted token is visible. Kept until dismissed, because a
 // pane that vanishes on the next click loses a credential that cannot be
 // recovered.
@@ -571,6 +817,10 @@ async function load(force) {
     // guard widget and a widget that fetches on render would flash empty.
     const pr = await fetch('/api/paste-guard' + q);
     if (pr.ok) PG = await pr.json();
+    // Before the first render: widgets read their form choice straight out
+    // of PREFS while drawing, so a late fetch would draw every card once in
+    // the default form and then again in the chosen one.
+    await prefsLoad();
     // The recorded answers to findings (acknowledged / accepted), managed
     // mode only. Failure leaves PSTAT null and every row simply reads open.
     if (CFG.managed && CFG.managed.enabled && AUTH && AUTH.mode === 'login') {
@@ -794,6 +1044,156 @@ const trendChip = (series, badWhenUp) => {
     title="second half of the window: ${d.b}, first half: ${d.a}">${d.up ? '▲' : '▼'}</span>`;
 };
 
+// ---- forms a widget can take ----------------------------------------
+// Only where the data has more than one honest reading. Most widgets
+// have exactly one: a row of headline numbers is a row of headline
+// numbers, and drawing it as a grouped bar chart makes it worse. A list
+// of recent findings and a list of silent sources are logs, not
+// magnitudes. Offering a picker on those would mean the feature's main
+// output was misleading pictures of your own estate.
+//
+// The first entry is the default, and it is the form the widget already
+// had - nobody's overview changes shape because this shipped.
+const WIDGET_FORMS = {
+  // Magnitude across ~7 named things: a table reads exact values, a bar
+  // reads the shape. Not a pie - that is part-to-whole with two or three
+  // slices, and seven tools compared by device count is neither.
+  top_tools: ['table', 'bar'],
+  // A ratio against a limit per surface. The dots are a discrete meter
+  // and stay the default because 1/5 should look like four dark squares
+  // rather than a bar length to squint at; the continuous meter is the
+  // better read once a group has more sources than squares fit.
+  detection_coverage: ['dots', 'meter'],
+};
+
+function widgetForm(kind) {
+  const forms = WIDGET_FORMS[kind];
+  if (!forms) return null;
+  const saved = pref('widget.' + kind + '.form', '');
+  // An unknown saved value falls back rather than drawing nothing: forms
+  // can be renamed or dropped, and a stale preference must not blank a
+  // card on somebody who has not been here since.
+  return forms.indexOf(saved) >= 0 ? saved : forms[0];
+}
+
+function formToggle(kind) {
+  const forms = WIDGET_FORMS[kind];
+  if (!forms) return '';
+  const cur = widgetForm(kind);
+  return '<span class="wform">' + forms.map(f =>
+    `<button class="${f === cur ? 'on' : ''}" data-act="widget-form"
+      data-key="${esc(kind)}" data-form="${esc(f)}"
+      aria-pressed="${f === cur}" title="draw this as a ${esc(f)}"
+      >${esc(f)}</button>`).join('') + '</span>';
+}
+
+// ---- chart parts -----------------------------------------------------
+
+// Tooltips carry plain text and are written with textContent, never
+// innerHTML: a tool name is finding-derived, and the one thing this page
+// will not do is let a finding's own text become part of a program.
+let CTIP = null;
+function tipShow(el, text) {
+  if (!CTIP) {
+    CTIP = document.createElement('div');
+    CTIP.className = 'ctip';
+    document.body.appendChild(CTIP);
+  }
+  CTIP.textContent = text;
+  CTIP.classList.add('on');
+  const r = el.getBoundingClientRect(), t = CTIP.getBoundingClientRect();
+  let left = r.left + r.width / 2 - t.width / 2;
+  left = Math.max(8, Math.min(left, window.innerWidth - t.width - 8));
+  let top = r.top - t.height - 8;
+  if (top < 8) top = r.bottom + 8;
+  CTIP.style.left = Math.round(left) + 'px';
+  CTIP.style.top = Math.round(top) + 'px';
+}
+function tipHide() { if (CTIP) CTIP.classList.remove('on'); }
+
+// Delegated, because every render replaces the markup these sit on.
+document.addEventListener('mouseover', e => {
+  const el = e.target.closest && e.target.closest('[data-ctip]');
+  if (!el) return;
+  tipShow(el, el.getAttribute('data-ctip'));
+  const band = el.closest('g[data-band]');
+  if (band) band.classList.add('on');
+});
+document.addEventListener('mouseout', e => {
+  const el = e.target.closest && e.target.closest('[data-ctip]');
+  if (!el) return;
+  tipHide();
+  const band = el.closest('g[data-band]');
+  if (band) band.classList.remove('on');
+});
+
+// Rows of [label, value] as horizontal bars, in HTML rather than SVG.
+// The first version was an SVG with a scaled viewBox, which cannot hold a
+// label column still: the geometry scaled with the card and the text did
+// not, so the whole chart drifted to the middle on a wide card. Flex rows
+// lay the labels out with real text metrics, keep the bars on one left
+// edge, and make each row the same clickable thing the table's rows are.
+// One series, so no legend - the card title names it - and every bar is
+// directly labelled, which replaces an axis rather than adding one.
+function barRows(rows, unit, open) {
+  if (!rows.length) return '';
+  const max = Math.max(...rows.map(r => r[1])) || 1;
+  return '<div class="bars">' + rows.map(r => {
+    const name = String(r[0]);
+    return `<div class="barrow"${open ? ` data-open="${esc(open)}"
+      data-key="${esc(name)}" tabindex="0"` : ''}
+      data-ctip="${esc(name + ' · ' + r[1] + ' ' + unit)}">
+      <span class="bl" title="${esc(name)}">${esc(name)}</span>
+      <span class="bt"><span class="bf" style="width:${
+        Math.max(2, Math.round(r[1] / max * 100))}%"></span></span>
+      <b>${r[1]}</b></div>`;
+  }).join('') + '</div>';
+}
+
+// Two series over the window: the one that matters, and the one that
+// gives it scale. Emphasis rather than two competing hues - the question
+// is whether personal accounts are rising, and devices is the context
+// that says whether a fall means "fixed" or "stopped reporting".
+function trendChart(days, a, b, aLabel, bLabel) {
+  const n = days.length;
+  if (n < 2) return '';
+  const W = 320, H = 120, T = 8, B = 10;
+  const max = Math.max(1, ...a, ...b);
+  const x = i => i * W / (n - 1);
+  const y = v => T + (1 - v / max) * (H - T - B);
+  const path = s => s.map((v, i) =>
+    `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join('');
+  const area = `${path(a)}L${x(n - 1).toFixed(1)} ${y(0)}L0 ${y(0)}z`;
+  const day = d => (d || '').slice(5).replace('-', '/');
+  return `<div class="tchart">
+    <svg class="chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"
+      role="img" aria-label="${esc(aLabel)} and ${esc(bLabel)} per day">
+      <line class="grid" x1="0" y1="${y(0)}" x2="${W}" y2="${y(0)}"/>
+      <line class="grid" x1="0" y1="${y(max)}" x2="${W}" y2="${y(max)}"
+        opacity=".5"/>
+      <path class="area" d="${area}"/>
+      <path class="line ctx" d="${path(b)}"/>
+      <path class="line" d="${path(a)}"/>
+      ${days.map((d, i) => {
+        const bw = W / (n - 1);
+        return `<g data-band="${i}">
+          <line class="cross" x1="${x(i)}" y1="${T}" x2="${x(i)}" y2="${y(0)}"/>
+          <rect class="hit" x="${x(i) - bw / 2}" y="0" width="${bw}" height="${H}"
+            data-ctip="${esc(d + ' · ' + aLabel + ' ' + a[i]
+                             + ' · ' + bLabel + ' ' + b[i])}"/>
+        </g>`;
+      }).join('')}
+    </svg>
+    <span class="tmax">${max}</span>
+  </div>
+  <div class="tdays"><span>${esc(day(days[0]))}</span>
+    <span>${esc(day(days[n - 1]))}</span></div>
+  <div class="clegend">
+    <span><i style="background:var(--chart)"></i>${esc(aLabel)}</span>
+    <span><i style="background:color-mix(in srgb,var(--mut) 55%,transparent)"></i>${esc(bLabel)}</span>
+  </div>`;
+}
+
 const WIDGETS = {
 
   stat_row: () => {
@@ -863,16 +1263,23 @@ const WIDGETS = {
     const twoDays = Date.now() - 2*86400000;
     const rows = ents(G.tools)
       .sort((a,b)=>(b[1].devices||[]).length-(a[1].devices||[]).length).slice(0,7);
-    return `<div class="wcard w6"><h3>Top tools</h3>
-    ${rows.length ? `<table class="plain">${rows.map(([k,t])=>{
+    const bars = widgetForm('top_tools') === 'bar';
+    return `<div class="wcard w6"><h3>${formToggle('top_tools')}Top tools</h3>
+    ${rows.length ? (bars ? barRows(rows.map(([k,t]) =>
+      [k, (t.devices||[]).length || (t.identities||[]).length]), 'devices', 'tool')
+    : `<table class="plain">${rows.map(([k,t])=>{
       const isNew = firsts[k] && Date.parse(firsts[k]) > twoDays;
       return `<tr data-open="tool" data-key="${esc(k)}" style="cursor:pointer">
         <td>${esc(k)}${isNew ? ' <span class="pill p-amb">new</span>' : ''}</td>
         <td>${spark(series[k])}</td>
         <td class="num">${(t.devices||[]).length || (t.identities||[]).length}</td></tr>`;
-    }).join('')}</table>
-    <p class="src-note">The bars are the last ${ (tr.days||[]).length || 7 } days,
-    left to right. Click a tool to open it.</p>`
+    }).join('')}</table>`)
+    + `<p class="src-note">${bars
+      ? 'Devices per tool over the window. Click a tool to open it, or '
+        + 'switch to the table for the last ' + ((tr.days||[]).length || 7)
+        + ' days per tool.'
+      : 'The bars are the last ' + ((tr.days||[]).length || 7) + ' days, '
+        + 'left to right. Click a tool to open it.'}</p>`
     : '<p class="lede">Nothing reported yet.</p>'}</div>`;
   },
 
@@ -895,11 +1302,19 @@ const WIDGETS = {
     if (!S) return '<div class="wcard w4"><h3>Detection coverage</h3><p class="lede">No status available.</p></div>';
     // One square per source, filled when it reports: 1/5 should look like
     // four dark squares, not a bar length to squint at.
-    return `<div class="wcard w4"><h3>Detection coverage</h3>
+    const meter = widgetForm('detection_coverage') === 'meter';
+    return `<div class="wcard w4"><h3>${formToggle('detection_coverage')}Detection coverage</h3>
     <p class="src-note" style="margin:0 0 8px">Dedicated sources reporting per
     surface. A surface can still be covered by another source: MCP servers turn
     up in endpoint collector findings whether or not the MCP scanner runs.</p>
-    ${(S.groups||[]).map(g=>{
+    ${meter ? (S.groups||[]).map(g => `<div class="meterrow"
+        data-ctip="${esc(g.group + ' · ' + g.reporting + ' of ' + g.total
+                         + ' dedicated sources reporting')}">
+        <span>${esc(g.group)}</span>
+        <span class="track"><span class="fill" style="width:${
+          g.total ? Math.round(g.reporting / g.total * 100) : 0}%"></span></span>
+        <b>${g.reporting}/${g.total}</b></div>`).join('')
+    : (S.groups||[]).map(g=>{
       const dots = g.total <= 14
         ? `<span class="dots">${Array.from({length: g.total}, (_, i) =>
             `<i class="${i < g.reporting ? 'on' : ''}"></i>`).join('')}</span>`
@@ -913,6 +1328,23 @@ const WIDGETS = {
         <span>${esc(g.group)}</span>${dots}
         <b>${g.reporting}/${g.total}</b></div>`;
     }).join('')}</div>`;
+  },
+
+  // The change dimension, which the estate has had all along and shown
+  // only as 18px sparklines inside stat tiles. Every other number on this
+  // page is a total over the window: 23 personal accounts reads the same
+  // whether it was 12 last week or 40.
+  activity_trend: () => {
+    const tr = G.trends || {}, days = tr.days || [];
+    if (days.length < 2) return `<div class="wcard w6"><h3>Activity</h3>
+      <p class="lede">Not enough days in the window to draw a trend yet.</p></div>`;
+    return `<div class="wcard w6"><h3>Activity</h3>
+    ${trendChart(days, tr.personal || days.map(() => 0),
+                 tr.devices || days.map(() => 0),
+                 'personal accounts', 'devices reporting')}
+    <p class="src-note">Per day across the window. Devices is context, not a
+    second story: personal accounts falling while devices falls with it is a
+    fleet going quiet, not a problem being fixed.</p></div>`;
   },
 
   source_health: () => {
@@ -1054,19 +1486,166 @@ const truncNote = flag => flag ? `<div class="note">Only the newest findings
   here is a floor, not a total. Narrow the window, or raise
   <span class="mono">LOKI_MAX_FINDINGS</span>.</div>` : '';
 
-function overview() {
+// ---- arranging the overview -----------------------------------------
+// Which cards this person wants, in what order. The deployment's own
+// widget list stays the source of what CAN appear - this only reorders
+// and hides within it, so a widget an admin turns on later still shows
+// up, at the end, rather than being invisible to everyone who has ever
+// saved an arrangement.
+const wKey = w => w.kind === 'grafana' ? 'grafana:' + (w.ref || '') : w.kind;
+
+function overviewWidgets() {
   const ws = CFG.overview_widgets || [{kind:'stat_row'},{kind:'review_queue'},
     {kind:'top_tools'},{kind:'recent_personal_accounts'},{kind:'detection_coverage'}];
-  const stat = ws.filter(w => w.kind === 'stat_row');
-  const rest = ws.filter(w => w.kind !== 'stat_row');
+  let saved = {};
+  try { saved = JSON.parse(pref('overview.layout', '') || '{}') || {}; }
+  catch (e) { /* a layout that will not parse is one nobody saved */ }
+  const order = Array.isArray(saved.order) ? saved.order : [];
+  const hidden = Array.isArray(saved.hidden) ? saved.hidden : [];
+  const sizes = (saved.sizes && typeof saved.sizes === 'object')
+    ? saved.sizes : {};
+  // Cards that share the column of the card before them rather than
+  // opening one of their own.
+  const stacked = Array.isArray(saved.stacked) ? saved.stacked : [];
+  const by = new Map(ws.map(w => [wKey(w), w]));
+  const out = [];
+  order.forEach(k => { if (by.has(k)) { out.push(by.get(k)); by.delete(k); } });
+  // Whatever the saved order never mentioned goes last, in the
+  // deployment's own order: new widgets appear rather than disappear.
+  by.forEach(w => out.push(w));
+  return {all: out, sizes: sizes,
+          stacked: stacked.filter(k => out.some(w => wKey(w) === k)),
+          hidden: hidden.filter(k => out.some(w => wKey(w) === k))};
+}
+
+// What each card may be resized to, small to large, against the grid's
+// own three widths. Not every widget reads correctly at every size and
+// offering one that does not is how a personal layout becomes a broken
+// page: a KPI row squeezed into a third of the width wraps into a column
+// of orphans, and two stat cells stretched across the full width is a
+// card that is mostly empty. A widget with one entry gets no control.
+// A name for a widget that draws no title of its own. Every other card
+// has an <h3> for the edit controls to sit beside; without one they float
+// in a strip attached to nothing, which reads as a control that has come
+// loose rather than one belonging to the card under it.
+const WIDGET_TITLES = {stat_row: 'Headline numbers'};
+
+const SIZES = ['w4', 'w6', 'w12'];
+const SIZE_LABEL = {w4: 'S', w6: 'M', w12: 'L'};
+const SIZE_NAME = {w4: 'small', w6: 'medium', w12: 'large'};
+const WIDGET_SIZES = {
+  // Checked by rendering each of these three to a row at 328px and
+  // looking, not by reasoning about it - the first pass of this list was
+  // guesswork and most of it was wrong. A KPI row wraps to two columns,
+  // bars keep their labels, the line chart compresses to something
+  // sparkline-shaped but still readable, and stat cells stack.
+  stat_row: ['w4', 'w6', 'w12'],
+  top_tools: ['w4', 'w6', 'w12'],
+  activity_trend: ['w4', 'w6', 'w12'],
+  budget_spend: ['w4', 'w6', 'w12'],
+  detection_coverage: ['w4', 'w6', 'w12'],
+  source_health: ['w4', 'w6', 'w12'],
+  paste_guard: ['w4', 'w6', 'w12'],
+  // These two genuinely break at a third width, which is the whole point
+  // of the list: the review queue's Add to registry / Dismiss buttons
+  // overflow the card and Dismiss is clipped mid-word, and a four-column
+  // table of people wraps every date onto three lines.
+  recent_personal_accounts: ['w6', 'w12'],
+  review_queue: ['w6', 'w12'],
+  // A cross-origin frame decides its own layout and cannot be checked
+  // from here, so it is not offered a width nobody has seen it at.
+  grafana: ['w6', 'w12'],
+};
+
+// The working copy while arranging. Null means not arranging.
+let OVEDIT = null;
+
+function overview() {
+  const live = overviewWidgets();
+  const editing = !!OVEDIT;
+  const order = editing ? OVEDIT.order : live.all.map(wKey);
+  const hidden = editing ? OVEDIT.hidden : live.hidden;
+  const sizes = editing ? OVEDIT.sizes : live.sizes;
+  const stacked = editing ? OVEDIT.stacked : live.stacked;
+  const by = new Map(live.all.map(w => [wKey(w), w]));
+  const draw = order.filter(k => by.has(k) && (editing || hidden.indexOf(k) < 0));
+
+  // A card's own declared width, which is also the default when nothing
+  // has been chosen. Read from the widget's markup rather than mapped, so
+  // one that changes its own span still tiles.
+  const ownSpan = (k, body) => (body.match(/class="[^"]*\b(w4|w6|w12)\b/) || [])[1]
+    || (by.get(k).kind === 'stat_row' ? 'w12' : 'w6');
+
+  const drawn = new Map(draw.map(k => {
+    const w = by.get(k);
+    return [k, WIDGETS[w.kind]
+      ? WIDGETS[w.kind](w)
+      : WIDGETS.error({error: 'no renderer for ' + w.kind})];
+  }));
+
+  // Columns. A card marked stacked joins the column before it; anything
+  // else opens a new one. The first card can never stack - there is
+  // nothing to stack it under - which is also why the toggle is absent
+  // on it.
+  const cols = [];
+  draw.forEach(k => {
+    if (!drawn.get(k)) return;
+    if (cols.length && stacked.indexOf(k) >= 0) cols[cols.length - 1].push(k);
+    else cols.push([k]);
+  });
+
+  const cardOf = k => {
+    const w = by.get(k), body = drawn.get(k);
+    const off = hidden.indexOf(k) >= 0;
+    const can = WIDGET_SIZES[w.kind] || [ownSpan(k, body)];
+    const span = can.indexOf(sizes[k]) >= 0 ? sizes[k] : ownSpan(k, body);
+    const isStacked = stacked.indexOf(k) >= 0;
+    const titled = body.indexOf('<h3') >= 0;
+    return `<div class="gcard${titled ? '' : ' notitle'}" data-wk="${esc(k)}"
+      ${editing ? 'draggable="true"' : ''}
+      style="${off ? 'opacity:.45' : ''}">
+      ${editing && !titled ? `<h3 class="gname">${
+        esc(WIDGET_TITLES[w.kind] || w.kind)}</h3>` : ''}
+      ${editing ? `<span class="gtools">${
+        // A stacked card takes the column's width from the card at its
+        // head, so offering it a width of its own would be a control that
+        // does nothing.
+        (!isStacked && can.length > 1)
+        ? SIZES.filter(z => can.indexOf(z) >= 0).map(z =>
+            `<button class="${z === span ? 'on' : ''}" data-act="w-size"
+              data-key="${esc(k)}" data-size="${z}"
+              title="${SIZE_NAME[z]}">${SIZE_LABEL[z]}</button>`).join('')
+        : ''}${isStacked ? `<button data-act="w-unstack" data-key="${esc(k)}"
+        title="give this card a column of its own again"
+        >unstack</button>` : ''}<button data-act="w-hide" data-key="${esc(k)}"
+        >${off ? 'show' : 'hide'}</button></span>` : ''}${body}</div>`;
+  };
+
+  const colOf = (col, i) => {
+    const head = col[0], body = drawn.get(head);
+    const w = by.get(head);
+    const can = WIDGET_SIZES[w.kind] || [ownSpan(head, body)];
+    // The column takes its width from the card at its head.
+    const span = can.indexOf(sizes[head]) >= 0 ? sizes[head] : ownSpan(head, body);
+    return `<div class="gitem ${span}${col.length > 1 ? ' stack' : ''}">${
+      col.map(k => cardOf(k)).join('')}</div>`;
+  };
+
   return `<h2>Overview</h2>
   ${truncNote(G.findings_truncated)}
-  <p class="lede">You can choose which widgets appear here: they are
-  toggles under Settings.</p>
-  ${stat.map(w => WIDGETS.stat_row(w)).join('')}
-  <div class="grid">${rest.map(w =>
-    (WIDGETS[w.kind] ? WIDGETS[w.kind](w) : WIDGETS.error({error:'no renderer for '+w.kind}))
-  ).join('')}</div>`;
+  ${editing ? `<div class="oedit">
+    <span>Drag a card between others to move it, or onto the middle of one
+    to stack them in a column - two short cards share the height of a tall
+    one that way. This is your own view and changes nothing for anyone
+    else${
+      AUTH && AUTH.role !== 'viewer'
+        ? ' - the widgets a deployment offers are set under Settings' : ''}.</span>
+    <span class="sp"></span>
+    <button class="ghost" data-act="ov-reset">reset to default</button>
+    <button class="ghost" data-act="ov-cancel">cancel</button>
+    <button class="pri" data-act="ov-save">save</button>
+  </div>` : ''}
+  <div class="grid${editing ? ' editing' : ''}">${cols.map(colOf).join('')}</div>`;
 }
 
 function card(k, d) {
@@ -4528,6 +5107,56 @@ async function managedAction(act, el) {
     if (r.ok) USERS = null;
     render(); return;
   }
+  if (act === 'ov-edit') {
+    const live = overviewWidgets();
+    OVEDIT = {order: live.all.map(wKey), hidden: live.hidden.slice(),
+              sizes: Object.assign({}, live.sizes),
+              stacked: live.stacked.slice()};
+    render(); return;
+  }
+  if (act === 'ov-cancel') { OVEDIT = null; render(); return; }
+  if (act === 'ov-save') {
+    await prefSet('overview.layout', JSON.stringify(
+      {order: OVEDIT.order, hidden: OVEDIT.hidden, sizes: OVEDIT.sizes,
+       stacked: OVEDIT.stacked}));
+    OVEDIT = null; render(); return;
+  }
+  if (act === 'ov-reset') {
+    // Deleting the key rather than saving today's default: the default is
+    // the deployment's, and a stored copy of it would stop tracking.
+    await prefSet('overview.layout', null);
+    OVEDIT = null; render(); return;
+  }
+  if (act === 'ov-showall') {
+    const live = overviewWidgets();
+    await prefSet('overview.layout', JSON.stringify(
+      {order: live.all.map(wKey), hidden: [], sizes: live.sizes,
+       stacked: live.stacked}));
+    render(); return;
+  }
+  if (act === 'w-unstack') {
+    const i = OVEDIT.stacked.indexOf(el.getAttribute('data-key'));
+    if (i >= 0) OVEDIT.stacked.splice(i, 1);
+    render(); return;
+  }
+  if (act === 'w-size') {
+    OVEDIT.sizes[el.getAttribute('data-key')] = el.getAttribute('data-size');
+    render(); return;
+  }
+  if (act === 'w-hide') {
+    const k = el.getAttribute('data-key');
+    const i = OVEDIT.hidden.indexOf(k);
+    if (i < 0) OVEDIT.hidden.push(k); else OVEDIT.hidden.splice(i, 1);
+    render(); return;
+  }
+  if (act === 'widget-form') {
+    // A display choice, so it saves and redraws and nothing else: no
+    // refetch, because both forms are drawn from data the page already
+    // holds.
+    await prefSet('widget.' + el.getAttribute('data-key') + '.form',
+                  el.getAttribute('data-form'));
+    render(); return;
+  }
   if (act === 'take-tour') { await tourStart(); return; }
   if (act === 'user-reset-form') { URFORM = el.getAttribute('data-key'); USERR = ''; render(); return; }
   if (act === 'user-reset-cancel') { URFORM = null; render(); return; }
@@ -5015,9 +5644,22 @@ function drawNav() {
 // and the extension guide belong to no section and get none.
 function tabbar() {
   const sec = sectionOf(view);
-  if (!sec || sec.items.length < 2) return '';
-  return `<div class="tabs">${sec.items.map(([id, lbl]) =>
-    `<button data-nav="${id}" class="${view===id?'on':''}">${lbl}</button>`).join('')}</div>`;
+  // A view's own controls ride the tab row. They stand down while
+  // arranging, because the edit toolbar is the control surface then.
+  const aside = view === 'overview' && !OVEDIT ? overviewTools() : '';
+  const tabs = (sec && sec.items.length >= 2)
+    ? `<div class="tabs">${sec.items.map(([id, lbl]) =>
+        `<button data-nav="${id}" class="${view===id?'on':''}">${lbl}</button>`).join('')}</div>`
+    : '';
+  if (!tabs && !aside) return '';
+  return `<div class="tabrow">${tabs}<span class="tabaside">${aside}</span></div>`;
+}
+
+function overviewTools() {
+  const hidden = overviewWidgets().hidden.length;
+  return `${hidden ? `<button class="mini" data-act="ov-showall"
+    >show all (${hidden} hidden)</button>` : ''}
+    <button class="mini" data-act="ov-edit">edit</button>`;
 }
 
 // Did the estate data actually arrive? Every "none seen, and that is a
@@ -5157,6 +5799,100 @@ app.addEventListener('change', e => {
     render();
   }
 });
+// Dragging a card. Delegated for the same reason every other handler here
+// is: a render replaces the elements, and per-card listeners would have to
+// be reattached each time.
+let DRAGK = null;
+app.addEventListener('dragstart', e => {
+  const it = e.target.closest && e.target.closest('.gcard[draggable]');
+  if (!it) return;
+  DRAGK = it.getAttribute('data-wk');
+  it.classList.add('drag');
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move';
+    // Firefox will not start a drag without data on the transfer.
+    try { e.dataTransfer.setData('text/plain', DRAGK); } catch (x) {}
+  }
+});
+app.addEventListener('dragend', () => {
+  DRAGK = null;
+  app.querySelectorAll('.gcard.drag, .gcard.over')
+     .forEach(n => n.classList.remove('drag', 'over'));
+});
+// Where a drop would land, from the pointer's position down the card:
+// the middle stacks into that card's column, the top and bottom edges
+// place it as a column of its own before or after. Edges are relative to
+// the whole column, not the card under the pointer, so dropping beside a
+// stack never lands inside it by accident.
+function dropZone(card, y) {
+  const r = card.getBoundingClientRect();
+  const rel = (y - r.top) / (r.height || 1);
+  return rel < 0.28 ? 'before' : rel > 0.72 ? 'after' : 'into';
+}
+
+function colKeys(card) {
+  const col = card.closest('.gitem');
+  return col ? [...col.querySelectorAll('.gcard')]
+    .map(c => c.getAttribute('data-wk')) : [card.getAttribute('data-wk')];
+}
+
+app.addEventListener('dragover', e => {
+  if (!OVEDIT || !DRAGK) return;
+  const it = e.target.closest && e.target.closest('.gcard');
+  if (!it) return;
+  e.preventDefault();
+  app.querySelectorAll('.gcard.over, .gcard.into')
+     .forEach(n => n.classList.remove('over', 'into', 'before', 'after'));
+  if (it.getAttribute('data-wk') === DRAGK) return;
+  const zone = dropZone(it, e.clientY);
+  it.classList.add(zone === 'into' ? 'into' : 'over', zone);
+});
+
+app.addEventListener('drop', e => {
+  if (!OVEDIT || !DRAGK) return;
+  const it = e.target.closest && e.target.closest('.gcard');
+  if (!it) return;
+  e.preventDefault();
+  const to = it.getAttribute('data-wk'), from = DRAGK;
+  const zone = dropZone(it, e.clientY);
+  const col = colKeys(it);
+  DRAGK = null;
+  if (!to || to === from) return;
+
+  const o = OVEDIT.order.slice(), st = OVEDIT.stacked.slice();
+  // Lifting the head of a stack leaves its followers to attach themselves
+  // to whatever column happens to precede them, so the next one up is
+  // promoted. Read from the DRAGGED card's column - the drop target's is
+  // a different column entirely, and using it promoted nothing.
+  const fromCard = [...app.querySelectorAll('.gcard')]
+    .find(c => c.getAttribute('data-wk') === from);
+  const fromCol = fromCard ? colKeys(fromCard) : [from];
+  if (fromCol[0] === from && fromCol.length > 1) {
+    const heir = st.indexOf(fromCol[1]);
+    if (heir >= 0) st.splice(heir, 1);
+  }
+  o.splice(o.indexOf(from), 1);
+  const wasStacked = st.indexOf(from);
+  if (wasStacked >= 0) st.splice(wasStacked, 1);
+
+  const rest = col.filter(k => k !== from);
+  if (zone === 'into' && rest.length) {
+    // Under the last card of that column, and marked so it joins it.
+    o.splice(o.indexOf(rest[rest.length - 1]) + 1, 0, from);
+    st.push(from);
+  } else if (rest.length) {
+    // Beside the column, never inside it: an anchor on the group rather
+    // than on the card keeps a drop next to a stack from splitting it.
+    const anchor = zone === 'before' ? rest[0] : rest[rest.length - 1];
+    o.splice(o.indexOf(anchor) + (zone === 'before' ? 0 : 1), 0, from);
+  } else {
+    o.push(from);
+  }
+  OVEDIT.order = o;
+  OVEDIT.stacked = st;
+  render();
+});
+
 // The Settings sub-tabs, delegated like everything else in #app.
 app.addEventListener('click', e => {
   const el = e.target.closest('[data-settab]');
@@ -5419,28 +6155,17 @@ const tourKey = () => 'tour.seen.' + tourRole();
 // admin key is simply absent. Classic mode has no account to hang it on,
 // so it falls back to this browser.
 async function tourProgress() {
-  if (CFG.managed && CFG.managed.enabled && AUTH && AUTH.mode === 'login') {
-    try {
-      const r = await mfetch('/api/preferences');
-      if (r.ok) {
-        const p = (await r.json()).preferences || {};
-        return {admin: p['tour.seen.admin'], viewer: p['tour.seen.viewer']};
-      }
-    } catch (e) { /* fall through to the browser */ }
-  }
-  const ls = k => { try { return localStorage.getItem('aiguard-tour.seen.' + k); }
-                    catch (e) { return null; } };
-  return {admin: ls('admin'), viewer: ls('viewer')};
+  // The same store every other preference uses. The per-key localStorage
+  // entries an earlier build wrote are still honoured, so nobody in
+  // classic mode is shown a tour they have already sat through.
+  const legacy = k => { try {
+    return localStorage.getItem('aiguard-tour.seen.' + k); } catch (e) { return null; } };
+  return {admin: pref('tour.seen.admin', legacy('admin')),
+          viewer: pref('tour.seen.viewer', legacy('viewer'))};
 }
 
 async function tourRemember(v) {
-  try { localStorage.setItem('aiguard-' + tourKey(), v); } catch (e) {}
-  if (CFG.managed && CFG.managed.enabled && AUTH && AUTH.mode === 'login') {
-    try {
-      await mfetch('/api/preferences', {method: 'PUT', body: JSON.stringify(
-        {preferences: {[tourKey()]: v}})});
-    } catch (e) { /* the browser copy still stands */ }
-  }
+  await prefSet(tourKey(), v);
 }
 
 async function tourStart(intro) {
