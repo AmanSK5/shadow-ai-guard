@@ -98,8 +98,12 @@ def test_progress_is_kept_per_role():
     other role's key is present and this one's is not."""
     assert "'tour.seen.' + tourRole()" in INDEX
     assert "TOUR_ROLE_CHANGED" in INDEX
+    # Both roles are read, whichever store they come from - the point is
+    # that one role's progress never answers for the other's.
+    progress = INDEX.split("async function tourProgress() {", 1)[1].split(
+        "\n}", 1)[0]
     for role in ("admin", "viewer"):
-        assert f"p['tour.seen.{role}']" in INDEX
+        assert f"tour.seen.{role}" in progress
 
 
 def test_every_step_carries_a_way_forward():

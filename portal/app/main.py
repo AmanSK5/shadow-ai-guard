@@ -821,6 +821,7 @@ KNOWN_WIDGETS = {
     "paste_guard": "Pastes warned, overridden and blocked",
     "review_queue": "Observed tools awaiting a governance decision",
     "budget_spend": "Tracked AI spend against observed use (managed mode)",
+    "activity_trend": "Personal accounts and devices per day across the window",
 }
 
 DEFAULT_WIDGETS = ["stat_row", "review_queue", "budget_spend", "top_tools",
