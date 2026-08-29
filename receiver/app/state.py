@@ -369,6 +369,33 @@ class State:
                 if name not in have:
                     self._db.execute(
                         f"ALTER TABLE admin_users ADD COLUMN {name} {decl}")
+            # A database from before the owner role has accounts and no
+            # owner. The account the setup code created is the earliest
+            # one - create_admin refuses once any account exists, so
+            # "earliest" identifies it exactly - and it is promoted.
+            # Nothing new is recorded to work this out, and a deployment
+            # that has since deleted that account promotes whichever admin
+            # is now oldest rather than leaving nobody able to appoint one.
+            have_any = self._db.execute(
+                "SELECT 1 FROM admin_users LIMIT 1").fetchone()
+            if have_any:
+                has_owner = self._db.execute(
+                    "SELECT 1 FROM admin_users WHERE role = 'owner' LIMIT 1"
+                ).fetchone()
+                if not has_owner:
+                    first = self._db.execute(
+                        "SELECT id FROM admin_users WHERE role = 'admin'"
+                        " ORDER BY created_at, id LIMIT 1").fetchone()
+                    if first is not None:
+                        self._db.execute(
+                            "UPDATE admin_users SET role = 'owner'"
+                            " WHERE id = ?", (first["id"],))
+                        self._db.execute(
+                            "INSERT INTO events (at, kind, detail)"
+                            " VALUES (?, ?, ?)",
+                            (_now(), "owner_promoted_on_upgrade",
+                             json.dumps({"user": first["id"],
+                                         "why": "earliest account, no owner"})))
             # After the ALTER, never in _SCHEMA: on a database that predates
             # the column the index would be built against a column that does
             # not exist yet. Partial, so the many accounts with no address do
@@ -619,7 +646,7 @@ class State:
         return row is not None
 
     def create_admin(self, username: str, password: str) -> dict:
-        """The first account, always an admin.
+        """The first account, and the deployment's owner.
 
         Refuses once any account exists: creating the first account is what
         the one-time setup code authorizes, and after that the door is
@@ -633,7 +660,7 @@ class State:
             self._db.execute(
                 "INSERT INTO admin_users"
                 " (id, username, password_hash, created_at, role)"
-                " VALUES (?, ?, ?, ?, 'admin')",
+                " VALUES (?, ?, ?, ?, 'owner')",
                 (uid, username, _hash_password(password), _now()),
             )
             self._event("admin_created", {"user": uid, "username": username})
@@ -716,7 +743,57 @@ class State:
     # happened, and it cost the account its password to say something the
     # trail can state outright.
 
-    ROLES = ("admin", "viewer")
+    ROLES = ("owner", "admin", "viewer")
+
+    # What a role outranks. The rule every account action below enforces:
+    # you cannot act on an account that outranks you, and you cannot grant
+    # a role above your own. Without it, an admin reaches an owner through
+    # any of three doors - reset their password and sign in as them, set
+    # their email and sign in through the identity provider, or simply
+    # change their role - and the tier above admin would exist in name
+    # only. Kubernetes RBAC names this escalation prevention; Entra
+    # enforces the same shape by refusing a password reset against a
+    # higher-privileged role.
+    RANK = {"owner": 3, "admin": 2, "viewer": 1}
+
+    def _outranks(self, actor: str, target: str) -> bool:
+        return self.RANK.get(actor, 0) > self.RANK.get(target, 0)
+
+    def _may_act_on(self, by_role: str, target_role: str):
+        """Raise unless by_role may act on an account holding target_role.
+
+        by_role empty means the API credential, which is the operator's own
+        break-glass and is not role-limited.
+        """
+        if not by_role:
+            return
+        if self._outranks(target_role, by_role):
+            raise AuthError(403, "that account holds a role above yours")
+
+    def _may_grant(self, by_role: str, role: str):
+        if not by_role:
+            return
+        if self._outranks(role, by_role):
+            raise AuthError(403, "you cannot grant a role above your own")
+
+    def _guard_last(self, was: str, becomes: str = ""):
+        """Refuse to remove the last owner.
+
+        Callers hold the lock. This replaces the old last-admin floor,
+        which existed so a deployment could not lock itself out of its own
+        account management - an owner does everything an admin does, so a
+        deployment with an owner and no admins is not locked out of
+        anything. The owner floor is the one that matters and is stricter
+        than the admin floor ever was: an admin cannot make an owner, so
+        losing the last one cannot be undone from inside at all.
+        """
+        if was != "owner" or becomes == "owner":
+            return
+        n = self._db.execute(
+            "SELECT COUNT(*) AS n FROM admin_users WHERE role = 'owner'"
+        ).fetchone()["n"]
+        if n <= 1:
+            raise AuthError(409, "cannot remove the last owner")
 
     def list_users(self) -> list[dict]:
         with self._lock:
@@ -727,9 +804,11 @@ class State:
         return [dict(r) for r in rows]
 
     def create_user(self, username: str, password: str, role: str,
-                    by: str = "", email: str = "") -> dict:
+                    by: str = "", email: str = "",
+                    by_role: str = "") -> dict:
         if role not in self.ROLES:
-            raise AuthError(422, "role must be admin or viewer")
+            raise AuthError(422, "role must be owner, admin or viewer")
+        self._may_grant(by_role, role)
         address = normalize_email(email)
         uid = secrets.token_hex(8)
         with self._lock:
@@ -759,7 +838,8 @@ class State:
         return {"id": uid, "username": username, "role": role,
                 "email": address}
 
-    def set_user_email(self, uid: str, email: str, by: str = "") -> bool:
+    def set_user_email(self, uid: str, email: str, by: str = "",
+                       by_role: str = "") -> bool:
         """Set or clear the address an identity provider would map onto.
 
         Separate from account creation because the accounts that need one
@@ -768,10 +848,15 @@ class State:
         name."""
         address = normalize_email(email)
         with self._lock:
-            if self._db.execute(
-                "SELECT 1 FROM admin_users WHERE id = ?", (uid,)
-            ).fetchone() is None:
+            row = self._db.execute(
+                "SELECT role FROM admin_users WHERE id = ?", (uid,)
+            ).fetchone()
+            if row is None:
                 return False
+            # The address is what a federated sign-in matches on, so
+            # setting it on an account above yours is that account's
+            # credentials by another route.
+            self._may_act_on(by_role, row["role"])
             if address and self._db.execute(
                 "SELECT 1 FROM admin_users WHERE email = ? AND id != ?",
                 (address, uid),
@@ -785,7 +870,8 @@ class State:
             self._db.commit()
         return True
 
-    def set_user_role(self, uid: str, role: str, by: str = "") -> bool:
+    def set_user_role(self, uid: str, role: str, by: str = "",
+                      by_role: str = "") -> bool:
         """Move an account between trust levels.
 
         Enforcement is live: session_user reads the role off the account row
@@ -795,7 +881,8 @@ class State:
         sign someone out to achieve what the join already achieved.
         """
         if role not in self.ROLES:
-            raise AuthError(422, "role must be admin or viewer")
+            raise AuthError(422, "role must be owner, admin or viewer")
+        self._may_grant(by_role, role)
         with self._lock:
             row = self._db.execute(
                 "SELECT role FROM admin_users WHERE id = ?", (uid,)
@@ -803,20 +890,14 @@ class State:
             if row is None:
                 return False
             was = row["role"]
+            # Both ends: granting a role you do not hold is escalation, and
+            # so is demoting somebody who outranks you out of the way.
+            self._may_act_on(by_role, was)
             if was == role:
                 # Idempotent, and no event: the trail records changes, and a
                 # write that changed nothing is not one.
                 return True
-            if was == "admin" and role != "admin":
-                admins = self._db.execute(
-                    "SELECT COUNT(*) AS n FROM admin_users WHERE role = 'admin'"
-                ).fetchone()["n"]
-                if admins <= 1:
-                    # The same floor delete_user holds, for the same reason:
-                    # a deployment with accounts and no admin cannot manage
-                    # its own accounts, and the API credential that could
-                    # dig it out is optional.
-                    raise AuthError(409, "cannot demote the last admin")
+            self._guard_last(was, role)
             self._db.execute("UPDATE admin_users SET role = ? WHERE id = ?",
                              (role, uid))
             self._event("user_role_changed",
@@ -824,7 +905,7 @@ class State:
             self._db.commit()
         return True
 
-    def delete_user(self, uid: str, by: str = "") -> bool:
+    def delete_user(self, uid: str, by: str = "", by_role: str = "") -> bool:
         """Remove an account and kill its sessions. The last admin cannot be
         deleted: a deployment with accounts and no admin is locked out of
         its own account management, and the API credential that could fix
@@ -835,12 +916,8 @@ class State:
             ).fetchone()
             if row is None:
                 return False
-            if row["role"] == "admin":
-                admins = self._db.execute(
-                    "SELECT COUNT(*) AS n FROM admin_users WHERE role = 'admin'"
-                ).fetchone()["n"]
-                if admins <= 1:
-                    raise AuthError(409, "cannot delete the last admin")
+            self._may_act_on(by_role, row["role"])
+            self._guard_last(row["role"])
             # Sessions reference the account (FK), and a deleted account's
             # sessions have nothing left to say - remove rather than revoke.
             self._db.execute("DELETE FROM sessions WHERE user_id = ?", (uid,))
@@ -850,16 +927,18 @@ class State:
         return True
 
     def reset_user_password(self, uid: str, new_password: str,
-                            by: str = "") -> bool:
+                            by: str = "", by_role: str = "") -> bool:
         """An admin setting someone else's password. Every session that user
         holds dies with the old one - the reset exists because the old
         credential can no longer be trusted, and that distrust extends to
         anything it minted."""
         with self._lock:
-            if self._db.execute(
-                "SELECT 1 FROM admin_users WHERE id = ?", (uid,)
-            ).fetchone() is None:
+            row = self._db.execute(
+                "SELECT role FROM admin_users WHERE id = ?", (uid,)
+            ).fetchone()
+            if row is None:
                 return False
+            self._may_act_on(by_role, row["role"])
             self._db.execute(
                 "UPDATE admin_users SET password_hash = ? WHERE id = ?",
                 (_hash_password(new_password), uid))
@@ -1511,8 +1590,9 @@ class State:
         user_id names whose - the session's own user in the normal path.
         current=None with no user_id is the break-glass path, reached only
         with the API credential (the operator who can set the receiver's
-        environment already owns the box); it targets the oldest admin,
-        which is the account the setup code created. Every session except
+        environment already owns the box); it targets the oldest owner,
+        which is the account the setup code created, falling back to the
+        oldest admin if a deployment has removed its owners. Every session except
         keep_session dies with the old password - a stolen session must not
         outlive the password change that was made because of it.
         """
@@ -1523,12 +1603,20 @@ class State:
                     (user_id,),
                 ).fetchone()
             else:
+                # The oldest account that can run the platform: the owner
+                # the setup code created, or the oldest admin on a
+                # deployment whose owners have all been removed. This used
+                # to name role = 'admin' outright, which stopped finding
+                # anything the moment the setup account became an owner -
+                # breaking the one path that exists for being locked out.
                 row = self._db.execute(
                     "SELECT id, password_hash FROM admin_users"
-                    " WHERE role = 'admin' ORDER BY created_at LIMIT 1"
+                    " WHERE role IN ('owner', 'admin')"
+                    " ORDER BY CASE role WHEN 'owner' THEN 0 ELSE 1 END,"
+                    " created_at, id LIMIT 1"
                 ).fetchone()
             if row is None:
-                raise AuthError(409, "no admin account exists")
+                raise AuthError(409, "no owner or admin account exists")
             if current is not None and not _verify_password(
                 current, row["password_hash"]
             ):

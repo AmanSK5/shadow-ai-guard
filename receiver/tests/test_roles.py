@@ -98,7 +98,7 @@ def test_viewer_writes_nothing_and_is_told_why(viewer):
 
 def test_the_session_probe_names_the_role(viewer, admin):
     assert client.get("/admin/session", headers=viewer).json()["role"] == "viewer"
-    assert client.get("/admin/session", headers=admin).json()["role"] == "admin"
+    assert client.get("/admin/session", headers=admin).json()["role"] == "owner"
 
 
 # ------------------------------------------------------- account management --
@@ -111,7 +111,7 @@ def test_admin_creates_lists_and_deletes_accounts(managed, admin):
     assert r.status_code == 200 and r.json()["role"] == "viewer"
     users = client.get("/admin/users", headers=admin).json()["users"]
     assert [(u["username"], u["role"]) for u in users] == \
-        [("root", "admin"), ("auditor", "viewer")]
+        [("root", "owner"), ("auditor", "viewer")]
     uid = users[1]["id"]
     assert client.post(f"/admin/users/{uid}/delete",
                        headers=admin).status_code == 200
@@ -128,11 +128,24 @@ def test_duplicate_usernames_and_odd_roles_are_refused(managed, admin):
     assert client.post("/admin/users", headers=admin, json=body).status_code == 422
 
 
-def test_the_last_admin_cannot_be_deleted(managed, admin):
+def test_the_last_owner_cannot_be_deleted(managed, admin):
+    """The floor that replaced the last-admin one. It is stricter than
+    that floor ever was: an admin cannot make an owner, so losing the last
+    one cannot be undone from inside at all."""
     uid = client.get("/admin/users", headers=admin).json()["users"][0]["id"]
     r = client.post(f"/admin/users/{uid}/delete", headers=admin)
     assert r.status_code == 409
-    assert "last admin" in r.json()["detail"]
+    assert "last owner" in r.json()["detail"]
+
+
+def test_the_last_admin_may_be_deleted_while_an_owner_remains(managed, admin):
+    """An owner does everything an admin does, so there is nothing to
+    protect - the old floor here would have refused this."""
+    _mk(managed, "operator", "admin")
+    uid = next(u["id"] for u in managed.list_users()
+               if u["username"] == "operator")
+    assert client.post(f"/admin/users/{uid}/delete",
+                       headers=admin).status_code == 200
 
 
 def test_deleting_an_account_kills_its_sessions(managed, admin):
@@ -233,18 +246,16 @@ def test_a_promotion_takes_effect_without_a_sign_out(managed, admin):
                       ).status_code == 200
 
 
-def test_the_last_admin_cannot_be_demoted(managed, admin):
-    """The same floor that stops the last admin being deleted: a deployment
-    with accounts and no admin cannot manage its own accounts."""
+def test_the_last_owner_cannot_be_demoted(managed, admin):
     uid = next(u["id"] for u in managed.list_users() if u["username"] == "root")
     r = client.post(f"/admin/users/{uid}/role", headers=admin,
                     json={"role": "viewer"})
     assert r.status_code == 409
-    assert "last admin" in r.json()["detail"]
+    assert "last owner" in r.json()["detail"]
 
 
-def test_an_admin_may_be_demoted_once_another_exists(managed, admin):
-    _mk(managed, "second", "admin")
+def test_an_owner_may_be_demoted_once_another_exists(managed, admin):
+    _mk(managed, "second", "owner")
     uid = next(u["id"] for u in managed.list_users() if u["username"] == "root")
     assert client.post(f"/admin/users/{uid}/role", headers=admin,
                        json={"role": "viewer"}).status_code == 200
@@ -260,7 +271,7 @@ def test_a_viewer_cannot_change_a_role(managed, viewer):
 def test_an_unknown_role_and_an_unknown_account_are_refused(managed, admin):
     uid = next(u["id"] for u in managed.list_users() if u["username"] == "root")
     assert client.post(f"/admin/users/{uid}/role", headers=admin,
-                       json={"role": "owner"}).status_code == 422
+                       json={"role": "superuser"}).status_code == 422
     assert client.post("/admin/users/0123456789abcdef/role", headers=admin,
                        json={"role": "admin"}).status_code == 404
 
@@ -288,3 +299,119 @@ def test_setting_the_role_it_already_has_records_nothing(managed, admin):
                        json={"role": "viewer"}).status_code == 200
     events = client.get("/admin/events", headers=admin).json()["events"]
     assert [x for x in events if x["kind"] == "user_role_changed"] == []
+
+
+# ------------------------------------------------------------ the rank rule --
+# You cannot act on an account that outranks you, and you cannot grant a
+# role above your own. Without it the tier above admin exists in name
+# only: an admin reaches an owner through any of three doors - reset their
+# password and sign in as them, set the address a federated sign-in
+# matches on, or simply change their role.
+
+
+def _admin_session(managed, name="operator"):
+    _mk(managed, name, "admin")
+    return _session(managed, name), next(
+        u["id"] for u in managed.list_users() if u["username"] == name)
+
+
+def test_an_admin_cannot_reset_an_owners_password(managed, admin):
+    """The most direct door: reset it, then sign in as them."""
+    sess, _ = _admin_session(managed)
+    owner = next(u["id"] for u in managed.list_users() if u["role"] == "owner")
+    r = client.post(f"/admin/users/{owner}/password", headers=sess,
+                    json={"new": "a-brand-new-long-password"})
+    assert r.status_code == 403
+    assert "above yours" in r.json()["detail"]
+
+
+def test_an_admin_cannot_set_an_owners_email(managed, admin):
+    """The quieter door, and the one this rule exists for: the address is
+    what a federated sign-in matches on, so setting it on an account above
+    yours is that account's credentials by another route."""
+    sess, _ = _admin_session(managed)
+    owner = next(u["id"] for u in managed.list_users() if u["role"] == "owner")
+    r = client.post(f"/admin/users/{owner}/email", headers=sess,
+                    json={"email": "attacker@example.com"})
+    assert r.status_code == 403
+
+
+def test_an_admin_cannot_demote_an_owner(managed, admin):
+    sess, _ = _admin_session(managed)
+    owner = next(u["id"] for u in managed.list_users() if u["role"] == "owner")
+    assert client.post(f"/admin/users/{owner}/role", headers=sess,
+                       json={"role": "viewer"}).status_code == 403
+
+
+def test_an_admin_cannot_delete_an_owner(managed, admin):
+    sess, _ = _admin_session(managed)
+    owner = next(u["id"] for u in managed.list_users() if u["role"] == "owner")
+    assert client.post(f"/admin/users/{owner}/delete",
+                       headers=sess).status_code == 403
+
+
+def test_an_admin_cannot_grant_owner(managed, admin):
+    """Not by creating one, and not by promoting one. Either would let a
+    role make a role above itself, which is the whole thing the rule
+    prevents."""
+    sess, uid = _admin_session(managed)
+    assert client.post("/admin/users", headers=sess,
+                       json={"username": "climber", "role": "owner",
+                             "password": "a-long-enough-password"}
+                       ).status_code == 403
+    _mk(managed, "colleague", "viewer")
+    cid = next(u["id"] for u in managed.list_users()
+               if u["username"] == "colleague")
+    assert client.post(f"/admin/users/{cid}/role", headers=sess,
+                       json={"role": "owner"}).status_code == 403
+
+
+def test_an_admin_still_manages_admins_and_viewers(managed, admin):
+    """The rule is about rank, not about account management: an operator
+    keeps the job they had, including resetting a colleague-admin's
+    password. Only the tier above them is out of reach."""
+    sess, _ = _admin_session(managed)
+    assert client.post("/admin/users", headers=sess,
+                       json={"username": "colleague", "role": "admin",
+                             "password": "a-long-enough-password"}
+                       ).status_code == 200
+    cid = next(u["id"] for u in managed.list_users()
+               if u["username"] == "colleague")
+    assert client.post(f"/admin/users/{cid}/password", headers=sess,
+                       json={"new": "another-long-password"}).status_code == 200
+    assert client.post(f"/admin/users/{cid}/email", headers=sess,
+                       json={"email": "colleague@example.com"}
+                       ).status_code == 200
+    assert client.post(f"/admin/users/{cid}/role", headers=sess,
+                       json={"role": "viewer"}).status_code == 200
+    assert client.post(f"/admin/users/{cid}/delete",
+                       headers=sess).status_code == 200
+
+
+def test_an_owner_may_act_on_another_owner(managed, admin):
+    """Equal rank is not above it. Otherwise two owners could never manage
+    each other and the role would need a fourth tier to supervise it."""
+    _mk(managed, "second", "owner")
+    sess = _session(managed, "second")
+    root = next(u["id"] for u in managed.list_users() if u["username"] == "root")
+    assert client.post(f"/admin/users/{root}/email", headers=sess,
+                       json={"email": "root@example.com"}).status_code == 200
+
+
+def test_the_api_credential_is_outside_the_rank_rule(managed, admin):
+    """It is the operator's break-glass, held by whoever can set the
+    receiver's environment - who already owns the box. Rank-limiting it
+    would only lock the operator out of their own recovery path."""
+    owner = next(u["id"] for u in managed.list_users() if u["role"] == "owner")
+    assert client.post(f"/admin/users/{owner}/email", headers=API_ADMIN,
+                       json={"email": "root@example.com"}).status_code == 200
+
+
+def test_break_glass_finds_the_owner_not_a_missing_admin(managed, admin):
+    """It used to name role = 'admin' outright, which stopped finding
+    anything the moment the setup account became an owner - breaking the
+    one path that exists for being locked out."""
+    r = client.post("/admin/password", headers=API_ADMIN,
+                    json={"new": "recovered-long-password"})
+    assert r.status_code == 200
+    assert managed.login("root", "recovered-long-password")["token"]

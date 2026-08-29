@@ -605,6 +605,8 @@ let G = {devices:{},identities:{},tools:{},bridges:{},unattributed:[],counts:{}}
 // Declared here rather than beside their views: load() clears them and let
 // is not hoisted, so declaring them lower down is a TDZ error on first
 // refresh.
+// Which account's email is being edited inline, if any.
+let UEFORM = null;
 let SETTAB = 'fleet';
 // The Settings sub-tabs, up here with SETTAB for the same reason: SETTAB is
 // set from the URL fragment by fromHash(), which runs while the module is
@@ -678,6 +680,11 @@ let AUTH = null;
 // they are fetched once with everything else rather than per widget.
 // Managed mode keeps them with the account; classic mode has no account
 // to keep them on and falls back to this browser.
+// The receiver enforces the rank rule; this is the same table so the page
+// does not offer a control whose answer is already a 403.
+const RANK = {owner: 3, admin: 2, viewer: 1};
+const ROLE_ORDER = ['viewer', 'admin', 'owner'];
+
 let PREFS = {};
 const LS_PREFS = 'aiguard-prefs';
 
@@ -3352,21 +3359,40 @@ function accountSettings() {
   const viewer = AUTH && AUTH.role === 'viewer';
   const users = USERS === null ? '' : `
   <div class="wcard" style="margin-bottom:10px"><h3>Accounts</h3>
-    <p class="lede" style="margin-bottom:10px">An admin runs the platform; a
-    viewer reads every page and can change nothing - made for the auditor
-    and the exec. Changing a role applies to that account's next request,
-    not its next sign-in: nobody has to sign out, though a page already
-    open shows its old buttons until it is reloaded.</p>
+    <p class="lede" style="margin-bottom:10px">An owner decides who may sign
+    in; an admin runs the platform; a viewer reads every page and can change
+    nothing - made for the auditor and the exec. Nobody can act on an
+    account that outranks them, or grant a role above their own. Changing a
+    role applies to that account's next request rather than its next
+    sign-in: nobody has to sign out, though a page already open shows its
+    old buttons until it is reloaded.</p>
     ${USERR ? `<div class="note">${esc(USERR)}</div>` : ''}
-    <table><tr><th>username</th><th>role</th><th>created</th><th>last sign-in</th><th></th></tr>
-    ${USERS.map(u => `<tr>
+    <table><tr><th>username</th><th>email</th><th>role</th><th>created</th><th>last sign-in</th><th></th></tr>
+    ${USERS.map(u => {
+      // The same rank rule the receiver enforces, so the page does not
+      // offer a control that is going to come back 403. Equal rank is not
+      // above it: two owners manage each other.
+      const mine = RANK[(AUTH && AUTH.role) || 'viewer'] || 0;
+      const overRank = (RANK[u.role] || 0) > mine;
+      const may = !viewer && !overRank;
+      return `<tr>
       <td>${esc(u.username)}${AUTH && AUTH.username === u.username ? ' <span class="pill p-acc">you</span>' : ''}</td>
-      <td>${viewer
-        ? `<span class="pill ${u.role === 'admin' ? 'p-ok' : 'p-mut'}">${esc(u.role)}</span>`
-        : `<select class="mfield" data-role-for="${esc(u.id)}" style="min-width:100px">
-             <option value="viewer"${u.role === 'viewer' ? ' selected' : ''}>viewer</option>
-             <option value="admin"${u.role === 'admin' ? ' selected' : ''}>admin</option>
-           </select>`}</td>
+      <td>${UEFORM === u.id
+        ? `<input id="ue-new" class="mfield" style="min-width:190px"
+             placeholder="name@example.com" value="${esc(u.email || '')}"
+             autocomplete="off">
+           <button class="mini" data-act="user-email" data-key="${esc(u.id)}">set</button>
+           <button class="mini" data-act="user-email-cancel">cancel</button>`
+        : `${u.email ? `<span class="mono">${esc(u.email)}</span>`
+                     : '<span style="color:var(--mut)">not set</span>'}${may
+            ? ` <button class="mini" data-act="user-email-form"
+                 data-key="${esc(u.id)}">edit</button>` : ''}`}</td>
+      <td>${may
+        ? `<select class="mfield" data-role-for="${esc(u.id)}" style="min-width:100px">
+             ${ROLE_ORDER.filter(r => (RANK[r] || 0) <= mine).map(r =>
+               `<option value="${r}"${u.role === r ? ' selected' : ''}>${r}</option>`).join('')}
+           </select>`
+        : `<span class="pill ${u.role === 'viewer' ? 'p-mut' : 'p-ok'}">${esc(u.role)}</span>`}</td>
       <td style="color:var(--mut)">${esc((u.created_at || '').slice(0, 10))}</td>
       <td style="color:var(--mut)">${esc((u.last_login_at || '').slice(0, 10)) || '—'}</td>
       <td class="nw">${URFORM === u.id
@@ -3374,9 +3400,9 @@ function accountSettings() {
              placeholder="new password (12+)" autocomplete="new-password">
            <button class="mini" data-act="user-reset" data-key="${esc(u.id)}">set</button>
            <button class="mini" data-act="user-reset-cancel">cancel</button>`
-        : `<button class="mini" data-act="user-reset-form" data-key="${esc(u.id)}">reset password</button>
-           <button class="mini" data-act="user-delete" data-key="${esc(u.id)}">delete</button>`}</td>
-    </tr>`).join('')}</table>
+        : may ? `<button class="mini" data-act="user-reset-form" data-key="${esc(u.id)}">reset password</button>
+           <button class="mini" data-act="user-delete" data-key="${esc(u.id)}">delete</button>` : ''}</td>
+    </tr>`;}).join('')}</table>
     <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <input id="user-name" class="mfield" placeholder="username"
         name="ai-guard-new-account" autocomplete="off"
@@ -3385,13 +3411,20 @@ function accountSettings() {
         placeholder="password (12+ characters)"
         name="ai-guard-new-account-secret" autocomplete="new-password"
         data-lpignore="true" data-1p-ignore data-bwignore>
+      <input id="user-email" class="mfield" placeholder="email (optional)"
+        autocomplete="off" data-lpignore="true" data-1p-ignore data-bwignore>
       <select id="user-role" class="mfield" style="min-width:110px">
-        <option value="viewer">viewer</option><option value="admin">admin</option>
+        ${ROLE_ORDER.filter(r =>
+          (RANK[r] || 0) <= (RANK[(AUTH && AUTH.role) || 'viewer'] || 0)
+        ).map(r => `<option value="${r}">${r}</option>`).join('')}
       </select>
       <button class="mini" data-act="user-create">add account</button>
     </div>
-    <p class="src-note">Deleting an account kills its sessions; the last
-    admin can be neither deleted nor demoted. A role change leaves the
+    <p class="src-note">An email address is what a federated sign-in would
+    match on; an account without one can only be reached with its password,
+    which is what makes it usable as a shared break-glass credential.
+    Deleting an account kills its sessions; the last owner can be neither
+    deleted nor demoted. A role change leaves the
     account's password and sessions alone. Every action here lands in the
     audit trail.</p>
   </div>`;
@@ -5093,7 +5126,8 @@ async function managedAction(act, el) {
   if (act === 'user-create') {
     const role = (document.getElementById('user-role') || {}).value || 'viewer';
     const r = await mfetch('/api/users', {method: 'POST', body: JSON.stringify(
-      {username: _val('user-name'), password: _val('user-pass'), role})});
+      {username: _val('user-name'), password: _val('user-pass'), role,
+       email: _val('user-email')})});
     if (r.status === 401) { sessionLost(); return; }
     USERR = r.ok ? '' : 'Not created: ' + await _refusal(r);
     if (r.ok) USERS = null;
@@ -5158,6 +5192,16 @@ async function managedAction(act, el) {
     render(); return;
   }
   if (act === 'take-tour') { await tourStart(); return; }
+  if (act === 'user-email-form') { UEFORM = el.getAttribute('data-key'); USERR = ''; render(); return; }
+  if (act === 'user-email-cancel') { UEFORM = null; render(); return; }
+  if (act === 'user-email') {
+    const r = await mfetch('/api/users/' + el.getAttribute('data-key') + '/email',
+      {method: 'POST', body: JSON.stringify({email: _val('ue-new')})});
+    if (r.status === 401) { sessionLost(); return; }
+    USERR = r.ok ? '' : 'Not saved: ' + await _refusal(r);
+    if (r.ok) { USERS = null; UEFORM = null; }
+    render(); return;
+  }
   if (act === 'user-reset-form') { URFORM = el.getAttribute('data-key'); USERR = ''; render(); return; }
   if (act === 'user-reset-cancel') { URFORM = null; render(); return; }
   if (act === 'user-reset') {

@@ -818,20 +818,30 @@ def _touch_device(request: Request):
         )
 
 
-def _admin_auth(authorization: str, write: bool = False):
+def _admin_auth(authorization: str, write: bool = False,
+                owner: bool = False):
     # Defence in depth for /admin/*, like _auth for ingest. 404 when managed
     # mode is off: routes that do not exist should not confirm they exist.
     # write=True is the role gate: a viewer account reads everything and
     # changes nothing, and the refusal names the reason rather than lying
     # with a generic 401 to someone who IS authenticated.
+    #
+    # owner=True is the tier above it, for the settings that decide who may
+    # sign in at all. Returns the caller's role, because the account routes
+    # need it: the rules there are relative to who is asking, not absolute.
+    # The API credential returns "admin" from _admin_role and is treated as
+    # unrestricted by the state layer, which is what break-glass means.
     if STATE is None:
         raise HTTPException(404, "Not Found")
     role = _admin_role(authorization)
     if role is None:
         raise HTTPException(401, "bad token")
-    if write and role != "admin":
+    if owner and role not in ("owner",):
+        raise HTTPException(403, "only an owner account can change this")
+    if write and role not in ("owner", "admin"):
         raise HTTPException(403, "this account is read-only: an admin "
                                  "account has to make this change")
+    return role
 
 
 # What can enroll. The three collector platforms, one browser profile
@@ -1108,7 +1118,8 @@ def post_user(req: UserCreate, authorization: str = Header(default="")):
                                  "digits, . _ @ -")
     try:
         return STATE.create_user(req.username, req.password, req.role,
-                                 _admin_actor(authorization), req.email)
+                                 _admin_actor(authorization), req.email,
+                                 _actor_role(authorization))
     except _state.AuthError as e:
         raise HTTPException(e.status, e.detail)
 
@@ -1119,7 +1130,8 @@ def delete_user(uid: str, authorization: str = Header(default="")):
     if not re.fullmatch(r"[0-9a-f]{16}", uid):
         raise HTTPException(422, "malformed user id")
     try:
-        if not STATE.delete_user(uid, _admin_actor(authorization)):
+        if not STATE.delete_user(uid, _admin_actor(authorization),
+                                 _actor_role(authorization)):
             raise HTTPException(404, "no account with that id")
     except _state.AuthError as e:
         raise HTTPException(e.status, e.detail)
@@ -1141,7 +1153,8 @@ def set_user_role(uid: str, req: UserRoleWrite,
         raise HTTPException(422, "malformed user id")
     try:
         if not STATE.set_user_role(uid, req.role,
-                                   _admin_actor(authorization)):
+                                   _admin_actor(authorization),
+                                   _actor_role(authorization)):
             raise HTTPException(404, "no account with that id")
     except _state.AuthError as e:
         raise HTTPException(e.status, e.detail)
@@ -1160,7 +1173,8 @@ def set_user_email(uid: str, req: UserEmailWrite,
         raise HTTPException(422, "malformed user id")
     try:
         if not STATE.set_user_email(uid, req.email,
-                                    _admin_actor(authorization)):
+                                    _admin_actor(authorization),
+                                    _actor_role(authorization)):
             raise HTTPException(404, "no account with that id")
     except _state.AuthError as e:
         raise HTTPException(e.status, e.detail)
@@ -1176,9 +1190,13 @@ def reset_user_password(uid: str, req: UserPasswordReset,
     _admin_auth(authorization, write=True)
     if not re.fullmatch(r"[0-9a-f]{16}", uid):
         raise HTTPException(422, "malformed user id")
-    if not STATE.reset_user_password(uid, req.new,
-                                     _admin_actor(authorization)):
-        raise HTTPException(404, "no account with that id")
+    try:
+        if not STATE.reset_user_password(uid, req.new,
+                                         _admin_actor(authorization),
+                                         _actor_role(authorization)):
+            raise HTTPException(404, "no account with that id")
+    except _state.AuthError as e:
+        raise HTTPException(e.status, e.detail)
     return {"reset": uid}
 
 
@@ -1239,6 +1257,18 @@ def _session_account(authorization: str) -> str:
             return u["user_id"]
     raise HTTPException(409, "preferences belong to a signed-in account; "
                              "the API credential does not have one")
+
+
+def _actor_role(authorization: str) -> str:
+    """The role to enforce the account rules against, or "" for the API
+    credential - which is the operator's own break-glass and deliberately
+    outside them."""
+    token = _bearer(authorization)
+    if STATE is not None and token.startswith(_state.SESSION_PREFIX):
+        u = STATE.session_user(token)
+        if u is not None:
+            return u.get("role") or "admin"
+    return ""
 
 
 def _admin_actor(authorization: str) -> str:

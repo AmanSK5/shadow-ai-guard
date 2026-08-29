@@ -135,10 +135,20 @@ def test_the_accounts_table_ships_the_role_control():
     assert "async function userRole" in INDEX
 
 
-def test_a_viewer_sees_the_role_as_text_not_a_control():
-    """The select is rendered only for an account that could use it - a
-    read-only account offered a dropdown that always 403s is a worse page
-    than one that shows the role plainly."""
-    cell = INDEX.split("data-role-for")[0]
-    assert "${viewer" in cell.rsplit("<td>", 1)[-1]
+def test_the_page_offers_no_control_whose_answer_is_already_403():
+    """A read-only account, and an account looking at one that outranks
+    it, both see the role plainly rather than a dropdown that refuses.
+    The page keeps the receiver's rank table for exactly this - it is a
+    courtesy, not the enforcement, which stays server-side."""
+    assert "const RANK = {owner: 3, admin: 2, viewer: 1};" in INDEX
+    assert "const may = !viewer && !overRank;" in INDEX
+    # And it never offers a role above the viewer's own to grant.
+    assert "ROLE_ORDER.filter(r => (RANK[r] || 0) <= mine)" in INDEX
+
+
+def test_the_accounts_table_shows_and_edits_an_email():
+    """Built in #199 as an API with no way to reach it from the page."""
+    assert "<th>email</th>" in INDEX
+    assert 'data-act="user-email-form"' in INDEX
+    assert "id=\"user-email\"" in INDEX, "and on the create row too"
 
