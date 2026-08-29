@@ -152,3 +152,54 @@ def test_the_accounts_table_shows_and_edits_an_email():
     assert 'data-act="user-email-form"' in INDEX
     assert "id=\"user-email\"" in INDEX, "and on the create row too"
 
+
+
+# ---------------------------------------------------- federated sign-in --
+
+
+def test_the_callback_is_outside_the_json_only_rule():
+    """The identity provider posts a form, so the CSRF rule that refuses
+    non-JSON POSTs under /api would refuse the sign-in. What stands in for
+    it is the state: minted by the receiver minutes earlier, single-use,
+    and paired with a PKCE verifier the browser never held."""
+    src = (Path(__file__).parent.parent / "app" / "main.py").read_text()
+    assert '@app.post("/sso/callback")' in src
+    assert '"/api/sso/callback"' not in src
+
+
+def test_the_callback_answers_with_a_page_not_a_redirect():
+    """The session cookie is SameSite=Strict and this redirect chain began
+    at the identity provider, so a redirect would arrive with the cookie
+    withheld - signed in, and shown the sign-in screen. Navigating from a
+    page we served is same-site, which is the difference."""
+    src = (Path(__file__).parent.parent / "app" / "main.py").read_text()
+    fn = src.split("async def sso_callback(", 1)[1].split("\n@app", 1)[0]
+    assert "_sso_page(" in fn
+    assert "RedirectResponse" not in fn
+
+
+def test_provider_error_text_is_escaped_into_that_page():
+    """It is the one place this service renders HTML, and the text comes
+    from outside."""
+    src = (Path(__file__).parent.parent / "app" / "main.py").read_text()
+    page = src.split("def _sso_page(", 1)[1].split("\n@app", 1)[0]
+    assert "esc_attr(title)" in page and "esc_attr(body)" in page
+
+
+def test_the_wizard_saves_disabled_and_enables_only_after_a_sign_in():
+    """A misconfigured provider that is already enabled is a deployment
+    nobody can sign in to."""
+    save = INDEX.split("if (act === 'sso-save') {", 1)[1].split("\n  }", 1)[0]
+    assert "ssoSave(false)" in save
+    enable = INDEX.split("if (act === 'sso-enable') {", 1)[1].split("\n  }", 1)[0]
+    assert "ssoSave(true)" in enable
+
+
+def test_the_wizard_is_owner_only():
+    assert "AUTH && AUTH.role === 'owner' ? `<div class=\"wcard\"" in INDEX
+
+
+def test_the_redirect_uri_is_offered_not_asked_for():
+    """It has to match the app registration exactly, so the page shows the
+    one it would actually use rather than asking somebody to compose it."""
+    assert "location.origin + '/sso/callback'" in INDEX

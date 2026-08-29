@@ -415,3 +415,37 @@ def test_break_glass_finds_the_owner_not_a_missing_admin(managed, admin):
                     json={"new": "recovered-long-password"})
     assert r.status_code == 200
     assert managed.login("root", "recovered-long-password")["token"]
+
+
+# --------------------------------------------------------- the owner tier --
+
+
+def test_only_an_owner_configures_federated_sign_in(managed, admin):
+    """The one thing the tier above admin exists to hold. Everything else
+    on the settings page stays an admin's job."""
+    sess, _ = _admin_session(managed)
+    r = client.put("/admin/settings", headers=sess,
+                   json={"sso_tenant_id": "contoso.onmicrosoft.com"})
+    assert r.status_code == 403
+    assert "owner" in r.json()["detail"]
+    # ...and the rest of the page is untouched by the gate.
+    assert client.put("/admin/settings", headers=sess,
+                      json={"grafana_url": "https://grafana.example.com"}
+                      ).status_code == 200
+
+
+def test_an_owner_configures_federated_sign_in(managed, admin):
+    assert client.put("/admin/settings", headers=admin,
+                      json={"sso_tenant_id": "contoso.onmicrosoft.com"}
+                      ).status_code == 200
+
+
+def test_the_client_secret_is_never_echoed(managed, admin):
+    """Same treatment as the log-store password and the webhook: a stored
+    secret that a GET hands back is a stored secret anybody with a read
+    can walk off with."""
+    client.put("/admin/settings", headers=admin,
+               json={"sso_client_secret": "a-real-looking-secret"})
+    body = client.get("/admin/settings", headers=admin).json()
+    assert "a-real-looking-secret" not in str(body)
+    assert body["settings"]["sso_client_secret"]["set"] is True

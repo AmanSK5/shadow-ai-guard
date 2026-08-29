@@ -70,6 +70,53 @@ shared token off for ingest (see the configuration table).
 | GET  | `/admin/preferences` | admin or viewer | the signed-in account's own display state - layout, chart choices, what it has already been walked through. Scoped to the session, so there is no id to pass and no route to another account's |
 | PUT  | `/admin/preferences` | admin or viewer | merge keys into the account's own preferences; a `null` value deletes one. The single authenticated write a viewer owns - these change what one person sees, never what a page reports. Bounded at 50 keys and 4096 characters a value |
 
+**Federated sign-in (Microsoft Entra).** Owner-gated, off until proven.
+Configured through a five-step wizard in the portal rather than a settings
+panel, because each step has something to check: the tenant is resolved
+against its own OpenID configuration document, the application id and
+secret are proved with a client-credentials grant, and the last step is a
+real sign-in. Nothing is enabled until that sign-in succeeds - an enabled
+provider that does not work is a deployment nobody can sign in to.
+
+| Method | Path | Who | What |
+|---|---|---|---|
+| POST | `/admin/sso/probe` | owner (write) | check a tenant, and optionally an application id and secret, before anything is saved |
+| GET  | `/admin/sso/start` | open | begin a sign-in; 404 until federated sign-in is fully configured, so an estate that has not set it up does not advertise the endpoint |
+| POST | `/admin/sso/callback` | open | redeem the code the provider handed the browser, and mint a session |
+
+The two open endpoints are open for the reason `/admin/login` is: nobody
+has a session yet. What protects the callback is the `state` it must
+quote - minted by `/start` minutes earlier, single-use, and paired with a
+PKCE verifier the browser never held.
+
+**How an account is matched.** On an account's first federated sign-in the
+email address finds it; the account's `oid` and `tid` are written at that
+moment, and every sign-in after that matches on those alone. Microsoft's
+guidance is explicit that an address "isn't guaranteed to be correct and
+is mutable over time. Never use it for authorization" - addresses get
+reassigned, and a joiner inheriting a leaver's address would otherwise
+inherit their account and their role. The address is an invitation, spent
+once.
+
+**No sign-in ever creates an account.** Somebody who can set an address in
+a tenant cannot mint themselves a way in; an owner or admin has to create
+the account first. Local passwords keep working whether or not federated
+sign-in is on, so an account with no address remains reachable only by
+password - which is what makes one usable as a shared break-glass
+credential.
+
+**On the ID token signature.** It is not verified, deliberately. The token
+is fetched by the receiver over TLS directly from the token endpoint named
+by the tenant's own discovery document, and OpenID Connect Core 3.1.3.7
+permits exactly that: "If the ID Token is received via direct
+communication between the Client and the Token Endpoint... the TLS server
+validation MAY be used to validate the issuer in place of checking the
+token signature." Issuer, audience, expiry, nonce and tenant are all
+checked. The alternative is a JWT library and the native cryptography
+stack it brings, on an image this project keeps small, for a guarantee the
+transport already gives in this flow. Revisit it the day a token arrives
+by any other route.
+
 **Roles and the rank rule.** Three roles: `owner`, `admin`, `viewer`. An
 owner decides who may sign in and can appoint another owner; an admin runs
 the platform - fleet, governance, budget, settings and the accounts below

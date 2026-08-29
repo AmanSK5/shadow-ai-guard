@@ -236,12 +236,23 @@ _DEVICE_COLUMNS_ADDED = (
 _ADMIN_COLUMNS_ADDED = (
     ("role", "TEXT NOT NULL DEFAULT 'admin'"),
     # Where an account meets an identity provider. Nullable because a local
-    # account has never needed one and still does not: this is the join key
-    # a future SSO integration would map onto, recorded now while there are
-    # few accounts to fill in. It is deliberately NOT the login identifier -
-    # username stays that, so `admin` remains a usable local account and a
-    # misconfigured provider cannot lock anyone out of their own portal.
+    # account has never needed one and still does not. It is deliberately
+    # NOT the login identifier - username stays that, so `admin` remains a
+    # usable local account and a misconfigured provider cannot lock anyone
+    # out of their own portal.
+    #
+    # It is also not the join key after the first federated sign-in. The
+    # address matches once, to find the account somebody was invited to;
+    # the immutable pair below is written at that moment and every sign-in
+    # after that matches on it alone. Microsoft's own guidance is explicit:
+    # an address "isn't guaranteed to be correct and is mutable over time.
+    # Never use it for authorization", because addresses are reassigned -
+    # a joiner inheriting a leaver's address would otherwise inherit their
+    # account and their role.
     ("email", "TEXT"),
+    ("sso_subject", "TEXT"),
+    ("sso_tenant", "TEXT"),
+    ("sso_bound_at", "TEXT"),
 )
 
 # A subscription from before licence coverage covers exactly its own tool,
@@ -404,6 +415,12 @@ class State:
             self._db.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS admin_users_email"
                 " ON admin_users (email) WHERE email IS NOT NULL")
+            # One federated identity, one account. Partial for the same
+            # reason: most accounts have never signed in that way.
+            self._db.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS admin_users_sso"
+                " ON admin_users (sso_tenant, sso_subject)"
+                " WHERE sso_subject IS NOT NULL")
             have = {r["name"] for r in self._db.execute(
                 "PRAGMA table_info(budget_subscriptions)")}
             for name, decl in _BUDGET_SUB_COLUMNS_ADDED:
@@ -798,8 +815,8 @@ class State:
     def list_users(self) -> list[dict]:
         with self._lock:
             rows = self._db.execute(
-                "SELECT id, username, email, role, created_at, last_login_at"
-                " FROM admin_users ORDER BY created_at"
+                "SELECT id, username, email, role, created_at, last_login_at,"
+                " sso_bound_at FROM admin_users ORDER BY created_at"
             ).fetchall()
         return [dict(r) for r in rows]
 
@@ -948,6 +965,116 @@ class State:
             self._event("password_reset", {"user": uid, "by": by})
             self._db.commit()
         return True
+
+    # -------------------------------------------------- federated sign-in --
+
+    def sso_account(self, tenant: str, subject: str, email: str) -> dict | None:
+        """The account this federated identity signs in as, or None.
+
+        Two matches, and the order is the whole design. The immutable pair
+        first: once an account has been bound, that binding is the only
+        thing that signs it in, and nothing about the address can move it.
+        The address second, and only for an account not yet bound - it is
+        an invitation, spent the first time somebody accepts it.
+
+        Never creates an account. Somebody who can set an address in a
+        tenant cannot mint themselves a way in here; every account exists
+        because a person decided it should.
+        """
+        address = (email or "").strip().lower()
+        with self._lock:
+            row = self._db.execute(
+                "SELECT id, username, role FROM admin_users"
+                " WHERE sso_tenant = ? AND sso_subject = ?",
+                (tenant, subject)).fetchone()
+            if row is not None:
+                return dict(row) | {"bound": True}
+            if not address:
+                return None
+            row = self._db.execute(
+                "SELECT id, username, role FROM admin_users"
+                " WHERE email = ? AND sso_subject IS NULL", (address,)
+            ).fetchone()
+            return dict(row) | {"bound": False} if row else None
+
+    def sso_bind(self, uid: str, tenant: str, subject: str) -> bool:
+        """Write the immutable pair onto an account, once.
+
+        Refuses if the account is already bound to a different identity:
+        rebinding is how an address change would move somebody else's
+        account, which is exactly what binding exists to stop. Clearing a
+        binding is deliberate and separate.
+        """
+        with self._lock:
+            row = self._db.execute(
+                "SELECT sso_subject, sso_tenant FROM admin_users WHERE id = ?",
+                (uid,)).fetchone()
+            if row is None:
+                return False
+            if row["sso_subject"]:
+                if (row["sso_subject"], row["sso_tenant"]) != (subject, tenant):
+                    raise AuthError(409, "that account is already linked to a "
+                                         "different federated identity")
+                return True
+            self._db.execute(
+                "UPDATE admin_users SET sso_subject = ?, sso_tenant = ?,"
+                " sso_bound_at = ? WHERE id = ?",
+                (subject, tenant, _now(), uid))
+            # The subject is a GUID, and recorded: an operator asking "who
+            # is this account" needs to be able to answer it.
+            self._event("sso_bound", {"user": uid, "tenant": tenant,
+                                      "subject": subject})
+            self._db.commit()
+        return True
+
+    def sso_unbind(self, uid: str, by: str = "", by_role: str = "") -> bool:
+        """Cut an account loose from its federated identity.
+
+        The way back from a wrong binding, and the way an account is handed
+        to a different person. Subject to the same rank rule as every other
+        account action: unbinding an account above yours would let you
+        re-bind it to yourself on the next sign-in.
+        """
+        with self._lock:
+            row = self._db.execute(
+                "SELECT role, sso_subject FROM admin_users WHERE id = ?",
+                (uid,)).fetchone()
+            if row is None:
+                return False
+            self._may_act_on(by_role, row["role"])
+            self._db.execute(
+                "UPDATE admin_users SET sso_subject = NULL, sso_tenant = NULL,"
+                " sso_bound_at = NULL WHERE id = ?", (uid,))
+            self._event("sso_unbound", {"user": uid, "by": by})
+            self._db.commit()
+        return True
+
+    def sso_login(self, uid: str, ttl_hours: int = 24) -> dict:
+        """Mint a session for an account the provider has vouched for.
+
+        Deliberately not login(): there is no password to verify, and the
+        throttle that guards password guessing has nothing to guard here.
+        """
+        with self._lock:
+            row = self._db.execute(
+                "SELECT username, role FROM admin_users WHERE id = ?",
+                (uid,)).fetchone()
+            if row is None:
+                raise AuthError(404, "no account with that id")
+            token = SESSION_PREFIX + secrets.token_urlsafe(32)
+            expires = (datetime.now(timezone.utc)
+                       + timedelta(hours=ttl_hours)).isoformat()
+            self._db.execute(
+                "INSERT INTO sessions (token_hash, user_id, created_at,"
+                " expires_at) VALUES (?, ?, ?, ?)",
+                (_hash(token), uid, _now(), expires))
+            self._db.execute(
+                "UPDATE admin_users SET last_login_at = ? WHERE id = ?",
+                (_now(), uid))
+            self._event("sso_login", {"user": uid})
+            self._db.commit()
+        return {"token": token, "expires_at": expires,
+                "username": row["username"], "role": row["role"]}
 
     # ---------------------------------------------------- preferences --
     # How one person wants the portal laid out, and what it has already

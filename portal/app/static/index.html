@@ -3355,6 +3355,172 @@ function alertingSettings() {
   </dl></div>`;
 }
 
+// ---- the single sign-on wizard ---------------------------------------
+// Owner-only, and a wizard rather than a settings panel because every
+// step here has something real to check. A page of four fields and a save
+// button is a page that reports success over a half-configured provider,
+// and the failure lands on whoever tries to sign in next.
+//
+// Nothing is enabled until a real sign-in has completed. That is the
+// difference between "the settings look right" and "somebody got in".
+let SSOW = null;
+
+const SSO_STEPS = ['register', 'tenant', 'client', 'redirect', 'test'];
+
+function ssoOpen() {
+  const s = (SETTINGS && SETTINGS.settings) || {};
+  const v = k => ((s[k] || {}).value) || '';
+  SSOW = {
+    step: 0, busy: false, err: '', ok: {},
+    tenant: v('sso_tenant_id'), client: v('sso_client_id'),
+    secret: '', redirect: v('sso_redirect_uri') || ssoRedirectGuess(),
+    secretSet: !!((s.sso_client_secret || {}).set),
+  };
+  render();
+}
+
+// The redirect URI has to match the app registration exactly, so the page
+// offers the one it would actually use rather than asking somebody to
+// compose it correctly from memory.
+function ssoRedirectGuess() {
+  return location.origin + '/sso/callback';
+}
+
+async function ssoProbe(withClient) {
+  SSOW.busy = true; SSOW.err = ''; render();
+  const body = {tenant_id: SSOW.tenant.trim()};
+  if (withClient) {
+    body.client_id = SSOW.client.trim();
+    body.client_secret = SSOW.secret;
+  }
+  const r = await mfetch('/api/sso/probe', {method: 'POST',
+    body: JSON.stringify(body)});
+  SSOW.busy = false;
+  if (r.status === 401) { sessionLost(); return false; }
+  if (!r.ok) { SSOW.err = await _refusal(r); render(); return false; }
+  const out = await r.json();
+  SSOW.issuer = out.issuer || '';
+  if (withClient) {
+    SSOW.ok.client = out.client_ok === true;
+    // A tenant can refuse a client-credentials grant for reasons that say
+    // nothing about the credentials - no application permissions
+    // consented, for one. Blocking a correct configuration on that would
+    // be worse than saying what came back.
+    if (!SSOW.ok.client) SSOW.err = 'The pair reached the tenant but it '
+      + 'refused the check: ' + (out.detail || 'no reason given')
+      + '. That can be normal - continue and let the test sign-in decide.';
+  } else {
+    SSOW.ok.tenant = true;
+  }
+  render();
+  return true;
+}
+
+async function ssoSave(enable) {
+  SSOW.busy = true; SSOW.err = ''; render();
+  const body = {sso_tenant_id: SSOW.tenant.trim(),
+                sso_client_id: SSOW.client.trim(),
+                sso_redirect_uri: SSOW.redirect.trim()};
+  if (SSOW.secret) body.sso_client_secret = SSOW.secret;
+  if (enable !== undefined) body.sso_enabled = enable ? '1' : '';
+  const r = await mfetch('/api/settings', {method: 'POST',
+    body: JSON.stringify(body)});
+  SSOW.busy = false;
+  if (r.status === 401) { sessionLost(); return false; }
+  if (!r.ok) { SSOW.err = await _refusal(r); render(); return false; }
+  SETTINGS = await r.json();
+  SSOW.secretSet = SSOW.secretSet || !!SSOW.secret;
+  render();
+  return true;
+}
+
+function ssoWizard() {
+  const step = SSO_STEPS[SSOW.step];
+  const nav = (back, next, nextLabel) => `<div style="margin-top:14px;
+    display:flex;gap:8px;align-items:center">
+    <button class="mini" data-act="sso-close">close</button>
+    <span style="margin-left:auto"></span>
+    ${back ? '<button class="mini" data-act="sso-back">back</button>' : ''}
+    ${next ? `<button class="mini" data-act="${next}"${SSOW.busy
+      ? ' disabled' : ''}>${SSOW.busy ? 'checking…' : nextLabel}</button>` : ''}
+  </div>`;
+  const err = SSOW.err ? `<div class="note" style="border-color:var(--warn)"
+    >${esc(SSOW.err)}</div>` : '';
+  const dots = `<div id="tour-dots" style="margin-bottom:12px">${
+    SSO_STEPS.map((_, i) => `<i class="${i === SSOW.step ? 'on' : ''}"></i>`
+    ).join('')}</div>`;
+
+  const body = {
+    register: `<h3>1 · Register an application</h3>
+      <p class="lede">In the Microsoft Entra admin center, go to
+      <span class="mono">Entra ID → App registrations → New registration</span>.
+      Give it any name, leave the account types on single tenant, and add a
+      <b>Web</b> platform with this exact redirect URI:</p>
+      <p><span class="mono" style="user-select:all">${esc(ssoRedirectGuess())}</span></p>
+      <p class="src-note">Then open <span class="mono">Certificates &amp;
+      secrets</span> and create a client secret. Copy its <b>value</b> now -
+      Entra shows it once. You will need the directory (tenant) ID and the
+      application (client) ID from the overview page as well.</p>`,
+
+    tenant: `<h3>2 · Your tenant</h3>
+      <p class="lede">The directory (tenant) ID from the app registration's
+      overview page, or your tenant's domain. This is checked against the
+      provider before anything is saved.</p>
+      <p><input id="sso-tenant" class="mfield" style="min-width:340px"
+        placeholder="00000000-0000-0000-0000-000000000000"
+        value="${esc(SSOW.tenant)}"></p>
+      ${SSOW.ok.tenant ? `<div class="note">Reached it. Tokens will be
+        issued by <span class="mono">${esc(SSOW.issuer || '')}</span>.</div>`
+        : ''}`,
+
+    client: `<h3>3 · The application</h3>
+      <p class="lede">The application (client) ID, and the secret value you
+      copied. The pair is checked against the tenant now, so a wrong secret
+      is found here rather than by the first person who tries to sign in.</p>
+      <p><input id="sso-client" class="mfield" style="min-width:340px"
+        placeholder="application (client) ID"
+        value="${esc(SSOW.client)}"></p>
+      <p><input id="sso-secret" class="mfield" type="password"
+        style="min-width:340px" autocomplete="new-password"
+        placeholder="${SSOW.secretSet ? 'stored - leave blank to keep it'
+                                      : 'client secret value'}"></p>
+      ${SSOW.ok.client ? '<div class="note">That pair works.</div>' : ''}`,
+
+    redirect: `<h3>4 · Where sign-ins come back to</h3>
+      <p class="lede">This has to match the redirect URI on the app
+      registration exactly. It is filled in with the address this portal is
+      being used on.</p>
+      <p><input id="sso-redirect" class="mfield" style="min-width:340px"
+        value="${esc(SSOW.redirect)}"></p>
+      <p class="src-note">If people reach the portal on more than one
+      address, register every one of them and set the one you want sign-ins
+      to land on.</p>`,
+
+    test: `<h3>5 · Prove it works</h3>
+      <p class="lede">Saved, and off. The last step is a real sign-in: this
+      opens the provider in a new tab and comes back with an account, or
+      with the reason it could not. Nothing is switched on until that
+      succeeds - a misconfigured provider that is already enabled is a
+      deployment nobody can sign in to.</p>
+      <p class="src-note">Your account needs an email address set on it
+      first, matching the one you sign in with. An account with no address
+      is reachable only by password, which is how a shared break-glass
+      credential stays out of the provider's reach.</p>
+      <p><button class="mini" data-act="sso-try">open a test sign-in</button>
+        <button class="mini" data-act="sso-enable">turn it on</button></p>`,
+  }[step];
+
+  return `<div class="wcard" style="margin-bottom:10px">
+    ${dots}${err}${body}
+    ${nav(SSOW.step > 0,
+          step === 'tenant' ? 'sso-check-tenant'
+          : step === 'client' ? 'sso-check-client'
+          : step === 'redirect' ? 'sso-save'
+          : step === 'test' ? '' : 'sso-next',
+          step === 'redirect' ? 'save' : 'next')}
+  </div>`;
+}
+
 function accountSettings() {
   const viewer = AUTH && AUTH.role === 'viewer';
   const users = USERS === null ? '' : `
@@ -3443,6 +3609,22 @@ function accountSettings() {
       password; this one stays.</div></dd>
   </dl></div>
 
+  ${AUTH && AUTH.role === 'owner' ? `<div class="wcard" style="margin-bottom:10px">
+    <h3>Single sign-on</h3>
+    ${SSOW ? '' : `<p class="lede">${
+      ((SETTINGS && SETTINGS.settings && SETTINGS.settings.sso_enabled
+        && SETTINGS.settings.sso_enabled.value) === '1')
+      ? 'On. People with an email address on their account can sign in '
+        + 'through Microsoft Entra. Passwords keep working, so an account '
+        + 'without an address stays reachable as a break-glass credential.'
+      : 'Off. Sign in with Microsoft Entra instead of a portal password. '
+        + 'Five steps, each one checked, ending in a real sign-in - nothing '
+        + 'is switched on until that works.'}</p>
+      <p><button class="mini" data-act="sso-open">${
+        ((SETTINGS && SETTINGS.settings && SETTINGS.settings.sso_enabled
+          && SETTINGS.settings.sso_enabled.value) === '1')
+        ? 'review the configuration' : 'set it up'}</button></p>`}
+  </div>${SSOW ? ssoWizard() : ''}` : ''}
   <p class="src-note" style="margin:4px 0 14px">
     <button class="mini" data-act="open-wizard">run the setup wizard again</button>
     — safe to repeat: every step is one of these settings, prefilled
@@ -5192,6 +5374,45 @@ async function managedAction(act, el) {
     render(); return;
   }
   if (act === 'take-tour') { await tourStart(); return; }
+  if (act === 'sso-open') { ssoOpen(); return; }
+  if (act === 'sso-close') { SSOW = null; render(); return; }
+  if (act === 'sso-back') { SSOW.step--; SSOW.err = ''; render(); return; }
+  if (act === 'sso-next') { SSOW.step++; SSOW.err = ''; render(); return; }
+  if (act === 'sso-check-tenant') {
+    SSOW.tenant = _val('sso-tenant');
+    if (await ssoProbe(false)) { SSOW.step++; render(); }
+    return;
+  }
+  if (act === 'sso-check-client') {
+    SSOW.client = _val('sso-client');
+    const typed = _val('sso-secret');
+    if (typed) SSOW.secret = typed;
+    if (!SSOW.secret && !SSOW.secretSet) {
+      SSOW.err = 'A client secret is needed to check the pair.';
+      render(); return;
+    }
+    // With a stored secret and nothing typed there is nothing to check
+    // against - the receiver never hands a secret back - so the step
+    // passes through and the test sign-in is what proves it.
+    if (!SSOW.secret) { SSOW.step++; render(); return; }
+    await ssoProbe(true);
+    SSOW.step++; render(); return;
+  }
+  if (act === 'sso-save') {
+    SSOW.redirect = _val('sso-redirect');
+    // Saved OFF. Enabling is the last step and needs a real sign-in.
+    if (await ssoSave(false)) { SSOW.step++; SSOW.err = ''; render(); }
+    return;
+  }
+  if (act === 'sso-try') { window.open('/sso/start', '_blank', 'noopener'); return; }
+  if (act === 'sso-enable') {
+    if (await ssoSave(true)) {
+      SSOW = null; SETMSG = 'Single sign-on is on. Local passwords keep '
+        + 'working, so a break-glass account is still a way in.';
+      render();
+    }
+    return;
+  }
   if (act === 'user-email-form') { UEFORM = el.getAttribute('data-key'); USERR = ''; render(); return; }
   if (act === 'user-email-cancel') { UEFORM = null; render(); return; }
   if (act === 'user-email') {
