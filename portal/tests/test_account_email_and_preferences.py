@@ -9,12 +9,16 @@ which is what keeps a layout from being addressable by anyone else.
 """
 
 import os
+from pathlib import Path
 
 os.environ.setdefault("PORTAL_AUTH", "none")
 
 import pytest
 
 from app import main
+
+INDEX = (Path(__file__).parent.parent / "app" / "static"
+         / "index.html").read_text()
 
 
 @pytest.fixture
@@ -101,3 +105,37 @@ def test_a_null_preference_survives_the_relay(receiver_spy):
         main.PreferencesWrite(preferences={"overview.layout": None}),
         token=token)
     assert receiver_spy[-1]["body"] == {"preferences": {"overview.layout": None}}
+
+
+def test_the_role_route_forwards_the_right_verb_and_path(receiver_spy):
+    token = main._admin_forward(_Req())
+    uid = "0123456789abcdef"
+
+    main.api_users_role(uid, main.UserRoleWrite(role="admin"), token=token)
+
+    assert receiver_spy[-1]["method"] == "POST"
+    assert receiver_spy[-1]["path"] == "/admin/users/%s/role" % uid
+    assert receiver_spy[-1]["body"] == {"role": "admin"}
+
+
+def test_the_role_route_refuses_a_malformed_id_locally(receiver_spy):
+    token = main._admin_forward(_Req())
+    with pytest.raises(Exception):
+        main.api_users_role("../../admin", main.UserRoleWrite(role="admin"),
+                            token=token)
+    assert receiver_spy == []
+
+
+def test_the_accounts_table_ships_the_role_control():
+    """A route with no control in front of it is a route nobody uses."""
+    assert "data-role-for" in INDEX
+    assert "async function userRole" in INDEX
+
+
+def test_a_viewer_sees_the_role_as_text_not_a_control():
+    """The select is rendered only for an account that could use it - a
+    read-only account offered a dropdown that always 403s is a worse page
+    than one that shows the role plainly."""
+    cell = INDEX.split("data-role-for")[0]
+    assert "${viewer" in cell.rsplit("<td>", 1)[-1]
+

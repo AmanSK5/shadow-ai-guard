@@ -140,10 +140,13 @@ another. Exceptions stay file-only
 is an admin. Admins can add more under Settings, as admin or as viewer. A
 viewer reads every page and can change nothing - every write comes back as
 a 403 that says so - which is the right shape for an auditor or an exec.
-Roles are fixed at creation; changing someone's trust level is delete and
-recreate, which leaves a cleaner trail than an edit would. The last admin
-cannot be deleted, password resets revoke the sessions the old password
-minted, and everything lands in the audit trail.
+A role changes from the dropdown on the account's row, and applies to that
+account's next request rather than its next sign-in - nobody has to sign
+out, though a page already open keeps showing its old buttons until it is
+reloaded. Passwords and sessions are untouched by the change. The last
+admin can be neither deleted nor demoted, password resets revoke the
+sessions the old password minted, and everything lands in the audit
+trail.
 
 **The audit trail.** Every change made through the portal - settings,
 decisions, accounts, enrollments, revocations - is recorded by the receiver

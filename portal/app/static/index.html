@@ -2654,14 +2654,19 @@ function accountSettings() {
   <div class="wcard" style="margin-bottom:10px"><h3>Accounts</h3>
     <p class="lede" style="margin-bottom:10px">An admin runs the platform; a
     viewer reads every page and can change nothing - made for the auditor
-    and the exec. Roles are fixed at creation: changing someone's trust
-    level is delete and recreate, which leaves a cleaner trail than an
-    edit would.</p>
+    and the exec. Changing a role applies to that account's next request,
+    not its next sign-in: nobody has to sign out, though a page already
+    open shows its old buttons until it is reloaded.</p>
     ${USERR ? `<div class="note">${esc(USERR)}</div>` : ''}
     <table><tr><th>username</th><th>role</th><th>created</th><th>last sign-in</th><th></th></tr>
     ${USERS.map(u => `<tr>
       <td>${esc(u.username)}${AUTH && AUTH.username === u.username ? ' <span class="pill p-acc">you</span>' : ''}</td>
-      <td><span class="pill ${u.role === 'admin' ? 'p-ok' : 'p-mut'}">${esc(u.role)}</span></td>
+      <td>${viewer
+        ? `<span class="pill ${u.role === 'admin' ? 'p-ok' : 'p-mut'}">${esc(u.role)}</span>`
+        : `<select class="mfield" data-role-for="${esc(u.id)}" style="min-width:100px">
+             <option value="viewer"${u.role === 'viewer' ? ' selected' : ''}>viewer</option>
+             <option value="admin"${u.role === 'admin' ? ' selected' : ''}>admin</option>
+           </select>`}</td>
       <td style="color:var(--mut)">${esc((u.created_at || '').slice(0, 10))}</td>
       <td style="color:var(--mut)">${esc((u.last_login_at || '').slice(0, 10)) || '—'}</td>
       <td class="nw">${URFORM === u.id
@@ -2686,7 +2691,9 @@ function accountSettings() {
       <button class="mini" data-act="user-create">add account</button>
     </div>
     <p class="src-note">Deleting an account kills its sessions; the last
-    admin cannot be deleted. Every action here lands in the audit trail.</p>
+    admin can be neither deleted nor demoted. A role change leaves the
+    account's password and sessions alone. Every action here lands in the
+    audit trail.</p>
   </div>`;
   return `${viewer ? `<div class="note">This account is read-only: every
     page works, saving does not. An admin manages accounts from this tab.</div>` : ''}
@@ -4311,6 +4318,22 @@ async function paWrite(key, status, reason) {
   PAFORM = null; render();
 }
 
+// A role change, written on the select's own change event. No confirm
+// step: the action is audited, reversible, and the one case that is not -
+// demoting the only admin - the receiver refuses outright. Re-reads the
+// accounts either way, so a refusal leaves the row showing the role that
+// is actually stored rather than the one that was clicked.
+async function userRole(uid, role) {
+  const r = await mfetch('/api/users/' + uid + '/role',
+    {method: 'POST', body: JSON.stringify({role})});
+  if (r.status === 401) { sessionLost(); return; }
+  USERR = r.ok
+    ? 'Role updated. It applies to their next request; a page they already '
+      + 'have open shows its old buttons until they reload.'
+    : 'Not changed: ' + await _refusal(r);
+  USERS = null; render();
+}
+
 // The refusal detail from a failed write, for the message line.
 async function _refusal(r) {
   let d = r.statusText;
@@ -4982,6 +5005,9 @@ app.addEventListener('click', e => {
 // Changing the wizard's tool re-suggests what the licence covers: the
 // checkboxes belong to the selected tool's licence group, not the page.
 app.addEventListener('change', e => {
+  const roleFor = e.target && e.target.getAttribute
+    && e.target.getAttribute('data-role-for');
+  if (roleFor) { userRole(roleFor, e.target.value); return; }
   if (e.target && e.target.id === 'bw-tool' && BWIZ) {
     BWIZ.tool_id = e.target.value;
     BWIZ.covers = null;
