@@ -1089,6 +1089,11 @@ class UserEmailWrite(BaseModel):
     email: str = Field(default="", max_length=254)
 
 
+class UserRoleWrite(BaseModel):
+    model_config = {"extra": "forbid"}
+    role: str = Field(min_length=1, max_length=16)
+
+
 @app.get("/admin/users")
 def get_users(authorization: str = Header(default="")):
     _admin_auth(authorization)
@@ -1119,6 +1124,28 @@ def delete_user(uid: str, authorization: str = Header(default="")):
     except _state.AuthError as e:
         raise HTTPException(e.status, e.detail)
     return {"deleted": uid}
+
+
+@app.post("/admin/users/{uid}/role")
+def set_user_role(uid: str, req: UserRoleWrite,
+                  authorization: str = Header(default="")):
+    """Move an account between admin and viewer.
+
+    Takes effect on that account's next request, not at its next sign-in:
+    the role is read off the account row per request, so a demotion is
+    immediate and a promotion costs a reload. The last admin cannot be
+    demoted, for the same reason it cannot be deleted.
+    """
+    _admin_auth(authorization, write=True)
+    if not re.fullmatch(r"[0-9a-f]{16}", uid):
+        raise HTTPException(422, "malformed user id")
+    try:
+        if not STATE.set_user_role(uid, req.role,
+                                   _admin_actor(authorization)):
+            raise HTTPException(404, "no account with that id")
+    except _state.AuthError as e:
+        raise HTTPException(e.status, e.detail)
+    return {"user": uid, "role": req.role}
 
 
 @app.post("/admin/users/{uid}/email")

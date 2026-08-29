@@ -172,3 +172,119 @@ def test_account_actions_land_in_the_audit_trail(managed, admin):
     e = next(x for x in events if x["kind"] == "user_created")
     assert e["detail"]["username"] == "auditor"
     assert e["detail"]["by"] == "root"
+
+
+# ------------------------------------------------ changing a role in place --
+# A role used to be fixed at creation, so moving somebody between levels
+# meant deleting the account and making a new one - which cost them their
+# password to record something the trail can simply state.
+
+
+def test_a_role_changes_in_place(managed, admin):
+    _mk(managed, "temp", "viewer")
+    uid = next(u["id"] for u in managed.list_users() if u["username"] == "temp")
+    r = client.post(f"/admin/users/{uid}/role", headers=admin,
+                    json={"role": "admin"})
+    assert r.status_code == 200
+    assert next(u["role"] for u in managed.list_users()
+                if u["id"] == uid) == "admin"
+
+
+def test_the_password_survives_a_role_change(managed, admin):
+    """The reason to do this at all: a promotion should not cost somebody
+    their credential."""
+    _mk(managed, "temp", "viewer")
+    uid = next(u["id"] for u in managed.list_users() if u["username"] == "temp")
+    client.post(f"/admin/users/{uid}/role", headers=admin,
+                json={"role": "admin"})
+    assert _session(managed, "temp")
+
+
+def test_a_demotion_takes_effect_without_a_sign_out(managed, admin):
+    """The property that makes "log out for this to apply" unnecessary: the
+    role is read off the account row per request, not frozen into the
+    session when it was minted."""
+    _mk(managed, "temp", "admin")
+    live = _session(managed, "temp")
+    assert client.put("/admin/settings", headers=live,
+                      json={"grafana_url": "https://grafana.example.com"}
+                      ).status_code == 200
+
+    uid = next(u["id"] for u in managed.list_users() if u["username"] == "temp")
+    client.post(f"/admin/users/{uid}/role", headers=admin,
+                json={"role": "viewer"})
+
+    # Same token, no sign-out, and the next write is refused.
+    assert client.put("/admin/settings", headers=live,
+                      json={"grafana_url": "https://other.example.com"}
+                      ).status_code == 403
+    # Still signed in, and still able to read.
+    assert client.get("/admin/settings", headers=live).status_code == 200
+
+
+def test_a_promotion_takes_effect_without_a_sign_out(managed, admin):
+    _mk(managed, "temp", "viewer")
+    live = _session(managed, "temp")
+    uid = next(u["id"] for u in managed.list_users() if u["username"] == "temp")
+    client.post(f"/admin/users/{uid}/role", headers=admin,
+                json={"role": "admin"})
+    assert client.put("/admin/settings", headers=live,
+                      json={"grafana_url": "https://grafana.example.com"}
+                      ).status_code == 200
+
+
+def test_the_last_admin_cannot_be_demoted(managed, admin):
+    """The same floor that stops the last admin being deleted: a deployment
+    with accounts and no admin cannot manage its own accounts."""
+    uid = next(u["id"] for u in managed.list_users() if u["username"] == "root")
+    r = client.post(f"/admin/users/{uid}/role", headers=admin,
+                    json={"role": "viewer"})
+    assert r.status_code == 409
+    assert "last admin" in r.json()["detail"]
+
+
+def test_an_admin_may_be_demoted_once_another_exists(managed, admin):
+    _mk(managed, "second", "admin")
+    uid = next(u["id"] for u in managed.list_users() if u["username"] == "root")
+    assert client.post(f"/admin/users/{uid}/role", headers=admin,
+                       json={"role": "viewer"}).status_code == 200
+
+
+def test_a_viewer_cannot_change_a_role(managed, viewer):
+    """Otherwise read-only is a formality."""
+    uid = next(u["id"] for u in managed.list_users() if u["username"] == "root")
+    assert client.post(f"/admin/users/{uid}/role", headers=viewer,
+                       json={"role": "viewer"}).status_code == 403
+
+
+def test_an_unknown_role_and_an_unknown_account_are_refused(managed, admin):
+    uid = next(u["id"] for u in managed.list_users() if u["username"] == "root")
+    assert client.post(f"/admin/users/{uid}/role", headers=admin,
+                       json={"role": "owner"}).status_code == 422
+    assert client.post("/admin/users/0123456789abcdef/role", headers=admin,
+                       json={"role": "admin"}).status_code == 404
+
+
+def test_a_role_change_is_one_event_naming_both_levels(managed, admin):
+    """What delete-and-recreate could not say: a reader had to correlate a
+    removal with a creation and infer what had happened."""
+    _mk(managed, "temp", "viewer")
+    uid = next(u["id"] for u in managed.list_users() if u["username"] == "temp")
+    client.post(f"/admin/users/{uid}/role", headers=admin,
+                json={"role": "admin"})
+    events = client.get("/admin/events", headers=admin).json()["events"]
+    e = next(x for x in events if x["kind"] == "user_role_changed")
+    assert e["detail"]["from"] == "viewer"
+    assert e["detail"]["to"] == "admin"
+    assert e["detail"]["by"] == "root"
+
+
+def test_setting_the_role_it_already_has_records_nothing(managed, admin):
+    """The trail records changes, and a write that changed nothing is not
+    one."""
+    _mk(managed, "temp", "viewer")
+    uid = next(u["id"] for u in managed.list_users() if u["username"] == "temp")
+    assert client.post(f"/admin/users/{uid}/role", headers=admin,
+                       json={"role": "viewer"}).status_code == 200
+    events = client.get("/admin/events", headers=admin).json()["events"]
+    assert [x for x in events if x["kind"] == "user_role_changed"] == []

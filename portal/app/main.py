@@ -1608,6 +1608,11 @@ class UserEmailWrite(BaseModel):
     email: str = Field(default="", max_length=254)
 
 
+class UserRoleWrite(BaseModel):
+    model_config = {"extra": "forbid"}
+    role: str = Field(min_length=1, max_length=16)
+
+
 class PreferencesWrite(BaseModel):
     model_config = {"extra": "forbid"}
     preferences: dict[str, str | None] = Field(default_factory=dict)
@@ -1644,6 +1649,17 @@ def api_users_reset(uid: str, req: UserPasswordReset, _=Depends(require_auth),
     if not _UID_RE.match(uid):
         raise HTTPException(422, "malformed user id")
     return _receiver("POST", "/admin/users/%s/password" % uid, token,
+                     req.model_dump())
+
+
+@app.post("/api/users/{uid}/role")
+def api_users_role(uid: str, req: UserRoleWrite, _=Depends(require_auth),
+                   token: str = Depends(_admin_forward)):
+    """Move an account between admin and viewer. The receiver holds the
+    floor that keeps the last admin in place."""
+    if not _UID_RE.match(uid):
+        raise HTTPException(422, "malformed user id")
+    return _receiver("POST", "/admin/users/%s/role" % uid, token,
                      req.model_dump())
 
 

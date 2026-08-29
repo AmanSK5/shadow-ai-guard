@@ -710,9 +710,11 @@ class State:
     # More than one pair of eyes, without more than one level of trust being
     # implicit: an admin runs the platform, a viewer reads it. Viewer exists
     # for the auditor and the exec - people who need the pages and must not
-    # be able to change what the pages say. Roles are fixed at creation;
-    # changing someone's trust level is delete-and-recreate, which leaves a
-    # cleaner audit trail than an edit ever would.
+    # be able to change what the pages say. A role changes in place, and the
+    # change is one audit event naming both levels: delete-and-recreate left
+    # a reader to correlate a removal with a creation and infer what had
+    # happened, and it cost the account its password to say something the
+    # trail can state outright.
 
     ROLES = ("admin", "viewer")
 
@@ -780,6 +782,45 @@ class State:
                              (address or None, uid))
             self._event("user_email_set",
                         {"user": uid, "email_set": bool(address), "by": by})
+            self._db.commit()
+        return True
+
+    def set_user_role(self, uid: str, role: str, by: str = "") -> bool:
+        """Move an account between trust levels.
+
+        Enforcement is live: session_user reads the role off the account row
+        on every request, so a demotion refuses the next write without
+        waiting for a sign-out, and a promotion needs no more than a
+        reload. Sessions are deliberately left alone - revoking them would
+        sign someone out to achieve what the join already achieved.
+        """
+        if role not in self.ROLES:
+            raise AuthError(422, "role must be admin or viewer")
+        with self._lock:
+            row = self._db.execute(
+                "SELECT role FROM admin_users WHERE id = ?", (uid,)
+            ).fetchone()
+            if row is None:
+                return False
+            was = row["role"]
+            if was == role:
+                # Idempotent, and no event: the trail records changes, and a
+                # write that changed nothing is not one.
+                return True
+            if was == "admin" and role != "admin":
+                admins = self._db.execute(
+                    "SELECT COUNT(*) AS n FROM admin_users WHERE role = 'admin'"
+                ).fetchone()["n"]
+                if admins <= 1:
+                    # The same floor delete_user holds, for the same reason:
+                    # a deployment with accounts and no admin cannot manage
+                    # its own accounts, and the API credential that could
+                    # dig it out is optional.
+                    raise AuthError(409, "cannot demote the last admin")
+            self._db.execute("UPDATE admin_users SET role = ? WHERE id = ?",
+                             (role, uid))
+            self._event("user_role_changed",
+                        {"user": uid, "from": was, "to": role, "by": by})
             self._db.commit()
         return True
 
