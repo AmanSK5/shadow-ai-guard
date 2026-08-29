@@ -69,14 +69,17 @@ def test_creating_an_account_carries_the_address(receiver_spy):
     assert receiver_spy[-1]["body"]["email"] == "someone@example.com"
 
 
-def test_an_address_is_optional_on_create(receiver_spy):
-    """A local account has never needed one, and still does not."""
+def test_an_unset_address_is_not_sent_at_all(receiver_spy):
+    """The receiver forbids unknown fields, so a key always sent is a key
+    that breaks account creation against a receiver too old to know it -
+    a call that worked before this feature existed."""
     token = main._admin_forward(_Req())
     main.api_users_create(
         main.UserCreate(username="someone", password="a-long-enough-password",
                         role="viewer"),
         token=token)
-    assert receiver_spy[-1]["body"]["email"] == ""
+    assert "email" not in receiver_spy[-1]["body"]
+    assert receiver_spy[-1]["body"]["username"] == "someone"
 
 
 def test_the_preferences_routes_pass_no_account_id(receiver_spy):

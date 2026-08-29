@@ -271,6 +271,95 @@ table.plain td{border-bottom:0;padding:4.5px 10px 4.5px 0;vertical-align:middle}
   dt, dd, td, th, p, li, span { color: #111 !important; }
   .src-note { color: #555 !important; }
 }
+/* ---- the guided tour ------------------------------------------------
+   A spotlight rather than a modal: the page underneath stays legible, so
+   what is being described is the real thing and not a picture of it. The
+   hole is one element's box-shadow spread over the viewport, which needs
+   no SVG mask and keeps a rounded corner. */
+#tour { position: fixed; inset: 0; z-index: 9000; display: none;
+        /* The layer never swallows a click. Only the card takes one,
+           so a step can ask somebody to press the real control and
+           nobody gets trapped behind an overlay if a step is wrong. */
+        pointer-events: none; }
+#tour.on { display: block; }
+#tour-shade {
+  position: absolute; border-radius: 10px;
+  box-shadow: 0 0 0 9999px rgba(8, 12, 18, .62);
+  /* Clicks pass through to the real control underneath. A step that asks
+     somebody to press something has to let them press it. */
+  pointer-events: none;
+  transition: top .32s cubic-bezier(.4, 0, .2, 1),
+              left .32s cubic-bezier(.4, 0, .2, 1),
+              width .32s cubic-bezier(.4, 0, .2, 1),
+              height .32s cubic-bezier(.4, 0, .2, 1);
+}
+/* A step with nowhere to point (the welcome, the sign-off) dims the whole
+   page instead of cutting a hole in the middle of it. */
+#tour.plain #tour-shade { box-shadow: 0 0 0 9999px rgba(8, 12, 18, .72); }
+#tour-ring {
+  position: absolute; border-radius: 10px; pointer-events: none;
+  border: 2px solid var(--acc); opacity: 0;
+  transition: top .32s cubic-bezier(.4, 0, .2, 1),
+              left .32s cubic-bezier(.4, 0, .2, 1),
+              width .32s cubic-bezier(.4, 0, .2, 1),
+              height .32s cubic-bezier(.4, 0, .2, 1);
+}
+#tour.aimed #tour-ring { opacity: 1; }
+/* Only the steps that want a click pulse. Everywhere else it would be an
+   animation asking for something the step does not want. */
+#tour.wants-click #tour-ring { animation: tour-pulse 1.6s ease-out infinite; }
+@keyframes tour-pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(14, 110, 140, .45); }
+  70%  { box-shadow: 0 0 0 12px rgba(14, 110, 140, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(14, 110, 140, 0); }
+}
+#tour-card {
+  position: absolute; width: min(360px, calc(100vw - 32px));
+  background: var(--sf); color: var(--fg); border: 1px solid var(--bd);
+  border-radius: 12px; padding: 16px 18px 14px;
+  box-shadow: 0 8px 32px rgba(8, 12, 18, .28);
+  pointer-events: auto;
+  transition: top .32s cubic-bezier(.4, 0, .2, 1),
+              left .32s cubic-bezier(.4, 0, .2, 1);
+}
+#tour-card.step-in { animation: tour-in .34s cubic-bezier(.2, .8, .3, 1); }
+@keyframes tour-in {
+  from { opacity: 0; transform: translateY(6px) scale(.985); }
+  to   { opacity: 1; transform: none; }
+}
+#tour-card h4 { margin: 0 0 6px; font-size: 15px; }
+#tour-card p { margin: 0 0 12px; font-size: 13px; line-height: 1.5;
+               color: var(--mut); }
+#tour-card .tour-do {
+  display: inline-block; margin: 0 0 12px; font-size: 12px; font-weight: 600;
+  color: var(--acc); background: var(--acc-soft);
+  border-radius: 999px; padding: 3px 10px;
+}
+#tour-foot { display: flex; align-items: center; gap: 8px; }
+#tour-dots { display: flex; gap: 4px; margin-right: auto; }
+#tour-dots i {
+  width: 5px; height: 5px; border-radius: 50%; background: var(--bd);
+  display: block; transition: background .2s, width .2s;
+}
+#tour-dots i.on { background: var(--acc); width: 14px; border-radius: 3px; }
+#tour-card button {
+  font: inherit; font-size: 12px; border-radius: 7px; padding: 6px 12px;
+  border: 1px solid var(--bd); background: var(--sf2); color: var(--fg);
+  cursor: pointer;
+}
+#tour-card button.pri {
+  background: var(--acc); border-color: var(--acc); color: #fff;
+}
+#tour-card button.ghost { border-color: transparent; background: transparent;
+                          color: var(--mut); padding: 6px 8px; }
+#tour-card button:hover { filter: brightness(1.06); }
+/* Somebody who has asked their browser to stop things moving gets the same
+   tour with none of the motion. */
+@media (prefers-reduced-motion: reduce) {
+  #tour-shade, #tour-ring, #tour-card { transition: none; }
+  #tour-card.step-in { animation: none; }
+  #tour.wants-click #tour-ring { animation: none; }
+}
 </style>
 <div class="overlay" id="overlay"></div>
 <div class="drawer" id="drawer"></div>
@@ -299,6 +388,11 @@ table.plain td{border-bottom:0;padding:4.5px 10px 4.5px 0;vertical-align:middle}
     </div>
     <main id="app"></main>
   </div>
+</div>
+<div id="tour" aria-live="polite">
+  <div id="tour-shade"></div>
+  <div id="tour-ring"></div>
+  <div id="tour-card"></div>
 </div>
 <script>
 let G = {devices:{},identities:{},tools:{},bridges:{},unattributed:[],counts:{}};
@@ -393,6 +487,10 @@ function chrome(on) {
 }
 
 function showLogin(msg) {
+  // Same reason as the pane below: nothing from the last session belongs on
+  // this screen, and an overlay is the one piece of it that would cover the
+  // way back in rather than merely linger.
+  tourAbort();
   // A minted token's show-once pane must not outlive the session that
   // minted it: signing out and back in would show the plaintext again.
   MINTED = null; FLEET = null; TOKENS = null; SETTINGS = null;
@@ -531,6 +629,29 @@ async function load(force) {
   }
   render();
   showFreshness();
+}
+
+// The tour opens itself once, for somebody who has not seen the one for
+// their role. Deliberately after the wizard check above and skipped while
+// it is showing: a first-run deployment has one thing to do, and stacking
+// a walkthrough on top of it is two.
+let TOURTRIED = false;
+async function maybeTour() {
+  if (TOURTRIED || TOUR) return;
+  if (AUTH && AUTH.mode === 'login' && !AUTH.authenticated) return;
+  // Not while the wizard is up, and without spending the one attempt on
+  // it either: a first-run deployment opens on the wizard, so a flag set
+  // here would mean the tour never ran at all on the sign-in it is for.
+  // Leaving the wizard renders, and this runs again.
+  if (view === 'wizard') return;
+  TOURTRIED = true;
+  const seen = await tourProgress();
+  const role = tourRole();
+  if (seen[role]) return;
+  // Having taken the other role's tour means the role changed under them,
+  // which is worth saying out loud before offering a second walkthrough.
+  const other = seen[role === 'admin' ? 'viewer' : 'admin'];
+  await tourStart(other ? TOUR_ROLE_CHANGED[role] : null);
 }
 
 // The graph is cached, and a cache you cannot see is indistinguishable from a
@@ -686,7 +807,7 @@ const WIDGETS = {
     // "what needs someone", and an answered finding no longer does.
     const open = PSTAT
       ? pa.filter(r => (PSTAT[paKey(r)] || {}).status !== 'accepted') : pa;
-    return `<dl class="stats">
+    return `<dl class="stats" data-tour="stats">
       <div><dt style="color:var(--dstr)">${open.length}${trendChip(tr.personal, true)}</dt>
         <dd${open.length !== pa.length
           ? ` title="${pa.length - open.length} more accepted with a reason"` : ''}>
@@ -1317,7 +1438,7 @@ function personal() {
     match(r.device) || match(r.device_name));
   const lifecycle = CFG.managed && CFG.managed.enabled && PSTAT !== null;
   return `<h2>Personal accounts</h2>
-  <p class="lede">AI tools signed into personal accounts. Even an approved
+  <p class="lede" data-tour="personal">AI tools signed into personal accounts. Even an approved
   tool on a personal account means company data flowing somewhere you don't
   manage, and access that survives offboarding. "Personal" means the account
   domain isn't in your corporate domains list. Treat these as leads to follow
@@ -2713,7 +2834,11 @@ function accountSettings() {
   <p class="src-note" style="margin:4px 0 14px">
     <button class="mini" data-act="open-wizard">run the setup wizard again</button>
     — safe to repeat: every step is one of these settings, prefilled
-    with what is saved.</p>`;
+    with what is saved.</p>
+  <p class="src-note" style="margin:4px 0 14px">
+    <button class="mini" data-act="take-tour">take the tour again</button>
+    — the walkthrough from your first sign-in. It shows the pages your
+    account can act on, so an admin and a viewer see different tours.</p>`;
 }
 
 function diagnosticsCards() {
@@ -4403,6 +4528,7 @@ async function managedAction(act, el) {
     if (r.ok) USERS = null;
     render(); return;
   }
+  if (act === 'take-tour') { await tourStart(); return; }
   if (act === 'user-reset-form') { URFORM = el.getAttribute('data-key'); USERR = ''; render(); return; }
   if (act === 'user-reset-cancel') { URFORM = null; render(); return; }
   if (act === 'user-reset') {
@@ -4477,7 +4603,16 @@ async function managedAction(act, el) {
     SETTINGS = await r.json(); SETMSG = '';
     view = 'setup'; detail = null;
     history.replaceState(null, '', '#setup');
-    drawNav(); render(); return;
+    // Leaving the wizard is what normally lets the tour open itself, and
+    // finishing it is still leaving it. Claiming the attempt first means
+    // the walkthrough arrives as the offer below rather than springing
+    // open unannounced the moment the last setting saves.
+    const seen = await tourProgress();
+    const offer = !seen[tourRole()];
+    if (offer) TOURTRIED = true;
+    drawNav(); await render();
+    if (offer) await tourStart(TOUR_AFTER_WIZARD);
+    return;
   }
   if (act === 'reg-add') { REDIT = ''; RPRE = null; RERR = ''; RADV = false; render(); return; }
   if (act === 'reg-cancel') { REDIT = null; RPRE = null; RERR = ''; RADV = false; render(); return; }
@@ -4916,7 +5051,7 @@ function loadBanner() {
   </div>`;
 }
 
-async function render() {
+async function renderView() {
   const sec = sectionOf(view);
   if (sec) SECTAB[sec.id] = view;
   drawNav();
@@ -4949,6 +5084,14 @@ async function render() {
   if (view === 'people') { app.innerHTML = tb + await people(); return; }
   app.innerHTML = tb + ({setup, overview, devices, tools, coverage,
                          dashboard, personal, mcp})[view]();
+}
+
+// Every navigation lands here, and half the views above return early, so
+// the tour's own check hangs off the wrapper rather than the body - a call
+// per branch is a call somebody adding the twelfth view forgets.
+async function render() {
+  await renderView();
+  maybeTour();
 }
 // A detail opens in the inspector beside the list rather than replacing it.
 // Opening touches only the drawer, so the list keeps its scroll position;
@@ -5109,5 +5252,362 @@ document.getElementById('signout').onclick = async () => {
   AUTH = {mode: 'login', authenticated: false, username: '', setup_needed: false};
   showLogin('Signed out.');
 };
+// ---- the guided tour -------------------------------------------------
+// A first sign-in lands on eleven views with no way to tell which of them
+// answers the question the person came with. This walks them through the
+// few that do, pointing at the real page rather than a picture of it.
+//
+// Bumping the version re-runs the tour for everybody: progress records
+// which version somebody has seen, not a bare "yes", so a rewritten tour
+// reaches people who took the old one.
+const TOUR_VERSION = '1';
+
+// Two tours, because a viewer and an admin are looking at different
+// products. Showing a read-only account the settings it cannot save is
+// how a walkthrough teaches somebody that the tool is not for them.
+//   view  - where the step lives; the tour navigates there itself
+//   sel   - what to spotlight, or absent for a step about no one thing
+//   click - the step advances when the target is pressed, not on Next
+//   ok    - label for the advance button, where "next" is the wrong word
+//   no    - label for the leave button, same reason
+const TOURS = {
+  admin: [
+    {title: 'Welcome to Shadow AI Guard',
+     body: 'This is every AI tool your estate is actually using - the '
+         + 'browser, laptops, your cloud tenant - and the accounts behind '
+         + 'it. Two minutes and you will know where to look for what.',
+     ok: 'start'},
+    {view: 'overview', sel: '[data-tour="stats"]',
+     title: 'The numbers that matter',
+     body: 'Personal accounts first, because that is the one worth acting '
+         + 'on. Everything here reads the window in the corner - findings '
+         + 'age out of it, so a number falling can mean a device went '
+         + 'quiet rather than a problem going away.'},
+    {view: 'overview', sel: '[data-s="inventory"]', click: true,
+     title: 'What was found',
+     body: 'Tools, people, devices and the accounts they are signed into. '
+         + 'Open Inventory and I will show you the page most of this '
+         + 'exists for.'},
+    {view: 'personal', sel: '[data-tour="personal"]',
+     title: 'The page this is all for',
+     body: 'An approved tool on a personal account is still unmanaged data '
+         + 'flow and an offboarding gap - so approval never changes '
+         + 'severity here. The account is the risk, not the tool.'},
+    {view: 'personal', sel: '[data-s="governance"]', click: true,
+     title: 'Deciding what is allowed',
+     body: 'Nothing is approved or refused until a person says so. Open '
+         + 'Governance for where those decisions live.'},
+    {view: 'register', sel: '[data-s="health"]',
+     title: 'Before you trust a number',
+     body: 'The AI register is what you actually use; a tool missing from '
+         + 'the registry is flagged rather than hidden. Health is the '
+         + 'check that belongs with it - a surface nobody is collecting '
+         + 'from looks exactly like a surface with nothing on it.'},
+    {view: 'setup', sel: '[data-s="system"]', click: true,
+     title: 'Making it yours',
+     body: 'One thing worth setting today: your corporate domains, which '
+         + 'is what decides whether an account counts as personal. Open '
+         + 'Settings.'},
+    {view: 'settings', sel: '#set-domains',
+     title: 'Corporate domains',
+     body: 'Every domain your people legitimately sign in with. Anything '
+         + 'else is a personal account and warns. Get this wrong and the '
+         + 'whole platform reports the wrong thing, so it is the first '
+         + 'field to fill in.'},
+    {view: 'settings', sel: '#refresh',
+     title: 'One last thing',
+     body: 'Findings are cached, so this is how you force a fresh read. '
+         + 'You can take this tour again from Settings, under Account.'},
+  ],
+  viewer: [
+    {title: 'Welcome to Shadow AI Guard',
+     body: 'This account reads every page and changes nothing - made for '
+         + 'the auditor and the exec. Same tour as an admin gets, with who '
+         + 'to ask where a page needs a change.',
+     ok: 'start'},
+    {view: 'overview', sel: '[data-tour="stats"]',
+     title: 'The numbers that matter',
+     body: 'Personal accounts first, because that is the one worth acting '
+         + 'on. Everything here reads the window in the corner - findings '
+         + 'age out of it, so a number falling can mean a device went '
+         + 'quiet rather than a problem going away.'},
+    {view: 'overview', sel: '[data-s="inventory"]', click: true,
+     title: 'What was found',
+     body: 'Tools, people, devices and the accounts they are signed into. '
+         + 'Open Inventory and I will show you the page most of this '
+         + 'exists for.'},
+    {view: 'personal', sel: '[data-tour="personal"]',
+     title: 'The page this is all for',
+     body: 'An approved tool on a personal account is still unmanaged data '
+         + 'flow and an offboarding gap - so approval never changes '
+         + 'severity here. The account is the risk, not the tool.'},
+    {view: 'personal', sel: '[data-s="governance"]', click: true,
+     title: 'What was decided, and by whom',
+     body: 'Approvals, owners and review dates - the evidence an audit '
+         + 'asks for, and all of it readable from this account. Recording '
+         + 'a decision is the admin\u2019s half. Open Governance.'},
+    {view: 'register', sel: '[data-s="health"]',
+     title: 'Before you trust a number',
+     body: 'The AI register is what you actually use; a tool missing from '
+         + 'the registry is flagged rather than hidden. Health is the '
+         + 'check that belongs with it - a surface nobody is collecting '
+         + 'from looks exactly like a surface with nothing on it.'},
+    {view: 'setup', sel: '[data-s="system"]', click: true,
+     title: 'Where the numbers come from',
+     body: 'One setting decides what counts as a personal account, and it '
+         + 'is worth seeing even though this account cannot change it. '
+         + 'Open Settings.'},
+    {view: 'settings', sel: '#set-domains',
+     title: 'Corporate domains - read it, do not take it on trust',
+     body: 'Anything not on this list is treated as a personal account. '
+         + 'Every figure on the Personal accounts page rests on it, so a '
+         + 'missing domain overstates the problem and a wrong one hides '
+         + 'it. You can read it here; an admin changes it - and if it '
+         + 'looks wrong, that is the conversation to have before quoting '
+         + 'any of these numbers.'},
+    {view: 'settings', sel: '#refresh',
+     title: 'That is the tour',
+     body: 'Findings are cached, and this forces a fresh read. Saving is '
+         + 'the only thing this account cannot do - every page works. You '
+         + 'can take this tour again from Settings, under Account.'},
+  ],
+};
+
+// Openings that replace the welcome. Each is a step like any other, so a
+// case that needs its own first card costs a copy block rather than a
+// branch through the engine.
+//
+// After the wizard: a first-run deployment opens on the wizard, and the
+// tour holds off while it is up. Finishing it is the moment orientation
+// becomes useful - but somebody who has just worked through nine settings
+// has earned a question rather than another overlay springing open.
+const TOUR_AFTER_WIZARD = {
+  title: "That's the setup done",
+  body: 'A short walkthrough covers what each page shows and where the '
+      + 'numbers come from - including which of them depend on what you '
+      + 'just configured. It stays in Settings, so not now does not mean '
+      + 'never.',
+  ok: 'show me around', no: 'not now'};
+
+// Shown instead of a welcome to somebody who has taken the other role's
+// tour already: they know the pages, and what they need is the delta.
+const TOUR_ROLE_CHANGED = {
+  admin: {
+    title: 'You are an admin now',
+    body: 'Someone changed this account from viewer to admin. The pages you '
+        + 'have been reading are now ones you can change - settings, tool '
+        + 'decisions, accounts, and device enrolment. A short walkthrough '
+        + 'covers where those live; it is in Settings if you would rather '
+        + 'not now.',
+    ok: 'show me', no: 'no thanks'},
+  viewer: {
+    title: 'This account is read-only now',
+    body: 'Someone changed it from admin to viewer. Every page still works '
+        + 'and nothing is hidden - saving is the part that stops, and it '
+        + 'refuses with a line saying so rather than failing quietly. A '
+        + 'short walkthrough covers what you can still do and who to ask '
+        + 'for the rest.',
+    ok: 'show me', no: 'no thanks'},
+};
+
+let TOUR = null;
+const tourRole = () => (AUTH && AUTH.role === 'viewer') ? 'viewer' : 'admin';
+const tourKey = () => 'tour.seen.' + tourRole();
+
+// Progress lives with the account when there is one, so it follows a person
+// between browsers and a promotion surfaces the admin tour on its own - the
+// admin key is simply absent. Classic mode has no account to hang it on,
+// so it falls back to this browser.
+async function tourProgress() {
+  if (CFG.managed && CFG.managed.enabled && AUTH && AUTH.mode === 'login') {
+    try {
+      const r = await mfetch('/api/preferences');
+      if (r.ok) {
+        const p = (await r.json()).preferences || {};
+        return {admin: p['tour.seen.admin'], viewer: p['tour.seen.viewer']};
+      }
+    } catch (e) { /* fall through to the browser */ }
+  }
+  const ls = k => { try { return localStorage.getItem('aiguard-tour.seen.' + k); }
+                    catch (e) { return null; } };
+  return {admin: ls('admin'), viewer: ls('viewer')};
+}
+
+async function tourRemember(v) {
+  try { localStorage.setItem('aiguard-' + tourKey(), v); } catch (e) {}
+  if (CFG.managed && CFG.managed.enabled && AUTH && AUTH.mode === 'login') {
+    try {
+      await mfetch('/api/preferences', {method: 'PUT', body: JSON.stringify(
+        {preferences: {[tourKey()]: v}})});
+    } catch (e) { /* the browser copy still stands */ }
+  }
+}
+
+async function tourStart(intro) {
+  const role = tourRole();
+  // An opening replaces the welcome rather than preceding it: the welcome
+  // introduces the product, and every case with its own opening is one
+  // where that introduction has already happened or is beside the point.
+  const steps = intro
+    ? [intro].concat(TOURS[role].slice(1))
+    : TOURS[role];
+  TOUR = {steps: steps, i: 0};
+  document.getElementById('tour').classList.add('on');
+  await tourShow();
+}
+
+// Signing out, or a session going away underneath it, is not an answer to
+// the tour: it records nothing and simply goes. Without this the overlay
+// outlived its session and sat on top of the login screen - a dimmed page
+// with a stale card over the sign-in button, which reads as a portal that
+// failed to load.
+function tourAbort() {
+  if (TOUR && TOUR.drop) TOUR.drop();
+  TOUR = null;
+  const t = document.getElementById('tour');
+  if (t) t.className = '';
+  const c = document.getElementById('tour-card');
+  if (c) c.innerHTML = '';
+  // The next account signing in on this page load is a different person
+  // with their own role, so its tour has to be considered afresh.
+  TOURTRIED = false;
+}
+
+async function tourEnd(done) {
+  TOUR = null;
+  document.getElementById('tour').className = '';
+  document.getElementById('tour-card').innerHTML = '';
+  // Recorded whether it was finished or skipped: somebody who closed it
+  // decided they did not want it, and reopening it every sign-in would be
+  // the tour arguing with them.
+  await tourRemember(done ? TOUR_VERSION : 'skipped');
+}
+
+async function tourGo(n) {
+  if (!TOUR) return;
+  if (n < 0 || n >= TOUR.steps.length) { await tourEnd(n >= 0); return; }
+  TOUR.i = n;
+  await tourShow();
+}
+
+async function tourShow() {
+  const st = TOUR.steps[TOUR.i];
+  // The step owns where it happens, so Back works across views and a step
+  // never describes a page somebody navigated away from.
+  if (st.view && st.view !== view) {
+    view = st.view;
+    history.replaceState(null, '', '#' + view);
+    drawNav();
+    await render();
+  }
+  const el = st.sel ? document.querySelector(st.sel) : null;
+  if (el && el.scrollIntoView) {
+    el.scrollIntoView({block: 'center', behavior: 'smooth'});
+    // Let the scroll settle before measuring, or the hole lands where the
+    // target used to be.
+    await new Promise(r => setTimeout(r, 240));
+  }
+  tourPaint(el, st);
+  if (st.click && el) {
+    // One shot, on the way down, so a nav button still does its own job.
+    const once = ev => {
+      if (!el.contains(ev.target) && ev.target !== el) return;
+      document.removeEventListener('click', once, true);
+      // After the page it opened has drawn.
+      setTimeout(() => tourGo(TOUR ? TOUR.i + 1 : 0), 60);
+    };
+    document.addEventListener('click', once, true);
+    TOUR.drop = () => document.removeEventListener('click', once, true);
+  }
+}
+
+function tourPaint(el, st) {
+  const t = document.getElementById('tour');
+  const shade = document.getElementById('tour-shade');
+  const ring = document.getElementById('tour-ring');
+  const card = document.getElementById('tour-card');
+  const vw = window.innerWidth, vh = window.innerHeight;
+
+  // A step with no target, or one whose target is not on the page after
+  // all, dims everything and centres the card rather than cutting a hole
+  // somewhere arbitrary. A stale selector should cost a spotlight, never
+  // the tour.
+  if (!el) {
+    t.className = 'on plain';
+    shade.style.cssText = 'top:50%;left:50%;width:0;height:0';
+    card.style.top = Math.round(vh / 2 - 90) + 'px';
+    card.style.left = Math.round(vw / 2 - 180) + 'px';
+  } else {
+    const r = el.getBoundingClientRect(), pad = 6;
+    t.className = 'on aimed' + (st.click ? ' wants-click' : '');
+    const box = {top: r.top - pad, left: r.left - pad,
+                 w: r.width + pad * 2, h: r.height + pad * 2};
+    [shade, ring].forEach(n => {
+      n.style.top = box.top + 'px'; n.style.left = box.left + 'px';
+      n.style.width = box.w + 'px'; n.style.height = box.h + 'px';
+    });
+    // Below the target when it fits, above when it does not, and clamped
+    // to the viewport either way.
+    const cw = Math.min(360, vw - 32), ch = 190;
+    let top = box.top + box.h + 12;
+    if (top + ch > vh - 12) top = Math.max(12, box.top - ch - 12);
+    let left = box.left + box.w / 2 - cw / 2;
+    left = Math.max(12, Math.min(left, vw - cw - 12));
+    card.style.top = Math.round(top) + 'px';
+    card.style.left = Math.round(left) + 'px';
+  }
+
+  const last = TOUR.i === TOUR.steps.length - 1;
+  // Every step carries a way forward, the ones asking for a click
+  // included - secondary there, so the highlighted control stays the
+  // suggested path without being the only one. A step whose click will
+  // not land, or that somebody simply does not want to make, otherwise
+  // leaves leaving as the only way on.
+  //
+  // And the way out says "end tour", because "skip" beside "next" reads
+  // as skipping the step it is on.
+  card.innerHTML = `
+    <h4>${esc(st.title)}</h4>
+    ${st.click ? '<span class="tour-do">click the highlighted item</span>' : ''}
+    <p>${esc(st.body)}</p>
+    <div id="tour-foot">
+      <div id="tour-dots">${TOUR.steps.map((_, n) =>
+        `<i class="${n === TOUR.i ? 'on' : ''}"></i>`).join('')}</div>
+      <button class="ghost" data-tour-act="skip">${esc(st.no || 'end tour')}</button>
+      ${TOUR.i > 0 ? '<button data-tour-act="back">back</button>' : ''}
+      <button class="${st.click ? '' : 'pri'}" data-tour-act="next">${
+        esc(st.ok || (last ? 'done' : 'next'))}</button>
+    </div>`;
+  // Restarted per step so the card animates in each time rather than once.
+  card.classList.remove('step-in');
+  void card.offsetWidth;
+  card.classList.add('step-in');
+}
+
+document.getElementById('tour-card').addEventListener('click', e => {
+  const b = e.target.closest('[data-tour-act]');
+  if (!b || !TOUR) return;
+  const act = b.getAttribute('data-tour-act');
+  if (TOUR.drop) { TOUR.drop(); TOUR.drop = null; }
+  if (act === 'skip') { tourEnd(false); return; }
+  tourGo(TOUR.i + (act === 'back' ? -1 : 1));
+});
+
+// Escape leaves. A walkthrough somebody cannot get out of is a trap.
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && TOUR) {
+    if (TOUR.drop) { TOUR.drop(); TOUR.drop = null; }
+    tourEnd(false);
+  }
+});
+
+// The hole is drawn in viewport coordinates, so anything that moves the
+// page under it has to redraw it.
+['resize', 'scroll'].forEach(ev => window.addEventListener(ev, () => {
+  if (!TOUR) return;
+  const st = TOUR.steps[TOUR.i];
+  tourPaint(st.sel ? document.querySelector(st.sel) : null, st);
+}, true));
+
 boot();
 </script>
