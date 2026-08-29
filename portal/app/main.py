@@ -1632,7 +1632,16 @@ def api_users(_=Depends(require_auth), token: str = Depends(_admin_forward)):
 @app.post("/api/users")
 def api_users_create(req: UserCreate, _=Depends(require_auth),
                      token: str = Depends(_admin_forward)):
-    return _receiver("POST", "/admin/users", token, req.model_dump())
+    body = req.model_dump()
+    # An address only travels when there is one. The receiver forbids
+    # unknown fields, so a portal that always sent this key would refuse
+    # every account creation against a receiver too old to know it - a
+    # call that worked before this feature existed, broken by a value
+    # nobody set. Sending an address to a receiver that cannot store one
+    # still earns its 422, which is the honest answer.
+    if not body.get("email"):
+        body.pop("email", None)
+    return _receiver("POST", "/admin/users", token, body)
 
 
 @app.post("/api/users/{uid}/delete")
