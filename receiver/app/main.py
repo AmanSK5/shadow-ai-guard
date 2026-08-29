@@ -1073,11 +1073,20 @@ class UserCreate(BaseModel):
     username: str = Field(min_length=2, max_length=64)
     password: str = Field(min_length=12, max_length=256)
     role: str = Field(min_length=1, max_length=16)
+    # Optional, and optional it stays: local accounts have never needed an
+    # address, and a required field here would block creating the very
+    # break-glass account that exists for when the rest is broken.
+    email: str = Field(default="", max_length=254)
 
 
 class UserPasswordReset(BaseModel):
     model_config = {"extra": "forbid"}
     new: str = Field(min_length=12, max_length=256)
+
+
+class UserEmailWrite(BaseModel):
+    model_config = {"extra": "forbid"}
+    email: str = Field(default="", max_length=254)
 
 
 @app.get("/admin/users")
@@ -1094,7 +1103,7 @@ def post_user(req: UserCreate, authorization: str = Header(default="")):
                                  "digits, . _ @ -")
     try:
         return STATE.create_user(req.username, req.password, req.role,
-                                 _admin_actor(authorization))
+                                 _admin_actor(authorization), req.email)
     except _state.AuthError as e:
         raise HTTPException(e.status, e.detail)
 
@@ -1112,6 +1121,25 @@ def delete_user(uid: str, authorization: str = Header(default="")):
     return {"deleted": uid}
 
 
+@app.post("/admin/users/{uid}/email")
+def set_user_email(uid: str, req: UserEmailWrite,
+                   authorization: str = Header(default="")):
+    """Record which address an identity provider would map onto this
+    account, or clear it with an empty string. An admin action, not a
+    self-service one: an account that could rewrite its own mapping could
+    point somebody else's federated sign-in at itself."""
+    _admin_auth(authorization, write=True)
+    if not re.fullmatch(r"[0-9a-f]{16}", uid):
+        raise HTTPException(422, "malformed user id")
+    try:
+        if not STATE.set_user_email(uid, req.email,
+                                    _admin_actor(authorization)):
+            raise HTTPException(404, "no account with that id")
+    except _state.AuthError as e:
+        raise HTTPException(e.status, e.detail)
+    return {"user": uid, "email": _state.normalize_email(req.email)}
+
+
 @app.post("/admin/users/{uid}/password")
 def reset_user_password(uid: str, req: UserPasswordReset,
                         authorization: str = Header(default="")):
@@ -1127,11 +1155,63 @@ def reset_user_password(uid: str, req: UserPasswordReset,
     return {"reset": uid}
 
 
+# ---------------------------------------------------------- preferences --
+# An account's own view of the portal. Read and written by whoever is
+# signed in, for themselves only - there is no route to another account's
+# preferences, because no feature needs one and a layout is nobody else's
+# business. Viewers write these freely: choosing a chart type changes what
+# one person sees, never what the page reports.
+
+
+class PreferencesWrite(BaseModel):
+    model_config = {"extra": "forbid"}
+    # A merge, so one page saves its own key without carrying the others.
+    # A null value deletes the key rather than storing a copy of today's
+    # default, which would freeze it against every later change.
+    preferences: dict[str, str | None] = Field(default_factory=dict)
+
+
+@app.get("/admin/preferences")
+def get_preferences(authorization: str = Header(default="")):
+    _admin_auth(authorization)
+    return {"preferences": STATE.get_preferences(
+        _session_account(authorization))}
+
+
+@app.put("/admin/preferences")
+def put_preferences(req: PreferencesWrite,
+                    authorization: str = Header(default="")):
+    # No write=True: this is the one authenticated write a viewer owns.
+    _admin_auth(authorization)
+    try:
+        return {"preferences": STATE.set_preferences(
+            _session_account(authorization), req.preferences)}
+    except _state.AuthError as e:
+        raise HTTPException(e.status, e.detail)
+
+
 # ------------------------------------------------------- central settings --
 # Deployment configuration the portal edits and the fleet hears at runtime.
 # Precedence is DB-wins-when-set: a saved value overrides the matching
 # environment variable, and clearing it (null) falls back. The environment
 # stays the whole story for classic mode, which has no DB to consult.
+
+
+def _session_account(authorization: str) -> str:
+    """The account id behind this request, for the rows an account owns.
+
+    The ADMIN_TOKEN credential has no account and never will: it is
+    automation and break-glass, and preferences belong to a person with a
+    portal open. Saying so plainly beats inventing a shared pseudo-account
+    for a credential several operators may hold.
+    """
+    token = _bearer(authorization)
+    if STATE is not None and token.startswith(_state.SESSION_PREFIX):
+        u = STATE.session_user(token)
+        if u is not None:
+            return u["user_id"]
+    raise HTTPException(409, "preferences belong to a signed-in account; "
+                             "the API credential does not have one")
 
 
 def _admin_actor(authorization: str) -> str:
