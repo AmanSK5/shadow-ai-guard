@@ -9,6 +9,7 @@ which is what keeps a layout from being addressable by anyone else.
 """
 
 import os
+import re
 from pathlib import Path
 
 os.environ.setdefault("PORTAL_AUTH", "none")
@@ -186,6 +187,36 @@ def test_provider_error_text_is_escaped_into_that_page():
     assert "esc_attr(title)" in page and "esc_attr(body)" in page
 
 
+def test_nothing_dynamic_is_written_inside_a_script_tag():
+    """json.dumps escapes for JSON, which is not escaping for a script
+    context - it leaves "/" alone, so a provider error_description
+    containing "</script>" closed the tag early and everything after it
+    became markup. CodeQL caught it as py/reflective-xss.
+
+    The values ride in an attribute now, HTML-escaped like any other, and
+    a static script reads them back: there is no injection point left to
+    get the escaping wrong in."""
+    src = (Path(__file__).parent.parent / "app" / "main.py").read_text()
+    page = src.split("def _sso_page(", 1)[1].split("\n@app", 1)[0]
+    # An f-string is the only way a Python value reaches this markup, so
+    # no f-string may carry a script tag. The JS itself is a plain literal.
+    for m in re.finditer(r"""(f?)(['"])(.*?)\2""", page, re.S):
+        is_f, text = m.group(1), m.group(3)
+        if "<script" in text or "</script" in text:
+            assert not is_f, "a script tag is being built by an f-string"
+    assert 'data-r="{esc_attr(payload)}"' in page
+
+
+def test_the_escaping_survives_a_script_closing_tag():
+    """The actual attack string, through the actual helper."""
+    import html as _html
+    import json as _json
+    attr = _html.escape(_json.dumps(
+        {"detail": "x </script><img src=x onerror=alert(1)>"}), quote=True)
+    assert "</script>" not in attr
+    assert "&lt;/script&gt;" in attr
+
+
 def test_the_wizard_saves_disabled_and_enables_only_after_a_sign_in():
     """A misconfigured provider that is already enabled is a deployment
     nobody can sign in to."""
@@ -203,3 +234,21 @@ def test_the_redirect_uri_is_offered_not_asked_for():
     """It has to match the app registration exactly, so the page shows the
     one it would actually use rather than asking somebody to compose it."""
     assert "location.origin + '/sso/callback'" in INDEX
+
+
+def test_the_callback_parses_its_form_without_python_multipart():
+    """Starlette's form parser insists on python-multipart even for a
+    urlencoded body, and this endpoint 500s without it - which is every
+    real sign-in, at the last step. The provider posts
+    application/x-www-form-urlencoded and nothing else, so the stdlib is
+    enough and the image gains no dependency."""
+    src = (Path(__file__).parent.parent / "app" / "main.py").read_text()
+    fn = src.split("async def sso_callback(", 1)[1].split("\n@app", 1)[0]
+    # Comments stripped: the one explaining this names the thing it
+    # replaced, and would trip its own assertion.
+    code = "\n".join(l for l in fn.splitlines()
+                     if not l.strip().startswith("#"))
+    assert "request.form()" not in code
+    assert "urllib.parse.parse_qs" in code
+    # And it does not read an unbounded body from an open endpoint.
+    assert "[:16384]" in code

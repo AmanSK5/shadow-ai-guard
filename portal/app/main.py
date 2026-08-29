@@ -1362,17 +1362,27 @@ def _sso_page(title: str, body: str, go: str = "",
     back on the sign-in screen holding a valid session. Navigating from
     this page is same-site, which is the difference.
     """
-    # A test sign-in is opened from the wizard in a second tab, so its
-    # result has to travel back to the tab that started it. Same origin
-    # both ways, and the wizard ignores a message from anywhere else.
-    tell = ("<script>try{window.opener&&window.opener.postMessage("
-            + json.dumps({"ssoTest": "ok" if go else "fail",
-                          "username": who, "detail": body})
-            + ",location.origin)}catch(e){}</script>")
-    onward = (f'<p><a href="{esc_attr(go)}">Continue</a></p>'
-              f'<script>location.replace({json.dumps(go)})</script>') if go \
+    # Nothing dynamic goes inside a <script> tag. json.dumps escapes for
+    # JSON, which is not the same as escaping for a script context: it
+    # leaves "/" alone, so a provider error_description containing
+    # "</script>" closes the tag early and everything after it is markup.
+    # That text comes from the identity provider, which makes it the one
+    # genuinely untrusted string on this page.
+    #
+    # The values ride in an attribute instead, HTML-escaped like any
+    # other, and a static script reads them back. There is no injection
+    # point left to get the escaping wrong in.
+    payload = json.dumps({"ssoTest": "ok" if go else "fail",
+                          "username": who, "detail": body, "go": go})
+    tell = (f'<div id="ssor" hidden data-r="{esc_attr(payload)}"></div>'
+            '<script>(function(){try{'
+            'var r=JSON.parse(document.getElementById("ssor").dataset.r);'
+            'if(window.opener)window.opener.postMessage(r,location.origin);'
+            'if(r.go)location.replace(r.go);'
+            '}catch(e){}})()</script>')
+    onward = (f'<p><a href="{esc_attr(go)}">Continue</a></p>') if go \
         else '<p><a href="/">Back to sign in</a></p>'
-    return HTMLResponse(tell + 
+    return HTMLResponse(tell +
         "<!doctype html><meta charset=utf-8>"
         "<meta name=viewport content='width=device-width,initial-scale=1'>"
         f"<title>{esc_attr(title)}</title>"
@@ -1410,7 +1420,14 @@ async def sso_callback(request: Request):
     a PKCE verifier the browser never held.
     """
     _login_mode_only()
-    form = await request.form()
+    # Parsed here rather than with request.form(). Starlette's form parser
+    # requires python-multipart even for a urlencoded body, and this
+    # endpoint 500s without it - which is every real sign-in, at the last
+    # step. The provider posts application/x-www-form-urlencoded and
+    # nothing else, so the stdlib is enough and the image gains nothing.
+    raw = (await request.body())[:16384].decode("utf-8", "replace")
+    fields = urllib.parse.parse_qs(raw, keep_blank_values=True)
+    form = {k: v[0] for k, v in fields.items() if v}
     if form.get("error"):
         return _sso_page("Sign-in was refused", str(
             form.get("error_description") or form.get("error"))[:300])
