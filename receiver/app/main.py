@@ -23,6 +23,8 @@ New in v0.1.3:
   - GET /metrics: Prometheus metrics (scraped via ServiceMonitor)
 """
 
+import base64
+import hashlib
 import hmac
 import json
 import logging
@@ -509,10 +511,18 @@ app = FastAPI(title="ai-guard-receiver", version=APP_VERSION)
 _PROTECTED = ("/report", "/flag", "/registry", "/candidates")
 _MANAGED = ("/enroll", "/admin")
 
-# The two doors into admin auth. Exempt from the admin gate - they are how a
+# The doors into admin auth. Exempt from the admin gate - they are how a
 # session comes to exist - but not from the body-size gate, and they answer
 # 404 like everything managed when managed mode is off.
-_ADMIN_OPEN = ("/admin/setup", "/admin/login")
+#
+# The two federated ones are open for the same reason the password one is:
+# nobody has a session yet. What protects the callback is the state it must
+# quote, minted by /sso/start minutes earlier, single-use, and paired with
+# a PKCE verifier the browser never saw. /sso/start itself answers 404
+# until federated sign-in is fully configured, so an estate that has not
+# set it up does not advertise the endpoint.
+_ADMIN_OPEN = ("/admin/setup", "/admin/login",
+               "/admin/sso/start", "/admin/sso/callback")
 
 
 def _admin_role(header: str) -> str | None:
@@ -818,20 +828,30 @@ def _touch_device(request: Request):
         )
 
 
-def _admin_auth(authorization: str, write: bool = False):
+def _admin_auth(authorization: str, write: bool = False,
+                owner: bool = False):
     # Defence in depth for /admin/*, like _auth for ingest. 404 when managed
     # mode is off: routes that do not exist should not confirm they exist.
     # write=True is the role gate: a viewer account reads everything and
     # changes nothing, and the refusal names the reason rather than lying
     # with a generic 401 to someone who IS authenticated.
+    #
+    # owner=True is the tier above it, for the settings that decide who may
+    # sign in at all. Returns the caller's role, because the account routes
+    # need it: the rules there are relative to who is asking, not absolute.
+    # The API credential returns "admin" from _admin_role and is treated as
+    # unrestricted by the state layer, which is what break-glass means.
     if STATE is None:
         raise HTTPException(404, "Not Found")
     role = _admin_role(authorization)
     if role is None:
         raise HTTPException(401, "bad token")
-    if write and role != "admin":
+    if owner and role not in ("owner",):
+        raise HTTPException(403, "only an owner account can change this")
+    if write and role not in ("owner", "admin"):
         raise HTTPException(403, "this account is read-only: an admin "
                                  "account has to make this change")
+    return role
 
 
 # What can enroll. The three collector platforms, one browser profile
@@ -1108,7 +1128,8 @@ def post_user(req: UserCreate, authorization: str = Header(default="")):
                                  "digits, . _ @ -")
     try:
         return STATE.create_user(req.username, req.password, req.role,
-                                 _admin_actor(authorization), req.email)
+                                 _admin_actor(authorization), req.email,
+                                 _actor_role(authorization))
     except _state.AuthError as e:
         raise HTTPException(e.status, e.detail)
 
@@ -1119,7 +1140,8 @@ def delete_user(uid: str, authorization: str = Header(default="")):
     if not re.fullmatch(r"[0-9a-f]{16}", uid):
         raise HTTPException(422, "malformed user id")
     try:
-        if not STATE.delete_user(uid, _admin_actor(authorization)):
+        if not STATE.delete_user(uid, _admin_actor(authorization),
+                                 _actor_role(authorization)):
             raise HTTPException(404, "no account with that id")
     except _state.AuthError as e:
         raise HTTPException(e.status, e.detail)
@@ -1141,7 +1163,8 @@ def set_user_role(uid: str, req: UserRoleWrite,
         raise HTTPException(422, "malformed user id")
     try:
         if not STATE.set_user_role(uid, req.role,
-                                   _admin_actor(authorization)):
+                                   _admin_actor(authorization),
+                                   _actor_role(authorization)):
             raise HTTPException(404, "no account with that id")
     except _state.AuthError as e:
         raise HTTPException(e.status, e.detail)
@@ -1160,7 +1183,8 @@ def set_user_email(uid: str, req: UserEmailWrite,
         raise HTTPException(422, "malformed user id")
     try:
         if not STATE.set_user_email(uid, req.email,
-                                    _admin_actor(authorization)):
+                                    _admin_actor(authorization),
+                                    _actor_role(authorization)):
             raise HTTPException(404, "no account with that id")
     except _state.AuthError as e:
         raise HTTPException(e.status, e.detail)
@@ -1176,9 +1200,13 @@ def reset_user_password(uid: str, req: UserPasswordReset,
     _admin_auth(authorization, write=True)
     if not re.fullmatch(r"[0-9a-f]{16}", uid):
         raise HTTPException(422, "malformed user id")
-    if not STATE.reset_user_password(uid, req.new,
-                                     _admin_actor(authorization)):
-        raise HTTPException(404, "no account with that id")
+    try:
+        if not STATE.reset_user_password(uid, req.new,
+                                         _admin_actor(authorization),
+                                         _actor_role(authorization)):
+            raise HTTPException(404, "no account with that id")
+    except _state.AuthError as e:
+        raise HTTPException(e.status, e.detail)
     return {"reset": uid}
 
 
@@ -1217,6 +1245,296 @@ def put_preferences(req: PreferencesWrite,
         raise HTTPException(e.status, e.detail)
 
 
+
+# ----------------------------------------------------- federated sign-in --
+# OpenID Connect against Microsoft Entra, authorization code flow with
+# PKCE. The browser never carries a token: it carries a code, which this
+# receiver exchanges itself over TLS.
+#
+# ON NOT VERIFYING THE ID TOKEN SIGNATURE. The token is fetched by this
+# process, over verified TLS, directly from the token endpoint named by
+# the tenant's own discovery document. OpenID Connect Core 3.1.3.7 permits
+# exactly this: "If the ID Token is received via direct communication
+# between the Client and the Token Endpoint... the TLS server validation
+# MAY be used to validate the issuer in place of checking the token
+# signature." Everything a signature would not have told us is still
+# checked below - issuer, audience, expiry, nonce and tenant.
+#
+# The alternative is a JWT library and the native cryptography stack it
+# pulls in, on an image this project keeps deliberately small, for a
+# guarantee the transport already gives in this flow. That trade is worth
+# revisiting the day a token arrives by any route other than this one.
+
+_MS_AUTHORITY = "https://login.microsoftonline.com"
+# Guessing at endpoint paths is how an integration breaks silently when a
+# cloud instance differs; these come from the tenant's own document.
+_DISCOVERY = _MS_AUTHORITY + "/%s/v2.0/.well-known/openid-configuration"
+# A tenant is a GUID or a verified domain. Anything else is somebody's
+# typo, and refusing it here beats a confusing failure three steps later.
+_TENANT_RE = re.compile(r"^[0-9a-fA-F-]{36}$|^[a-zA-Z0-9.-]{3,120}$")
+_GUID_RE = re.compile(r"^[0-9a-fA-F-]{36}$")
+
+# In-flight sign-ins: state -> what has to match when the browser returns.
+# In memory on purpose. A restart losing them costs somebody a retry,
+# where a table would keep the nonce and verifier of every abandoned
+# attempt indefinitely.
+_SSO_FLIGHT: dict[str, dict] = {}
+SSO_FLIGHT_SECONDS = 600
+SSO_FLIGHT_MAX = 64
+
+
+def _sso_conf() -> dict:
+    g = (lambda k, d="": (STATE.get_setting(k) if STATE else None) or d)
+    return {
+        "tenant": g("sso_tenant_id"),
+        "client_id": g("sso_client_id"),
+        "secret": g("sso_client_secret"),
+        "redirect": g("sso_redirect_uri"),
+        "enabled": g("sso_enabled") == "1",
+    }
+
+
+async def _sso_discover(tenant: str) -> dict:
+    """The tenant's OpenID configuration, or a refusal naming the reason."""
+    if not _TENANT_RE.match(tenant or ""):
+        raise HTTPException(422, "that does not look like a tenant id or "
+                                 "domain")
+    try:
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.get(_DISCOVERY % tenant)
+    except Exception as e:
+        raise HTTPException(502, "could not reach the identity provider: %s"
+                                 % type(e).__name__)
+    if r.status_code != 200:
+        raise HTTPException(400, "the identity provider does not recognise "
+                                 "that tenant (HTTP %d)" % r.status_code)
+    doc = r.json()
+    for key in ("authorization_endpoint", "token_endpoint", "issuer"):
+        if not doc.get(key):
+            raise HTTPException(502, "the provider's configuration document "
+                                     "is missing %s" % key)
+    return doc
+
+
+def _sso_sweep():
+    now = time.time()
+    for k in [k for k, v in _SSO_FLIGHT.items()
+              if now - v["at"] > SSO_FLIGHT_SECONDS]:
+        _SSO_FLIGHT.pop(k, None)
+
+
+def _b64u(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+def _jwt_payload(token: str) -> dict:
+    """The claims, without verifying the signature - see the note above."""
+    try:
+        part = token.split(".")[1]
+        return json.loads(base64.urlsafe_b64decode(
+            part + "=" * (-len(part) % 4)))
+    except Exception:
+        raise HTTPException(502, "the identity provider returned a token "
+                                 "this receiver could not read")
+
+
+class SSOProbe(BaseModel):
+    model_config = {"extra": "forbid"}
+    tenant_id: str = Field(min_length=1, max_length=120)
+    client_id: str = Field(default="", max_length=64)
+    client_secret: str = Field(default="", max_length=512)
+
+
+@app.post("/admin/sso/probe")
+async def sso_probe(req: SSOProbe, authorization: str = Header(default="")):
+    """Check a tenant, and optionally an app registration, before anything
+    is saved.
+
+    The wizard's verification step. Each answer names what was actually
+    established, because "it works" over a half-configured provider is
+    what produces a deployment nobody can sign in to.
+    """
+    _admin_auth(authorization, write=True, owner=True)
+    doc = await _sso_discover(req.tenant_id.strip())
+    out = {"tenant_ok": True, "issuer": doc["issuer"],
+           "authorization_endpoint": doc["authorization_endpoint"]}
+    if not (req.client_id and req.client_secret):
+        return out
+    if not _GUID_RE.match(req.client_id.strip()):
+        raise HTTPException(422, "an application (client) id is a GUID")
+    # A client credentials grant proves the id and secret are a real pair
+    # in that tenant, before anybody is asked to sign in with them. It
+    # says nothing about redirect URIs - only a real sign-in does.
+    try:
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.post(doc["token_endpoint"], data={
+                "client_id": req.client_id.strip(),
+                "client_secret": req.client_secret,
+                "scope": "https://graph.microsoft.com/.default",
+                "grant_type": "client_credentials",
+            })
+    except Exception as e:
+        raise HTTPException(502, "could not reach the token endpoint: %s"
+                                 % type(e).__name__)
+    body = {}
+    try:
+        body = r.json()
+    except Exception:
+        pass
+    if r.status_code == 200 and body.get("access_token"):
+        out["client_ok"] = True
+        return out
+    code = body.get("error", "")
+    detail = body.get("error_description", "") or ("HTTP %d" % r.status_code)
+    if code == "unauthorized_client" or "AADSTS700016" in detail:
+        raise HTTPException(400, "no application with that client id exists "
+                                 "in this tenant")
+    if code == "invalid_client" or "AADSTS7000215" in detail:
+        raise HTTPException(400, "that client secret is wrong, or expired")
+    # A tenant can refuse the grant for reasons that say nothing about the
+    # credentials - no application permissions consented, for one. The
+    # pair is real if the refusal is about permissions rather than
+    # identity, and saying so beats blocking a correct configuration.
+    out["client_ok"] = False
+    out["detail"] = detail[:300]
+    return out
+
+
+@app.get("/admin/sso/start")
+async def sso_start(request: Request):
+    """Begin a sign-in, or a test of one.
+
+    Deliberately unauthenticated: this is the door somebody knocks on
+    BEFORE they have a session. It gives away nothing a sign-in page does
+    not - and returns 404 rather than a description when federated
+    sign-in is off, so an estate that has not configured it does not
+    advertise the endpoint.
+    """
+    if STATE is None:
+        raise HTTPException(404, "Not Found")
+    conf = _sso_conf()
+    if not (conf["tenant"] and conf["client_id"] and conf["secret"]
+            and conf["redirect"]):
+        raise HTTPException(404, "Not Found")
+    doc = await _sso_discover(conf["tenant"])
+    _sso_sweep()
+    if len(_SSO_FLIGHT) >= SSO_FLIGHT_MAX:
+        raise HTTPException(429, "too many sign-ins in flight; try again")
+    verifier = _b64u(secrets.token_bytes(48))
+    state = _b64u(secrets.token_bytes(24))
+    nonce = _b64u(secrets.token_bytes(24))
+    _SSO_FLIGHT[state] = {"nonce": nonce, "verifier": verifier,
+                          "at": time.time(), "issuer": doc["issuer"],
+                          "token_endpoint": doc["token_endpoint"]}
+    challenge = _b64u(hashlib.sha256(verifier.encode()).digest())
+    return {"authorize_url": doc["authorization_endpoint"] + "?" + urllib.parse.urlencode({
+        "client_id": conf["client_id"],
+        "response_type": "code",
+        "redirect_uri": conf["redirect"],
+        # form_post keeps the code out of the URL, where it would land in
+        # browser history and any proxy log on the way.
+        "response_mode": "form_post",
+        "scope": "openid profile email",
+        "state": state,
+        "nonce": nonce,
+        "code_challenge": challenge,
+        "code_challenge_method": "S256",
+    })}
+
+
+class SSOCallback(BaseModel):
+    model_config = {"extra": "forbid"}
+    code: str = Field(min_length=1, max_length=4096)
+    state: str = Field(min_length=1, max_length=256)
+
+
+def _sso_refuse(why: str):
+    # One shape for every refusal, and never the provider's raw error to a
+    # browser: these are read by whoever is trying to sign in.
+    return {"ok": False, "detail": why}
+
+
+@app.post("/admin/sso/callback")
+async def sso_callback(req: SSOCallback):
+    """Redeem the code the provider handed the browser.
+
+    Unauthenticated, like /start and for the same reason: nobody has a
+    session yet. What protects it is the state it must quote - minted here
+    minutes earlier, single-use, and paired with a PKCE verifier the
+    browser never saw.
+
+    The portal is what the browser talks to; it forwards the code here and
+    turns the answer into its own cookie. The client secret stays in this
+    process and the session is minted where sessions live.
+    """
+    if STATE is None:
+        raise HTTPException(404, "Not Found")
+    _sso_sweep()
+    flight = _SSO_FLIGHT.pop(req.state, None)
+    if flight is None:
+        return _sso_refuse("that sign-in expired or was not started here")
+    conf = _sso_conf()
+    try:
+        async with httpx.AsyncClient(timeout=10) as c:
+            r = await c.post(flight["token_endpoint"], data={
+                "client_id": conf["client_id"],
+                "client_secret": conf["secret"],
+                "code": req.code,
+                "grant_type": "authorization_code",
+                "redirect_uri": conf["redirect"],
+                "code_verifier": flight["verifier"],
+            })
+    except Exception as e:
+        return _sso_refuse("could not reach the token endpoint: %s"
+                           % type(e).__name__)
+    body = {}
+    try:
+        body = r.json()
+    except Exception:
+        pass
+    if r.status_code != 200 or not body.get("id_token"):
+        return _sso_refuse(str(body.get("error_description")
+                               or "the provider refused the sign-in")[:300])
+
+    claims = _jwt_payload(body["id_token"])
+    # Everything a signature check would not have told us anyway. The
+    # issuer is compared against the one this tenant's own discovery
+    # document named, not against a pattern.
+    if claims.get("iss") != flight["issuer"]:
+        return _sso_refuse("the token came from an unexpected issuer")
+    if claims.get("aud") != conf["client_id"]:
+        return _sso_refuse("the token was issued for a different application")
+    if claims.get("nonce") != flight["nonce"]:
+        return _sso_refuse("the token did not answer this sign-in")
+    if int(claims.get("exp") or 0) <= int(time.time()):
+        return _sso_refuse("the token had already expired")
+    tid, sub = claims.get("tid") or "", claims.get("oid") or ""
+    if not tid or not sub:
+        return _sso_refuse("the token carried no tenant or object id")
+    # A guest signing in through this tenant is a different account from
+    # the same person in their home tenant, by Microsoft's own design.
+    # Pinning the tenant is what keeps that true here.
+    if _GUID_RE.match(conf["tenant"] or "") and tid != conf["tenant"]:
+        return _sso_refuse("that account is not in this tenant")
+
+    email = claims.get("email") or claims.get("preferred_username") or ""
+    user = STATE.sso_account(tid, sub, email)
+    if user is None:
+        # No account, and none is created. An address in a tenant is not a
+        # way in here: somebody has to have been given an account first.
+        return _sso_refuse("no account here matches that sign-in. An owner "
+                           "or admin has to create one and set its email "
+                           "address first.")
+    if not user["bound"]:
+        try:
+            STATE.sso_bind(user["id"], tid, sub)
+        except _state.AuthError as e:
+            return _sso_refuse(e.detail)
+    out = STATE.sso_login(user["id"], ttl_hours=SESSION_TTL_HOURS)
+    return {"ok": True, "token": out["token"], "username": out["username"],
+            "role": out["role"], "expires_at": out["expires_at"],
+            "bound_now": not user["bound"]}
+
 # ------------------------------------------------------- central settings --
 # Deployment configuration the portal edits and the fleet hears at runtime.
 # Precedence is DB-wins-when-set: a saved value overrides the matching
@@ -1239,6 +1557,18 @@ def _session_account(authorization: str) -> str:
             return u["user_id"]
     raise HTTPException(409, "preferences belong to a signed-in account; "
                              "the API credential does not have one")
+
+
+def _actor_role(authorization: str) -> str:
+    """The role to enforce the account rules against, or "" for the API
+    credential - which is the operator's own break-glass and deliberately
+    outside them."""
+    token = _bearer(authorization)
+    if STATE is not None and token.startswith(_state.SESSION_PREFIX):
+        u = STATE.session_user(token)
+        if u is not None:
+            return u.get("role") or "admin"
+    return ""
 
 
 def _admin_actor(authorization: str) -> str:
@@ -1277,6 +1607,16 @@ _STR_SETTINGS = (
     # Fired on a NEW discovery candidate - the moment a human decision
     # becomes needed - and never per finding, which would be a firehose.
     ("webhook_url", True, 500),
+    # Federated sign-in. Owner-gated in put_settings, because these decide
+    # who may sign in at all rather than what the platform reports.
+    # sso_enabled is deliberately last to matter: nothing here takes effect
+    # until it is "1", and the portal will not set it until a real sign-in
+    # has been completed against the rest.
+    ("sso_tenant_id", False, 64),
+    ("sso_client_id", False, 64),
+    ("sso_client_secret", False, 512),
+    ("sso_redirect_uri", True, 500),
+    ("sso_enabled", False, 1),
     # The currency the Budget view's headline reports in, and the default
     # for newly linked tools. A display preference, not money math: the
     # portal never converts between currencies.
@@ -1287,7 +1627,7 @@ _STR_SETTINGS = (
 # tool. Baked into every extension policy artifact; "warn" is the default
 # when unset, matching the extension's own default.
 _PASTE_GUARD_MODES = ("off", "warn", "block")
-SECRET_SETTINGS = ("log_store_password", "webhook_url")
+SECRET_SETTINGS = ("log_store_password", "webhook_url", "sso_client_secret")
 
 
 class SettingsUpdate(BaseModel):
@@ -1302,6 +1642,11 @@ class SettingsUpdate(BaseModel):
     log_store_push_url: str | None = Field(default=None, max_length=500)
     log_store_username: str | None = Field(default=None, max_length=256)
     log_store_password: str | None = Field(default=None, max_length=512)
+    sso_tenant_id: str | None = Field(default=None, max_length=64)
+    sso_client_id: str | None = Field(default=None, max_length=64)
+    sso_redirect_uri: str | None = Field(default=None, max_length=500)
+    sso_enabled: str | None = Field(default=None, max_length=1)
+    sso_client_secret: str | None = Field(default=None, max_length=512)
     alertmanager_url: str | None = Field(default=None, max_length=500)
     grafana_url: str | None = Field(default=None, max_length=500)
     grafana_panels: str | None = Field(default=None, max_length=2000)
@@ -1390,6 +1735,20 @@ def get_settings(authorization: str = Header(default="")):
             "source": ("db" if stored.get("classification_markings")
                        is not None else "unset"),
         },
+        # Federated sign-in. The tenant, application id and redirect are
+        # not secrets - they are in every authorize URL a browser sees -
+        # so the wizard can show them back and say what is configured.
+        "sso_tenant_id": plain("sso_tenant_id"),
+        "sso_client_id": plain("sso_client_id"),
+        "sso_redirect_uri": plain("sso_redirect_uri"),
+        "sso_enabled": plain("sso_enabled"),
+        # The secret is not. Same treatment as the log-store password: set
+        # -ness and source, never the value.
+        "sso_client_secret": {
+            "set": stored.get("sso_client_secret") is not None,
+            "source": ("db" if stored.get("sso_client_secret") is not None
+                       else "unset"),
+        },
     }}
 
 
@@ -1423,8 +1782,15 @@ def get_settings_secrets(authorization: str = Header(default="")):
 @app.put("/admin/settings")
 def put_settings(req: SettingsUpdate, authorization: str = Header(default="")):
     """Partial upsert: only the keys sent change. An explicit null deletes
-    the row, which is how the environment value comes back into effect."""
+    the row, which is how the environment value comes back into effect.
+
+    The sso_* keys are owner-gated inside. They are not settings about
+    what the platform reports; they decide who may sign in to it at all,
+    which is the one thing the tier above admin exists to hold.
+    """
     _admin_auth(authorization, write=True)
+    if any(k.startswith("sso_") for k in req.model_fields_set):
+        _admin_auth(authorization, write=True, owner=True)
     by = _admin_actor(authorization)
 
     if "corp_domains" in req.model_fields_set:

@@ -228,7 +228,10 @@ def test_a_database_written_before_either_gains_both(tmp_path):
     st = state_mod.State(path)
     users = st.list_users()
     assert [u["username"] for u in users] == ["existing"]
-    # Accounts predate roles as well as addresses, and both defaults hold.
-    assert users[0]["role"] == "admin"
+    # Accounts predate roles, addresses AND the owner role. The role
+    # column defaults to admin, and the earliest account - which is the
+    # one the setup code created, since create_admin refuses once any
+    # account exists - is promoted to owner on open.
+    assert users[0]["role"] == "owner"
     assert users[0]["email"] is None
     assert st.set_preferences(users[0]["id"], {"a": "1"}) == {"a": "1"}

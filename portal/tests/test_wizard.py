@@ -232,7 +232,7 @@ def test_the_register_carries_the_watchlist_decisions():
     html = (main.STATIC / "index.html").read_text()
     for needle in ("watchlistBlock", "wl-toggle", "open-wizard",
                    "known, not observed",
-                   "run the setup wizard again"):
+                   "Run the setup wizard again"):
         assert needle in html, needle
 
 

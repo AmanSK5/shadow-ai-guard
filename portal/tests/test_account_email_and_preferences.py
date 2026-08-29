@@ -9,6 +9,7 @@ which is what keeps a layout from being addressable by anyone else.
 """
 
 import os
+import re
 from pathlib import Path
 
 os.environ.setdefault("PORTAL_AUTH", "none")
@@ -135,10 +136,119 @@ def test_the_accounts_table_ships_the_role_control():
     assert "async function userRole" in INDEX
 
 
-def test_a_viewer_sees_the_role_as_text_not_a_control():
-    """The select is rendered only for an account that could use it - a
-    read-only account offered a dropdown that always 403s is a worse page
-    than one that shows the role plainly."""
-    cell = INDEX.split("data-role-for")[0]
-    assert "${viewer" in cell.rsplit("<td>", 1)[-1]
+def test_the_page_offers_no_control_whose_answer_is_already_403():
+    """A read-only account, and an account looking at one that outranks
+    it, both see the role plainly rather than a dropdown that refuses.
+    The page keeps the receiver's rank table for exactly this - it is a
+    courtesy, not the enforcement, which stays server-side."""
+    assert "const RANK = {owner: 3, admin: 2, viewer: 1};" in INDEX
+    assert "const may = !viewer && !overRank;" in INDEX
+    # And it never offers a role above the viewer's own to grant.
+    assert "ROLE_ORDER.filter(r => (RANK[r] || 0) <= mine)" in INDEX
 
+
+def test_the_accounts_table_shows_and_edits_an_email():
+    """Built in #199 as an API with no way to reach it from the page."""
+    assert "<th>email</th>" in INDEX
+    assert 'data-act="user-email-form"' in INDEX
+    assert "id=\"user-email\"" in INDEX, "and on the create row too"
+
+
+
+# ---------------------------------------------------- federated sign-in --
+
+
+def test_the_callback_is_outside_the_json_only_rule():
+    """The identity provider posts a form, so the CSRF rule that refuses
+    non-JSON POSTs under /api would refuse the sign-in. What stands in for
+    it is the state: minted by the receiver minutes earlier, single-use,
+    and paired with a PKCE verifier the browser never held."""
+    src = (Path(__file__).parent.parent / "app" / "main.py").read_text()
+    assert '@app.post("/sso/callback")' in src
+    assert '"/api/sso/callback"' not in src
+
+
+def test_the_callback_answers_with_a_page_not_a_redirect():
+    """The session cookie is SameSite=Strict and this redirect chain began
+    at the identity provider, so a redirect would arrive with the cookie
+    withheld - signed in, and shown the sign-in screen. Navigating from a
+    page we served is same-site, which is the difference."""
+    src = (Path(__file__).parent.parent / "app" / "main.py").read_text()
+    fn = src.split("async def sso_callback(", 1)[1].split("\n@app", 1)[0]
+    assert "_sso_page(" in fn
+    assert "RedirectResponse" not in fn
+
+
+def test_provider_error_text_is_escaped_into_that_page():
+    """It is the one place this service renders HTML, and the text comes
+    from outside."""
+    src = (Path(__file__).parent.parent / "app" / "main.py").read_text()
+    page = src.split("def _sso_page(", 1)[1].split("\n@app", 1)[0]
+    assert "esc_attr(title)" in page and "esc_attr(body)" in page
+
+
+def test_nothing_dynamic_is_written_inside_a_script_tag():
+    """json.dumps escapes for JSON, which is not escaping for a script
+    context - it leaves "/" alone, so a provider error_description
+    containing "</script>" closed the tag early and everything after it
+    became markup. CodeQL caught it as py/reflective-xss.
+
+    The values ride in an attribute now, HTML-escaped like any other, and
+    a static script reads them back: there is no injection point left to
+    get the escaping wrong in."""
+    src = (Path(__file__).parent.parent / "app" / "main.py").read_text()
+    page = src.split("def _sso_page(", 1)[1].split("\n@app", 1)[0]
+    # An f-string is the only way a Python value reaches this markup, so
+    # no f-string may carry a script tag. The JS itself is a plain literal.
+    for m in re.finditer(r"""(f?)(['"])(.*?)\2""", page, re.S):
+        is_f, text = m.group(1), m.group(3)
+        if "<script" in text or "</script" in text:
+            assert not is_f, "a script tag is being built by an f-string"
+    assert 'data-r="{esc_attr(payload)}"' in page
+
+
+def test_the_escaping_survives_a_script_closing_tag():
+    """The actual attack string, through the actual helper."""
+    import html as _html
+    import json as _json
+    attr = _html.escape(_json.dumps(
+        {"detail": "x </script><img src=x onerror=alert(1)>"}), quote=True)
+    assert "</script>" not in attr
+    assert "&lt;/script&gt;" in attr
+
+
+def test_the_wizard_saves_disabled_and_enables_only_after_a_sign_in():
+    """A misconfigured provider that is already enabled is a deployment
+    nobody can sign in to."""
+    save = INDEX.split("if (act === 'sso-save') {", 1)[1].split("\n  }", 1)[0]
+    assert "ssoSave(false)" in save
+    enable = INDEX.split("if (act === 'sso-enable') {", 1)[1].split("\n  }", 1)[0]
+    assert "ssoSave(true)" in enable
+
+
+def test_the_wizard_is_owner_only():
+    assert "AUTH && AUTH.role === 'owner' ? (SSOW ? ssoWizard()" in INDEX
+
+
+def test_the_redirect_uri_is_offered_not_asked_for():
+    """It has to match the app registration exactly, so the page shows the
+    one it would actually use rather than asking somebody to compose it."""
+    assert "location.origin + '/sso/callback'" in INDEX
+
+
+def test_the_callback_parses_its_form_without_python_multipart():
+    """Starlette's form parser insists on python-multipart even for a
+    urlencoded body, and this endpoint 500s without it - which is every
+    real sign-in, at the last step. The provider posts
+    application/x-www-form-urlencoded and nothing else, so the stdlib is
+    enough and the image gains no dependency."""
+    src = (Path(__file__).parent.parent / "app" / "main.py").read_text()
+    fn = src.split("async def sso_callback(", 1)[1].split("\n@app", 1)[0]
+    # Comments stripped: the one explaining this names the thing it
+    # replaced, and would trip its own assertion.
+    code = "\n".join(l for l in fn.splitlines()
+                     if not l.strip().startswith("#"))
+    assert "request.form()" not in code
+    assert "urllib.parse.parse_qs" in code
+    # And it does not read an unbounded body from an open endpoint.
+    assert "[:16384]" in code

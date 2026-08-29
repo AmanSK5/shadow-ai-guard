@@ -62,13 +62,92 @@ shared token off for ingest (see the configuration table).
 | GET  | `/admin/session` | admin | who this session is, its role, and until when; the portal's validity probe |
 | POST | `/admin/password` | admin | change your own password (`current` + `new`) - a viewer owns theirs too. With the `ADMIN_TOKEN` credential, `current` is not required and the reset targets the oldest admin: the break-glass path. Every other session dies with the old password |
 | GET  | `/admin/users` | admin | the accounts: username, email, role, created, last sign-in |
-| POST | `/admin/users` | admin (write) | create an account (`username`, `password`, `role`: `admin` or `viewer`, and an optional `email`) |
-| POST | `/admin/users/{id}/delete` | admin (write) | remove an account and kill its sessions. The last admin cannot be deleted |
+| POST | `/admin/users` | admin (write) | create an account (`username`, `password`, `role`: `owner`, `admin` or `viewer`, and an optional `email`). Subject to the rank rule below |
+| POST | `/admin/users/{id}/delete` | admin (write) | remove an account and kill its sessions. The last owner cannot be deleted |
 | POST | `/admin/users/{id}/password` | admin (write) | set someone else's password - the forgotten-password path. Their old sessions die with it |
-| POST | `/admin/users/{id}/role` | admin (write) | move an account between `admin` and `viewer`. Takes effect on that account's next request, not its next sign-in - the role is read off the account row per request, so a demotion refuses the next write immediately and a promotion costs a page reload. Sessions and passwords are untouched. The last admin cannot be demoted, for the same reason it cannot be deleted |
+| POST | `/admin/users/{id}/role` | admin (write) | move an account between `owner`, `admin` and `viewer`. Takes effect on that account's next request, not its next sign-in - the role is read off the account row per request, so a demotion refuses the next write immediately and a promotion costs a page reload. Sessions and passwords are untouched. The last owner cannot be demoted, for the same reason it cannot be deleted |
 | POST | `/admin/users/{id}/email` | admin (write) | set or clear (empty string) the address an identity provider would map onto this account. Normalised to lowercase and unique across accounts; **not** the login identifier, which stays `username` - so a local account keeps working whatever happens to a provider. Admin-gated: an account able to rewrite its own mapping could point somebody else's federated sign-in at itself |
 | GET  | `/admin/preferences` | admin or viewer | the signed-in account's own display state - layout, chart choices, what it has already been walked through. Scoped to the session, so there is no id to pass and no route to another account's |
 | PUT  | `/admin/preferences` | admin or viewer | merge keys into the account's own preferences; a `null` value deletes one. The single authenticated write a viewer owns - these change what one person sees, never what a page reports. Bounded at 50 keys and 4096 characters a value |
+
+**Federated sign-in (Microsoft Entra).** Owner-gated, off until proven.
+Configured through a five-step wizard in the portal rather than a settings
+panel, because each step has something to check: the tenant is resolved
+against its own OpenID configuration document, the application id and
+secret are proved with a client-credentials grant, and the last step is a
+real sign-in. Nothing is enabled until that sign-in succeeds - an enabled
+provider that does not work is a deployment nobody can sign in to.
+
+| Method | Path | Who | What |
+|---|---|---|---|
+| POST | `/admin/sso/probe` | owner (write) | check a tenant, and optionally an application id and secret, before anything is saved |
+| GET  | `/admin/sso/start` | open | begin a sign-in; 404 until federated sign-in is fully configured, so an estate that has not set it up does not advertise the endpoint |
+| POST | `/admin/sso/callback` | open | redeem the code the provider handed the browser, and mint a session |
+
+The two open endpoints are open for the reason `/admin/login` is: nobody
+has a session yet. What protects the callback is the `state` it must
+quote - minted by `/start` minutes earlier, single-use, and paired with a
+PKCE verifier the browser never held.
+
+**How an account is matched.** On an account's first federated sign-in the
+email address finds it; the account's `oid` and `tid` are written at that
+moment, and every sign-in after that matches on those alone. Microsoft's
+guidance is explicit that an address "isn't guaranteed to be correct and
+is mutable over time. Never use it for authorization" - addresses get
+reassigned, and a joiner inheriting a leaver's address would otherwise
+inherit their account and their role. The address is an invitation, spent
+once.
+
+**No sign-in ever creates an account.** Somebody who can set an address in
+a tenant cannot mint themselves a way in; an owner or admin has to create
+the account first. Local passwords keep working whether or not federated
+sign-in is on, so an account with no address remains reachable only by
+password - which is what makes one usable as a shared break-glass
+credential.
+
+**On the ID token signature.** It is not verified, deliberately. The token
+is fetched by the receiver over TLS directly from the token endpoint named
+by the tenant's own discovery document, and OpenID Connect Core 3.1.3.7
+permits exactly that: "If the ID Token is received via direct
+communication between the Client and the Token Endpoint... the TLS server
+validation MAY be used to validate the issuer in place of checking the
+token signature." Issuer, audience, expiry, nonce and tenant are all
+checked. The alternative is a JWT library and the native cryptography
+stack it brings, on an image this project keeps small, for a guarantee the
+transport already gives in this flow. Revisit it the day a token arrives
+by any other route.
+
+**Roles and the rank rule.** Three roles: `owner`, `admin`, `viewer`. An
+owner decides who may sign in and can appoint another owner; an admin runs
+the platform - fleet, governance, budget, settings and the accounts below
+their own level; a viewer reads every page and writes nothing but its own
+password and display preferences.
+
+Every account action above is subject to one rule: **you cannot act on an
+account that outranks you, and you cannot grant a role above your own.**
+Without it the owner tier exists in name only, because an admin reaches an
+owner through any of three doors - reset their password and sign in as
+them, set the address a federated sign-in matches on, or simply change
+their role. Equal rank is not above it, so two owners manage each other and
+an admin still resets a colleague-admin's password. Kubernetes RBAC calls
+this escalation prevention; Entra enforces the same shape by refusing a
+password reset against a higher-privileged role.
+
+The `ADMIN_TOKEN` credential is outside the rule. It is break-glass, held
+by whoever can set the receiver's environment - who already owns the box -
+and rank-limiting it would only lock an operator out of their own recovery
+path.
+
+The account created by the setup code is the deployment's owner. On a
+deployment that predates the role, the earliest account is promoted on
+first start (`create_admin` refuses once any account exists, so "earliest"
+identifies it exactly) and the promotion lands in the audit trail.
+
+An account with no email address cannot be matched by a federated sign-in
+at all, which is what makes one usable as a shared break-glass credential:
+a password in a password manager, reachable by nobody through the identity
+provider.
+
 | GET  | `/admin/settings` | admin | each central setting with its effective value and its source (`db`, `env`, `unset`), so a saved value shadowing an environment one is visible as such. The log-store password is reported as `{set, source}` only, never its value |
 | PUT  | `/admin/settings` | admin | partial upsert; a saved value wins over the matching env var, an explicit `null` (or empty) deletes the row and falls back to it. Unknown keys are 422. Keys: `corp_domains`, `extension_id`, `onboarding_done`, `receiver_public_url`, `log_store_url` (base - the push endpoint is **derived** as `<base>/loki/api/v1/push`), `log_store_push_url` (explicit override for gateways), `log_store_username`, `log_store_password`, `alertmanager_url`, `grafana_url`, `grafana_panels`, `grafana_dashboard_uid`, `overview_widgets`, `extension_update_url`, `extension_crx_url`, `extension_xpi_url`, `paste_guard_mode`, `firefox_extension_id`, `classification_markings`, `webhook_url` (Slack-compatible; the receiver posts to it when discovery queues a NEW tool or MCP server - once per candidate lifetime, from a thread, so a webhook outage can never bounce ingest. Masked like the log-store password: a webhook URL is a bearer capability) |
 | GET  | `/admin/settings/secrets` | admin (write) | the stored log-store configuration with the password in plaintext - for the portal's server-side reads via its service credential; the portal exposes no route that relays it. Admin-only, because the credential is typically write-capable and a read-only account must not be a path to it. See SECURITY.md |

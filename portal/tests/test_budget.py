@@ -132,7 +132,7 @@ def test_the_shell_ships_the_share_view():
 def test_the_report_can_withhold_names_and_guards_the_csv():
     # The page names individuals and their personal account domains, so
     # withholding them is one control, in the page and in the export.
-    assert "BRNAMES" in INDEX and "withhold names" in INDEX
+    assert "BRNAMES" in INDEX and "Withhold names" in INDEX
     assert "-anonymised.csv" in INDEX or "'-anonymised'" in INDEX
     # An exported address starting with = is a live formula in Excel.
     assert "B_FORMULA_LEAD" in INDEX and "function bCsvCell" in INDEX

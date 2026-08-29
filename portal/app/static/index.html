@@ -287,6 +287,57 @@ table.plain td{border-bottom:0;padding:4.5px 10px 4.5px 0;vertical-align:middle}
   dt, dd, td, th, p, li, span { color: #111 !important; }
   .src-note { color: #555 !important; }
 }
+/* ---- the single sign-on wizard ------------------------------------- */
+.ssow{display:grid;grid-template-columns:290px 1fr;border:1px solid var(--bd);
+  border-radius:12px;overflow:hidden;background:var(--sf);margin-bottom:10px}
+@media(max-width:760px){.ssow{grid-template-columns:1fr}
+  .ssow .ssrail{border-right:0;border-bottom:1px solid var(--bd)}}
+.ssrail{background:var(--sf2);border-right:1px solid var(--bd);padding:18px 16px}
+.ssrail ol{list-style:none;margin:0;padding:0}
+.ssstep{display:flex;gap:10px;padding:9px 8px;border-radius:8px;cursor:pointer;
+  align-items:flex-start;position:relative}
+.ssstep:hover{background:var(--bg)}
+.ssstep.on{background:var(--sf)}
+.ssstep .dot{width:22px;height:22px;border-radius:50%;flex:0 0 22px;display:grid;
+  place-items:center;font-size:11px;font-weight:700;border:1.5px solid var(--bd);
+  color:var(--mut);background:var(--sf)}
+.ssstep.on .dot{border-color:var(--acc);color:var(--acc)}
+.ssstep.done .dot{background:var(--pri);border-color:var(--pri);color:#fff}
+.ssstep .t{font-size:13px;font-weight:600}
+.ssstep .val{font-size:11.5px;color:var(--pri);word-break:break-all;display:block}
+.ssstep .pend{font-size:11.5px;color:var(--mut);display:block}
+.ssstep.locked{opacity:.5;cursor:not-allowed}
+/* The connector, so the rail reads as one sequence rather than five rows. */
+.ssstep::after{content:'';position:absolute;left:19px;top:33px;bottom:-4px;
+  width:1.5px;background:var(--bd)}
+.ssstep:last-child::after{display:none}
+.ssstep.done::after{background:var(--pri)}
+.sssum{margin-top:16px;padding-top:13px;border-top:1px solid var(--bd)}
+.sssum .barwrap{height:5px;border-radius:3px;background:var(--bd);overflow:hidden;
+  margin:7px 0 6px}
+.sssum .bar{height:100%;background:var(--pri);border-radius:3px;transition:width .35s ease}
+.ssmain{padding:22px 24px}
+.ssmain h4{margin:0 0 8px;font-size:16px}
+.sscopy{display:flex;gap:8px;align-items:center;background:var(--bg);
+  border:1px dashed var(--bd);border-radius:8px;padding:9px 11px;margin:0 0 10px}
+.sscopy .mono{flex:1;overflow:auto;white-space:nowrap;user-select:all}
+.sshelp{border:0;background:none;color:var(--acc);cursor:pointer;font:inherit;
+  font-size:12.5px;padding:0;text-decoration:underline;text-underline-offset:3px;
+  display:inline-block;margin:0 0 4px}
+.sshelpbody{border-left:2px solid var(--bd);padding:2px 0 2px 12px;margin:0 0 12px;
+  color:var(--mut);font-size:13px}
+.sshelpbody ol{margin:6px 0 0;padding-left:18px}
+.ssacts{margin-top:20px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.ssfoot{display:flex;gap:8px;align-items:center;margin-top:18px;padding-top:14px;
+  border-top:1px solid var(--bd)}
+.ssfoot .sp{margin-left:auto}
+.ssspin{width:11px;height:11px;border:2px solid currentColor;
+  border-right-color:transparent;border-radius:50%;display:inline-block;
+  animation:ssspin .7s linear infinite;margin-right:5px}
+@keyframes ssspin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.ssspin{animation:none}
+  .sssum .bar{transition:none}}
+
 /* ---- the guided tour ------------------------------------------------
    A spotlight rather than a modal: the page underneath stays legible, so
    what is being described is the real thing and not a picture of it. The
@@ -426,7 +477,7 @@ table.plain td{border-bottom:0;padding:4.5px 10px 4.5px 0;vertical-align:middle}
 /* The form switch on a card that has more than one honest reading. */
 .wform { float: right; display: inline-flex; gap: 2px; margin: -2px 0 0; }
 .wform button {
-  font: inherit; font-size: 10px; text-transform: lowercase;
+  font: inherit; font-size: 10px;
   padding: 2px 8px; border-radius: 6px; cursor: pointer;
   border: 1px solid var(--bd); background: transparent; color: var(--mut);
 }
@@ -586,9 +637,9 @@ table.plain td{border-bottom:0;padding:4.5px 10px 4.5px 0;vertical-align:middle}
         <input id="q" placeholder="filter this view…">
       </div>
       <span id="freshness" class="mono" style="font-size:11px;color:var(--mut)"></span>
-      <button id="refresh" class="back" style="margin:0">refresh</button>
+      <button id="refresh" class="back" style="margin:0">Refresh</button>
       <span id="who" class="mono" style="font-size:11px;color:var(--mut);margin-left:auto"></span>
-      <button id="signout" class="back" style="margin:0;display:none">sign out</button>
+      <button id="signout" class="back" style="margin:0;display:none">Sign out</button>
       <button id="themebtn" class="back" style="margin:0" title="light / dark">◐</button>
     </div>
     <main id="app"></main>
@@ -605,6 +656,8 @@ let G = {devices:{},identities:{},tools:{},bridges:{},unattributed:[],counts:{}}
 // Declared here rather than beside their views: load() clears them and let
 // is not hoisted, so declaring them lower down is a TDZ error on first
 // refresh.
+// Which account's email is being edited inline, if any.
+let UEFORM = null;
 let SETTAB = 'fleet';
 // The Settings sub-tabs, up here with SETTAB for the same reason: SETTAB is
 // set from the URL fragment by fromHash(), which runs while the module is
@@ -678,6 +731,11 @@ let AUTH = null;
 // they are fetched once with everything else rather than per widget.
 // Managed mode keeps them with the account; classic mode has no account
 // to keep them on and falls back to this browser.
+// The receiver enforces the rank rule; this is the same table so the page
+// does not offer a control whose answer is already a 403.
+const RANK = {owner: 3, admin: 2, viewer: 1};
+const ROLE_ORDER = ['viewer', 'admin', 'owner'];
+
 let PREFS = {};
 const LS_PREFS = 'aiguard-prefs';
 
@@ -1084,7 +1142,7 @@ function formToggle(kind) {
     `<button class="${f === cur ? 'on' : ''}" data-act="widget-form"
       data-key="${esc(kind)}" data-form="${esc(f)}"
       aria-pressed="${f === cur}" title="draw this as a ${esc(f)}"
-      >${esc(f)}</button>`).join('') + '</span>';
+      >${esc(f[0].toUpperCase() + f.slice(1))}</button>`).join('') + '</span>';
 }
 
 // ---- chart parts -----------------------------------------------------
@@ -1240,7 +1298,7 @@ const WIDGETS = {
       return `<div class="wcard w6"><h3>AI spend</h3>
       <p class="lede">Nothing linked yet. The Budget view records what
       each AI tool costs and joins it against observed use.</p>
-      <p class="src-note"><button class="mini" data-nav="budget">open Budget</button></p></div>`;
+      <p class="src-note"><button class="mini" data-nav="budget">Open Budget</button></p></div>`;
     }
     const next = subs.filter(s => s.renewal_date)
       .sort((a, b) => a.renewal_date.localeCompare(b.renewal_date))[0];
@@ -1255,7 +1313,7 @@ const WIDGETS = {
       <div><dt>${subs.length}</dt><dd>tools linked</dd></div>
       <div><dt${unob ? ' style="color:var(--warn)"' : ''}>${unob}</dt><dd>paid seats never observed</dd></div>
     </dl>
-    <p class="src-note">${next ? `next renewal: ${esc(next.tool_id)} ${when(next.renewal_date)} · ` : ''}<button class="mini" data-nav="budget">open Budget</button></p></div>`;
+    <p class="src-note">${next ? `next renewal: ${esc(next.tool_id)} ${when(next.renewal_date)} · ` : ''}<button class="mini" data-nav="budget">Open Budget</button></p></div>`;
   },
 
   top_tools: () => {
@@ -1617,8 +1675,8 @@ function overview() {
               title="${SIZE_NAME[z]}">${SIZE_LABEL[z]}</button>`).join('')
         : ''}${isStacked ? `<button data-act="w-unstack" data-key="${esc(k)}"
         title="give this card a column of its own again"
-        >unstack</button>` : ''}<button data-act="w-hide" data-key="${esc(k)}"
-        >${off ? 'show' : 'hide'}</button></span>` : ''}${body}</div>`;
+        >Unstack</button>` : ''}<button data-act="w-hide" data-key="${esc(k)}"
+        >${off ? 'Show' : 'Hide'}</button></span>` : ''}${body}</div>`;
   };
 
   const colOf = (col, i) => {
@@ -1641,9 +1699,9 @@ function overview() {
       AUTH && AUTH.role !== 'viewer'
         ? ' - the widgets a deployment offers are set under Settings' : ''}.</span>
     <span class="sp"></span>
-    <button class="ghost" data-act="ov-reset">reset to default</button>
-    <button class="ghost" data-act="ov-cancel">cancel</button>
-    <button class="pri" data-act="ov-save">save</button>
+    <button class="ghost" data-act="ov-reset">Reset to default</button>
+    <button class="ghost" data-act="ov-cancel">Cancel</button>
+    <button class="pri" data-act="ov-save">Save</button>
   </div>` : ''}
   <div class="grid${editing ? ' editing' : ''}">${cols.map(colOf).join('')}</div>`;
 }
@@ -1691,9 +1749,9 @@ function identityMapPanel(unattributed) {
       ? ` · a file is also mounted, and rows saved here win over it` : ''}.
   ${unattributed} device${unattributed === 1 ? '' : 's'} still ${unattributed === 1 ? 'has' : 'have'} no person attached.</p>
   <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
-    <button class="mini" data-act="id-export">download map in use (CSV)</button>
-    ${ro ? '' : `<button class="mini" data-act="id-open">${IDPARSE ? 'editing…' : 'upload or paste a map'}</button>`}
-    ${!ro && saved.length ? `<button class="mini" data-act="id-clear">clear the saved map</button>` : ''}
+    <button class="mini" data-act="id-export">Download map in use (CSV)</button>
+    ${ro ? '' : `<button class="mini" data-act="id-open">${IDPARSE ? 'Editing…' : 'Upload or paste a map'}</button>`}
+    ${!ro && saved.length ? `<button class="mini" data-act="id-clear">Clear the saved map</button>` : ''}
   </div>
   ${IDMSG ? `<div class="note">${esc(IDMSG)}</div>` : ''}
   <p class="src-note" style="margin-top:0">The download is the working
@@ -1725,8 +1783,8 @@ function identityMapEditor() {
       placeholder="key,identity&#10;C02XXXX,jo.bloggs&#10;jo.bloggs,Jo Bloggs">${esc(p.text || '')}</textarea>
     <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
       <input type="file" id="id-file" accept=".csv,text/csv,text/plain" class="mfield" style="min-width:0">
-      <button class="mini" data-act="id-parse">preview</button>
-      <button class="mini" data-act="id-cancel">cancel</button>
+      <button class="mini" data-act="id-parse">Preview</button>
+      <button class="mini" data-act="id-cancel">Cancel</button>
       ${(p.rows || []).length ? `<button class="mini" data-act="id-save">save ${p.rows.length} ${p.rows.length === 1 ? 'row' : 'rows'}</button>` : ''}
     </div>
     ${p.rows ? `<p class="src-note">${p.rows.length} rows understood${
@@ -1994,16 +2052,16 @@ const paStatus = r => (PSTAT || {})[paKey(r)] || null;
 function paActions(r) {
   const st = paStatus(r);
   const key = esc(paKey(r));
-  if (st) return `<button class="mini" data-act="pa-reopen" data-key="${key}">reopen</button>`;
+  if (st) return `<button class="mini" data-act="pa-reopen" data-key="${key}">Reopen</button>`;
   if (PAFORM === paKey(r)) return `
     <input id="pa-reason" class="mfield" style="min-width:180px"
       placeholder="why this is acceptable" autocomplete="off">
-    <button class="mini" data-act="pa-accept" data-key="${key}">accept</button>
-    <button class="mini" data-act="pa-cancel">cancel</button>`;
+    <button class="mini" data-act="pa-accept" data-key="${key}">Accept</button>
+    <button class="mini" data-act="pa-cancel">Cancel</button>`;
   return `<button class="mini" data-act="pa-ack" data-key="${key}"
-      title="spoken to - stays visible, stops being new">ack</button>
+      title="spoken to - stays visible, stops being new">Ack</button>
     <button class="mini" data-act="pa-accept-form" data-key="${key}"
-      title="accepted with a reason - drops out of the open count">accept…</button>`;
+      title="accepted with a reason - drops out of the open count">Accept…</button>`;
 }
 
 const paChip = st => !st ? ''
@@ -2066,8 +2124,8 @@ function govForm(r) {
     <input id="gov-reason" class="mfield" placeholder="reason (optional)"
       value="${esc(pre.reason ?? '')}">
     <div>
-      <button class="mini" data-act="gov-save" data-key="${esc(r.id)}">save decision</button>
-      <button class="mini" data-act="gov-cancel">cancel</button>
+      <button class="mini" data-act="gov-save" data-key="${esc(r.id)}">Save decision</button>
+      <button class="mini" data-act="gov-cancel">Cancel</button>
     </div>
   </div>`;
 }
@@ -2103,7 +2161,7 @@ function regForm() {
   registry's own rules and says exactly what it refuses.</p>
   ${RERR ? `<div class="note">${esc(RERR)}</div>` : ''}
   <div style="margin-bottom:8px">
-    <button class="mini" data-act="reg-adv">${RADV ? 'form editor' : 'advanced: edit as JSON'}</button>
+    <button class="mini" data-act="reg-adv">${RADV ? 'Form editor' : 'Advanced: edit as JSON'}</button>
   </div>
   ${RADV ? `<textarea id="re-json" class="mfield" rows="14"
       style="width:100%;font-family:ui-monospace,monospace"
@@ -2133,8 +2191,8 @@ function regForm() {
     ${row('re-notes', 'notes', e.notes, '')}
   </dl>`}
   <div style="margin-top:10px">
-    <button class="mini" data-act="reg-save">save tool</button>
-    <button class="mini" data-act="reg-cancel">cancel</button>
+    <button class="mini" data-act="reg-save">Save tool</button>
+    <button class="mini" data-act="reg-cancel">Cancel</button>
   </div></div>`;
 }
 
@@ -2194,7 +2252,7 @@ async function registryView() {
   that on the AI register.</p>
 
   ${REDIT !== null ? regForm() : `<div style="margin-bottom:14px">
-    <button class="mini" style="padding:6px 14px" data-act="reg-add">define a tool</button>
+    <button class="mini" style="padding:6px 14px" data-act="reg-add">Define a tool</button>
   </div>`}
 
   <h2 style="font-size:16px">Your tools (${RENTRIES.length})</h2>
@@ -2211,8 +2269,8 @@ async function registryView() {
     <td>${esc(e.name || '')}</td><td>${esc(e.vendor || '')}</td>
     <td>${n}</td>
     <td>${when(x.updated_at)} <span style="color:var(--mut)">${esc(x.updated_by || '')}</span></td>
-    <td><button class="mini" data-act="reg-edit" data-key="${esc(x.tool_id)}">edit</button>
-        <button class="mini" data-act="reg-delete" data-key="${esc(x.tool_id)}">delete</button></td>
+    <td><button class="mini" data-act="reg-edit" data-key="${esc(x.tool_id)}">Edit</button>
+        <button class="mini" data-act="reg-delete" data-key="${esc(x.tool_id)}">Delete</button></td>
   </tr>`; }).join('')}</table>`
   : `<p class="lede">None yet. A tool observed on the register that the
   registry does not know has an "add to registry" button - or define one
@@ -2265,8 +2323,8 @@ function watchlistBlock(observedIds) {
     return `<tr><td>${esc(t.name)}</td>
       <td style="color:var(--mut)">${esc(t.vendor)}</td>
       <td>${state}</td>
-      <td><button class="mini" data-act="wiz-approve" data-key="${esc(t.id)}">approve</button>
-          <button class="mini" data-act="wiz-notapprove" data-key="${esc(t.id)}">not approved</button></td>
+      <td><button class="mini" data-act="wiz-approve" data-key="${esc(t.id)}">Approve</button>
+          <button class="mini" data-act="wiz-notapprove" data-key="${esc(t.id)}">Not approved</button></td>
     </tr>`;
   }).join('')}</table></details>`;
 }
@@ -2488,11 +2546,11 @@ async function register() {
       <dt>review</dt><dd>${review(r)}</dd>
     </dl>
     ${CFG.managed && CFG.managed.enabled ? `<div style="margin-top:8px">
-      <button class="mini" data-act="gov-edit" data-key="${esc(r.id)}">edit</button>
+      <button class="mini" data-act="gov-edit" data-key="${esc(r.id)}">Edit</button>
       ${r.status_source === 'portal' ? `<button class="mini" data-act="gov-clear"
-        data-key="${esc(r.id)}">clear decision</button>` : ''}
+        data-key="${esc(r.id)}">Clear decision</button>` : ''}
       ${!r.in_registry ? `<button class="mini" data-act="reg-suggest"
-        data-key="${esc(r.id)}">add to registry</button>` : ''}</div>` : ''}`}
+        data-key="${esc(r.id)}">Add to registry</button>` : ''}</div>` : ''}`}
     ${exceptionBlock(r)}
   </div>`).join('')}
   </div>` : !dataOk() ? `<p class="lede">No AI tools to show: the findings
@@ -2690,7 +2748,7 @@ async function iso() {
 // so a row is label + input + save - what someone changing a value scans
 // for. What stays visible is state (set, and from where), because that is
 // a glance rather than reading.
-const INFO = '<button class="info" data-info type="button" title="about this field">i</button>';
+const INFO = '<button class="info" data-info type="button" title="about this field">I</button>';
 
 function settingRow(key, label, placeholder, note) {
   const s = (SETTINGS && SETTINGS.settings || {})[key] || {value: '', source: 'unset'};
@@ -2711,7 +2769,7 @@ function settingRow(key, label, placeholder, note) {
       ${secret ? 'type="password" autocomplete="off"' : ''}
       placeholder="${esc(placeholder)}"
       value="${secret ? '' : esc(s.value || '')}">
-    <button class="mini" data-act="save-setting" data-key="${esc(key)}">save</button>
+    <button class="mini" data-act="save-setting" data-key="${esc(key)}">Save</button>
     ${state}
     ${more ? `<div class="src-note fnote">${more}</div>` : ''}</dd>`;
 }
@@ -2757,7 +2815,7 @@ function widgetPickerRow() {
     ${orphans.map((r, i) => box('owo-' + i, true, r,
       `<span class="mono">grafana:${esc(r)}</span>`,
       'saved panel reference (no longer in the panels list)')).join('')}
-    <button class="mini" data-act="save-widgets" style="margin-top:4px">save</button>
+    <button class="mini" data-act="save-widgets" style="margin-top:4px">Save</button>
     <div class="src-note fnote">What the overview draws, in this order.
     Unticking everything is refused rather than saved: an empty list falls
     back to the default set, which is probably not what you meant.</div>
@@ -2776,7 +2834,7 @@ function pasteGuardBehaviourFields() {
         <option value=""${mode ? '' : ' selected'}>warn (default)</option>
         ${opt('off', 'off')}${opt('warn', 'warn')}${opt('block', 'block')}
       </select>
-      <button class="mini" data-act="save-setting" data-key="paste_guard_mode">save</button>
+      <button class="mini" data-act="save-setting" data-key="paste_guard_mode">Save</button>
       <div class="src-note fnote">What happens when someone pastes marked content
       into an AI tool: warn asks them first, block stops it. Baked into the
       policy downloads.</div></dd>
@@ -2784,8 +2842,8 @@ function pasteGuardBehaviourFields() {
       <textarea id="set-classification_markings" class="mfield" rows="4"
         style="min-width:340px;resize:vertical;font-family:inherit"
         placeholder="one marking per line (empty = the default set)">${marks === null ? '' : esc(marks.join('\n'))}</textarea>
-      <button class="mini" data-act="save-markings">save</button>
-      ${marksSet ? '<button class="mini" data-act="clear-markings">clear (default set)</button>' : ''}
+      <button class="mini" data-act="save-markings">Save</button>
+      ${marksSet ? '<button class="mini" data-act="clear-markings">Clear (default set)</button>' : ''}
       <div class="src-note fnote">Document phrases the guard looks for in pastes,
       one per line. Save an empty box to use no markings; clear to go back
       to the default five. What people paste never leaves their device -
@@ -2848,8 +2906,8 @@ function logStoreFields(withUsername) {
 }
 
 const logStoreTests = () => `<div style="margin-top:8px">
-  <button class="mini" data-act="run-test" data-key="log-store-push">test: receiver can write</button>
-  <button class="mini" data-act="run-test" data-key="log-store-read">test: portal can read</button>
+  <button class="mini" data-act="run-test" data-key="log-store-push">Test: receiver can write</button>
+  <button class="mini" data-act="run-test" data-key="log-store-read">Test: portal can read</button>
 </div>${testNote('log-store-push')}${testNote('log-store-read')}`;
 
 // ------------------------------------------------- extension setup guide --
@@ -2887,7 +2945,7 @@ function extStatusRows() {
 
 const extCmd = c => `<div style="display:flex;gap:8px;align-items:flex-start;margin:8px 0">
   <pre class="mono" style="margin:0;padding:8px 10px;background:var(--sf2);border:1px solid var(--bd);border-radius:6px;overflow-x:auto;flex:1;font-size:12px">${esc(c)}</pre>
-  <button class="mini" data-act="copy" data-copy="${esc(c)}">copy</button></div>`;
+  <button class="mini" data-act="copy" data-copy="${esc(c)}">Copy</button></div>`;
 
 async function extSetup() {
   const gate = CFG.managed && CFG.managed.enabled
@@ -2970,7 +3028,7 @@ async function extSetup() {
       <dt>Chromium extension ID</dt><dd>
         <input id="set-extid" class="mfield" style="min-width:340px"
           placeholder="the 32-letter id, a-p only" value="${esc(st.id)}">
-        <button class="mini" data-act="save-extid">save</button>
+        <button class="mini" data-act="save-extid">Save</button>
         <div class="src-note">32 letters a-p. Anything else means the id was
         read from the wrong place - it is not the key, and not a hash.</div></dd>
     </dl>`;
@@ -3001,7 +3059,7 @@ async function extSetup() {
         'Where you put updates.xml. The install policies point every browser at this URL, and it is how future releases roll out - pack, upload, replace updates.xml, done.')}
     </dl>
     ${st.upd ? `<div style="margin-top:8px">
-      <button class="mini" data-act="run-test" data-key="extension-updates">probe the hosted manifest</button>
+      <button class="mini" data-act="run-test" data-key="extension-updates">Probe the hosted manifest</button>
     </div>${testNote('extension-updates')}` : ''}`;
   if (EXTPAGE === 5) body = `
     <h3>Firefox (skip if you do not deploy it)</h3>
@@ -3040,7 +3098,7 @@ async function extSetup() {
       next to it, at the update_url you put in the manifest:</p>
       ${dlBtn('firefox-updates-json', 'download firefox-updates.json')}
       <div style="margin-top:8px">
-        <button class="mini" data-act="run-test" data-key="extension-xpi">probe the hosted .xpi (checks the Mozilla signature)</button>
+        <button class="mini" data-act="run-test" data-key="extension-xpi">Probe the hosted .xpi (checks the Mozilla signature)</button>
       </div>${testNote('extension-xpi')}` : ''}`;
   if (EXTPAGE === 6) body = `
     <h3>What the guard does</h3>
@@ -3053,7 +3111,7 @@ async function extSetup() {
     The policy downloads - pre-filled with all of this plus a fresh
     enrollment token each - are in the wizard's step 7, and pushing those
     through your MDM is the actual rollout.</p>
-    <button class="mini" style="padding:6px 14px" data-act="open-wizard">back to the setup wizard</button>`;
+    <button class="mini" style="padding:6px 14px" data-act="open-wizard">Back to the setup wizard</button>`;
 
   return `<h2>Extension setup</h2>
   <p class="lede">The browser extension, from source to hosted package, one
@@ -3064,7 +3122,7 @@ async function extSetup() {
   <div class="wcard" style="margin-bottom:10px">${body}</div>
   <div style="margin:14px 0">
     ${EXTPAGE > 1 ? `<button class="mini" data-act="ext-page" data-key="${EXTPAGE - 1}">← back</button>` : ''}
-    ${EXTPAGE < 6 ? `<button class="mini" data-act="ext-page" data-key="${EXTPAGE + 1}">next →</button>` : ''}
+    ${EXTPAGE < 6 ? `<button class="mini" data-act="ext-page" data-key="${EXTPAGE + 1}">Next →</button>` : ''}
   </div>`;
 }
 
@@ -3102,8 +3160,8 @@ async function wizard() {
     return `<tr><td>${esc(t.name)}</td>
       <td style="color:var(--mut)">${esc(t.vendor)}</td>
       <td>${state}</td>
-      <td><button class="mini" data-act="wiz-approve" data-key="${esc(t.id)}">approve</button>
-          <button class="mini" data-act="wiz-notapprove" data-key="${esc(t.id)}">not approved</button></td>
+      <td><button class="mini" data-act="wiz-approve" data-key="${esc(t.id)}">Approve</button>
+          <button class="mini" data-act="wiz-notapprove" data-key="${esc(t.id)}">Not approved</button></td>
     </tr>`;
   };
 
@@ -3129,7 +3187,7 @@ async function wizard() {
       'https://ai-guard.your-tailnet.ts.net', '')}
   </dl>
   <div style="margin-top:8px">
-    <button class="mini" data-act="run-test" data-key="receiver-url">probe the saved URL</button>
+    <button class="mini" data-act="run-test" data-key="receiver-url">Probe the saved URL</button>
   </div>${testNote('receiver-url')}</div>
 
   <div class="wcard" style="margin-bottom:10px"><h3>2 · The log store</h3>
@@ -3165,12 +3223,12 @@ async function wizard() {
   <input id="set-domains" class="mfield" style="min-width:340px"
     placeholder="example.com, example.co.uk"
     value="${esc((cd.value || []).join(', '))}">
-  <button class="mini" data-act="save-domains">save</button>
+  <button class="mini" data-act="save-domains">Save</button>
   <div style="margin-top:12px">
     <input id="set-budget_currency" class="mfield" style="min-width:120px"
       placeholder="GBP"
       value="${esc(((s.budget_currency || {}).value) || '')}">
-    <button class="mini" data-act="save-setting" data-key="budget_currency">save</button>
+    <button class="mini" data-act="save-setting" data-key="budget_currency">Save</button>
     <div class="src-note">Preferred currency, for the Budget view: the
     headline converts into it at the ECB's daily reference rate (the rate's
     date is named right beside the number), newly linked tools default to
@@ -3202,7 +3260,7 @@ async function wizard() {
   come back.</p>
   ${extStatusRows()}
   <div style="margin-top:10px">
-    <button class="mini" style="padding:6px 14px" data-act="ext-open">open the extension setup</button>
+    <button class="mini" style="padding:6px 14px" data-act="ext-open">Open the extension setup</button>
     <span class="src-note" style="margin-left:8px">Six short steps: download,
     pack, identity, hosting, Firefox, behaviour. Each value is also editable
     flat under Settings.</span>
@@ -3225,15 +3283,15 @@ async function wizard() {
   under Fleet. Each download gets its own token, so you can revoke one
   rollout without touching the others.</p>
   ${CFG.managed && CFG.managed.artifacts_ready ? `<div style="display:flex;gap:8px;flex-wrap:wrap">
-    <button class="mini" data-act="artifact" data-key="collector-macos">macOS collector</button>
+    <button class="mini" data-act="artifact" data-key="collector-macos">MacOS collector</button>
     <button class="mini" data-act="artifact" data-key="collector-linux">Linux collector</button>
     <button class="mini" data-act="artifact" data-key="collector-windows">Windows collector</button>
     <button class="mini" data-act="artifact" data-key="extension-policy">extension policy · Chromium macOS${eid ? '' : ' (needs step 5)'}</button>
-    <button class="mini" data-act="artifact" data-key="extension-windows">extension deploy · Chromium Windows</button>
-    <button class="mini" data-act="artifact" data-key="firefox-policy">extension policy · Firefox macOS</button>
-    <button class="mini" data-act="artifact" data-key="firefox-windows">extension deploy · Firefox Windows</button>
-    <button class="mini" data-act="artifact" data-key="scanner-cronjob">scanner CronJob</button>
-    <button class="mini" data-act="artifact" data-key="discovery-cronjob">discovery CronJob</button>
+    <button class="mini" data-act="artifact" data-key="extension-windows">Extension deploy · Chromium Windows</button>
+    <button class="mini" data-act="artifact" data-key="firefox-policy">Extension policy · Firefox macOS</button>
+    <button class="mini" data-act="artifact" data-key="firefox-windows">Extension deploy · Firefox Windows</button>
+    <button class="mini" data-act="artifact" data-key="scanner-cronjob">Scanner CronJob</button>
+    <button class="mini" data-act="artifact" data-key="discovery-cronjob">Discovery CronJob</button>
   </div>` : `<div class="note">No public receiver URL yet, so downloads cannot
   bake a URL agents can reach - save one in step 1 and these appear.</div>`}</div>
 
@@ -3278,8 +3336,8 @@ function fleetSettings() {
       <input id="set-domains" class="mfield" style="min-width:340px"
         placeholder="example.com, example.co.uk"
         value="${esc((cd.value || []).join(', '))}">
-      <button class="mini" data-act="save-domains">save</button>
-      ${cd.source === 'db' ? `<button class="mini" data-act="clear-domains">clear (fall back)</button>` : ''}
+      <button class="mini" data-act="save-domains">Save</button>
+      ${cd.source === 'db' ? `<button class="mini" data-act="clear-domains">Clear (fall back)</button>` : ''}
       ${cd.source === 'db' ? '<span class="pill p-mut">saved here</span>'
         : cd.source === 'env' ? '<span class="pill p-mut">from deployment</span>' : ''}
       <div class="src-note fnote">An AI tool signed into one of these counts
@@ -3288,13 +3346,13 @@ function fleetSettings() {
       <input id="set-extid" class="mfield" style="min-width:340px"
         placeholder="the browser extension's ID"
         value="${esc((s.extension_id || {}).value || '')}">
-      <button class="mini" data-act="save-extid">save</button>
+      <button class="mini" data-act="save-extid">Save</button>
       <div class="src-note fnote">Used to generate the extension's managed-policy
       artifact. Empty clears it.</div></dd>
     ${pasteGuardFields()}
   </dl>
   <div style="margin-top:10px">
-    <button class="mini" data-act="ext-open">open the extension setup</button>
+    <button class="mini" data-act="ext-open">Open the extension setup</button>
     <span class="src-note" style="margin-left:8px">The guided version of
     these fields: pack, host and sign, one step at a time.</span>
   </div></div>`;
@@ -3308,7 +3366,7 @@ function connectionSettings() {
       'The URL endpoints reach from OUTSIDE - it gets baked into every downloaded artifact. Not the internal receiver address the portal proxies to.')}
   </dl>
   <div style="margin-top:8px">
-    <button class="mini" data-act="run-test" data-key="receiver-url">probe the saved URL</button>
+    <button class="mini" data-act="run-test" data-key="receiver-url">Probe the saved URL</button>
   </div>${testNote('receiver-url')}</div>
 
   <div class="wcard" style="margin-bottom:10px"><h3>Log store</h3>
@@ -3348,35 +3406,324 @@ function alertingSettings() {
   </dl></div>`;
 }
 
+// ---- the single sign-on wizard ---------------------------------------
+// Owner-only, and a wizard rather than a settings panel because every
+// step here has something real to check. A page of four fields and a save
+// button is a page that reports success over a half-configured provider,
+// and the failure lands on whoever tries to sign in next.
+//
+// Nothing is enabled until a real sign-in has completed. That is the
+// difference between "the settings look right" and "somebody got in".
+let SSOW = null;
+
+const SSO_STEPS = [
+  {k:'register', t:'Register an application', d:'In the Entra admin center'},
+  {k:'tenant',   t:'Your tenant',             d:'Checked against the provider'},
+  {k:'client',   t:'Application and secret',  d:'Proved before anyone signs in'},
+  {k:'redirect', t:'Where sign-ins return',   d:'Must match the registration'},
+  {k:'test',     t:'Verify and enable',       d:'A real sign-in, then enable'},
+];
+
+function ssoOpen() {
+  const s = (SETTINGS && SETTINGS.settings) || {};
+  const v = k => ((s[k] || {}).value) || '';
+  SSOW = {
+    step: 0, busy: '', err: '', done: {},
+    tenant: v('sso_tenant_id'), client: v('sso_client_id'),
+    secret: '', redirect: v('sso_redirect_uri') || ssoRedirectGuess(),
+    secretSet: !!((s.sso_client_secret || {}).set),
+  };
+  // A deployment that has been through this before starts with what it
+  // already proved, rather than asking for it all again.
+  if (SSOW.tenant) SSOW.done.tenant = 'Saved · ' + SSOW.tenant;
+  if (SSOW.client) SSOW.done.client = 'Saved · ' + SSOW.client;
+  if (v('sso_redirect_uri')) SSOW.done.redirect = 'Saved · ' + v('sso_redirect_uri');
+  if (SSOW.tenant) SSOW.done.register = 'done';
+  render();
+}
+
+// The redirect URI has to match the app registration exactly, so the page
+// offers the one it would actually use rather than asking somebody to
+// compose it correctly from memory.
+function ssoRedirectGuess() { return location.origin + '/sso/callback'; }
+
+function ssoGo(i) {
+  const reach = ssoReach();
+  if (i > reach) return;
+  ssoStash(); SSOW.step = i; SSOW.err = ''; render();
+}
+function ssoReach() {
+  let n = 0;
+  for (const s of SSO_STEPS) { if (SSOW.done[s.k]) n++; else break; }
+  return Math.min(n, SSO_STEPS.length - 1);
+}
+function ssoStash() {
+  const g = id => { const e = document.getElementById(id); return e ? e.value : null; };
+  const t = g('sso-tenant'); if (t !== null) SSOW.tenant = t;
+  const c = g('sso-client'); if (c !== null) SSOW.client = c;
+  const k = g('sso-secret'); if (k) SSOW.secret = k;
+  const r = g('sso-redirect'); if (r !== null) SSOW.redirect = r;
+}
+
+async function ssoProbe(withClient) {
+  ssoStash();
+  SSOW.busy = withClient ? 'client' : 'tenant'; SSOW.err = ''; render();
+  const body = {tenant_id: (SSOW.tenant || '').trim()};
+  if (withClient) {
+    body.client_id = (SSOW.client || '').trim();
+    body.client_secret = SSOW.secret;
+  }
+  const r = await mfetch('/api/sso/probe', {method: 'POST',
+    body: JSON.stringify(body)});
+  SSOW.busy = '';
+  if (r.status === 401) { sessionLost(); return false; }
+  if (!r.ok) { SSOW.err = await _refusal(r); render(); return false; }
+  const out = await r.json();
+  if (withClient) {
+    if (out.client_ok === true) {
+      SSOW.done.client = 'Verified · ' + SSOW.client;
+    } else {
+      // A tenant can refuse a client-credentials grant for reasons that
+      // say nothing about the credentials - unconsented application
+      // permissions, for one. Blocking a correct configuration on that
+      // would be worse than saying what came back.
+      SSOW.done.client = 'Accepted · ' + SSOW.client;
+      SSOW.err = 'The tenant took the pair but refused the check: '
+        + (out.detail || 'no reason given')
+        + ' That can be normal. The test sign-in at the end decides.';
+    }
+  } else {
+    SSOW.done.tenant = 'Reached · ' + SSOW.tenant;
+    SSOW.issuer = out.issuer || '';
+  }
+  if (SSOW.step < SSO_STEPS.length - 1) SSOW.step++;
+  render();
+  return true;
+}
+
+async function ssoSave(enable) {
+  ssoStash();
+  SSOW.busy = 'save'; SSOW.err = ''; render();
+  const body = {sso_tenant_id: (SSOW.tenant || '').trim(),
+                sso_client_id: (SSOW.client || '').trim(),
+                sso_redirect_uri: (SSOW.redirect || '').trim()};
+  if (SSOW.secret) body.sso_client_secret = SSOW.secret;
+  if (enable !== undefined) body.sso_enabled = enable ? '1' : '';
+  const r = await mfetch('/api/settings', {method: 'POST',
+    body: JSON.stringify(body)});
+  SSOW.busy = '';
+  if (r.status === 401) { sessionLost(); return false; }
+  if (!r.ok) { SSOW.err = await _refusal(r); render(); return false; }
+  SETTINGS = await r.json();
+  SSOW.secretSet = SSOW.secretSet || !!SSOW.secret;
+  render();
+  return true;
+}
+
+// The test sign-in happens in a second tab, so its result comes back by
+// message rather than by return value. Same origin both ways; anything
+// from anywhere else is ignored.
+window.addEventListener('message', e => {
+  if (e.origin !== location.origin || !SSOW) return;
+  const d = e.data || {};
+  if (d.ssoTest === 'ok') {
+    SSOW.done.test = 'Signed in as ' + (d.username || 'your account');
+    SSOW.err = '';
+  } else if (d.ssoTest === 'fail') {
+    SSOW.err = String(d.detail || 'that sign-in was refused');
+  } else { return; }
+  SSOW.busy = ''; render();
+});
+
+function ssoBody(k) {
+  const busy = SSOW.busy === k;
+  const err = SSOW.err ? `<div class="note" style="border-color:var(--warn)"
+    >${esc(SSOW.err)}</div>` : '';
+  if (k === 'register') return `
+    <h4>Register an application</h4>
+    <p class="lede">First you will need to create an app registration in
+      Microsoft Entra.</p>
+    <p class="lede">In the Entra admin center go to <span class="mono">Entra ID
+      &rarr; App registrations &rarr; New registration</span>. Give it a name
+      your team will recognise, leave the account types on single tenant, and
+      add a <b>Web</b> platform with this redirect URI:</p>
+    <div class="sscopy"><span class="mono">${esc(ssoRedirectGuess())}</span>
+      <button class="mini" data-act="sso-copy">Copy</button></div>
+    <p class="lede" style="font-size:12.5px">Paste it exactly. Entra matches it
+      character for character, and a trailing slash is a different address as
+      far as it is concerned.</p>
+    <button class="sshelp" data-act="sso-help">Where do I find the values I
+      will need?</button>
+    ${SSOW.help ? `<div class="sshelpbody"><ol>
+      <li><b>Directory (tenant) ID</b> - the registration's Overview page.</li>
+      <li><b>Application (client) ID</b> - the same page, just above it.</li>
+      <li><b>Client secret</b> - Certificates &amp; secrets &rarr; New client
+        secret. Copy the <b>Value</b> straight away; Entra shows it once and
+        never again.</li></ol></div>` : ''}
+    ${err}<div class="ssacts">
+      <button class="mini" data-act="sso-registered">Registered</button></div>`;
+  if (k === 'tenant') return `
+    <h4>Your tenant</h4>
+    <p class="lede">Your tenant is your organisation's directory in Entra.
+      Paste its ID here - it is on the Overview page of the registration you
+      just made, labelled <b>Directory (tenant) ID</b>. Your tenant domain
+      works too if you would rather use that.</p>
+    <p><input id="sso-tenant" class="mfield" style="min-width:340px"
+      placeholder="00000000-0000-0000-0000-000000000000"
+      value="${esc(SSOW.tenant)}"></p>
+    <p class="lede" style="font-size:12.5px">We will ask Microsoft about it
+      before anything is saved, so a typo shows up now rather than at the
+      end.</p>
+    ${SSOW.done.tenant && SSOW.issuer ? `<div class="note">Found it. Sign-ins
+      will be issued by <span class="mono">${esc(SSOW.issuer)}</span></div>` : ''}
+    ${err}<div class="ssacts"><button class="mini" data-act="sso-check-tenant"
+      ${busy ? 'disabled' : ''}>${busy
+        ? '<span class="ssspin"></span>Checking with Microsoft…' : 'Verify'}</button></div>`;
+  if (k === 'client') return `
+    <h4>Application and secret</h4>
+    <p class="lede">Two values from the registration you just made: the
+      <b>Application (client) ID</b> from its Overview page, and the client
+      secret you created under Certificates &amp; secrets.</p>
+    <p><input id="sso-client" class="mfield" style="min-width:340px"
+      placeholder="Application (client) ID" value="${esc(SSOW.client)}"></p>
+    <p><input id="sso-secret" class="mfield" type="password"
+      style="min-width:340px" autocomplete="new-password"
+      placeholder="${SSOW.secretSet ? 'Stored - leave blank to keep it'
+                                    : 'Client secret value'}"></p>
+    <p class="lede" style="font-size:12.5px">If you did not copy the secret
+      when you created it, you will need to make a new one - Entra only shows
+      the value once. We will ask Microsoft for a token with these now, so a
+      wrong secret is caught here instead of by the first person who tries to
+      sign in.</p>
+    ${err}<div class="ssacts"><button class="mini" data-act="sso-check-client"
+      ${busy ? 'disabled' : ''}>${busy
+        ? '<span class="ssspin"></span>Checking with Microsoft…'
+        : 'Verify application'}</button></div>`;
+  if (k === 'redirect') return `
+    <h4>Where sign-ins return</h4>
+    <p class="lede">When somebody finishes signing in, Entra sends them back
+      here. This has to be the exact URI you put on the app registration. The
+      address shown below is the one you are using to access the portal
+      currently.</p>
+    <p><input id="sso-redirect" class="mfield" style="min-width:340px"
+      value="${esc(SSOW.redirect)}"></p>
+    <p class="lede" style="font-size:12.5px">If your team reaches the portal on
+      more than one address, add every one of them to the registration and put
+      the one you want sign-ins to land on here.</p>
+    <div class="note">Saving does not switch single sign-on on. That is the
+      last step, and only after a real sign-in has worked.</div>
+    ${err}<div class="ssacts"><button class="mini" data-act="sso-save"
+      ${SSOW.busy === 'Save' ? 'disabled' : ''}>${SSOW.busy === 'Save'
+        ? '<span class="ssspin"></span>Saving…' : 'Save and continue'}</button></div>`;
+  return `
+    <h4>Verify and enable</h4>
+    <p class="lede">Config saved. Single sign-on is still disabled. To enable
+      it, complete the verification by clicking Test sign-in.</p>
+    <p class="lede">This opens Microsoft in a new tab. Come back here and you
+      will either see who you signed in as, or the reason it did not work.</p>
+    <div class="note">Your account needs an email address on it matching the
+      one you sign in with. An account with no address can only be reached with
+      its password - which is how you would keep a shared break-glass login out
+      of Entra's reach.</div>
+    ${SSOW.done.test ? `<div class="note" style="border-color:var(--pri)"
+      >${esc(SSOW.done.test)}</div>` : ''}
+    ${err}<div class="ssacts">
+      <button class="mini" data-act="sso-try" ${busy ? 'disabled' : ''}>${busy
+        ? '<span class="ssspin"></span>Waiting for Microsoft…' : 'Test sign-in'}</button>
+      <button class="mini" data-act="sso-enable"
+        ${SSOW.done.test && SSOW.busy !== 'Save' ? '' : 'disabled'}>${
+        SSOW.busy === 'Save' ? '<span class="ssspin"></span>Turning it on…'
+                             : 'Turn on single sign-on'}</button>
+      ${SSOW.done.test ? '' : `<span class="lede" style="font-size:12.5px"
+        >unlocks once a sign-in works</span>`}</div>`;
+}
+
+function ssoWizard() {
+  const reach = ssoReach();
+  const n = SSO_STEPS.filter(s => SSOW.done[s.k]).length;
+  return `<div class="ssow">
+    <div class="ssrail">
+      <h3>Setup</h3>
+      <ol>${SSO_STEPS.map((s, i) => {
+        const d = SSOW.done[s.k], on = i === SSOW.step;
+        const locked = i > reach && !on, busy = SSOW.busy === s.k;
+        return `<li class="ssstep ${d ? 'done' : ''} ${on ? 'on' : ''}
+          ${locked ? 'locked' : ''}"${locked ? '' : ` data-act="sso-step"
+          data-key="${i}"`}>
+          <span class="dot">${busy
+            ? '<span class="ssspin" style="margin:0"></span>'
+            : d ? '&#10003;' : i + 1}</span>
+          <span style="min-width:0"><span class="t">${esc(s.t)}</span>
+          ${d && d !== 'done'
+            ? `<span class="val">${esc(d)}</span>`
+            : `<span class="pend">${busy ? 'checking…' : esc(s.d)}</span>`}</span>
+        </li>`;
+      }).join('')}</ol>
+      <div class="sssum">
+        <div class="lede" style="font-size:11.5px">${n} of ${SSO_STEPS.length} verified</div>
+        <div class="barwrap"><div class="bar"
+          style="width:${n / SSO_STEPS.length * 100}%"></div></div>
+        <div class="lede" style="font-size:11.5px">Single sign-on turns on only
+          when every step is ticked.</div>
+      </div>
+    </div>
+    <div class="ssmain">${ssoBody(SSO_STEPS[SSOW.step].k)}
+      <div class="ssfoot"><button class="mini" data-act="sso-close">Close</button>
+        <span class="sp"></span>
+        ${SSOW.step > 0 ? `<button class="mini" data-act="sso-step"
+          data-key="${SSOW.step - 1}">Back</button>` : ''}
+      </div>
+    </div></div>`;
+}
+
 function accountSettings() {
   const viewer = AUTH && AUTH.role === 'viewer';
   const users = USERS === null ? '' : `
   <div class="wcard" style="margin-bottom:10px"><h3>Accounts</h3>
-    <p class="lede" style="margin-bottom:10px">An admin runs the platform; a
-    viewer reads every page and can change nothing - made for the auditor
-    and the exec. Changing a role applies to that account's next request,
-    not its next sign-in: nobody has to sign out, though a page already
-    open shows its old buttons until it is reloaded.</p>
+    <p class="lede" style="margin-bottom:10px">An owner decides who may sign
+    in; an admin runs the platform; a viewer reads every page and can change
+    nothing - made for the auditor and the exec. Nobody can act on an
+    account that outranks them, or grant a role above their own. Changing a
+    role applies to that account's next request rather than its next
+    sign-in: nobody has to sign out, though a page already open shows its
+    old buttons until it is reloaded.</p>
     ${USERR ? `<div class="note">${esc(USERR)}</div>` : ''}
-    <table><tr><th>username</th><th>role</th><th>created</th><th>last sign-in</th><th></th></tr>
-    ${USERS.map(u => `<tr>
+    <table><tr><th>username</th><th>email</th><th>role</th><th>created</th><th>last sign-in</th><th></th></tr>
+    ${USERS.map(u => {
+      // The same rank rule the receiver enforces, so the page does not
+      // offer a control that is going to come back 403. Equal rank is not
+      // above it: two owners manage each other.
+      const mine = RANK[(AUTH && AUTH.role) || 'viewer'] || 0;
+      const overRank = (RANK[u.role] || 0) > mine;
+      const may = !viewer && !overRank;
+      return `<tr>
       <td>${esc(u.username)}${AUTH && AUTH.username === u.username ? ' <span class="pill p-acc">you</span>' : ''}</td>
-      <td>${viewer
-        ? `<span class="pill ${u.role === 'admin' ? 'p-ok' : 'p-mut'}">${esc(u.role)}</span>`
-        : `<select class="mfield" data-role-for="${esc(u.id)}" style="min-width:100px">
-             <option value="viewer"${u.role === 'viewer' ? ' selected' : ''}>viewer</option>
-             <option value="admin"${u.role === 'admin' ? ' selected' : ''}>admin</option>
-           </select>`}</td>
+      <td>${UEFORM === u.id
+        ? `<input id="ue-new" class="mfield" style="min-width:190px"
+             placeholder="name@example.com" value="${esc(u.email || '')}"
+             autocomplete="off">
+           <button class="mini" data-act="user-email" data-key="${esc(u.id)}">Set</button>
+           <button class="mini" data-act="user-email-cancel">Cancel</button>`
+        : `${u.email ? `<span class="mono">${esc(u.email)}</span>`
+                     : '<span style="color:var(--mut)">not set</span>'}${may
+            ? ` <button class="mini" data-act="user-email-form"
+                 data-key="${esc(u.id)}">Edit</button>` : ''}`}</td>
+      <td>${may
+        ? `<select class="mfield" data-role-for="${esc(u.id)}" style="min-width:100px">
+             ${ROLE_ORDER.filter(r => (RANK[r] || 0) <= mine).map(r =>
+               `<option value="${r}"${u.role === r ? ' selected' : ''}>${r}</option>`).join('')}
+           </select>`
+        : `<span class="pill ${u.role === 'viewer' ? 'p-mut' : 'p-ok'}">${esc(u.role)}</span>`}</td>
       <td style="color:var(--mut)">${esc((u.created_at || '').slice(0, 10))}</td>
       <td style="color:var(--mut)">${esc((u.last_login_at || '').slice(0, 10)) || '—'}</td>
       <td class="nw">${URFORM === u.id
         ? `<input id="ur-new" class="mfield" type="password" style="min-width:190px"
              placeholder="new password (12+)" autocomplete="new-password">
-           <button class="mini" data-act="user-reset" data-key="${esc(u.id)}">set</button>
-           <button class="mini" data-act="user-reset-cancel">cancel</button>`
-        : `<button class="mini" data-act="user-reset-form" data-key="${esc(u.id)}">reset password</button>
-           <button class="mini" data-act="user-delete" data-key="${esc(u.id)}">delete</button>`}</td>
-    </tr>`).join('')}</table>
+           <button class="mini" data-act="user-reset" data-key="${esc(u.id)}">Set</button>
+           <button class="mini" data-act="user-reset-cancel">Cancel</button>`
+        : may ? `<button class="mini" data-act="user-reset-form" data-key="${esc(u.id)}">Reset password</button>
+           <button class="mini" data-act="user-delete" data-key="${esc(u.id)}">Delete</button>` : ''}</td>
+    </tr>`;}).join('')}</table>
     <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <input id="user-name" class="mfield" placeholder="username"
         name="ai-guard-new-account" autocomplete="off"
@@ -3385,13 +3732,20 @@ function accountSettings() {
         placeholder="password (12+ characters)"
         name="ai-guard-new-account-secret" autocomplete="new-password"
         data-lpignore="true" data-1p-ignore data-bwignore>
+      <input id="user-email" class="mfield" placeholder="email (optional)"
+        autocomplete="off" data-lpignore="true" data-1p-ignore data-bwignore>
       <select id="user-role" class="mfield" style="min-width:110px">
-        <option value="viewer">viewer</option><option value="admin">admin</option>
+        ${ROLE_ORDER.filter(r =>
+          (RANK[r] || 0) <= (RANK[(AUTH && AUTH.role) || 'viewer'] || 0)
+        ).map(r => `<option value="${r}">${r}</option>`).join('')}
       </select>
-      <button class="mini" data-act="user-create">add account</button>
+      <button class="mini" data-act="user-create">Add account</button>
     </div>
-    <p class="src-note">Deleting an account kills its sessions; the last
-    admin can be neither deleted nor demoted. A role change leaves the
+    <p class="src-note">An email address is what a federated sign-in would
+    match on; an account without one can only be reached with its password,
+    which is what makes it usable as a shared break-glass credential.
+    Deleting an account kills its sessions; the last owner can be neither
+    deleted nor demoted. A role change leaves the
     account's password and sessions alone. Every action here lands in the
     audit trail.</p>
   </div>`;
@@ -3405,17 +3759,37 @@ function accountSettings() {
         placeholder="current password" autocomplete="current-password">
       <input id="set-newpass" class="mfield" type="password"
         placeholder="new password (12+ characters)" autocomplete="new-password">
-      <button class="mini" data-act="change-password">change</button>
+      <button class="mini" data-act="change-password">Change</button>
       <div class="src-note">Every other session is signed out with the old
       password; this one stays.</div></dd>
   </dl></div>
 
+  ${AUTH && AUTH.role === 'owner' ? (SSOW ? ssoWizard() : `<div class="wcard"
+    style="margin-bottom:10px">
+    <h3>Single sign-on</h3>
+    ${`${(() => {
+      const on = ((SETTINGS && SETTINGS.settings && SETTINGS.settings.sso_enabled
+        && SETTINGS.settings.sso_enabled.value) === '1');
+      return `<p style="margin:0 0 6px"><span class="pill p-ok">${
+        on ? 'On' : 'Off'}</span></p>
+      <p class="lede">${on
+        ? 'People with an email address on their account can sign in through '
+          + 'Microsoft Entra. Passwords keep working, so an account without '
+          + 'an address stays reachable as a break-glass credential.'
+        : 'Sign in with Microsoft Entra instead of a portal password. Five '
+          + 'step process through an interactive wizard.'}</p>`;
+    })()}
+      <p><button class="mini" data-act="sso-open">${
+        ((SETTINGS && SETTINGS.settings && SETTINGS.settings.sso_enabled
+          && SETTINGS.settings.sso_enabled.value) === '1')
+        ? 'Review the configuration' : 'Set it up'}</button></p>`}
+  </div>`) : ''}
   <p class="src-note" style="margin:4px 0 14px">
-    <button class="mini" data-act="open-wizard">run the setup wizard again</button>
+    <button class="mini" data-act="open-wizard">Run the setup wizard again</button>
     — safe to repeat: every step is one of these settings, prefilled
     with what is saved.</p>
   <p class="src-note" style="margin:4px 0 14px">
-    <button class="mini" data-act="take-tour">take the tour again</button>
+    <button class="mini" data-act="take-tour">Take the tour again</button>
     — the walkthrough from your first sign-in. It shows the pages your
     account can act on, so an admin and a viewer see different tours.</p>`;
 }
@@ -3621,7 +3995,7 @@ function setup() {
     return `It does not cover <strong>${un.length}</strong> of
       ${ents(G.devices || {}).length} devices, which show as unattributed -
       a legitimate answer, and one you can shorten:
-      <button class="mini" data-nav="people">edit the map on People</button>`;
+      <button class="mini" data-nav="people">Edit the map on People</button>`;
   })()}</p>`
   : `<details class="how" style="margin:0 0 14px"><summary>how to build the map</summary><div>
   <ol style="padding-left:18px;line-height:2;margin:6px 0">
@@ -3768,9 +4142,9 @@ async function fleet() {
                        : '<span class="pill p-mut">revoked</span>')
                        : '<span class="pill p-ok">active</span>'}</td>
     <td>${!d.revoked_at
-            ? `<button class="mini" data-act="revoke-device" data-key="${esc(d.id)}">revoke</button>`
+            ? `<button class="mini" data-act="revoke-device" data-key="${esc(d.id)}">Revoke</button>`
             : (d.reenroll_allowed_at ? ''
-               : `<button class="mini" data-act="allow-reenroll" data-key="${esc(d.id)}">allow re-enrollment</button>`)}</td>
+               : `<button class="mini" data-act="allow-reenroll" data-key="${esc(d.id)}">Allow re-enrollment</button>`)}</td>
   </tr>`).join('')}</table>`
   : `<div class="note">${(() => {
       // An empty enrollment list beside a reporting fleet is not a
@@ -3806,12 +4180,12 @@ async function tokens() {
   Revoke it here when a rollout is done or a token leaks.</p>
   ${MINTED ? (MINTED.error
     ? `<div class="note">${esc(MINTED.error)}
-       <button class="mini" data-act="dismiss-minted">dismiss</button></div>`
+       <button class="mini" data-act="dismiss-minted">Dismiss</button></div>`
     : `<div class="tokpane"><strong>Token ${esc(MINTED.id)} minted.</strong>
        This is the only time it is shown — the receiver stores a hash.
        <br><code>${esc(MINTED.token)}</code><br>
-       <button class="mini" data-act="copy" data-copy="${esc(MINTED.token)}">copy</button>
-       <button class="mini" data-act="dismiss-minted">done, I've saved it</button>
+       <button class="mini" data-act="copy" data-copy="${esc(MINTED.token)}">Copy</button>
+       <button class="mini" data-act="dismiss-minted">Done, I've saved it</button>
        </div>`) : ''}
   <div style="margin:10px 0 16px">
     <input id="mint-note" class="mfield" placeholder="note, e.g. macOS Jamf rollout">
@@ -3825,7 +4199,7 @@ async function tokens() {
     <td class="mono">${esc(t.id)}</td><td>${esc(t.note || '—')}</td>
     <td>${when(t.created_at)}</td><td>${when(t.expires_at)}</td>
     <td><span class="pill ${cls}">${lbl}</span></td>
-    <td>${lbl === 'active' ? `<button class="mini" data-act="revoke-token" data-key="${esc(t.id)}">revoke</button>` : ''}</td>
+    <td>${lbl === 'active' ? `<button class="mini" data-act="revoke-token" data-key="${esc(t.id)}">Revoke</button>` : ''}</td>
   </tr>`; }).join('')}</table>` : '<div class="note">No enrollment tokens yet.</div>'}`;
 }
 
@@ -4323,7 +4697,7 @@ function budgetWizard() {
           counts as observed, and the spend is counted once.</div></dd>`;
       })()}
     </dl>
-    <button class="mini" data-act="b-step" data-key="2">next</button>` : ''}
+    <button class="mini" data-act="b-step" data-key="2">Next</button>` : ''}
   ${step(2) ? `
     <p style="margin-top:0"><strong>Where does the member list come from?</strong></p>
     <div id="bw-source" style="margin-bottom:12px">
@@ -4360,8 +4734,8 @@ function budgetWizard() {
     ${w.source === 'csv' ? `<p class="src-note" style="margin:0 0 10px">The
       paste box comes right after the last step - link the tool first, then
       drop the export in.</p>` : ''}
-    <button class="mini" data-act="b-step" data-key="1">back</button>
-    <button class="mini" data-act="b-step" data-key="3">next</button>` : ''}
+    <button class="mini" data-act="b-step" data-key="1">Back</button>
+    <button class="mini" data-act="b-step" data-key="3">Next</button>` : ''}
   ${step(3) ? `
     <p style="margin-top:0"><strong>Seats and pricing</strong></p>
     ${bTierRows(w.tiers, [w.tool_id].concat(w.covers || []))}
@@ -4379,10 +4753,10 @@ function budgetWizard() {
     ${(w.covers || []).length ? 'Per-tier coverage is how "premium includes '
       + 'claude-code, standard does not" is said - it powers the '
       + 'seat-economics findings on the card.' : ''}</p>
-    <button class="mini" data-act="b-step" data-key="2">back</button>
-    <button class="mini" data-act="b-save">${w.editing ? 'save changes' : 'link tool'}</button>` : ''}
+    <button class="mini" data-act="b-step" data-key="2">Back</button>
+    <button class="mini" data-act="b-save">${w.editing ? 'Save changes' : 'Link tool'}</button>` : ''}
   <p class="src-note" style="margin-bottom:0">
-    <button class="mini" data-act="b-cancel">cancel</button></p>
+    <button class="mini" data-act="b-cancel">Cancel</button></p>
   </div>`;
 }
 
@@ -4464,7 +4838,7 @@ function budgetCard(sub) {
     <td>${esc(m.role || '—')}</td><td>${esc(m.seat_tier || '—')}</td>
     <td>${esc(usageBits(m)) || '<span class="src-note">—</span>'}</td>
     <td>${m.source === 'manual' && !ro
-      ? `<button class="mini" data-act="b-mdel" data-tool="${esc(sub.tool_id)}" data-key="${esc(m.email)}">remove</button>`
+      ? `<button class="mini" data-act="b-mdel" data-tool="${esc(sub.tool_id)}" data-key="${esc(m.email)}">Remove</button>`
       : `<span class="pill p-mut">${esc(m.source)}</span>`}</td></tr>`;
   // The same licence linked twice, from before covers existed: name the
   // fold-together steps on the card rather than leave the double count
@@ -4567,15 +4941,15 @@ function budgetCard(sub) {
     with no person attached - not counted anywhere
     above. An identity map (Sources view) links them.</p>` : ''}
   ${ro ? '' : `<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
-    ${conn ? `<button class="mini" data-act="b-sync" data-key="${esc(sub.tool_id)}">sync users now</button>` : ''}
-    <button class="mini" data-act="b-edit" data-key="${esc(sub.tool_id)}">edit</button>
-    <button class="mini" data-act="b-import" data-key="${esc(sub.tool_id)}">import users</button>
-    <button class="mini" data-act="b-unlink" data-key="${esc(sub.tool_id)}">unlink</button>
+    ${conn ? `<button class="mini" data-act="b-sync" data-key="${esc(sub.tool_id)}">Sync users now</button>` : ''}
+    <button class="mini" data-act="b-edit" data-key="${esc(sub.tool_id)}">Edit</button>
+    <button class="mini" data-act="b-import" data-key="${esc(sub.tool_id)}">Import users</button>
+    <button class="mini" data-act="b-unlink" data-key="${esc(sub.tool_id)}">Unlink</button>
   </div>
   <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
     <input id="bm-email-${esc(sub.tool_id)}" class="mfield" placeholder="add member: email" autocomplete="off">
     <input id="bm-tier-${esc(sub.tool_id)}" class="mfield" style="min-width:110px" placeholder="seat tier">
-    <button class="mini" data-act="b-madd" data-key="${esc(sub.tool_id)}">add</button>
+    <button class="mini" data-act="b-madd" data-key="${esc(sub.tool_id)}">Add</button>
   </div>`}
   </div>`;
 }
@@ -4594,8 +4968,8 @@ function budgetImport() {
   <textarea id="b-csv" class="mfield" style="width:100%;min-height:140px;font-family:var(--monofont,monospace)"
     placeholder="email,role,seat type&#10;jane@corp.example,member,premium">${esc(BCSV.text || '')}</textarea>
   <div style="margin-top:8px;display:flex;gap:6px">
-    <button class="mini" data-act="b-csv-parse">preview</button>
-    <button class="mini" data-act="b-csv-cancel">cancel</button>
+    <button class="mini" data-act="b-csv-parse">Preview</button>
+    <button class="mini" data-act="b-csv-cancel">Cancel</button>
     ${parsed && parsed.members.length ? `<button class="mini" data-act="b-csv-save">import ${parsed.members.length} members</button>` : ''}
   </div>
   ${parsed ? `${parsed.headerless ? `<p class="src-note" style="color:var(--warn)">These
@@ -4758,10 +5132,10 @@ function budgetReport() {
   };
 
   return `<div class="noprint" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;align-items:center">
-    <button class="mini" data-act="b-report-back">back to Budget</button>
-    <button class="mini" data-act="b-report-print">print / save as PDF</button>
-    <button class="mini" data-act="b-report-csv">download CSV</button>
-    <button class="mini" data-act="b-report-names">${BRNAMES ? 'withhold names' : 'show names'}</button>
+    <button class="mini" data-act="b-report-back">Back to Budget</button>
+    <button class="mini" data-act="b-report-print">Print / save as PDF</button>
+    <button class="mini" data-act="b-report-csv">Download CSV</button>
+    <button class="mini" data-act="b-report-names">${BRNAMES ? 'Withhold names' : 'Show names'}</button>
     <span class="src-note" style="margin:0">${BRNAMES
       ? 'Names are shown. Withhold them for wider circulation - the counts stay.'
       : 'Names are withheld: counts only, in the page and in the CSV.'}</span>
@@ -4839,7 +5213,7 @@ async function budget() {
     detection data already holds.</div>`}
   <p style="margin-top:10px">
     ${ro ? '' : '<button class="mini" data-act="b-open">Link a tool</button>'}
-    ${subs.length ? '<button class="mini" data-act="b-report">share / export</button>' : ''}</p>
+    ${subs.length ? '<button class="mini" data-act="b-report">Share / export</button>' : ''}</p>
   <p class="src-note">Automatic user sync currently supports
   ${ents((BUDGET.providers) || {}).map(([, p]) => esc(p.label)).join(' and ') || 'no vendors yet'}.
   More vendors will be added for automatic configuration - if you want a
@@ -5093,7 +5467,8 @@ async function managedAction(act, el) {
   if (act === 'user-create') {
     const role = (document.getElementById('user-role') || {}).value || 'viewer';
     const r = await mfetch('/api/users', {method: 'POST', body: JSON.stringify(
-      {username: _val('user-name'), password: _val('user-pass'), role})});
+      {username: _val('user-name'), password: _val('user-pass'), role,
+       email: _val('user-email')})});
     if (r.status === 401) { sessionLost(); return; }
     USERR = r.ok ? '' : 'Not created: ' + await _refusal(r);
     if (r.ok) USERS = null;
@@ -5158,6 +5533,70 @@ async function managedAction(act, el) {
     render(); return;
   }
   if (act === 'take-tour') { await tourStart(); return; }
+  if (act === 'sso-open') { ssoOpen(); return; }
+  if (act === 'sso-close') { SSOW = null; render(); return; }
+  if (act === 'sso-help') { SSOW.help = !SSOW.help; render(); return; }
+  if (act === 'sso-step') { ssoGo(+el.getAttribute('data-key')); return; }
+  if (act === 'sso-copy') {
+    try { await navigator.clipboard.writeText(ssoRedirectGuess());
+      el.textContent = 'copied';
+      setTimeout(() => { el.textContent = 'copy'; }, 1400);
+    } catch (e) { el.textContent = 'select it and copy'; }
+    return;
+  }
+  if (act === 'sso-registered') {
+    SSOW.done.register = 'done'; SSOW.step = 1; SSOW.err = ''; render(); return;
+  }
+  if (act === 'sso-check-tenant') { await ssoProbe(false); return; }
+  if (act === 'sso-check-client') {
+    ssoStash();
+    if (!SSOW.secret && !SSOW.secretSet) {
+      SSOW.err = 'A client secret is needed to check the pair.';
+      render(); return;
+    }
+    // With a stored secret and nothing typed there is nothing to check
+    // against - the receiver never hands a secret back - so the step
+    // passes through and the test sign-in is what proves it.
+    if (!SSOW.secret) {
+      SSOW.done.client = 'Saved · ' + SSOW.client;
+      SSOW.step = 3; SSOW.err = ''; render(); return;
+    }
+    await ssoProbe(true); return;
+  }
+  if (act === 'sso-save') {
+    // Saved OFF. Enabling is the last step and needs a real sign-in.
+    if (await ssoSave(false)) {
+      SSOW.done.redirect = 'Saved · ' + SSOW.redirect;
+      SSOW.step = 4; SSOW.err = ''; render();
+    }
+    return;
+  }
+  if (act === 'sso-try') {
+    // Not noopener: the new tab reports its result back by postMessage,
+    // and that needs an opener to report to. Same origin both ways.
+    SSOW.busy = 'test'; SSOW.err = ''; render();
+    window.open('/sso/start', 'aiguard-sso-test');
+    return;
+  }
+  if (act === 'sso-enable') {
+    if (await ssoSave(true)) {
+      SSOW = null;
+      SETMSG = 'Single sign-on is on. Local passwords keep working, so a '
+        + 'break-glass account is still a way in.';
+      render();
+    }
+    return;
+  }
+  if (act === 'user-email-form') { UEFORM = el.getAttribute('data-key'); USERR = ''; render(); return; }
+  if (act === 'user-email-cancel') { UEFORM = null; render(); return; }
+  if (act === 'user-email') {
+    const r = await mfetch('/api/users/' + el.getAttribute('data-key') + '/email',
+      {method: 'POST', body: JSON.stringify({email: _val('ue-new')})});
+    if (r.status === 401) { sessionLost(); return; }
+    USERR = r.ok ? '' : 'Not saved: ' + await _refusal(r);
+    if (r.ok) { USERS = null; UEFORM = null; }
+    render(); return;
+  }
   if (act === 'user-reset-form') { URFORM = el.getAttribute('data-key'); USERR = ''; render(); return; }
   if (act === 'user-reset-cancel') { URFORM = null; render(); return; }
   if (act === 'user-reset') {
@@ -5659,7 +6098,7 @@ function overviewTools() {
   const hidden = overviewWidgets().hidden.length;
   return `${hidden ? `<button class="mini" data-act="ov-showall"
     >show all (${hidden} hidden)</button>` : ''}
-    <button class="mini" data-act="ov-edit">edit</button>`;
+    <button class="mini" data-act="ov-edit">Edit</button>`;
 }
 
 // Did the estate data actually arrive? Every "none seen, and that is a
@@ -6012,7 +6451,7 @@ const TOURS = {
      body: 'This is every AI tool your estate is actually using - the '
          + 'browser, laptops, your cloud tenant - and the accounts behind '
          + 'it. Two minutes and you will know where to look for what.',
-     ok: 'start'},
+     ok: 'Start'},
     {view: 'overview', sel: '[data-tour="stats"]',
      title: 'The numbers that matter',
      body: 'Personal accounts first, because that is the one worth acting '
@@ -6060,7 +6499,7 @@ const TOURS = {
      body: 'This account reads every page and changes nothing - made for '
          + 'the auditor and the exec. Same tour as an admin gets, with who '
          + 'to ask where a page needs a change.',
-     ok: 'start'},
+     ok: 'Start'},
     {view: 'overview', sel: '[data-tour="stats"]',
      title: 'The numbers that matter',
      body: 'Personal accounts first, because that is the one worth acting '
@@ -6123,7 +6562,7 @@ const TOUR_AFTER_WIZARD = {
       + 'numbers come from - including which of them depend on what you '
       + 'just configured. It stays in Settings, so not now does not mean '
       + 'never.',
-  ok: 'show me around', no: 'not now'};
+  ok: 'Show me around', no: 'Not now'};
 
 // Shown instead of a welcome to somebody who has taken the other role's
 // tour already: they know the pages, and what they need is the delta.
@@ -6135,7 +6574,7 @@ const TOUR_ROLE_CHANGED = {
         + 'decisions, accounts, and device enrolment. A short walkthrough '
         + 'covers where those live; it is in Settings if you would rather '
         + 'not now.',
-    ok: 'show me', no: 'no thanks'},
+    ok: 'Show me', no: 'No thanks'},
   viewer: {
     title: 'This account is read-only now',
     body: 'Someone changed it from admin to viewer. Every page still works '
@@ -6143,7 +6582,7 @@ const TOUR_ROLE_CHANGED = {
         + 'refuses with a line saying so rather than failing quietly. A '
         + 'short walkthrough covers what you can still do and who to ask '
         + 'for the rest.',
-    ok: 'show me', no: 'no thanks'},
+    ok: 'Show me', no: 'No thanks'},
 };
 
 let TOUR = null;
@@ -6298,10 +6737,10 @@ function tourPaint(el, st) {
     <div id="tour-foot">
       <div id="tour-dots">${TOUR.steps.map((_, n) =>
         `<i class="${n === TOUR.i ? 'on' : ''}"></i>`).join('')}</div>
-      <button class="ghost" data-tour-act="skip">${esc(st.no || 'end tour')}</button>
-      ${TOUR.i > 0 ? '<button data-tour-act="back">back</button>' : ''}
+      <button class="ghost" data-tour-act="skip">${esc(st.no || 'End tour')}</button>
+      ${TOUR.i > 0 ? '<button data-tour-act="back">Back</button>' : ''}
       <button class="${st.click ? '' : 'pri'}" data-tour-act="next">${
-        esc(st.ok || (last ? 'done' : 'next'))}</button>
+        esc(st.ok || (last ? 'Done' : 'Next'))}</button>
     </div>`;
   // Restarted per step so the card animates in each time rather than once.
   card.classList.remove('step-in');

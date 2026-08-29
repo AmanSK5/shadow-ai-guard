@@ -74,6 +74,7 @@ encryption.
                     ran, with nothing on screen saying the view was stale.
 """
 
+import html
 import json
 import logging
 import os
@@ -86,8 +87,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import (FileResponse, JSONResponse, PlainTextResponse,
-                               Response)
+from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse,
+                               PlainTextResponse, RedirectResponse, Response)
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel, Field
 
@@ -1339,6 +1340,119 @@ def api_setup(req: SetupRequest, request: Request):
     return _session_response(out, request)
 
 
+# ----------------------------------------------------- federated sign-in --
+# The browser talks to the portal; the receiver holds the client secret and
+# mints the session. Nothing here reads a token: the code goes straight
+# through and comes back as a session or a refusal.
+
+
+def esc_attr(v) -> str:
+    """The one place this service renders HTML, and provider error text
+    lands in it - so it is escaped rather than trusted."""
+    return html.escape(str(v), quote=True)
+
+
+def _sso_page(title: str, body: str, go: str = "",
+              who: str = "") -> HTMLResponse:
+    """The callback's own answer, as a page rather than a redirect.
+
+    A redirect would be a cross-site navigation - the chain started at the
+    identity provider - and the session cookie is SameSite=Strict, so the
+    browser would decline to send it on arrival and the operator would land
+    back on the sign-in screen holding a valid session. Navigating from
+    this page is same-site, which is the difference.
+    """
+    # Nothing dynamic goes inside a <script> tag. json.dumps escapes for
+    # JSON, which is not the same as escaping for a script context: it
+    # leaves "/" alone, so a provider error_description containing
+    # "</script>" closes the tag early and everything after it is markup.
+    # That text comes from the identity provider, which makes it the one
+    # genuinely untrusted string on this page.
+    #
+    # The values ride in an attribute instead, HTML-escaped like any
+    # other, and a static script reads them back. There is no injection
+    # point left to get the escaping wrong in.
+    payload = json.dumps({"ssoTest": "ok" if go else "fail",
+                          "username": who, "detail": body, "go": go})
+    tell = (f'<div id="ssor" hidden data-r="{esc_attr(payload)}"></div>'
+            '<script>(function(){try{'
+            'var r=JSON.parse(document.getElementById("ssor").dataset.r);'
+            'if(window.opener)window.opener.postMessage(r,location.origin);'
+            'if(r.go)location.replace(r.go);'
+            '}catch(e){}})()</script>')
+    onward = (f'<p><a href="{esc_attr(go)}">Continue</a></p>') if go \
+        else '<p><a href="/">Back to sign in</a></p>'
+    return HTMLResponse(tell +
+        "<!doctype html><meta charset=utf-8>"
+        "<meta name=viewport content='width=device-width,initial-scale=1'>"
+        f"<title>{esc_attr(title)}</title>"
+        "<style>body{font:15px/1.5 -apple-system,'Segoe UI',sans-serif;"
+        "max-width:34rem;margin:14vh auto;padding:0 1.2rem;color:#1c2024}"
+        "@media(prefers-color-scheme:dark){body{background:#14171b;color:#e8eaed}}"
+        "h1{font-size:19px;margin:0 0 .5rem}p{color:#5c636e}"
+        "@media(prefers-color-scheme:dark){p{color:#9aa3ad}}</style>"
+        f"<h1>{esc_attr(title)}</h1><p>{esc_attr(body)}</p>{onward}")
+
+
+@app.get("/sso/start")
+def sso_start(request: Request):
+    """Send the browser to the identity provider."""
+    _login_mode_only()
+    try:
+        out = managed.receiver_request(RECEIVER_URL, "GET", "/admin/sso/start",
+                                       "", None)
+    except managed.ReceiverError as e:
+        if e.status == 404:
+            return _sso_page("Single sign-on is not set up",
+                             "This deployment has not finished configuring an "
+                             "identity provider. Sign in with a password.")
+        return _sso_page("Could not start sign-in", str(e.detail)[:300])
+    return RedirectResponse(out["authorize_url"], status_code=302)
+
+
+@app.post("/sso/callback")
+async def sso_callback(request: Request):
+    """Where the identity provider posts the browser back.
+
+    Deliberately outside /api, so the JSON-only CSRF rule does not refuse
+    the provider's form post. What stands in for that rule here is the
+    state: minted by the receiver minutes ago, single-use, and paired with
+    a PKCE verifier the browser never held.
+    """
+    _login_mode_only()
+    # Parsed here rather than with request.form(). Starlette's form parser
+    # requires python-multipart even for a urlencoded body, and this
+    # endpoint 500s without it - which is every real sign-in, at the last
+    # step. The provider posts application/x-www-form-urlencoded and
+    # nothing else, so the stdlib is enough and the image gains nothing.
+    raw = (await request.body())[:16384].decode("utf-8", "replace")
+    fields = urllib.parse.parse_qs(raw, keep_blank_values=True)
+    form = {k: v[0] for k, v in fields.items() if v}
+    if form.get("error"):
+        return _sso_page("Sign-in was refused", str(
+            form.get("error_description") or form.get("error"))[:300])
+    code, state = str(form.get("code") or ""), str(form.get("state") or "")
+    if not code or not state:
+        return _sso_page("Sign-in did not complete",
+                         "The identity provider returned no authorization "
+                         "code.")
+    try:
+        out = managed.receiver_request(RECEIVER_URL, "POST",
+                                       "/admin/sso/callback", "",
+                                       {"code": code, "state": state})
+    except managed.ReceiverError as e:
+        return _sso_page("Could not complete sign-in", str(e.detail)[:300])
+    if not out.get("ok"):
+        return _sso_page("Signed in, but not here",
+                         str(out.get("detail") or "that sign-in was refused"))
+    resp = _sso_page("Signed in", "Taking you to the portal.", go="/",
+                     who=str(out.get("username", "")))
+    resp.set_cookie(SESSION_COOKIE, str(out.get("token", "")),
+                    httponly=True, samesite="strict",
+                    secure=_cookie_secure(request), path="/")
+    return resp
+
+
 @app.post("/api/logout")
 def api_logout(request: Request):
     _login_mode_only()
@@ -1671,6 +1785,20 @@ def api_users_role(uid: str, req: UserRoleWrite, _=Depends(require_auth),
         raise HTTPException(422, "malformed user id")
     return _receiver("POST", "/admin/users/%s/role" % uid, token,
                      req.model_dump())
+
+
+class SSOProbe(BaseModel):
+    model_config = {"extra": "forbid"}
+    tenant_id: str = Field(min_length=1, max_length=120)
+    client_id: str = Field(default="", max_length=64)
+    client_secret: str = Field(default="", max_length=512)
+
+
+@app.post("/api/sso/probe")
+def api_sso_probe(req: SSOProbe, _=Depends(require_auth),
+                  token: str = Depends(_admin_forward)):
+    """The wizard's verification step. Owner-gated at the receiver."""
+    return _receiver("POST", "/admin/sso/probe", token, req.model_dump())
 
 
 @app.post("/api/users/{uid}/email")

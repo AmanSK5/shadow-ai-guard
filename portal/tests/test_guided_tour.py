@@ -120,4 +120,4 @@ def test_every_step_carries_a_way_forward():
         "a step that asks for a click must still offer next"
     assert "st.click ? '' : 'pri'" in card, \
         "next should be secondary on a click step, not absent"
-    assert "'end tour'" in card, "the way out has to say what it does"
+    assert "'End tour'" in card, "the way out has to say what it does"
