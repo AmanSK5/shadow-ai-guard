@@ -40,6 +40,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import sqlite3
 import threading
@@ -202,6 +203,17 @@ CREATE TABLE IF NOT EXISTS budget_connections (
   created_at       TEXT NOT NULL,
   updated_by       TEXT NOT NULL DEFAULT ''
 );
+-- How one person wants the portal to look, and what it has already shown
+-- them. Display state, not governance: nothing here changes what a page
+-- reports, only how that person sees it, which is why a viewer writes its
+-- own rows freely. Deleting the account takes the rows with it.
+CREATE TABLE IF NOT EXISTS user_preferences (
+  user_id    TEXT NOT NULL REFERENCES admin_users(id) ON DELETE CASCADE,
+  key        TEXT NOT NULL,
+  value      TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, key)
+);
 """
 
 # Columns added after the first release, applied to databases that predate
@@ -223,6 +235,13 @@ _DEVICE_COLUMNS_ADDED = (
 # existing account as admin, which is exactly what those accounts were.
 _ADMIN_COLUMNS_ADDED = (
     ("role", "TEXT NOT NULL DEFAULT 'admin'"),
+    # Where an account meets an identity provider. Nullable because a local
+    # account has never needed one and still does not: this is the join key
+    # a future SSO integration would map onto, recorded now while there are
+    # few accounts to fill in. It is deliberately NOT the login identifier -
+    # username stays that, so `admin` remains a usable local account and a
+    # misconfigured provider cannot lock anyone out of their own portal.
+    ("email", "TEXT"),
 )
 
 # A subscription from before licence coverage covers exactly its own tool,
@@ -238,6 +257,38 @@ def _now() -> str:
 
 def _hash(token: str) -> bytes:
     return hashlib.sha256(token.encode()).digest()
+
+
+# Deliberately not RFC 5322. That grammar accepts addresses no identity
+# provider will ever issue, and implementing it badly is worse than checking
+# the shape that matters: one @, something either side, a dotted domain.
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+# The RFC's own ceiling, and enough that the cap never fires on a real one.
+_EMAIL_MAX = 254
+
+
+def normalize_email(email: str) -> str:
+    """The stored form of an address, or "" for none.
+
+    Lowercased and stripped, because uniqueness has to mean what a person
+    means by it: two accounts differing only in capitals are one identity
+    to every provider that would map onto them, and storing both would let
+    the mapping resolve two ways.
+    """
+    address = (email or "").strip().lower()
+    if not address:
+        return ""
+    if len(address) > _EMAIL_MAX or not _EMAIL_RE.match(address):
+        raise AuthError(422, "that does not look like an email address")
+    return address
+
+
+# What one account may keep. Bounds rather than trust: these rows are the
+# one place an authenticated viewer writes freely, and a preference store
+# with no ceiling is a blob store with a login.
+MAX_PREFERENCE_KEYS = 50
+MAX_PREFERENCE_VALUE = 4096
+_PREFERENCE_KEY_RE = re.compile(r"^[a-z0-9][a-z0-9_.-]{0,63}$")
 
 
 # scrypt from the stdlib, so a password store costs no new dependency. The
@@ -318,6 +369,14 @@ class State:
                 if name not in have:
                     self._db.execute(
                         f"ALTER TABLE admin_users ADD COLUMN {name} {decl}")
+            # After the ALTER, never in _SCHEMA: on a database that predates
+            # the column the index would be built against a column that does
+            # not exist yet. Partial, so the many accounts with no address do
+            # not all collide on NULL - only a set address has to be unique,
+            # because that is what an identity provider would map onto.
+            self._db.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS admin_users_email"
+                " ON admin_users (email) WHERE email IS NOT NULL")
             have = {r["name"] for r in self._db.execute(
                 "PRAGMA table_info(budget_subscriptions)")}
             for name, decl in _BUDGET_SUB_COLUMNS_ADDED:
@@ -660,32 +719,69 @@ class State:
     def list_users(self) -> list[dict]:
         with self._lock:
             rows = self._db.execute(
-                "SELECT id, username, role, created_at, last_login_at"
+                "SELECT id, username, email, role, created_at, last_login_at"
                 " FROM admin_users ORDER BY created_at"
             ).fetchall()
         return [dict(r) for r in rows]
 
     def create_user(self, username: str, password: str, role: str,
-                    by: str = "") -> dict:
+                    by: str = "", email: str = "") -> dict:
         if role not in self.ROLES:
             raise AuthError(422, "role must be admin or viewer")
+        address = normalize_email(email)
         uid = secrets.token_hex(8)
         with self._lock:
             if self._db.execute(
                 "SELECT 1 FROM admin_users WHERE username = ?", (username,)
             ).fetchone():
                 raise AuthError(409, "that username already exists")
+            if address and self._db.execute(
+                "SELECT 1 FROM admin_users WHERE email = ?", (address,)
+            ).fetchone():
+                raise AuthError(409, "that email address is already on "
+                                     "another account")
             self._db.execute(
                 "INSERT INTO admin_users"
-                " (id, username, password_hash, created_at, role)"
-                " VALUES (?, ?, ?, ?, ?)",
-                (uid, username, _hash_password(password), _now(), role),
+                " (id, username, password_hash, created_at, role, email)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (uid, username, _hash_password(password), _now(), role,
+                 address or None),
             )
+            # The address is recorded as set or not, never spelled out: the
+            # audit trail says who has an identity mapping, and an events
+            # table is not the place to accumulate a staff address book.
             self._event("user_created",
                         {"user": uid, "username": username, "role": role,
-                         "by": by})
+                         "email_set": bool(address), "by": by})
             self._db.commit()
-        return {"id": uid, "username": username, "role": role}
+        return {"id": uid, "username": username, "role": role,
+                "email": address}
+
+    def set_user_email(self, uid: str, email: str, by: str = "") -> bool:
+        """Set or clear the address an identity provider would map onto.
+
+        Separate from account creation because the accounts that need one
+        most already exist. An empty address clears the mapping, which is
+        the way back from a typo that took the only spelling of somebody's
+        name."""
+        address = normalize_email(email)
+        with self._lock:
+            if self._db.execute(
+                "SELECT 1 FROM admin_users WHERE id = ?", (uid,)
+            ).fetchone() is None:
+                return False
+            if address and self._db.execute(
+                "SELECT 1 FROM admin_users WHERE email = ? AND id != ?",
+                (address, uid),
+            ).fetchone():
+                raise AuthError(409, "that email address is already on "
+                                     "another account")
+            self._db.execute("UPDATE admin_users SET email = ? WHERE id = ?",
+                             (address or None, uid))
+            self._event("user_email_set",
+                        {"user": uid, "email_set": bool(address), "by": by})
+            self._db.commit()
+        return True
 
     def delete_user(self, uid: str, by: str = "") -> bool:
         """Remove an account and kill its sessions. The last admin cannot be
@@ -732,6 +828,77 @@ class State:
             self._event("password_reset", {"user": uid, "by": by})
             self._db.commit()
         return True
+
+    # ---------------------------------------------------- preferences --
+    # How one person wants the portal laid out, and what it has already
+    # walked them through. Every other write in this file is a governance
+    # act by an admin; these are display state a viewer owns for itself,
+    # so they are role-free and deliberately unaudited - a layout dragged
+    # into a new shape is not an event anyone will ever need to review,
+    # and logging it would bury the writes that matter.
+
+    def get_preferences(self, user_id: str) -> dict:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT key, value FROM user_preferences WHERE user_id = ?",
+                (user_id,),
+            ).fetchall()
+        return {r["key"]: r["value"] for r in rows}
+
+    def set_preferences(self, user_id: str, updates: dict) -> dict:
+        """Merge these keys into the account's preferences.
+
+        A merge rather than a replace, so a page that owns one key can save
+        it without carrying every other page's state and racing them. A
+        None value deletes the key, which is how a setting returns to
+        whatever the portal's default becomes later - storing a copy of
+        today's default would freeze it.
+        """
+        for key, value in updates.items():
+            if not _PREFERENCE_KEY_RE.match(key):
+                raise AuthError(422, "preference keys are 1-64 characters of "
+                                     "lowercase letters, digits, . _ -")
+            if value is None:
+                continue
+            if not isinstance(value, str):
+                raise AuthError(422, f"preference {key} must be a string")
+            if len(value) > MAX_PREFERENCE_VALUE:
+                raise AuthError(422, f"preference {key} is longer than "
+                                     f"{MAX_PREFERENCE_VALUE} characters")
+        with self._lock:
+            if self._db.execute(
+                "SELECT 1 FROM admin_users WHERE id = ?", (user_id,)
+            ).fetchone() is None:
+                raise AuthError(404, "no account with that id")
+            kept = {r["key"] for r in self._db.execute(
+                "SELECT key FROM user_preferences WHERE user_id = ?",
+                (user_id,))}
+            kept.difference_update(k for k, v in updates.items() if v is None)
+            kept.update(k for k, v in updates.items() if v is not None)
+            if len(kept) > MAX_PREFERENCE_KEYS:
+                raise AuthError(422, f"an account keeps at most "
+                                     f"{MAX_PREFERENCE_KEYS} preferences")
+            now = _now()
+            for key, value in updates.items():
+                if value is None:
+                    self._db.execute(
+                        "DELETE FROM user_preferences"
+                        " WHERE user_id = ? AND key = ?", (user_id, key))
+                else:
+                    self._db.execute(
+                        "INSERT INTO user_preferences"
+                        " (user_id, key, value, updated_at)"
+                        " VALUES (?, ?, ?, ?)"
+                        " ON CONFLICT (user_id, key) DO UPDATE SET"
+                        " value = excluded.value,"
+                        " updated_at = excluded.updated_at",
+                        (user_id, key, value, now))
+            self._db.commit()
+            rows = self._db.execute(
+                "SELECT key, value FROM user_preferences WHERE user_id = ?",
+                (user_id,),
+            ).fetchall()
+        return {r["key"]: r["value"] for r in rows}
 
     def logout(self, token: str) -> bool:
         with self._lock:

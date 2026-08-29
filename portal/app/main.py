@@ -1595,11 +1595,22 @@ class UserCreate(BaseModel):
     username: str = Field(min_length=2, max_length=64)
     password: str = Field(min_length=12, max_length=256)
     role: str = Field(min_length=1, max_length=16)
+    email: str = Field(default="", max_length=254)
 
 
 class UserPasswordReset(BaseModel):
     model_config = {"extra": "forbid"}
     new: str = Field(min_length=12, max_length=256)
+
+
+class UserEmailWrite(BaseModel):
+    model_config = {"extra": "forbid"}
+    email: str = Field(default="", max_length=254)
+
+
+class PreferencesWrite(BaseModel):
+    model_config = {"extra": "forbid"}
+    preferences: dict[str, str | None] = Field(default_factory=dict)
 
 
 _UID_RE = re.compile(r"^[0-9a-f]{16}$")
@@ -1634,6 +1645,32 @@ def api_users_reset(uid: str, req: UserPasswordReset, _=Depends(require_auth),
         raise HTTPException(422, "malformed user id")
     return _receiver("POST", "/admin/users/%s/password" % uid, token,
                      req.model_dump())
+
+
+@app.post("/api/users/{uid}/email")
+def api_users_email(uid: str, req: UserEmailWrite, _=Depends(require_auth),
+                    token: str = Depends(_admin_forward)):
+    """Which address an identity provider would map onto this account.
+    Admin-gated at the receiver, like every other change to an account."""
+    if not _UID_RE.match(uid):
+        raise HTTPException(422, "malformed user id")
+    return _receiver("POST", "/admin/users/%s/email" % uid, token,
+                     req.model_dump())
+
+
+@app.get("/api/preferences")
+def api_preferences(_=Depends(require_auth),
+                    token: str = Depends(_admin_forward)):
+    """The signed-in account's own view of the portal. Self-scoped at the
+    receiver: this relays a session, and a session is one account, so there
+    is no id to pass and no way to ask for somebody else's."""
+    return _receiver("GET", "/admin/preferences", token)
+
+
+@app.put("/api/preferences")
+def api_preferences_write(req: PreferencesWrite, _=Depends(require_auth),
+                          token: str = Depends(_admin_forward)):
+    return _receiver("PUT", "/admin/preferences", token, req.model_dump())
 
 
 # ---------------------------------------------------------------- digest ---
