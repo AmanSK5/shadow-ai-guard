@@ -565,12 +565,19 @@ def test_the_settings_tab_from_the_url_cannot_dispatch_into_the_prototype():
     while the view on the very next line always was."""
     index = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     html = open(os.path.join(index, "app", "static", "index.html")).read()
-    # Allow-listed where it enters, like the view beside it.
-    assert "if (SETTABS.includes(tab)) SETTAB = tab;" in html
+    # Allow-listed where it enters, like the view beside it. fromHash now
+    # RETURNS the tab instead of assigning it, so the check and the value
+    # are one expression and there is no unchecked name in between.
+    assert ("return {view: 'settings', tab: SETTABS.includes(tab) ? tab : null};"
+            in html)
+    # The other assignment - the sub-tab buttons - is guarded on the line
+    # immediately above it, against the same list. Pinned as a PAIR: the
+    # assignment on its own is what this test exists to stop.
+    assert ("if (!SETTABS.includes(tab)) return;\n  SETTAB = tab;" in html)
     # And named outright at the point of use - no key, no lookup, no call.
     assert "if (SETTAB === 'connection') body = connectionSettings();" in html
     assert "else { SETTAB = 'fleet'; body = fleetSettings(); }" in html
-    assert "${body}`;" in html
+    assert "\n  ${body}\n" in html
     # The list has to exist before fromHash() runs, or it is a TDZ error
     # on load - the same trap SETTAB itself fell into.
     assert html.index("const SETTABS") < html.index("SETTABS.includes(tab)")
@@ -579,6 +586,55 @@ def test_the_settings_tab_from_the_url_cannot_dispatch_into_the_prototype():
                  "const SGROUPS = new Map([", "${settingsGroup()}",
                  "if (tab) SETTAB = tab;"):
         assert gone not in html
+
+
+def test_a_settings_sub_tab_link_opens_the_tab_it_names():
+    """The fragment carries the Settings sub-tab so a view can be sent to a
+    colleague, but the link only ever worked on a full page LOAD. fromHash()
+    set SETTAB as a side effect and returned only the view, and the
+    hashchange handler re-renders only when the VIEW id changes - so
+    #settings -> #settings/account moved the tab and drew nothing.
+
+    Both halves were wrong. Driven against the running portal: the link was
+    ignored, and the tab it had quietly set then surfaced on the next visit
+    to plain #settings, which showed Account under a URL reading #settings.
+    fromHash is pure now and the handler compares both values."""
+    index = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    html = open(os.path.join(index, "app", "static", "index.html")).read()
+    # Pure: it returns the pair, and assigns nothing.
+    assert "const BOOT = fromHash();" in html
+    assert "if (BOOT.tab) SETTAB = BOOT.tab;" in html
+    # The handler asks about the tab as well as the view, or the tab half
+    # of a fragment never draws.
+    assert "const tabbed = h.tab && h.tab !== SETTAB;" in html
+    assert "if (h.view === view && !tabbed) return;" in html
+    # frag() is fromHash's inverse, so every navigation writes a fragment
+    # that names the tab it is about to show. No caller may go back to
+    # writing a bare '#' + view: that is what left the URL disagreeing
+    # with the screen.
+    assert "const frag = v => '#' + v + (v === 'settings' ? '/' + SETTAB : '');" in html
+    assert "replaceState(null, '', '#' + view)" not in html
+    # A tour step on Settings owns the sub-tab too - #set-domains exists
+    # only on Fleet, and the step found nothing when it did not.
+    assert "{view: 'settings', tab: 'fleet', sel: '#set-domains'," in html
+
+
+def test_a_bare_url_lands_on_the_overview_not_on_sources():
+    """The unknown-fragment fallback doubled as the front door, so a bare
+    URL opened Sources. That is right immediately AFTER the wizard - which
+    sets #setup itself, deliberately - and wrong on every later visit, where
+    it made a health page the first thing an operator saw."""
+    index = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    html = open(os.path.join(index, "app", "static", "index.html")).read()
+    # Derived from the nav, so the front door is whatever the sidebar names
+    # first and there is no second list to keep in step.
+    assert "const HOME = NAV[0].items[0][0];" in html
+    assert "return {view: VIEWS.includes(h) ? h : HOME, tab: null};" in html
+    assert "return VIEWS.includes(h) ? h : 'setup';" not in html
+    # The first-run paths are untouched: the wizard still parks on Sources,
+    # and it still opens itself over an empty fragment.
+    assert "view = 'setup'; detail = null;" in html
+    assert "(!location.hash || location.hash === '#wizard')" in html
 
 
 def test_a_map_keyed_on_the_bare_serial_still_finds_the_machine():

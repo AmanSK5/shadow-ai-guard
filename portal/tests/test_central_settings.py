@@ -187,3 +187,34 @@ def test_the_page_carries_the_editors():
                    "/api/settings", "/api/governance-decisions",
                    "/api/password", "set in the portal"):
         assert needle in html, needle
+
+
+def test_the_settings_tabs_share_one_save_and_secrets_keep_their_own():
+    """The Fleet tab alone carried eight Save buttons, one per field, and
+    the four extension-hosting URLs - only meaningful together - were four
+    separate round trips.
+
+    A SECRET is deliberately left out of the batch. Its box renders blank by
+    design and blank means CLEAR, so sweeping the secrets into a batch would
+    wipe every one of them the moment somebody edited an unrelated field on
+    the same tab."""
+    html = (main.STATIC / "index.html").read_text()
+    # The batch is opt-in per call site, and a secret refuses it.
+    assert "function settingRow(key, label, placeholder, note, batch) {" in html
+    assert "const batched = batch && !secret;" in html
+    # Dirty is measured against the value the field was RENDERED with.
+    assert "const sDirty = () => Array.from(app.querySelectorAll('[data-sfield]'))" in html
+    assert "data-sinit=" in html
+    # The bar and the one save it drives.
+    assert 'data-act="settings-save-all"' in html
+    assert 'data-act="settings-discard"' in html
+    # The two list shapes the settings API takes.
+    assert 'data-slist="csv"' in html and 'data-slist="lines"' in html
+    # A failed save must NOT re-render: a render redraws every field from
+    # SETTINGS and would throw away the several edits that just failed.
+    assert "const err = document.getElementById('setbar-err');" in html
+    # The wizard and the extension guide pass no batch and keep their own
+    # per-field saves - each of their steps gates on its value being stored.
+    assert 'data-act="save-domains"' in html
+    assert 'data-act="save-extid"' in html
+    assert "${batch ? '' : '<button class=\"mini\" data-act=\"save-markings\">Save</button>'}" in html

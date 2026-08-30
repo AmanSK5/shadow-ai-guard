@@ -2474,6 +2474,9 @@ def get_budget(authorization: str = Header(default="")):
     _admin_auth(authorization)
     out = STATE.list_budget()
     out["providers"] = _budget.PROVIDERS
+    # What every shipped tool's vendor offers, so the portal can say
+    # whether a missing connector is our gap or the vendor's.
+    out["member_apis"] = _budget.MEMBER_APIS
     return out
 
 
