@@ -12,6 +12,14 @@
 #   pip download -d /tmp/w pyyaml==X jsonschema==Y pytest==Z
 # then take every sha256 PyPI publishes for each resolved version, not just
 # the wheel this machine happened to need.
+#
+# Anything named here that a component ALSO ships must match that component's
+# lock exactly. The test jobs install this file and the component lock in one
+# pip invocation, so two different pins are not a version choice - pip refuses
+# to install either and the job fails on a resolution error that says nothing
+# about the code under review. jsonschema is the one that overlaps today: it
+# is in receiver/requirements.in, so a Dependabot bump there lands on this
+# file too, and lock-drift cannot see it.
 
 attrs==26.1.0 \
     --hash=sha256:c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309 \
@@ -21,9 +29,9 @@ iniconfig==2.3.0 \
     --hash=sha256:c76315c77db068650d49c5b56314774a7804df16fee4402c1f19d6d15d8c4730 \
     --hash=sha256:f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12
 
-jsonschema==4.25.1 \
-    --hash=sha256:3fba0169e345c7175110351d456342c364814cfcf3b964ba4587f22915230a63 \
-    --hash=sha256:e4a9655ce0da0c0b67a085847e00a3a51449e1157f4f75e9fb5aa545e122eb85
+jsonschema==4.26.0 \
+    --hash=sha256:0c26707e2efad8aa1bfc5b7ce170f3fccc2e4918ff85989ba9ffa9facb2be326 \
+    --hash=sha256:d489f15263b8d200f8387e64b4c3a75f06629559fb73deb8fdfb525f2dab50ce
 
 jsonschema-specifications==2025.9.1 \
     --hash=sha256:98802fee3a11ee76ecaca44429fda8a41bff98b00a0f2838151b113f210cc6fe \
