@@ -210,6 +210,125 @@ button.mini{font:inherit;font-size:12.5px;font-weight:550;padding:4px 11px;borde
 button.mini:hover{border-color:var(--pri)}
 .mfield{font:inherit;font-size:13px;padding:5px 9px;border:1px solid var(--bd);border-radius:7px;
   background:var(--sf2);color:inherit;min-width:260px}
+/* The Settings save bar. Sticks to the bottom of the viewport so it is
+   reachable from any scroll position on a long tab, and is in the flow
+   (not fixed) so it never sits over the drawer or the tour. */
+.setbar{position:sticky;bottom:12px;z-index:40;display:flex;align-items:center;gap:10px;
+  margin:14px 0 4px;padding:10px 14px;background:var(--sf);border:1px solid var(--pri);
+  border-radius:10px;box-shadow:var(--shadow);font-size:12.5px}
+.setbar[hidden]{display:none}
+#setbar-n{font-weight:600}
+#setbar-err{color:var(--warn)}
+.setbar button{margin-left:auto}
+.setbar button+button{margin-left:0}
+button.mini.pri{border-color:var(--pri);background:color-mix(in srgb,var(--pri) 14%,transparent)}
+/* The registry wizard, sharing the SSO wizard's shell above. Only the pieces
+   that shell does not already have live here: the evidence card, the
+   confirm-a-proposal rows and the review table. */
+.eviq{border:1px solid var(--bd);border-left:3px solid var(--pri);border-radius:9px;
+  background:var(--bg);padding:13px 15px;margin:0 0 16px}
+.eviq h5{margin:0 0 8px;font-size:12px;font-weight:600;color:var(--pri);
+  text-transform:uppercase;letter-spacing:.05em}
+.eviq dl{display:grid;grid-template-columns:118px 1fr;gap:5px 14px;margin:0;font-size:13px}
+.eviq dt{color:var(--mut);font-size:12.5px}
+.eviq dd{margin:0}
+.sgroup>h5{margin:16px 0 6px;font-size:11.5px;font-weight:600;color:var(--mut);
+  text-transform:uppercase;letter-spacing:.05em;display:flex;align-items:center;gap:8px}
+.sgroup>h5 .ct{font-weight:500;text-transform:none;letter-spacing:0}
+.sug{display:flex;align-items:center;gap:11px;padding:8px 11px;border:1px solid var(--bd);
+  border-radius:8px;background:var(--bg);margin:0 0 5px;cursor:pointer}
+.sug:hover{border-color:var(--acc)}
+.sug.on{border-color:var(--pri);background:var(--pri-soft)}
+.sug input{margin:0;flex:none;min-width:0}
+.sug .idf{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;
+  flex:1;min-width:0;word-break:break-all}
+.sug .fld{font-size:11.5px;color:var(--mut);white-space:nowrap}
+.sug .why{font-size:11px;padding:2px 8px;border-radius:99px;white-space:nowrap}
+.sug .why.ev{background:var(--pri-soft);color:var(--pri)}
+.sug .why.vd{background:var(--acc-soft);color:var(--acc)}
+.sug .why.me{background:var(--sf2);color:var(--mut)}
+.addrow{display:flex;gap:7px;margin-top:7px;align-items:center;flex-wrap:wrap}
+.rvw{border:1px solid var(--bd);border-radius:9px;background:var(--bg);
+  overflow:hidden;margin:0 0 14px}
+.rvw table{border-collapse:collapse;width:100%;font-size:13px}
+.rvw th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;
+  color:var(--mut);font-weight:600;padding:9px 14px;border-bottom:1px solid var(--bd)}
+.rvw td{padding:8px 14px;border-bottom:1px solid var(--bd);vertical-align:top}
+.rvw tr:last-child td{border-bottom:0}
+.rvw .sname{font-weight:600;font-size:12.5px}
+.callout{border:1px solid var(--bd);border-left:3px solid var(--acc);border-radius:9px;
+  background:var(--bg);padding:12px 15px;font-size:13px;color:var(--mut);margin:0 0 14px}
+.callout b{color:var(--fg)}
+/* The budget wizard's own pieces: the licence-coverage chips, the member-source
+   cards and the seat-tier table. The tiers used to be three bare inputs whose
+   only labels were placeholders, which disappear as soon as anything is typed. */
+.covers{display:flex;flex-wrap:wrap;gap:7px;margin:2px 0 0}
+.covers label{display:flex;align-items:center;gap:7px;border:1px solid var(--bd);
+  border-radius:8px;padding:6px 11px;cursor:pointer;background:var(--bg);
+  font-size:12.5px}
+.covers label:has(input:checked){border-color:var(--pri);background:var(--pri-soft)}
+.covers label.off{opacity:.55;cursor:not-allowed}
+.covers input{margin:0;min-width:0;accent-color:var(--pri)}
+.covers .tag{font-size:10.5px;padding:1px 6px;border-radius:99px;
+  background:var(--acc-soft);color:var(--acc)}
+.covers .tag.mut{background:var(--sf2);color:var(--mut)}
+.srcpick{display:grid;gap:8px;margin:0 0 12px}
+.srcpick label{display:flex;align-items:flex-start;gap:11px;border:1px solid var(--bd);
+  border-radius:9px;padding:11px 14px;cursor:pointer;background:var(--bg)}
+.srcpick label:hover{border-color:var(--acc)}
+.srcpick label:has(input:checked){border-color:var(--pri);background:var(--pri-soft)}
+.srcpick input{margin:3px 0 0;min-width:0;accent-color:var(--pri)}
+.srcpick .nm{font-weight:600;font-size:13.5px;display:block}
+.srcpick .bl{font-size:12.5px;color:var(--mut)}
+.tiers{width:100%;border-collapse:collapse;margin:0 0 6px}
+.tiers th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;
+  color:var(--mut);font-weight:600;padding:0 8px 6px 0}
+.tiers td{padding:0 8px 7px 0;vertical-align:top}
+.tiers .mfield{min-width:0;width:100%}
+.tiers .num{text-align:right;font-variant-numeric:tabular-nums}
+.tiers .linetot{font-size:12.5px;color:var(--mut);padding-top:11px;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.tsum{display:flex;align-items:baseline;gap:10px;border-top:1px solid var(--bd);
+  padding-top:10px;margin-top:4px;font-size:13px}
+.tsum .big{font-size:17px;font-weight:600;font-variant-numeric:tabular-nums}
+.sssum .money{font-size:19px;font-weight:600;font-variant-numeric:tabular-nums;
+  margin:2px 0 1px}
+/* The account menu, anchored under the name in the header. A menu of
+   items, not a form: see #pwdlg below for why the password moved out. */
+#usermenu{position:absolute;right:0;top:calc(100% + 8px);z-index:60;width:240px;
+  background:var(--sf);border:1px solid var(--bd);border-radius:10px;
+  box-shadow:0 6px 24px rgba(0,0,0,.18);padding:7px;text-align:left}
+#usermenu[hidden]{display:none}
+#usermenu .umhead{font-size:12.5px;font-weight:600;padding:5px 9px 9px;
+  margin-bottom:6px;border-bottom:1px solid var(--bd)}
+#usermenu .umitem{display:block;width:100%;text-align:left;font:inherit;
+  font-size:13px;color:var(--fg);background:none;border:0;border-radius:7px;
+  padding:8px 9px;cursor:pointer}
+#usermenu .umitem:hover{background:var(--pri-soft);color:var(--pri)}
+#who{cursor:pointer}
+/* Changing your own password is a modal rather than a form inside the menu.
+   A menu closes on any click outside it and on Escape, and umClose() would
+   take half-typed fields with it; a password manager rarely offers to save
+   from a panel that disappears on blur. The modal also has the room for a
+   confirm field, which a 240px dropdown does not - and a typo in the new
+   password is otherwise not discovered until the next sign-in, by which
+   time every other session has been signed out with the old one. */
+#pwdlg{border:1px solid var(--bd);border-radius:12px;background:var(--sf);
+  color:var(--fg);padding:20px 22px;width:min(400px,92vw);
+  box-shadow:0 18px 50px rgba(0,0,0,.28)}
+#pwdlg::backdrop{background:rgba(15,18,20,.45)}
+#pwdlg h3{margin:0 0 2px;font-size:15px}
+#pwdlg .pwsub{font-size:12px;color:var(--mut);margin:0 0 15px}
+#pwdlg .pwsub[hidden]{display:none}
+#pwdlg .pwlbl{display:block;font-size:11.5px;color:var(--mut);margin:0 0 5px}
+#pwdlg .mfield{width:100%;margin-bottom:11px}
+#pwdlg .pwmsg{font-size:12px;margin:0 0 11px;padding:7px 9px;border-radius:7px}
+#pwdlg .pwmsg.ok{background:var(--pri-soft);color:var(--pri)}
+#pwdlg .pwmsg.bad{background:var(--warn-soft);color:var(--warn)}
+#pwdlg .pwmsg[hidden]{display:none}
+#pwdlg .src-note[hidden]{display:none}
+#pwdlg .pwfoot{display:flex;gap:8px;align-items:center}
+#pwdlg .pwfoot [hidden]{display:none}
 .tokpane{border:1px solid var(--pri);border-radius:9px;padding:12px 14px;margin:14px 0;background:var(--sf)}
 .tokpane code{word-break:break-all}
 /* The inspector: a device, tool or MCP server opens beside the list rather
@@ -316,8 +435,26 @@ table.plain td{border-bottom:0;padding:4.5px 10px 4.5px 0;vertical-align:middle}
 .sssum .barwrap{height:5px;border-radius:3px;background:var(--bd);overflow:hidden;
   margin:7px 0 6px}
 .sssum .bar{height:100%;background:var(--pri);border-radius:3px;transition:width .35s ease}
-.ssmain{padding:22px 24px}
+/* min-width:0, or the column refuses to shrink below its widest child. A grid
+   item defaults to min-width:auto, so one long unbreakable line - a shell
+   command in step 2, the zip line in step 5 - pushed the whole panel wider
+   than the card, and .ssow's overflow:hidden then cut off the buttons. */
+.ssmain{padding:22px 24px;min-width:0}
+/* The first-run rail groups its steps and says what each one costs to skip. */
+.ssrail .wact{font-size:10.5px;font-weight:700;color:var(--mut);
+  text-transform:uppercase;letter-spacing:.07em;margin:14px 0 4px 2px}
+.ssrail ol:first-of-type .wact:first-child{margin-top:0}
+.wtag{font-size:10px;padding:0 6px;border-radius:99px;margin-left:6px;
+  background:var(--sf2);color:var(--mut);border:1px solid var(--bd);
+  vertical-align:1px;font-weight:500}
+.wtag.req{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+.ssstep .need{font-size:11.5px;color:var(--warn);display:block}
+.ssstep.opt .dot{border-style:dashed}
 .ssmain h4{margin:0 0 8px;font-size:16px}
+/* A wizard column is already narrow; capping the prose again wrapped every
+   sentence two-thirds of the way across and left a ragged margin. */
+.ssmain>p{font-size:13.5px;color:var(--mut);margin:0 0 15px}
+.ssmain .wnote{margin-top:22px}
 .sscopy{display:flex;gap:8px;align-items:center;background:var(--bg);
   border:1px dashed var(--bd);border-radius:8px;padding:9px 11px;margin:0 0 10px}
 .sscopy .mono{flex:1;overflow:auto;white-space:nowrap;user-select:all}
@@ -638,7 +775,15 @@ table.plain td{border-bottom:0;padding:4.5px 10px 4.5px 0;vertical-align:middle}
       </div>
       <span id="freshness" class="mono" style="font-size:11px;color:var(--mut)"></span>
       <button id="refresh" class="back" style="margin:0">Refresh</button>
-      <span id="who" class="mono" style="font-size:11px;color:var(--mut);margin-left:auto"></span>
+      <span id="whowrap" style="margin-left:auto;position:relative">
+        <button id="who" class="back mono" style="margin:0;font-size:11px;
+          color:var(--mut);display:none" aria-haspopup="true"
+          aria-expanded="false"></button>
+        <div id="usermenu" hidden>
+          <div class="umhead" id="um-who"></div>
+          <button class="umitem" data-act="open-password">Change password</button>
+        </div>
+      </span>
       <button id="signout" class="back" style="margin:0;display:none">Sign out</button>
       <button id="themebtn" class="back" style="margin:0" title="light / dark">◐</button>
     </div>
@@ -650,6 +795,29 @@ table.plain td{border-bottom:0;padding:4.5px 10px 4.5px 0;vertical-align:middle}
   <div id="tour-ring"></div>
   <div id="tour-card"></div>
 </div>
+<dialog id="pwdlg" aria-labelledby="pw-title">
+  <form id="pwform">
+    <h3 id="pw-title">Change password</h3>
+    <p class="pwsub" id="pw-who"></p>
+    <label class="pwlbl" for="set-curpass">Current password</label>
+    <input id="set-curpass" class="mfield" type="password"
+      autocomplete="current-password">
+    <label class="pwlbl" for="set-newpass">New password</label>
+    <input id="set-newpass" class="mfield" type="password"
+      placeholder="12 characters or more" autocomplete="new-password">
+    <label class="pwlbl" for="set-confpass">Confirm new password</label>
+    <input id="set-confpass" class="mfield" type="password"
+      autocomplete="new-password">
+    <div id="pw-msg" class="pwmsg" hidden></div>
+    <p id="pw-note" class="src-note" style="margin:0 0 15px">Every other
+    session is signed out with the old password; this one stays.</p>
+    <div class="pwfoot">
+      <button id="pw-submit" class="mini pri" type="submit">Change password</button>
+      <button id="pw-cancel" class="back" type="button" style="margin:0"
+        data-act="close-password">Cancel</button>
+    </div>
+  </form>
+</dialog>
 <script>
 let G = {devices:{},identities:{},tools:{},bridges:{},unattributed:[],counts:{}};
 // Views that read a second endpoint, cached until refresh clears them.
@@ -662,9 +830,14 @@ let SETTAB = 'fleet';
 // The Settings sub-tabs, up here with SETTAB for the same reason: SETTAB is
 // set from the URL fragment by fromHash(), which runs while the module is
 // still evaluating, so the list it is checked against has to exist by then.
-const STABS = [['fleet', 'Fleet'], ['connection', 'Receiver & log store'],
+// 'fleet' keeps its id so existing #settings/fleet links still land: the tab
+// was renamed because "Fleet" also names a whole nav section (enrolled devices
+// and enrollment tokens), and two different things called Fleet in one product
+// is a coin toss every time somebody says it.
+const STABS = [['fleet', 'Detection & paste guard'],
+               ['connection', 'Receiver & log store'],
                ['alerting', 'Display & alerting'], ['account', 'Account'],
-               ['diagnostics', 'Diagnostics']];
+               ['start', 'Getting started'], ['diagnostics', 'Diagnostics']];
 const SETTABS = STABS.map(([id]) => id);
 let DIAG = null;
 let REG = null;
@@ -687,6 +860,15 @@ let REGTOOLS = null, GOVDECS = null, WIZOWNER = '', WIZREVIEW = '';
 // Which log-store shape the wizard's step 2 shows, and the last result of
 // each connection test, keyed by API name, so a result survives re-renders.
 let WIZSTORE = 'self', TESTS = {};
+// Which screen sent you into the extension setup. It is reachable from the
+// first-run wizard's step 5 and from Settings, and the way out is different:
+// somebody mid-setup wants to land back on step 5, and somebody who came from
+// Settings has no setup to return to. Offering both to everybody would send
+// half of them somewhere they were not.
+let EXTFROM = '';
+// Which first-run step is showing. The seven used to render at once on
+// one page, which is how it became 841 lines nobody could scan.
+let WIZSTEP = 1;
 // The budget view: the fetched spend data, the link-a-tool wizard's state
 // (null = closed), the last action's one-line outcome, and a parsed CSV
 // preview waiting for confirmation.
@@ -786,9 +968,127 @@ function chrome(on) {
   const so = document.getElementById('signout'), who = document.getElementById('who');
   const login = AUTH && AUTH.mode === 'login';
   so.style.display = on && login ? '' : 'none';
-  who.textContent = on && login && AUTH.username
+  const label = on && login && AUTH.username
     ? AUTH.username + (AUTH.role === 'viewer' ? ' · read-only' : '') : '';
+  who.textContent = label;
+  // A button only when there is a menu behind it. Signed out, or on a
+  // no-login deployment, it would open an empty panel.
+  who.style.display = label ? '' : 'none';
+  const um = document.getElementById('usermenu');
+  if (!label) { if (um) um.hidden = true; who.setAttribute('aria-expanded', 'false');
+                pwHide(); }
+  const umw = document.getElementById('um-who');
+  if (umw) umw.textContent = label;
 }
+
+// The account menu. It carries the one thing a person changes about
+// themselves rather than about the deployment, so it lives in the header
+// beside their name rather than under Settings > Account, which is where
+// OTHER people's accounts are managed. It matters most for a viewer: that tab
+// is read-only for them, and their password was the single editable field on
+// it, three blocks down.
+function umClose() {
+  const um = document.getElementById('usermenu');
+  const who = document.getElementById('who');
+  if (um) um.hidden = true;
+  if (who) who.setAttribute('aria-expanded', 'false');
+}
+
+// The password modal. It clears itself on the way in and on the way out -
+// including the way out the dialog element provides for free, Escape and
+// the backdrop - so a password never sits in a field behind a closed dialog
+// waiting for the next person at the machine.
+const PWFIELDS = ['set-curpass', 'set-newpass', 'set-confpass'];
+const pwWipe = () => PWFIELDS.forEach(id => {
+  const f = document.getElementById(id); if (f) f.value = '';
+});
+const pwIsOpen = () => {
+  const dlg = document.getElementById('pwdlg');
+  return !!(dlg && dlg.open);
+};
+
+function pwShow() {
+  umClose();
+  const dlg = document.getElementById('pwdlg');
+  if (!dlg) return;
+  pwWipe();
+  const msg = document.getElementById('pw-msg');
+  if (msg) { msg.hidden = true; msg.textContent = ''; }
+  // A second visit after a successful change gets the form back, not the
+  // Done button the last one ended on.
+  const sub = document.getElementById('pw-submit');
+  if (sub) sub.hidden = false;
+  const can = document.getElementById('pw-cancel');
+  if (can) can.textContent = 'Cancel';
+  const note = document.getElementById('pw-note');
+  if (note) note.hidden = false;
+  // Whose password this is. Hidden rather than blank when there is no
+  // name to show, or the modal opens with an empty line under its title.
+  const who = document.getElementById('pw-who');
+  if (who) {
+    who.textContent = (AUTH && AUTH.username) || '';
+    who.hidden = !who.textContent;
+  }
+  if (!dlg.open) dlg.showModal();
+  const f = document.getElementById('set-curpass');
+  if (f) f.focus();
+}
+
+function pwHide() {
+  const dlg = document.getElementById('pwdlg');
+  if (dlg && dlg.open) dlg.close();
+  pwWipe();
+}
+document.addEventListener('click', e => {
+  const btn = e.target.closest('#who');
+  const um = document.getElementById('usermenu');
+  if (!um) return;
+  if (btn) {
+    const open = um.hidden;
+    um.hidden = !open;
+    document.getElementById('who').setAttribute('aria-expanded', String(open));
+    if (open) { const f = document.getElementById('set-curpass'); if (f) f.focus(); }
+    return;
+  }
+  // The menu lives outside #app, so the delegated data-act listeners never
+  // see it. Its own listener, and a click anywhere else closes it.
+  const act = e.target.closest('#usermenu [data-act]');
+  if (act) { managedAction(act.getAttribute('data-act'), act); return; }
+  if (!e.target.closest('#usermenu')) umClose();
+});
+window.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  // Escape is closed HERE rather than left to the dialog element, which
+  // closes itself but - measured in Chrome 151, main world - fires neither
+  // 'cancel' nor 'close', so the listener below never runs and a typed
+  // password would sit in the field behind a dismissed dialog. Closing it
+  // ourselves is deterministic; dlg.close() on a closed dialog is a no-op,
+  // so it costs nothing where the events do arrive.
+  //
+  // The modal owns the keystroke outright, because the drawer's own Escape
+  // handler is a LATER window listener and by the time it runs pwHide() has
+  // already made pwIsOpen() false - so guarding it on live state is not
+  // enough, and one Escape would dismiss the modal and the drawer behind it.
+  if (pwIsOpen()) { pwHide(); e.stopImmediatePropagation(); return; }
+  const um = document.getElementById('usermenu');
+  if (um && !um.hidden) umClose();
+});
+// The dialog is outside #app for the same reason the menu is, and needs the
+// same treatment. Cancel goes through data-act; the primary button is the
+// form's SUBMIT so that Enter in any field does what the button does, and it
+// deliberately carries no data-act - a click would otherwise both submit and
+// delegate, and change the password twice.
+document.getElementById('pwform').addEventListener('submit', e => {
+  e.preventDefault();
+  managedAction('change-password', document.getElementById('pw-submit'));
+});
+document.getElementById('pwdlg').addEventListener('click', e => {
+  const el = e.target.closest('[data-act]');
+  if (el) managedAction(el.getAttribute('data-act'), el);
+});
+// Kept as well as the Escape handler above, for the dismissals the element
+// owns that this page never initiates, and for browsers that do fire it.
+document.getElementById('pwdlg').addEventListener('close', pwWipe);
 
 function showLogin(msg) {
   // Same reason as the pane below: nothing from the last session belongs on
@@ -1018,6 +1318,18 @@ const NAVICONS = {
 // you walk through once, not a place to live.
 const VIEWS = NAV.flatMap(sec => sec.items.map(([id]) => id))
   .concat(['wizard', 'extsetup', 'budget-report']);
+// Where a bare URL lands. Derived from the nav rather than spelled out, so
+// the front door is whatever the sidebar names first and there is no second
+// list to keep in step.
+const HOME = NAV[0].items[0][0];
+// Resolves a fragment to the view it names and, for settings, the sub-tab
+// inside it. The tab is RETURNED rather than assigned: assigning it was a
+// side effect, and the hashchange handler below skips its re-render when the
+// view id has not changed - so #settings -> #settings/account moved SETTAB
+// and drew nothing. The link did nothing, and the tab it had quietly set
+// then surfaced on the NEXT visit to plain #settings, which showed Account
+// under a URL reading #settings. Both halves were wrong; a pure function and
+// a handler that compares both values fixes them together.
 const fromHash = () => {
   const h = (location.hash || '').replace(/^#/, '');
   // #settings/account addresses a sub-tab; the view is still settings.
@@ -1025,12 +1337,27 @@ const fromHash = () => {
     // Checked against the known tabs exactly like the view below it. This
     // is the point the value stops being a fragment and starts being a tab.
     const tab = h.split('/')[1];
-    if (SETTABS.includes(tab)) SETTAB = tab;
-    return 'settings';
+    return {view: 'settings', tab: SETTABS.includes(tab) ? tab : null};
   }
-  return VIEWS.includes(h) ? h : 'setup';
+  // An unknown or empty fragment lands on the Overview. It used to land on
+  // Sources, which is right immediately after the wizard - that sets #setup
+  // itself, deliberately - but it was also where a bare URL took every
+  // operator on every later visit, making a health page the front door.
+  return {view: VIEWS.includes(h) ? h : HOME, tab: null};
 };
-let view = fromHash(), detail = null, filter = '';
+// The fragment for a view, and the inverse of fromHash: settings carries
+// its sub-tab, so a navigation names the tab it is about to show rather
+// than a bare #settings that would describe a different one on a reload.
+const frag = v => '#' + v + (v === 'settings' ? '/' + SETTAB : '');
+const BOOT = fromHash();
+if (BOOT.tab) SETTAB = BOOT.tab;
+// A bare #settings names no tab, but a tab is what gets drawn. Write the
+// one being shown back into the URL rather than leave the address bar
+// describing a different page from the one on screen.
+if (BOOT.view === 'settings' && !BOOT.tab) {
+  history.replaceState(null, '', frag('settings'));
+}
+let view = BOOT.view, detail = null, filter = '';
 
 // Escapes the five characters that matter in HTML text and in a quoted
 // attribute. The apostrophe was missing, and it mattered: values were
@@ -2145,91 +2472,388 @@ const REG_CATEGORIES = ['assistant', 'coding', 'transcription', 'writing',
 const _csv = v => (v || []).join(', ');
 const _uncsv = id => _val(id).split(',').map(x => x.trim()).filter(Boolean);
 
-function regForm() {
-  const e = RPRE || {};
-  const cli = e.cli || {};
-  const ext = e.extension_ids || {};
-  const row = (id, label, val, ph) => `<dt>${esc(label)}</dt>
-    <dd><input id="${id}" class="mfield" style="min-width:340px"
-      value="${esc(val || '')}" placeholder="${esc(ph || '')}"></dd>`;
-  const opt = (v, cur) => `<option value="${v}"${v === cur ? ' selected' : ''}>${v}</option>`;
-  return `<div class="wcard" style="margin-bottom:10px">
-  <h3>${REDIT === '' ? 'Define a tool' : 'Edit ' + esc(REDIT)}</h3>
-  <p class="lede" style="margin-bottom:10px">Identifiers are what the fleet
-  scans for - list only what you have seen or verified. Comma-separated
-  where a list is asked for. The receiver validates everything to the
-  registry's own rules and says exactly what it refuses.</p>
-  ${RERR ? `<div class="note">${esc(RERR)}</div>` : ''}
-  <div style="margin-bottom:8px">
-    <button class="mini" data-act="reg-adv">${RADV ? 'Form editor' : 'Advanced: edit as JSON'}</button>
-  </div>
-  ${RADV ? `<textarea id="re-json" class="mfield" rows="14"
-      style="width:100%;font-family:ui-monospace,monospace"
-      >${esc(JSON.stringify(e, null, 2))}</textarea>`
-  : `<dl class="kv">
-    ${REDIT === '' ? row('re-id', 'id', e.id, 'lowercase-slug, e.g. acme-copilot')
-      : `<dt>id</dt><dd class="mono">${esc(REDIT)}</dd>`}
-    ${row('re-name', 'name', e.name, 'Acme Copilot')}
-    ${row('re-vendor', 'vendor', e.vendor, 'Acme')}
-    <dt>category</dt><dd><select id="re-category" class="mfield">
-      ${REG_CATEGORIES.map(c => opt(c, e.category || 'unreviewed')).join('')}</select></dd>
-    <dt>risk tier</dt><dd><select id="re-risk" class="mfield">
-      ${['high', 'medium', 'low'].map(r => opt(r, e.risk_tier || 'medium')).join('')}</select></dd>
-    ${row('re-domains', 'browser domains', _csv(e.domains), 'copilot.acme.example (lowercase)')}
-    ${row('re-app-names', 'macOS app names', _csv(e.app_names), 'Acme Copilot.app')}
-    ${row('re-bundle-ids', 'macOS bundle ids', _csv(e.bundle_ids), 'com.acme.copilot')}
-    ${row('re-exe-names', 'windows exe names', _csv(e.exe_names), 'acme.exe')}
-    ${row('re-cli-binaries', 'cli binaries', _csv(cli.binaries), 'acme')}
-    ${row('re-cli-config', 'cli config paths (from $HOME)', _csv(cli.config_paths), '.acme')}
-    ${row('re-ext-vscode', 'vscode extension ids', _csv(ext.vscode), 'acme.copilot')}
-    ${row('re-email', 'signup email sender domains', _csv(e.email_senders), 'acme.example')}
-    ${row('re-mcp-ids', 'mcp identifiers', _csv(e.mcp_identifiers), 'acme-copilot')}
-    ${row('re-mcp-any', 'mcp config paths (all OS, from $HOME)', _csv(e.mcp_config_paths), '.acme/mcp.json')}
-    ${row('re-mcp-macos', 'mcp config paths (macOS)', _csv(e.mcp_config_paths_macos), 'Library/Acme/mcp.json')}
-    ${row('re-mcp-windows', 'mcp config paths (Windows)', _csv(e.mcp_config_paths_windows), 'AppData/Acme/mcp.json')}
-    ${row('re-mcp-linux', 'mcp config paths (Linux)', _csv(e.mcp_config_paths_linux), '.config/acme/mcp.json')}
-    ${row('re-notes', 'notes', e.notes, '')}
-  </dl>`}
-  <div style="margin-top:10px">
-    <button class="mini" data-act="reg-save">Save tool</button>
-    <button class="mini" data-act="reg-cancel">Cancel</button>
+// ---- the registry wizard --------------------------------------------------
+// "Define a tool" used to be one card carrying nineteen flat fields, every one
+// optional and ungrouped. The operator does not know a tool's bundle id or CLI
+// binary - working that out is what they run this platform for - so the wizard
+// never asks. It PROPOSES, and they confirm.
+//
+// Where a proposal came from is on screen beside it, because the sources are
+// not equally trustworthy:
+//   seen in your estate    discovery's own evidence, a domain it observed.
+//                          Ticked: something has already matched it.
+//   already saved          an entry being edited. Ticked.
+//   derived from the name  deterministic guesses off the name and vendor.
+//                          NEVER ticked by default, and labelled low
+//                          confidence, because a WRONG identifier is worse
+//                          than a missing one - a blank leaves a tool unseen,
+//                          a wrong one hangs somebody else's findings on it.
+//   you added              typed in by hand. Ticked.
+let RW = null;
+
+const RW_SURFACES = [
+  ['Browser',      ['domains']],
+  ['Desktop apps', ['app_names', 'bundle_ids', 'exe_names']],
+  ['CLI and IDE',  ['cli.binaries', 'cli.config_paths', 'extension_ids.vscode']],
+  ['MCP',          ['mcp_identifiers', 'mcp_config_paths']],
+  ['Email',        ['email_senders']],
+];
+const RW_FIELDLBL = {
+  domains: 'browser domain', app_names: 'macOS app', bundle_ids: 'macOS bundle id',
+  exe_names: 'Windows exe', 'cli.binaries': 'cli binary',
+  'cli.config_paths': 'cli config path', 'extension_ids.vscode': 'vscode extension',
+  mcp_identifiers: 'mcp identifier', mcp_config_paths: 'mcp config path',
+  email_senders: 'email sender domain',
+};
+const RW_WHY = {
+  ev:      ['seen in your estate',   'ev'],
+  saved:   ['already saved',         'ev'],
+  derived: ['derived from the name', 'vd'],
+  me:      ['you added',             'me'],
+};
+const RW_SURFACE_OF = f =>
+  (RW_SURFACES.find(x => x[1].indexOf(f) >= 0) || ['Other'])[0];
+const _slug = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-')
+  .replace(/^-+|-+$/g, '');
+
+// Deterministic, and deliberately so: no model, no key, no network call. These
+// are the guesses a person makes first, offered UNTICKED so that one has to be
+// recognised before it can enter detection. A real suggester - the classifier
+// discovery already runs - would add higher-confidence proposals alongside
+// these without changing anything else here.
+function rwDerive(name, vendor, domains) {
+  const nm = String(name || '').trim();
+  if (!nm) return [];
+  const ns = _slug(nm), vs = _slug(vendor) || ns.split('-')[0];
+  const first = ns.split('-')[0];
+  const tail = ns.indexOf(vs + '-') === 0 ? ns.slice(vs.length + 1) : ns;
+  const out = [
+    ['app_names', nm + '.app'],
+    ['bundle_ids', 'com.' + vs + '.' + tail.replace(/-/g, '')],
+    ['exe_names', nm.replace(/[^A-Za-z0-9]/g, '') + '.exe'],
+    ['cli.binaries', first],
+    ['cli.config_paths', '.' + first],
+    ['extension_ids.vscode', vs + '.' + ns],
+    ['mcp_identifiers', ns],
+  ];
+  (domains || []).forEach(d => out.push(['email_senders', d]));
+  return out.filter(x => x[1] && x[1].length > 2)
+    .map(x => ({f: x[0], v: x[1], why: 'derived', conf: 'low', on: false}));
+}
+
+// Recomputed whenever the name or vendor changes. Anything a person put there
+// - evidence, a saved value, a hand-typed one - survives untouched; only the
+// derived guesses are replaced, and a derived value duplicating one of those
+// is dropped rather than shown twice.
+function rwResuggest() {
+  const kept = RW.sugs.filter(s => s.why !== 'derived');
+  const have = {};
+  kept.forEach(s => { have[s.f + ' ' + s.v] = true; });
+  RW.sugs = kept.concat(rwDerive(RW.name, RW.vendor, RW.domains)
+    .filter(s => !have[s.f + ' ' + s.v]));
+}
+
+function rwOpen(seed) {
+  seed = seed || {};
+  RW = {
+    step: 0, editing: seed.editing || '',
+    id: seed.id || '', name: seed.name || '', vendor: seed.vendor || '',
+    category: seed.category || 'unreviewed', risk: seed.risk || 'medium',
+    notes: seed.notes || '', domains: seed.domains || [],
+    evidence: seed.evidence || null, sugs: (seed.sugs || []).slice(),
+  };
+  (seed.domains || []).forEach(d => RW.sugs.push({
+    f: 'domains', v: d, why: seed.editing ? 'saved' : 'ev',
+    conf: 'high', on: true}));
+  rwResuggest();
+  REDIT = seed.editing || ''; RPRE = null; RERR = ''; RADV = false;
+}
+
+// An existing entry arrives with every identifier already confirmed: it is in
+// the registry, so the question is what to change, not what to believe.
+function rwFromEntry(id, e) {
+  const sugs = [];
+  const take = (f, arr) => (arr || []).forEach(v =>
+    sugs.push({f: f, v: v, why: 'saved', conf: 'high', on: true}));
+  take('app_names', e.app_names); take('bundle_ids', e.bundle_ids);
+  take('exe_names', e.exe_names); take('email_senders', e.email_senders);
+  take('mcp_identifiers', e.mcp_identifiers);
+  take('mcp_config_paths', e.mcp_config_paths);
+  take('cli.binaries', (e.cli || {}).binaries);
+  take('cli.config_paths', (e.cli || {}).config_paths);
+  take('extension_ids.vscode', (e.extension_ids || {}).vscode);
+  rwOpen({editing: id, id: id, name: e.name, vendor: e.vendor,
+          category: e.category, risk: e.risk_tier, notes: e.notes,
+          domains: e.domains || [], sugs: sugs});
+}
+
+const rwOn = () => RW.sugs.filter(s => s.on);
+const rwOnIn = s => RW.sugs.filter(x => x.on && RW_SURFACE_OF(x.f) === s);
+const rwCovered = () => RW_SURFACES.filter(x => rwOnIn(x[0]).length).length;
+
+// The entry the wizard currently describes. Empty lists are dropped, because
+// the schema's shapes are optional-or-meaningful and an empty cli object is
+// neither.
+function rwEntry() {
+  // id, name, vendor and category are required by registry/schema.json, so all
+  // four are always present and the first step will not let you past without
+  // them. vendor used to be written only when non-empty, which produced an
+  // entry the receiver refused - found by saving one, not by reading this.
+  const e = {id: RW.editing || RW.id, name: RW.name, vendor: RW.vendor};
+  e.category = RW.category; e.risk_tier = RW.risk;
+  const push = (f, v) => {
+    if (f.indexOf('.') < 0) {
+      e[f] = e[f] || [];
+      if (e[f].indexOf(v) < 0) e[f].push(v);
+      return;
+    }
+    const p = f.split('.');
+    e[p[0]] = e[p[0]] || {};
+    e[p[0]][p[1]] = e[p[0]][p[1]] || [];
+    if (e[p[0]][p[1]].indexOf(v) < 0) e[p[0]][p[1]].push(v);
+  };
+  rwOn().forEach(s => push(s.f, s.v));
+  if (RW.notes) e.notes = RW.notes;
+  return e;
+}
+
+const RW_STEPS = () => [
+  {k: 'found',
+   t: RW.evidence ? 'What we found' : RW.editing ? 'This tool' : 'Which tool',
+   d: RW.evidence ? 'Discovered on your network' : 'Name it to get proposals'},
+  {k: 'ident',  t: 'How else to spot it', d: 'Confirm what to watch for'},
+  {k: 'review', t: 'Review and save',     d: 'What the fleet will watch'},
+];
+
+function rwRailLine(g) {
+  if (g.k === 'found') {
+    if (!RW.name) return {c: 'pend', t: g.d};
+    const ev = RW.evidence;
+    return {c: 'val', t: RW.name + (ev
+      ? ' · ' + ev.devices + ' device' + (ev.devices === 1 ? '' : 's') : '')};
+  }
+  if (g.k === 'ident') {
+    if (!RW.name) return {c: 'pend', t: 'waiting on a name'};
+    const n = rwOn().length, s = rwCovered();
+    return n
+      ? {c: 'val', t: n + ' confirmed across ' + s + ' surface' + (s === 1 ? '' : 's')}
+      : {c: 'pend', t: 'nothing confirmed yet'};
+  }
+  return rwOn().length ? {c: 'val', t: 'ready to save'} : {c: 'pend', t: g.d};
+}
+const rwReady = () => !!(RW.name && RW.vendor && (RW.editing || RW.id));
+const rwDone = g => g.k === 'found' ? rwReady()
+  : g.k === 'ident' ? rwOn().length > 0 : false;
+
+function rwRail() {
+  const steps = RW_STEPS(), cov = rwCovered();
+  return `<div class="ssrail"><h3>${RW.editing ? 'Edit a tool' : 'Add a tool'}</h3>
+  <ol>${steps.map((g, i) => {
+    const d = rwDone(g), on = i === RW.step, ln = rwRailLine(g);
+    return `<li class="ssstep ${d ? 'done' : ''} ${on ? 'on' : ''}"
+      data-act="rw-step" data-key="${i}">
+      <span class="dot">${d ? '&#10003;' : i + 1}</span>
+      <span style="min-width:0"><span class="t">${esc(g.t)}</span>
+      <span class="${ln.c}">${esc(ln.t)}</span></span></li>`;
+  }).join('')}</ol>
+  <div class="sssum">
+    <div class="lede" style="font-size:11.5px">${cov} of ${RW_SURFACES.length}
+      surfaces covered</div>
+    <div class="barwrap"><div class="bar"
+      style="width:${cov / RW_SURFACES.length * 100}%"></div></div>
+    <div class="lede" style="font-size:11.5px">A surface with no identifier is
+      not a gap in your estate - it is a place this tool would go unseen.</div>
   </div></div>`;
 }
 
-// The entry the form currently describes. Empty lists and empty strings
-// are dropped, because the schema's shapes are optional-or-meaningful and
-// an empty cli object is neither.
+function rwBodyFound() {
+  const ev = RW.evidence;
+  const row = (id, label, val, ph) => `<dt>${label}</dt><dd>
+    <input id="${id}" class="mfield" style="min-width:300px"
+      value="${esc(val || '')}" placeholder="${esc(ph || '')}"></dd>`;
+  return `<h4>${ev ? 'What we found'
+    : RW.editing ? esc(RW.name || RW.editing) : 'Which tool'}</h4>
+  <p>${ev
+    ? `Discovery saw this on your network and the classifier read it as an AI
+       service. Confirm it is what you think it is - everything after this hangs
+       off the name.`
+    : RW.editing
+    ? `This tool is already in the registry. Change what you need here; its
+       identifiers are on the next step.`
+    : `Name the tool and identifiers will be proposed for it. Nothing is saved
+       until you have confirmed them.`}</p>
+  ${ev ? `<div class="eviq"><h5>Evidence</h5><dl>
+    <dt>${ev.kind === 'mcp_server' ? 'Server' : 'Domain'}</dt>
+    <dd class="mono">${esc(ev.what)}</dd>
+    <dt>Seen on</dt><dd>${ev.devices} device${ev.devices === 1 ? '' : 's'}</dd>
+    ${ev.confidence ? `<dt>Read as</dt><dd>${esc(ev.category || 'AI tool')}
+      <span class="pill p-ok">${esc(ev.confidence)} confidence</span></dd>` : ''}
+    <dt>Source</dt><dd>Discovery run</dd>
+  </dl></div>` : ''}
+  <dl class="kv">
+    ${row('rw-name', 'name', RW.name, 'Acme Copilot')}
+    ${row('rw-vendor', 'vendor', RW.vendor, 'Acme')}
+    ${RW.editing
+      ? `<dt>id</dt><dd class="mono">${esc(RW.editing)}</dd>`
+      : row('rw-id', 'id', RW.id, 'lowercase-slug, e.g. acme-copilot')}
+    <dt>category</dt><dd><select id="rw-category" class="mfield">
+      ${REG_CATEGORIES.map(c => `<option${RW.category === c ? ' selected' : ''}
+        >${esc(c)}</option>`).join('')}</select></dd>
+    <dt>risk tier</dt><dd><select id="rw-risk" class="mfield">
+      ${['high', 'medium', 'low'].map(r => `<option${RW.risk === r ? ' selected' : ''}
+        >${r}</option>`).join('')}</select></dd>
+  </dl>
+  <p class="src-note" style="margin-top:10px">Name, vendor, id and category are
+  all required: the registry refuses an entry without them.</p>
+  <p class="src-note wnote">${RW.editing
+    ? 'The id is how every other page refers to this tool, so it cannot change.'
+    : ev
+    ? `Dismissing instead? That is the Dismiss button on the review queue - it
+       records that a person decided, so the same domain does not come back
+       next week.`
+    : 'The id is how every other page refers to this tool and cannot change later.'}</p>`;
+}
+
+function rwSugRow(s, i) {
+  const why = RW_WHY[s.why] || RW_WHY.me;
+  return `<label class="sug ${s.on ? 'on' : ''}">
+    <input type="checkbox" data-act="rw-tick" data-key="${i}"${s.on ? ' checked' : ''}>
+    <span class="idf">${esc(s.v)}</span>
+    <span class="fld">${esc(RW_FIELDLBL[s.f] || s.f)}</span>
+    ${s.why === 'derived'
+      ? `<span class="pill p-warn">${esc(s.conf)} confidence</span>` : ''}
+    <span class="why ${why[1]}">${esc(why[0])}</span></label>`;
+}
+
+function rwBodyIdent() {
+  if (!RW.name) return `<h4>How else to spot it</h4>
+    <p>Name the tool on the first step and proposals appear here.</p>`;
+  const anyEv = RW.sugs.some(s => s.why === 'ev' || s.why === 'saved');
+  return `<h4>How else to spot it</h4>
+  <p>What was already seen is ticked. Everything else is a proposal derived from
+  the name - left off, and labelled - because a wrong identifier is worse than a
+  missing one: a blank leaves this tool unseen on a surface, a wrong one hangs
+  somebody else's findings on it. Tick only what you recognise.</p>
+  ${anyEv ? '' : `<div class="note">Nothing here has been seen in your estate
+    yet - you are defining this tool before anything found it, so every line
+    below is a guess until a finding matches it.</div>`}
+  ${RW_SURFACES.map(sf => {
+    const rows = RW.sugs.map((x, i) => [x, i])
+      .filter(p => RW_SURFACE_OF(p[0].f) === sf[0]);
+    if (!rows.length) return '';
+    const n = rows.filter(p => p[0].on).length;
+    return `<div class="sgroup"><h5>${esc(sf[0])}
+      <span class="ct">${n ? n + ' confirmed' : 'none confirmed'}</span></h5>
+      ${rows.map(p => rwSugRow(p[0], p[1])).join('')}</div>`;
+  }).join('')}
+  <div class="sgroup"><h5>Add your own</h5>
+    <div class="addrow">
+      <input id="rw-newv" class="mfield" style="min-width:230px"
+        placeholder="an identifier you know, e.g. Acme.app">
+      <select id="rw-newf" class="mfield" style="min-width:180px">
+        ${Object.keys(RW_FIELDLBL).map(f =>
+          `<option value="${esc(f)}">${esc(RW_FIELDLBL[f])}</option>`).join('')}
+      </select>
+      <button class="mini" data-act="rw-add">Add</button>
+    </div></div>
+  <p class="src-note wnote">A confirmed identifier is still only a guess until something
+  matches it. The next step says which is which.</p>`;
+}
+
+function rwBodyReview() {
+  const rows = RW_SURFACES.map(sf => {
+    const c = rwOnIn(sf[0]);
+    const seen = c.some(x => x.why === 'ev' || x.why === 'saved');
+    return `<tr><td class="sname">${esc(sf[0])}</td>
+      <td>${c.length ? c.map(x => `<div class="mono"
+        style="font-size:12px">${esc(x.v)}</div>`).join('')
+        : '<span style="color:var(--mut)">nothing to match on</span>'}</td>
+      <td>${!c.length ? '<span class="pill p-mut">unseen</span>'
+        : seen ? '<span class="pill p-ok">already matching</span>'
+               : '<span class="pill p-warn">watching</span>'}</td></tr>`;
+  }).join('');
+  return `<h4>Review and save</h4>
+  <p>This is what goes to every collector on its next check-in. No repo, no
+  rebuild, no MDM re-push.</p>
+  ${RERR ? `<div class="note">${esc(RERR)}</div>` : ''}
+  <div class="rvw"><table>
+    <tr><th>surface</th><th>identifiers</th><th>status</th></tr>${rows}
+  </table></div>
+  <div class="callout"><b>Already matching</b> means findings exist for it today.
+  <b>Watching</b> means the identifier is live but nothing has matched yet -
+  which may mean nobody uses it that way, or may mean the identifier is wrong.
+  The tool page keeps that split visible rather than reporting a confident
+  zero.</div>
+  <div style="margin-bottom:10px">
+    <button class="mini" data-act="reg-adv">${RADV
+      ? 'Back to the wizard' : 'Advanced: edit as JSON'}</button></div>
+  ${RADV ? `<textarea id="re-json" class="mfield" rows="14"
+      style="width:100%;font-family:ui-monospace,monospace"
+      >${esc(JSON.stringify(rwEntry(), null, 2))}</textarea>` : ''}`;
+}
+
+function regForm() {
+  if (!RW) rwOpen({});
+  const steps = RW_STEPS(), g = steps[RW.step];
+  const body = g.k === 'found' ? rwBodyFound()
+    : g.k === 'ident' ? rwBodyIdent() : rwBodyReview();
+  const canNext = g.k !== 'found' || rwReady();
+  return `<div class="ssow" style="margin-bottom:14px">${rwRail()}
+    <div class="ssmain">${body}
+      <div class="ssfoot">
+        <button class="mini" data-act="reg-cancel">Cancel</button>
+        <span class="sp"></span>
+        ${RW.step > 0 ? `<button class="mini" data-act="rw-step"
+          data-key="${RW.step - 1}">Back</button>` : ''}
+        ${RW.step < 2
+          ? `<button class="mini pri" data-act="rw-step" data-key="${RW.step + 1}"
+              ${canNext ? '' : 'disabled'}>Next</button>`
+          : `<button class="mini pri" data-act="reg-save">${RW.editing
+              ? 'Save changes' : 'Save and watch'}</button>`}
+      </div></div></div>`;
+}
+
+// Typing a name has to reach the Next button and the rail as it happens. A full
+// re-render would take the focus out of the field mid-word, so this updates the
+// two things that depend on the name and leaves the inputs alone. Without it
+// Next stayed disabled from the first render and the wizard could not be walked
+// at all - found by typing into it rather than by reading it.
+function rwLive() {
+  if (!RW) return;
+  rwSync();
+  const railEl = document.querySelector('.ssrail');
+  if (railEl) railEl.outerHTML = rwRail();
+  const next = document.querySelector('.ssfoot [data-act="rw-step"].pri');
+  if (next) next.disabled = !rwReady();
+}
+app.addEventListener('input', e => {
+  if (e.target && e.target.matches
+      && e.target.matches('#rw-name,#rw-vendor,#rw-id')) rwLive();
+});
+
+// Reads whatever the current step has on screen back into RW, so moving between
+// steps - or saving from the last one - never loses a keystroke.
+function rwSync() {
+  if (!RW) return;
+  const val = id => { const el = document.getElementById(id); return el ? el.value : null; };
+  const nm = val('rw-name');
+  if (nm === null) return;
+  const before = RW.name + ' ' + RW.vendor;
+  RW.name = nm;
+  RW.vendor = val('rw-vendor') || '';
+  if (!RW.editing) RW.id = val('rw-id') || _slug(RW.name);
+  RW.category = val('rw-category') || RW.category;
+  RW.risk = val('rw-risk') || RW.risk;
+  if (RW.name + ' ' + RW.vendor !== before) rwResuggest();
+}
+
 function regEntryFromForm() {
   if (RADV) {
     const t = document.getElementById('re-json');
     return JSON.parse((t && t.value) || '{}');
   }
-  const e = {
-    id: REDIT === '' ? _val('re-id') : REDIT,
-    name: _val('re-name'), vendor: _val('re-vendor'),
-    category: _val('re-category'), risk_tier: _val('re-risk'),
-  };
-  const lists = {
-    domains: _uncsv('re-domains'), app_names: _uncsv('re-app-names'),
-    bundle_ids: _uncsv('re-bundle-ids'), exe_names: _uncsv('re-exe-names'),
-    email_senders: _uncsv('re-email'), mcp_identifiers: _uncsv('re-mcp-ids'),
-    mcp_config_paths: _uncsv('re-mcp-any'),
-    mcp_config_paths_macos: _uncsv('re-mcp-macos'),
-    mcp_config_paths_windows: _uncsv('re-mcp-windows'),
-    mcp_config_paths_linux: _uncsv('re-mcp-linux'),
-  };
-  Object.keys(lists).forEach(k => { if (lists[k].length) e[k] = lists[k]; });
-  const binaries = _uncsv('re-cli-binaries'), config = _uncsv('re-cli-config');
-  if (binaries.length || config.length) {
-    e.cli = {};
-    if (config.length) e.cli.config_paths = config;
-    if (binaries.length) e.cli.binaries = binaries;
-  }
-  const vscode = _uncsv('re-ext-vscode');
-  if (vscode.length) e.extension_ids = {vscode: vscode};
-  const notes = _val('re-notes');
-  if (notes) e.notes = notes;
-  return e;
+  rwSync();
+  return rwEntry();
 }
 
 async function registryView() {
@@ -2750,9 +3374,17 @@ async function iso() {
 // a glance rather than reading.
 const INFO = '<button class="info" data-info type="button" title="about this field">I</button>';
 
-function settingRow(key, label, placeholder, note) {
+// `batch` puts the field under the Settings view's one Save changes bar
+// instead of giving it a Save button of its own. A SECRET never batches,
+// whatever is asked for: its box renders blank by design, and blank means
+// CLEAR - so a batch that swept the secrets up would wipe every one of them
+// the moment somebody edited an unrelated field on the same tab. The wizard
+// and the extension guide pass nothing and keep their per-field saves,
+// which is right there: each step gates on its own value being stored.
+function settingRow(key, label, placeholder, note, batch) {
   const s = (SETTINGS && SETTINGS.settings || {})[key] || {value: '', source: 'unset'};
   const secret = !('value' in s);
+  const batched = batch && !secret;
   const state = secret
     ? (s.set ? '<span class="pill p-ok">set</span>' : '')
     : s.source === 'db' ? '<span class="pill p-mut">saved here</span>'
@@ -2764,12 +3396,14 @@ function settingRow(key, label, placeholder, note) {
     ? (s.set ? 'A value is set (never shown). Leave blank and save to CLEAR it; type and save to replace it.' : 'Not set.')
     : '';
   const more = `${esc(note)}${note ? ' ' : ''}${secretNote || src}`.trim();
+  const val = secret ? '' : (s.value || '');
   return `<dt>${esc(label)}${more ? INFO : ''}</dt><dd>
     <input id="set-${esc(key)}" class="mfield" style="min-width:340px"
       ${secret ? 'type="password" autocomplete="off"' : ''}
+      ${batched ? `data-sfield="${esc(key)}" data-sinit="${esc(val)}"` : ''}
       placeholder="${esc(placeholder)}"
-      value="${secret ? '' : esc(s.value || '')}">
-    <button class="mini" data-act="save-setting" data-key="${esc(key)}">Save</button>
+      value="${esc(val)}">
+    ${batched ? '' : `<button class="mini" data-act="save-setting" data-key="${esc(key)}">Save</button>`}
     ${state}
     ${more ? `<div class="src-note fnote">${more}</div>` : ''}</dd>`;
 }
@@ -2822,7 +3456,7 @@ function widgetPickerRow() {
   </dd>`;
 }
 
-function pasteGuardBehaviourFields() {
+function pasteGuardBehaviourFields(batch) {
   const s = (SETTINGS && SETTINGS.settings) || {};
   const mode = (s.paste_guard_mode || {}).value || '';
   const marksSet = (s.classification_markings || {}).source === 'db';
@@ -2830,19 +3464,22 @@ function pasteGuardBehaviourFields() {
   const opt = (v, label) => `<option value="${v}"${mode === v ? ' selected' : ''}>${label}</option>`;
   return `
     <dt>Paste guard mode${INFO}</dt><dd>
-      <select id="set-paste_guard_mode" class="mfield">
+      <select id="set-paste_guard_mode" class="mfield"
+        ${batch ? `data-sfield="paste_guard_mode" data-sinit="${esc(mode)}"` : ''}>
         <option value=""${mode ? '' : ' selected'}>warn (default)</option>
         ${opt('off', 'off')}${opt('warn', 'warn')}${opt('block', 'block')}
       </select>
-      <button class="mini" data-act="save-setting" data-key="paste_guard_mode">Save</button>
+      ${batch ? '' : '<button class="mini" data-act="save-setting" data-key="paste_guard_mode">Save</button>'}
       <div class="src-note fnote">What happens when someone pastes marked content
       into an AI tool: warn asks them first, block stops it. Baked into the
       policy downloads.</div></dd>
     <dt>Classification markings${INFO}</dt><dd>
       <textarea id="set-classification_markings" class="mfield" rows="4"
         style="min-width:340px;resize:vertical;font-family:inherit"
+        ${batch ? `data-sfield="classification_markings" data-slist="lines"
+          data-sinit="${marks === null ? '' : esc(marks.join('\n'))}"` : ''}
         placeholder="one marking per line (empty = the default set)">${marks === null ? '' : esc(marks.join('\n'))}</textarea>
-      <button class="mini" data-act="save-markings">Save</button>
+      ${batch ? '' : '<button class="mini" data-act="save-markings">Save</button>'}
       ${marksSet ? '<button class="mini" data-act="clear-markings">Clear (default set)</button>' : ''}
       <div class="src-note fnote">Document phrases the guard looks for in pastes,
       one per line. Save an empty box to use no markings; clear to go back
@@ -2850,31 +3487,14 @@ function pasteGuardBehaviourFields() {
       only which detector matched gets reported.</div></dd>`;
 }
 
-function extensionDeliveryFields() {
-  return `
-    ${settingRow('firefox_extension_id', 'Firefox extension ID (gecko id)',
-      'ai-guard@your-org.example',
-      'The id you set in the manifest (browser_specific_settings.gecko.id).'
-      + ' Not the same as the Chromium id. Needed for the Firefox'
-      + ' downloads.')}
-    ${settingRow('extension_crx_url', 'Packed .crx URL (Chromium)',
-      'https://files.example.com/ai-guard-1.0.0.crx',
-      'Where you host the packed .crx. The generated updates.xml points'
-      + ' browsers at it.')}
-    ${settingRow('extension_update_url', 'Chromium update manifest URL',
-      'https://files.example.com/updates.xml',
-      'Where you host the packed extension update manifest (updates.xml).'
-      + ' Needed for the Windows Chromium deploy script.')}
-    ${settingRow('extension_xpi_url', 'Signed .xpi URL (Firefox)',
-      'https://files.example.com/ai-guard-1.0.0.xpi',
-      'Where you host the SIGNED .xpi from addons.mozilla.org'
-      + ' (self-distribution). Firefox only installs Mozilla-signed'
-      + ' extensions - the extension setup guide covers the one-time'
-      + ' signing step. Needed for the Firefox downloads.')}`;
-}
-
+// Settings shows the paste guard under its one Save changes bar. The
+// delivery values - the packed URLs and the two extension ids - are NOT here
+// any more: they are the output of the pack-host-sign sequence and mean
+// nothing apart from it, so the extension setup owns them and Settings shows
+// their state. Corporate domains and the paste guard stay, because flipping
+// warn to block is a Tuesday decision rather than a repack.
 function pasteGuardFields() {
-  return pasteGuardBehaviourFields() + extensionDeliveryFields();
+  return pasteGuardBehaviourFields(true);
 }
 
 // The last result of a connection test, rendered where its button lives.
@@ -2895,12 +3515,12 @@ function testNote(which) {
 // The log-store step/card, shared by the wizard and the Settings view. The
 // wizard adds the self-hosted / cloud / none branch; Settings shows all
 // fields flat.
-function logStoreFields(withUsername) {
+function logStoreFields(withUsername, batch) {
   return settingRow('log_store_url', 'Log store base URL',
     'http://loki.<namespace>.svc.cluster.local:3100',
-    'The BASE URL. The receiver derives the push endpoint from it, so the push-vs-base mixup cannot happen here.')
+    'The BASE URL. The receiver derives the push endpoint from it, so the push-vs-base mixup cannot happen here.', batch)
     + (withUsername ? settingRow('log_store_username', 'Log store username',
-        'numeric instance id on Grafana Cloud', '')
+        'numeric instance id on Grafana Cloud', '', batch)
       + settingRow('log_store_password', 'Log store password / token', 'paste to set', '')
       : '');
 }
@@ -2929,8 +3549,12 @@ function extSettingsState() {
   };
 }
 
-// The wizard step-5 summary: where extension setup stands, at a glance.
-function extStatusRows() {
+// Where extension setup stands, at a glance. `mode` is shown by the setup
+// wizard's step-5 summary, which has no paste-guard field of its own, and
+// suppressed in Settings, which has one three rows above - a status block
+// repeating an editable field on the same screen is the duplication this
+// whole change was about.
+function extStatusRows(mode) {
   const st = extSettingsState();
   const pill = val => val
     ? `<span class="pill p-ok">set</span> <span class="mono" style="font-size:11px">${esc(val)}</span>`
@@ -2939,12 +3563,15 @@ function extStatusRows() {
     <dt>Chromium extension ID</dt><dd>${pill(st.id)}</dd>
     <dt>Chromium hosting</dt><dd>${pill(st.crx && st.upd ? 'crx + updates.xml URLs' : st.crx || st.upd)}</dd>
     <dt>Firefox (optional)</dt><dd>${pill(st.gecko && st.xpi ? st.gecko : st.gecko || st.xpi)}</dd>
-    <dt>Paste guard mode</dt><dd><span class="pill ${st.mode === 'block' ? 'p-warn' : 'p-ok'}">${esc(st.mode || 'warn (default)')}</span></dd>
+    ${mode ? `<dt>Paste guard mode</dt><dd><span class="pill ${st.mode === 'block' ? 'p-warn' : 'p-ok'}">${esc(st.mode || 'warn (default)')}</span></dd>` : ''}
   </dl>`;
 }
 
+// min-width:0 for the same reason as .ssmain: a flex item will not shrink
+// below its content, so overflow-x on its own never engages - the box just
+// grows and takes the layout with it.
 const extCmd = c => `<div style="display:flex;gap:8px;align-items:flex-start;margin:8px 0">
-  <pre class="mono" style="margin:0;padding:8px 10px;background:var(--sf2);border:1px solid var(--bd);border-radius:6px;overflow-x:auto;flex:1;font-size:12px">${esc(c)}</pre>
+  <pre class="mono" style="margin:0;padding:8px 10px;background:var(--sf2);border:1px solid var(--bd);border-radius:6px;overflow-x:auto;flex:1;min-width:0;font-size:12px">${esc(c)}</pre>
   <button class="mini" data-act="copy" data-copy="${esc(c)}">Copy</button></div>`;
 
 async function extSetup() {
@@ -2958,24 +3585,55 @@ async function extSetup() {
   const crxName = 'ai-guard-' + (ver || 'VERSION') + '.crx';
   const xpiName = 'ai-guard-' + (ver || 'VERSION') + '.xpi';
 
+  // Steps 1 and 2 save nothing - a download and a pack both happen on the
+  // operator's own machine - so their state cannot be read back. It is
+  // INFERRED from the id on step 3 instead: you cannot know a 32-letter
+  // Chromium id without having packed the thing that produced it. Evidence,
+  // the way the sign-on wizard treats a verified value, rather than a tick
+  // somebody presses to say they did it.
   const PAGES = [
-    ['Download', !!ready],
-    ['Pack', null],
-    ['Identity', !!st.id],
-    ['Host it', !!(st.crx && st.upd)],
-    ['Firefox', !!(st.gecko && st.xpi)],
-    ['Behaviour', null],
+    {t: 'Download', d: 'The pre-configured source',
+     done: !!st.id, line: st.id ? 'downloaded - the id proves it'
+       : ready ? (ver ? 'source ' + ver + ', ready' : 'ready') : ''},
+    {t: 'Pack', d: 'And keep the key',
+     done: !!st.id, line: st.id ? 'packed - the id proves it' : ''},
+    {t: 'Identity', d: 'The Chromium extension ID',
+     done: !!st.id, line: st.id},
+    {t: 'Host it', d: 'Where browsers fetch it',
+     done: !!(st.crx && st.upd),
+     line: (st.crx && st.upd) ? 'crx + updates.xml hosted'
+       : st.crx ? 'crx only - no manifest yet' : ''},
+    {t: 'Firefox', d: 'Optional', opt: true,
+     done: !!(st.gecko && st.xpi),
+     line: (st.gecko && st.xpi) ? st.gecko : 'not deployed'},
+    {t: 'Behaviour', d: 'What the guard does', done: true,
+     line: (st.mode || 'warn') + ' mode'},
   ];
-  const chips = PAGES.map(([t, done], i) => `<button class="mini"
-    ${EXTPAGE === i + 1 ? 'style="border-color:var(--pri);color:var(--pri)"' : ''}
-    data-act="ext-page" data-key="${i + 1}">${i + 1} · ${t}${done === true ? ' ✓' : ''}</button>`).join(' ');
+  const need = PAGES.filter(p => !p.opt);
+  const ndone = need.filter(p => p.done).length;
+  const rail = `<div class="ssrail"><h3>Extension setup</h3>
+    <ol>${PAGES.map((p, i) => `<li class="ssstep ${p.done ? 'done' : ''}
+      ${EXTPAGE === i + 1 ? 'on' : ''}" data-act="ext-page" data-key="${i + 1}">
+      <span class="dot">${p.done ? '&#10003;' : i + 1}</span>
+      <span style="min-width:0"><span class="t">${esc(p.t)}</span>
+      <span class="${p.line ? 'val' : 'pend'}">${esc(p.line || p.d)}</span></span>
+    </li>`).join('')}</ol>
+    <div class="sssum">
+      <div class="lede" style="font-size:11.5px">${ndone} of ${need.length}
+        required steps done</div>
+      <div class="barwrap"><div class="bar"
+        style="width:${ndone / need.length * 100}%"></div></div>
+      <div class="lede" style="font-size:11.5px">Firefox is optional. Nothing
+        here needs a checkout, and every saved value can be changed by coming
+        back to the step that owns it.</div>
+    </div></div>`;
 
   const dlBtn = (kind, label) => `<button class="mini" style="padding:6px 14px"
     data-act="artifact" data-key="${kind}">${label}</button>`;
 
   let body = '';
   if (EXTPAGE === 1) body = `
-    <h3>Download the pre-configured source</h3>
+    <h4>Download the pre-configured source</h4>
     <p class="lede">The extension is not on a web store: you pack it once and
     your browsers install it from where you host it. This download is the
     extension source shipped with this portal${ver ? ` (version ${esc(ver)})` : ''},
@@ -2992,7 +3650,7 @@ async function extSetup() {
     default set is the registry's browser surface and most deployments ship
     it as is.</p>`;
   if (EXTPAGE === 2) body = `
-    <h3>Pack it, and keep the key</h3>
+    <h4>Pack it, and keep the key</h4>
     <p class="lede">Packing happens in any Chromium browser on your own
     machine and produces two files: the extension package (.crx) and its
     signing key (.pem).</p>
@@ -3019,7 +3677,7 @@ async function extSetup() {
     again - this time supplying the .pem. Rename the result to a versioned
     name: <span class="mono">${esc(crxName)}</span>.</p>`;
   if (EXTPAGE === 3) body = `
-    <h3>Save the Chromium identity</h3>
+    <h4>Save the Chromium identity</h4>
     <p class="lede">The id from the previous page's first command (or from
     <span class="mono">chrome://extensions</span> on any machine with the
     packed extension loaded). Every Chromium policy artifact is keyed on it -
@@ -3033,17 +3691,36 @@ async function extSetup() {
         read from the wrong place - it is not the key, and not a hash.</div></dd>
     </dl>`;
   if (EXTPAGE === 4) body = `
-    <h3>Host the package</h3>
+    <h4>Host the package</h4>
     <p class="lede">Two small files go on HTTPS anywhere every browser in
     the fleet can fetch: the packed <span class="mono">${esc(crxName)}</span>
     and an update manifest (<span class="mono">updates.xml</span>) that
-    points at it. Any static host or artifact pipeline your org already
-    trusts works; serve the .crx as
+    points at it. Serve the .crx as
     <span class="mono">application/x-chrome-extension</span>. Two habits
     save a later outage: if your host grants read access per file, grant it
     by prefix instead, or every new release starts life private; and keep
     the previous .crx up when you upload a new one - re-pointing updates.xml
     at it is your rollback.</p>
+    <dl class="kv" style="margin-bottom:14px"><dt>Somewhere to put
+      them${INFO}</dt><dd>
+      <span class="src-note" style="margin:6px 0 0;display:block">Two static
+      files over HTTPS - not a container registry.</span>
+      <div class="src-note fnote">Anything that serves a file over HTTPS to a
+      managed machine will do, and most teams already run one:
+      <b>AWS S3</b> (optionally behind CloudFront), <b>Azure Blob Storage</b>
+      (optionally behind Front Door), <b>Google Cloud Storage</b>, an
+      <b>artifact repository</b> such as Artifactory or Nexus, or a plain
+      internal web server. It does not have to be public to the internet -
+      only reachable by the browsers you are deploying to - so an
+      intranet-only host is fine and is often the easier approval.
+      <br><br>A container registry is the one thing that will not work: ECR,
+      ACR and friends serve image layers to a container runtime, not files to
+      a browser. If that is where your other build output goes, these two need
+      somewhere else.
+      <br><br>On S3 specifically, grant read with a wildcard resource
+      (<span class="mono">arn:aws:s3:::your-bucket/*</span>) rather than
+      per-object, or every release you upload starts life private and the
+      fleet silently stops updating.</div></dd></dl>
     <dl class="kv">
       ${settingRow('extension_crx_url', 'Packed .crx URL',
         'https://files.example.com/' + crxName,
@@ -3062,7 +3739,7 @@ async function extSetup() {
       <button class="mini" data-act="run-test" data-key="extension-updates">Probe the hosted manifest</button>
     </div>${testNote('extension-updates')}` : ''}`;
   if (EXTPAGE === 5) body = `
-    <h3>Firefox (skip if you do not deploy it)</h3>
+    <h4>Firefox</h4>
     <p class="lede">Firefox refuses unsigned extensions on release builds,
     with no enterprise override, so it takes three extra one-time steps:
     give the extension a Firefox identity, have Mozilla sign it, and host
@@ -3101,7 +3778,7 @@ async function extSetup() {
         <button class="mini" data-act="run-test" data-key="extension-xpi">Probe the hosted .xpi (checks the Mozilla signature)</button>
       </div>${testNote('extension-xpi')}` : ''}`;
   if (EXTPAGE === 6) body = `
-    <h3>What the guard does</h3>
+    <h4>What the guard does</h4>
     <p class="lede">Both values are baked into every policy download, so a
     later change here means regenerate and re-push. The usual path is warn
     for a couple of weeks, then block once the override count has had its
@@ -3110,20 +3787,31 @@ async function extSetup() {
     <p class="lede" style="margin-top:14px">That is the one-time work done.
     The policy downloads - pre-filled with all of this plus a fresh
     enrollment token each - are in the wizard's step 7, and pushing those
-    through your MDM is the actual rollout.</p>
-    <button class="mini" style="padding:6px 14px" data-act="open-wizard">Back to the setup wizard</button>`;
+    through your MDM is the actual rollout.</p>`;
 
   return `<h2>Extension setup</h2>
   <p class="lede">The browser extension, from source to hosted package, one
-  step at a time. Nothing here needs a checkout, and every saved value stays
-  editable under Settings.</p>
+  step at a time. This is where its values live - come back to a step to
+  change one.</p>
   ${SETMSG ? `<div class="note">${esc(SETMSG)}</div>` : ''}
-  <div style="margin:12px 0">${chips}</div>
-  <div class="wcard" style="margin-bottom:10px">${body}</div>
-  <div style="margin:14px 0">
-    ${EXTPAGE > 1 ? `<button class="mini" data-act="ext-page" data-key="${EXTPAGE - 1}">← back</button>` : ''}
-    ${EXTPAGE < 6 ? `<button class="mini" data-act="ext-page" data-key="${EXTPAGE + 1}">Next →</button>` : ''}
-  </div>`;
+  <div class="ssow">${rail}
+    <div class="ssmain">${body}
+      <div class="ssfoot">
+        ${EXTPAGE === 6 ? '' : EXTFROM === 'wizard'
+          ? `<button class="mini" data-act="ext-back-to-setup">Back to
+              deployment setup</button>`
+          : '<button class="mini" data-nav="settings">Close</button>'}
+        <span class="sp"></span>
+        ${EXTPAGE > 1 ? `<button class="mini" data-act="ext-page"
+          data-key="${EXTPAGE - 1}">Back</button>` : ''}
+        ${EXTPAGE < 6
+          ? `<button class="mini pri" data-act="ext-page"
+              data-key="${EXTPAGE + 1}">Next</button>`
+          : EXTFROM === 'wizard'
+          ? `<button class="mini pri" data-act="ext-back-to-setup">Back to
+              deployment setup</button>`
+          : '<button class="mini pri" data-nav="settings">Done</button>'}
+      </div></div></div>`;
 }
 
 // The first-run wizard: everything a fresh managed install needs, in
@@ -3169,31 +3857,123 @@ async function wizard() {
     ${WIZSTORE === k ? 'style="border-color:var(--pri)"' : ''}
     data-act="wiz-store" data-key="${k}">${lbl}</button>`;
 
-  return `<h2>Welcome — set up your deployment</h2>
-  <p class="lede">Work through the steps top to bottom. Everything here can
-  be changed later under Settings, and changes take effect immediately - no
-  redeploys.</p>
-  ${SETMSG ? `<div class="note">${esc(SETMSG)}</div>` : ''}
+    const WIZ_STEPS = [
+    {t: 'Receiver URL',         need: 'req', act: 'Start collecting'},
+    {t: 'Log store',            need: 'rec', act: 'Start collecting'},
+    {t: 'Corporate domains',    need: 'req', act: 'Start collecting'},
+    {t: 'Governance baseline',  need: 'opt', act: 'Make it useful'},
+    {t: 'Browser extension',    need: 'opt', act: 'Make it useful'},
+    {t: 'Alerting and Grafana', need: 'opt', act: 'Make it useful'},
+    {t: 'Deployment downloads', need: 'out', act: 'Make it useful'},
+  ];
+  // A first-run wizard that only counts steps tells you how far down the page
+  // you are. This says what the deployment can do yet, and what it will get
+  // WRONG if you stop here. Corporate domains is "required" not because the
+  // platform refuses to run without it but because it runs wrong: every
+  // account reads as personal, and the Overview headline, the Personal
+  // accounts page and the ISO evidence all inherit that.
+  const wv = k => ((SETTINGS && SETTINGS.settings || {})[k] || {}).value || '';
+  const wDone = n =>
+    n === 1 ? !!wv('receiver_public_url') :
+    n === 2 ? !!wv('log_store_url') :
+    n === 3 ? ((cd.value || []).length > 0) :
+    n === 4 ? (GOVDECS || []).length > 0 :
+    n === 5 ? !!extSettingsState().id :
+    n === 6 ? !!(wv('alertmanager_url') || wv('grafana_url')) : false;
+  const wLine = n => {
+    if (n === 1) return wv('receiver_public_url')
+      ? {c: 'val', t: wv('receiver_public_url').replace(/^https?:\/\//, '')}
+      : {c: 'need', t: 'nothing can deploy without it'};
+    if (n === 2) return wv('log_store_url')
+      ? {c: 'val', t: 'reading from it'}
+      : {c: 'pend', t: 'findings stay in container logs'};
+    if (n === 3) return (cd.value || []).length
+      ? {c: 'val', t: (cd.value || []).join(', ')}
+      : {c: 'need', t: 'every account reads as personal'};
+    if (n === 4) return (GOVDECS || []).length
+      ? {c: 'val', t: (GOVDECS || []).length + ' recorded'}
+      : {c: 'pend', t: 'nothing decided yet'};
+    if (n === 5) return extSettingsState().id
+      ? {c: 'val', t: 'packed and hosted'} : {c: 'pend', t: 'not set up'};
+    if (n === 6) return (wv('alertmanager_url') || wv('grafana_url'))
+      ? {c: 'val', t: wv('alertmanager_url') ? 'alerting on' : 'grafana embedded'}
+      : {c: 'pend', t: 'nothing pages'};
+    return (CFG.managed && CFG.managed.artifacts_ready)
+      ? {c: 'val', t: 'ready'} : {c: 'pend', t: 'needs the receiver URL'};
+  };
+  const reqN = WIZ_STEPS.filter(x => x.need === 'req').length;
+  const reqDone = WIZ_STEPS.filter((x, i) => x.need === 'req' && wDone(i + 1)).length;
+  const canGo = reqDone === reqN;
+  let wact = '';
+  const rail = `<div class="ssrail"><h3>Set up your deployment</h3><ol>${
+    WIZ_STEPS.map((x, i) => {
+      const n = i + 1, dn = wDone(n), ln = wLine(n);
+      const hdr = x.act !== wact
+        ? `</ol><div class="wact">${esc(x.act)}</div><ol>` : '';
+      wact = x.act;
+      const tag = x.need === 'req' ? '<span class="wtag req">required</span>'
+        : x.need === 'rec' ? '<span class="wtag">recommended</span>'
+        : x.need === 'opt' ? '<span class="wtag">optional</span>' : '';
+      return `${hdr}<li class="ssstep ${dn ? 'done' : ''}
+        ${WIZSTEP === n ? 'on' : ''} ${x.need === 'opt' ? 'opt' : ''}"
+        data-act="wiz-step" data-key="${n}">
+        <span class="dot">${dn ? '&#10003;' : n}</span>
+        <span style="min-width:0"><span class="t">${esc(x.t)}${tag}</span>
+        <span class="${ln.c}">${esc(ln.t)}</span></span></li>`;
+    }).join('')}</ol>
+    <div class="sssum">${canGo
+      ? `<div class="lede" style="font-size:11.5px;color:var(--pri);font-weight:600">You can deploy now</div>
+         <div class="barwrap"><div class="bar" style="width:100%"></div></div>
+         <div class="lede" style="font-size:11.5px">Both required steps are in.
+           The rest can wait - collectors start reporting as soon as you push
+           the downloads.</div>
+         <p style="margin:9px 0 0"><button class="mini pri" data-act="wiz-step"
+           data-key="7">Go to downloads</button></p>`
+      : `<div class="lede" style="font-size:11.5px">${reqDone} of ${reqN} required steps done</div>
+         <div class="barwrap"><div class="bar"
+           style="width:${reqDone / reqN * 100}%"></div></div>
+         <div class="lede" style="font-size:11.5px">Optional steps can be left
+           for later; everything stays editable under Settings.</div>`}
+    </div></div>`;
 
-  <div class="wcard" style="margin-bottom:10px"><h3>1 · Where your machines reach the receiver</h3>
+  let body = '';
+  if (WIZSTEP === 1) body = `<h4>Where your machines reach the receiver</h4>
   <p class="lede" style="margin-bottom:10px">The URL your laptops and servers
   will send findings to. It gets baked into every download below, so it has
   to work from those machines - not just from inside the cluster. That means
   a DNS record pointing this name at your ingress or reverse proxy, plus a
   certificate - unless something like a Tailscale operator handles both for
-  you. Save it, then hit probe to check.</p>
+  you.</p>
+  <p class="lede" style="margin-bottom:10px">Not sure which address that is?
+  It is whatever already fronts this portal from outside. To find it:
+  <span class="mono">kubectl get ingress -A</span> for an ingress host,
+  <span class="mono">kubectl get svc -A --field-selector
+  spec.type=LoadBalancer</span> for a load-balancer address, or
+  <span class="mono">tailscale status</span> if a Tailscale operator handles
+  it. Then save it and press probe: the receiver either answers on the address
+  you typed or it does not, and that is the only confirmation worth having.</p>
   <dl class="kv">
     ${settingRow('receiver_public_url', 'Public receiver URL',
       'https://ai-guard.your-tailnet.ts.net', '')}
   </dl>
   <div style="margin-top:8px">
     <button class="mini" data-act="run-test" data-key="receiver-url">Probe the saved URL</button>
-  </div>${testNote('receiver-url')}</div>
-
-  <div class="wcard" style="margin-bottom:10px"><h3>2 · The log store</h3>
+  </div>${testNote('receiver-url')}`;
+  if (WIZSTEP === 2) body = `<h4>The log store</h4>
   <p class="lede" style="margin-bottom:10px">Findings are stored in a
   Loki-compatible log store: the receiver writes to it, this portal reads
   from it. Where is yours?</p>
+  <p class="lede" style="margin-bottom:10px">In practice that means
+  <b>Grafana Loki</b>, self-hosted in any of its deployment modes, or
+  <b>Grafana Cloud Logs</b>, which is the same API hosted. If you already run
+  the Grafana stack, this is the Loki you have.</p>
+  <p class="lede" style="margin-bottom:10px">Anything else has to implement
+  Loki's own HTTP API, and <i>both</i> halves of it: the receiver writes to
+  <span class="mono">/loki/api/v1/push</span> and this portal reads from
+  <span class="mono">/loki/api/v1/query_range</span>. Worth checking before you
+  commit - several log stores advertise Loki-compatible <i>ingest</i> while
+  answering queries in a language of their own, and one of those will take
+  every finding you send it and then show you an empty portal.</p>
   <div style="margin-bottom:10px">
     ${storeBtn('self', 'self-hosted / in-cluster')}
     ${storeBtn('cloud', 'hosted (Grafana Cloud)')}
@@ -3213,9 +3993,8 @@ async function wizard() {
     write-only token is the classic mistake - the test buttons below will
     catch it.</p>`}
   <dl class="kv">${logStoreFields(WIZSTORE === 'cloud')}</dl>
-  ${logStoreTests()}`}</div>
-
-  <div class="wcard" style="margin-bottom:10px"><h3>3 · Corporate domains</h3>
+  ${logStoreTests()}`}`;
+  if (WIZSTEP === 3) body = `<h4>Corporate domains</h4>
   <p class="lede" style="margin-bottom:10px">Your work email domains. An AI
   tool signed into one of these counts as a work account; anything else gets
   flagged as personal. Collectors pick this up automatically on their next
@@ -3233,9 +4012,8 @@ async function wizard() {
     headline converts into it at the ECB's daily reference rate (the rate's
     date is named right beside the number), newly linked tools default to
     it, and the per-currency figures stay visible.</div>
-  </div></div>
-
-  <div class="wcard" style="margin-bottom:10px"><h3>4 · Governance baseline</h3>
+  </div>`;
+  if (WIZSTEP === 4) body = `<h4>Governance baseline</h4>
   <p class="lede" style="margin-bottom:10px">Which AI tools your organisation
   has approved or banned. Only set the ones you actually have a position on -
   leaving the rest undecided is fine. You can refine any of this later on
@@ -3248,9 +4026,8 @@ async function wizard() {
       value="${esc(WIZREVIEW || yearOut)}" title="review due date for approvals">
   </div>
   <table><tr><th>tool</th><th>vendor</th><th>decision</th><th></th></tr>
-  ${REGTOOLS.map(toolRow).join('')}</table></div>
-
-  <div class="wcard" style="margin-bottom:10px"><h3>5 · Browser extension &amp; paste guard</h3>
+  ${REGTOOLS.map(toolRow).join('')}</table>`;
+  if (WIZSTEP === 5) body = `<h4>Browser extension &amp; paste guard</h4>
   <p class="lede" style="margin-bottom:10px">One extension does both jobs:
   it reports which account is signed into each AI site, and its paste guard
   warns or blocks risky pastes. It is a one-time pack-and-host, and the
@@ -3258,15 +4035,13 @@ async function wizard() {
   source here, no checkout needed. Everything it saves gets baked into the
   ready-made policy downloads in step 7. Fine to skip on a first pass and
   come back.</p>
-  ${extStatusRows()}
-  <div style="margin-top:10px">
-    <button class="mini" style="padding:6px 14px" data-act="ext-open">Open the extension setup</button>
-    <span class="src-note" style="margin-left:8px">Six short steps: download,
-    pack, identity, hosting, Firefox, behaviour. Each value is also editable
-    flat under Settings.</span>
-  </div></div>
-
-  <div class="wcard" style="margin-bottom:10px"><h3>6 · Alerting and Grafana (optional)</h3>
+  ${extStatusRows(true)}
+  <p class="src-note" style="margin:14px 0 8px">Six short steps: download,
+  pack, identity, hosting, Firefox, behaviour. It owns those values - Settings
+  shows where they stand and sends you here to change them.</p>
+  <p style="margin:0"><button class="mini" style="padding:6px 14px"
+    data-act="ext-open">Open the extension setup</button></p>`;
+  if (WIZSTEP === 6) body = `<h4>Alerting and Grafana</h4>
   <dl class="kv">
     ${settingRow('alertmanager_url', 'Alertmanager URL',
       'http://alertmanager.<namespace>.svc:9093',
@@ -3274,9 +4049,8 @@ async function wizard() {
     ${settingRow('grafana_url', 'Grafana URL',
       'the URL a BROWSER reaches Grafana on',
       'Saving reloads the page (the frame permission is baked into each page load). Panels and dashboard UID live under Settings; Grafana must allow embedding.')}
-  </dl></div>
-
-  <div class="wcard" style="margin-bottom:10px"><h3>7 · Deployment downloads</h3>
+  </dl>`;
+  if (WIZSTEP === 7) body = `<h4>Deployment downloads</h4>
   <p class="lede" style="margin-bottom:10px">Ready-to-deploy files with the
   receiver URL and a fresh enrollment token already inside - push them
   through your MDM or run them as-is. Machines enroll themselves and appear
@@ -3293,14 +4067,26 @@ async function wizard() {
     <button class="mini" data-act="artifact" data-key="scanner-cronjob">Scanner CronJob</button>
     <button class="mini" data-act="artifact" data-key="discovery-cronjob">Discovery CronJob</button>
   </div>` : `<div class="note">No public receiver URL yet, so downloads cannot
-  bake a URL agents can reach - save one in step 1 and these appear.</div>`}</div>
-
-  <div style="margin:18px 0">
-    <button class="mini" style="padding:8px 18px" data-act="wiz-finish">Finish setup</button>
-    <span class="src-note" style="margin-left:10px">You can come back:
-    everything above stays editable under Settings, and Settings can reopen
-    this wizard.</span>
-  </div>`;
+  bake a URL agents can reach - save one in step 1 and these appear.</div>`}`;
+  return `<h2>Welcome — set up your deployment</h2>
+  <p class="lede">One step at a time. Everything here can be changed later
+  under Settings, and changes take effect immediately - no redeploys.</p>
+  ${SETMSG ? `<div class="note">${esc(SETMSG)}</div>` : ''}
+  <div class="ssow">${rail}
+    <div class="ssmain">${body}
+      <div class="ssfoot">
+        <button class="mini" data-act="wiz-finish">${canGo
+          ? 'Finish setup' : 'Skip for now'}</button>
+        <span class="sp"></span>
+        ${WIZSTEP > 1 ? `<button class="mini" data-act="wiz-step"
+          data-key="${WIZSTEP - 1}">Back</button>` : ''}
+        ${WIZSTEP < 7
+          ? `<button class="mini pri" data-act="wiz-step"
+              data-key="${WIZSTEP + 1}">Next</button>`
+          : `<button class="mini pri" data-act="wiz-finish">Finish setup</button>`}
+      </div></div></div>
+  <p class="src-note">You can come back: everything above stays editable under
+  Settings, and Settings can reopen this wizard.</p>`;
 }
 
 // The editable deployment settings, managed mode only: what the receiver
@@ -3327,34 +4113,32 @@ function fleetSettings() {
       ? `From the deployment's <span class="mono">CORP_DOMAINS</span>;
          saving here overrides it without touching the deployment.`
       : 'Not set anywhere yet.';
-  return `<div class="wcard" style="margin-bottom:10px"><h3>Fleet</h3>
+  return `<div class="wcard" style="margin-bottom:10px"><h3>Detection and paste guard</h3>
   <p class="lede" style="margin-bottom:10px">Saved in the receiver and picked
   up by the fleet automatically - collectors get changes on their next
   check-in, nothing needs re-pushing through the MDM.</p>
   <dl class="kv">
     <dt>Corporate domains${INFO}</dt><dd>
       <input id="set-domains" class="mfield" style="min-width:340px"
+        data-sfield="corp_domains" data-slist="csv"
+        data-sinit="${esc((cd.value || []).join(', '))}"
         placeholder="example.com, example.co.uk"
         value="${esc((cd.value || []).join(', '))}">
-      <button class="mini" data-act="save-domains">Save</button>
       ${cd.source === 'db' ? `<button class="mini" data-act="clear-domains">Clear (fall back)</button>` : ''}
       ${cd.source === 'db' ? '<span class="pill p-mut">saved here</span>'
         : cd.source === 'env' ? '<span class="pill p-mut">from deployment</span>' : ''}
       <div class="src-note fnote">An AI tool signed into one of these counts
       as a work account; anything else is flagged personal. ${srcNote}</div></dd>
-    <dt>Extension ID${INFO}</dt><dd>
-      <input id="set-extid" class="mfield" style="min-width:340px"
-        placeholder="the browser extension's ID"
-        value="${esc((s.extension_id || {}).value || '')}">
-      <button class="mini" data-act="save-extid">Save</button>
-      <div class="src-note fnote">Used to generate the extension's managed-policy
-      artifact. Empty clears it.</div></dd>
     ${pasteGuardFields()}
   </dl>
-  <div style="margin-top:10px">
-    <button class="mini" data-act="ext-open">Open the extension setup</button>
-    <span class="src-note" style="margin-left:8px">The guided version of
-    these fields: pack, host and sign, one step at a time.</span>
+  <div class="wcard" style="margin-top:16px;background:var(--bg)">
+    <h3>Browser extension</h3>
+    ${extStatusRows()}
+    <div style="margin-top:12px">
+      <p class="src-note" style="margin:0 0 8px">Six steps, and the rail goes
+      straight to the one you need.</p>
+      <button class="mini" data-act="ext-open">Open the extension setup</button>
+    </div>
   </div></div>`;
 }
 
@@ -3363,7 +4147,7 @@ function connectionSettings() {
   <dl class="kv">
     ${settingRow('receiver_public_url', 'Public receiver URL',
       'https://ai-guard.your-tailnet.ts.net',
-      'The URL endpoints reach from OUTSIDE - it gets baked into every downloaded artifact. Not the internal receiver address the portal proxies to.')}
+      'The URL endpoints reach from OUTSIDE - it gets baked into every downloaded artifact. Not the internal receiver address the portal proxies to.', true)}
   </dl>
   <div style="margin-top:8px">
     <button class="mini" data-act="run-test" data-key="receiver-url">Probe the saved URL</button>
@@ -3375,10 +4159,10 @@ function connectionSettings() {
   moment this is saved - no restart. Credentials follow the URL: a store
   saved here uses only the credentials saved here.</p>
   <dl class="kv">
-    ${logStoreFields(true)}
+    ${logStoreFields(true, true)}
     ${settingRow('log_store_push_url', 'Push endpoint override',
       'only for gateways with a non-standard push path',
-      'Advanced. Leave empty to derive it from the base URL, which is almost always right.')}
+      'Advanced. Leave empty to derive it from the base URL, which is almost always right.', true)}
   </dl>${logStoreTests()}</div>`;
 }
 
@@ -3387,21 +4171,21 @@ function alertingSettings() {
   <dl class="kv">
     ${settingRow('alertmanager_url', 'Alertmanager URL',
       'http://alertmanager.<namespace>.svc:9093',
-      'warn findings page through this. Empty means findings are logged and dashboarded but nothing pages.')}
+      'warn findings page through this. Empty means findings are logged and dashboarded but nothing pages.', true)}
     ${settingRow('webhook_url', 'Notification webhook',
       'https://hooks.slack.com/services/…',
-      'A Slack-compatible incoming webhook. The receiver posts to it when discovery adds a NEW tool or MCP server to the review queue - once per discovery, never per finding. The weekly digest is separate: set DIGEST_WEBHOOK_URL on the portal deployment.')}
+      'A Slack-compatible incoming webhook. The receiver posts to it when discovery adds a NEW tool or MCP server to the review queue - once per discovery, never per finding. The weekly digest is separate: set DIGEST_WEBHOOK_URL on the portal deployment.', true)}
     ${settingRow('grafana_url', 'Grafana URL',
       'the URL a BROWSER reaches Grafana on',
-      'Saving reloads the page: the frame permission lives in this page\u2019s own security policy, which is fixed per load. Grafana must also allow embedding.')}
+      'Saving reloads the page: the frame permission lives in this page\u2019s own security policy, which is fixed per load. Grafana must also allow embedding.', true)}
     ${settingRow('grafana_panels', 'Grafana panels',
-      'dashboardUid:panelId:Title; semicolon separated', '')}
+      'dashboardUid:panelId:Title; semicolon separated', '', true)}
     ${settingRow('grafana_dashboard_uid', 'Grafana dashboard UID',
       'the /d/ segment of the dashboard URL',
-      'Embeds one whole dashboard instead of panels. Pasting the full dashboard URL works: it is trimmed to the UID.')}
+      'Embeds one whole dashboard instead of panels. Pasting the full dashboard URL works: it is trimmed to the UID.', true)}
     ${settingRow('budget_currency', 'Preferred currency',
       'GBP',
-      'The Budget headline converts into it at the ECB daily reference rate, naming the rate date inline; newly linked tools default to it.')}
+      'The Budget headline converts into it at the ECB daily reference rate, naming the rate date inline; newly linked tools default to it.', true)}
     ${widgetPickerRow()}
   </dl></div>`;
 }
@@ -3676,6 +4460,36 @@ function ssoWizard() {
     </div></div>`;
 }
 
+// The two ways back into the guided paths. They used to sit at the bottom of
+// the Account tab, under the accounts table and single sign-on - nowhere
+// anybody would look, since neither has anything to do with accounts. The
+// first UX pass on this portal found the tour re-entry 1,002 pixels down an
+// 1,105-pixel page; this is that fix.
+function gettingStarted() {
+  const done = SETTINGS && SETTINGS.settings
+    && SETTINGS.settings.onboarding_done
+    && SETTINGS.settings.onboarding_done.value;
+  return `<div class="wcard" style="margin-bottom:10px"><h3>Getting started</h3>
+  <p class="lede" style="margin-bottom:16px">${done
+    ? `Setup is marked done. Both of these are safe to repeat - neither resets
+       anything.`
+    : `Setup has not been finished yet. Neither of these changes anything on
+       its own.`}</p>
+  <p class="src-note" style="margin:0 0 8px">Every step is one of these
+  settings, prefilled with what is already saved - so running it again is a
+  review rather than a reset.</p>
+  <p style="margin:0 0 20px">
+    <button class="mini" style="padding:6px 14px" data-act="open-wizard">${done
+      ? 'Run the setup wizard again' : 'Finish setting up'}</button></p>
+  <p class="src-note" style="margin:0 0 8px">The walkthrough from your first
+  sign-in. It shows the pages your account can act on, so an admin and a viewer
+  see different tours.</p>
+  <p style="margin:0">
+    <button class="mini" style="padding:6px 14px" data-act="take-tour">Take the
+      tour again</button></p>
+  </div>`;
+}
+
 function accountSettings() {
   const viewer = AUTH && AUTH.role === 'viewer';
   const users = USERS === null ? '' : `
@@ -3752,18 +4566,6 @@ function accountSettings() {
   return `${viewer ? `<div class="note">This account is read-only: every
     page works, saving does not. An admin manages accounts from this tab.</div>` : ''}
   ${users}
-  <div class="wcard" style="margin-bottom:10px"><h3>Your account</h3>
-  <dl class="kv">
-    <dt>Change password</dt><dd>
-      <input id="set-curpass" class="mfield" type="password"
-        placeholder="current password" autocomplete="current-password">
-      <input id="set-newpass" class="mfield" type="password"
-        placeholder="new password (12+ characters)" autocomplete="new-password">
-      <button class="mini" data-act="change-password">Change</button>
-      <div class="src-note">Every other session is signed out with the old
-      password; this one stays.</div></dd>
-  </dl></div>
-
   ${AUTH && AUTH.role === 'owner' ? (SSOW ? ssoWizard() : `<div class="wcard"
     style="margin-bottom:10px">
     <h3>Single sign-on</h3>
@@ -3784,14 +4586,7 @@ function accountSettings() {
           && SETTINGS.settings.sso_enabled.value) === '1')
         ? 'Review the configuration' : 'Set it up'}</button></p>`}
   </div>`) : ''}
-  <p class="src-note" style="margin:4px 0 14px">
-    <button class="mini" data-act="open-wizard">Run the setup wizard again</button>
-    — safe to repeat: every step is one of these settings, prefilled
-    with what is saved.</p>
-  <p class="src-note" style="margin:4px 0 14px">
-    <button class="mini" data-act="take-tour">Take the tour again</button>
-    — the walkthrough from your first sign-in. It shows the pages your
-    account can act on, so an admin and a viewer see different tours.</p>`;
+`;
 }
 
 function diagnosticsCards() {
@@ -3883,6 +4678,42 @@ function diagnosticsCards() {
   from here.</p></div>`}`;
 }
 
+// ---- the Settings save bar -------------------------------------------
+// Every field on a Settings tab used to carry its own Save, which meant the
+// Fleet tab alone showed eight of them and the four extension-hosting URLs -
+// only meaningful together - were four separate round trips. The fields that
+// can batch now share one bar, and it appears only once something is dirty.
+//
+// Dirty is measured against the value the field was RENDERED with, carried
+// on the element as data-sinit, rather than against SETTINGS: a select and a
+// textarea do not read back the same way, and the rendered value is the one
+// the person is actually looking at.
+const sDirty = () => Array.from(app.querySelectorAll('[data-sfield]'))
+  .filter(el => el.value !== el.getAttribute('data-sinit'));
+
+// The value a field contributes to the POST body. Lists are the two shapes
+// the settings API takes: comma-separated domains and one marking per line.
+function sValue(el) {
+  const v = el.value, list = el.getAttribute('data-slist');
+  if (!list) return v;
+  return v.split(list === 'csv' ? ',' : '\n').map(x => x.trim()).filter(Boolean);
+}
+
+function sBarSync() {
+  const bar = document.getElementById('setbar');
+  if (!bar) return;
+  const n = sDirty().length;
+  bar.hidden = !n;
+  const lbl = document.getElementById('setbar-n');
+  if (lbl) lbl.textContent = n === 1 ? '1 unsaved change' : n + ' unsaved changes';
+  const err = document.getElementById('setbar-err');
+  if (err) err.textContent = '';
+}
+// Both events, because a select fires change and a text field fires input.
+['input', 'change'].forEach(ev => app.addEventListener(ev, e => {
+  if (e.target && e.target.hasAttribute && e.target.hasAttribute('data-sfield')) sBarSync();
+}));
+
 async function settings() {
   if (!DIAG) {
     try { DIAG = await (await fetch('/api/diagnostics')).json(); }
@@ -3919,6 +4750,7 @@ async function settings() {
   if (SETTAB === 'connection') body = connectionSettings();
   else if (SETTAB === 'alerting') body = alertingSettings();
   else if (SETTAB === 'account') body = accountSettings();
+  else if (SETTAB === 'start') body = gettingStarted();
   else if (SETTAB === 'diagnostics') body = diagnosticsCards();
   else { SETTAB = 'fleet'; body = fleetSettings(); }
   return `<h2>Settings</h2>
@@ -3928,7 +4760,13 @@ async function settings() {
   ${SETMSG ? `<div class="note">${esc(SETMSG)}</div>` : ''}
   <div class="tabs">${STABS.map(([id, lbl]) =>
     `<button data-settab="${id}" class="${SETTAB===id?'on':''}">${lbl}</button>`).join('')}</div>
-  ${body}`;
+  ${body}
+  <div id="setbar" class="setbar" hidden>
+    <span id="setbar-n"></span>
+    <span id="setbar-err"></span>
+    <button class="mini pri" data-act="settings-save-all">Save changes</button>
+    <button class="mini" data-act="settings-discard">Discard</button>
+  </div>`;
 }
 
 // Repo docs as real links, pinned to the release this portal runs - the
@@ -4540,31 +5378,15 @@ function parseUsersCsv(text) {
                 cols: {email: iEmail, name: iName, role: iRole, tier: iTier}}};
 }
 
-const BPROVIDER_NONE = `ChatGPT Business (Team) has no admin API - OpenAI
-  keeps SCIM and the Compliance API for Enterprise - so its users come in
-  through the guided import below. That is the vendor's boundary, not this
-  page's.`;
-
-function bTierRows(tiers, eff) {
-  const rows = [...(tiers || [])];
-  while (rows.length < Math.min(4, (tiers || []).length + 2)) rows.push({});
-  const covRow = (t, i) => (eff || []).length < 2 ? '' :
-    `<div style="margin:-2px 0 8px 2px;font-size:11.5px;color:var(--mut)">covers:
-      ${eff.map(tool => `<label style="margin-right:12px;cursor:pointer">
-        <input type="checkbox" id="bt-cov-${i}-${esc(tool)}"
-          style="min-width:0;margin:0 4px 0 0;accent-color:var(--pri)"
-          ${!t.covers || !t.covers.length || t.covers.includes(tool) ? 'checked' : ''}>${esc(tool)}</label>`).join('')}
-    </div>`;
-  return rows.map((t, i) => `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:6px">
-    <input id="bt-name-${i}" class="mfield" style="min-width:140px" placeholder="tier, e.g. premium"
-      value="${esc(t.name || '')}">
-    <input id="bt-seats-${i}" class="mfield" style="min-width:80px" placeholder="seats"
-      value="${t.seats != null ? esc(String(t.seats)) : ''}">
-    <input id="bt-price-${i}" class="mfield" style="min-width:120px" placeholder="price / seat / month"
-      value="${t.unit_price_monthly != null ? esc(String(t.unit_price_monthly)) : ''}">
-  </div>${covRow(t, i)}`).join('');
-}
-
+// The general case, not one vendor's. Automatic sync exists for a vendor only
+// where that vendor ships an admin API the receiver can call, and today that is
+// two of the thirty tools the registry ships with. Naming ChatGPT here made a
+// specific absence look like the only one; every other tool is in the same
+// position and the page never said so.
+const BPROVIDER_NONE = `Automatic sync needs an admin API from the vendor, and
+  most do not have one - or keep it for their top plan. Anything not listed
+  under Automatic uses Import or Manual, and its numbers work the same either
+  way. That is the vendor's boundary, not this page's.`;
 function bReadTiers(eff) {
   const tiers = [];
   for (let i = 0; i < 6; i++) {
@@ -4611,154 +5433,464 @@ function bStash() {
   }
 }
 
+// The seat tiers, as a table with real column headers. They used to be three
+// bare inputs whose only labels were their placeholders, which vanish the
+// moment anything is typed - so a filled-in row said "Standard 1 18" and
+// nothing said which number was the price. The per-row and running totals are
+// here because this is the one wizard whose subject is a number.
+function bTierRows(tiers, eff, cur) {
+  const rows = [...(tiers || [])];
+  while (rows.length < Math.min(4, (tiers || []).length + 2)) rows.push({});
+  const covRow = (t, i) => (eff || []).length < 2 ? '' :
+    `<tr><td colspan="4" style="padding:0 0 9px 2px">
+      <div class="covers">${eff.map(tool => `<label>
+        <input type="checkbox" id="bt-cov-${i}-${esc(tool)}"
+          ${!t.covers || !t.covers.length || t.covers.includes(tool) ? 'checked' : ''}>
+        <span class="mono">${esc(tool)}</span></label>`).join('')}</div></td></tr>`;
+  return `<table class="tiers">
+    <tr><th>Tier</th><th style="width:96px">Seats</th>
+      <th style="width:140px">Price / seat</th>
+      <th style="width:110px">Monthly</th></tr>
+    ${rows.map((t, i) => {
+      const line = (t.seats || 0) * (t.unit_price_monthly || 0);
+      return `<tr>
+      <td><input id="bt-name-${i}" class="mfield" placeholder="tier, e.g. premium"
+        value="${esc(t.name || '')}"></td>
+      <td><input id="bt-seats-${i}" class="mfield num" placeholder="0"
+        value="${t.seats != null ? esc(String(t.seats)) : ''}"></td>
+      <td><input id="bt-price-${i}" class="mfield num" placeholder="0.00"
+        value="${t.unit_price_monthly != null ? esc(String(t.unit_price_monthly)) : ''}"></td>
+      <td class="linetot" id="bt-line-${i}">${line ? bMoney(line, cur) : ''}</td>
+    </tr>${t.name ? covRow(t, i) : ''}`;
+    }).join('')}
+  </table>`;
+}
+
+// What the tiers on screen add up to. Read from the DOM when the seat step is
+// showing, so the rail and the running total move as the number is typed, and
+// from the stashed state otherwise.
+// The currency comes off the screen too while the seat step is showing.
+// Reading it only from the stashed state meant every figure rendered unitless
+// until you left the step - the rail said "216" where it meant GBP 216.
+function bWizCur() {
+  const el = document.getElementById('bw-currency');
+  return (el ? el.value : BWIZ.currency) || BWIZ.currency || '';
+}
+
+function bWizTotals() {
+  const w = BWIZ;
+  const eff = [w.tool_id].concat(w.covers || []);
+  const tiers = document.getElementById('bt-name-0') ? bReadTiers(eff) : (w.tiers || []);
+  return {
+    tiers: tiers,
+    monthly: tiers.reduce((a, t) => a + (t.seats || 0) * (t.unit_price_monthly || 0), 0),
+    seats: tiers.reduce((a, t) => a + (t.seats || 0), 0),
+  };
+}
+
+const BW_STEPS = [
+  {k: 1, t: 'Which tool',        d: 'And what the licence covers'},
+  {k: 2, t: 'Member list',       d: 'Where the names come from'},
+  {k: 3, t: 'Seats and pricing', d: 'What it costs a month'},
+  {k: 4, t: 'Review and link',   d: 'The whole subscription'},
+];
+const BW_SOURCES = [
+  ['api', 'Automatic', "the vendor's admin API, synced on demand"],
+  ['csv', 'Import', "paste the member export from the vendor's admin page"],
+  ['manual', 'Manual', "add members by hand on the tool's card"],
+];
+const bwSrcName = s => (BW_SOURCES.find(x => x[0] === s) || [])[1] || '';
+
+function bwRailLine(st) {
+  const w = BWIZ, tot = bWizTotals();
+  if (st.k === 1) {
+    if (!w.tool_id) return {c: 'pend', t: st.d};
+    const n = (w.covers || []).length;
+    return {c: 'val', t: bToolName(w.tool_id) + (n ? ' +' + n + ' covered' : '')};
+  }
+  if (st.k === 2) return w.source
+    ? {c: 'val', t: bwSrcName(w.source) + (w.source === 'api' && w.provider
+        ? ' · ' + w.provider : '')}
+    : {c: 'pend', t: st.d};
+  if (st.k === 3) return tot.tiers.length
+    ? {c: 'val', t: bMoney(tot.monthly, bWizCur()) + ' / month · '
+        + tot.seats + ' seat' + (tot.seats === 1 ? '' : 's')}
+    : {c: 'pend', t: st.d};
+  return tot.tiers.length ? {c: 'val', t: 'ready to link'} : {c: 'pend', t: st.d};
+}
+const bToolName = id =>
+  ((REGTOOLS || []).find(t => t.id === id) || {}).name || id;
+// Done means "you have been past it", not "it holds a default". Both the tool
+// and the member source are prefilled when the wizard opens, so keying off the
+// value alone ticked steps 1 and 2 green before the operator had looked at
+// either - a rail that congratulates you for arriving is not carrying state.
+// Editing is different: that subscription really is already saved.
+const bwDone = st => {
+  const w = BWIZ;
+  const passed = w.editing || w.step > st.k;
+  if (st.k === 4) return false;
+  if (st.k === 3) return passed && bWizTotals().tiers.length > 0;
+  return passed && (st.k === 1 ? !!w.tool_id : !!w.source);
+};
+
+function bwRail() {
+  const w = BWIZ, tot = bWizTotals();
+  const eff = 1 + (w.covers || []).length;
+  return `<div class="ssrail">
+    <h3>${w.editing ? 'Edit a subscription' : 'Link a tool'}</h3>
+    <ol>${BW_STEPS.map(st => {
+      const d = bwDone(st), on = w.step === st.k, ln = bwRailLine(st);
+      return `<li class="ssstep ${d ? 'done' : ''} ${on ? 'on' : ''}"
+        data-act="b-step" data-key="${st.k}">
+        <span class="dot">${d ? '&#10003;' : st.k}</span>
+        <span style="min-width:0"><span class="t">${esc(st.t)}</span>
+        <span class="${ln.c}">${esc(ln.t)}</span></span></li>`;
+    }).join('')}</ol>
+    <div class="sssum">
+      <div class="lede" style="font-size:11.5px">Monthly spend</div>
+      <div class="money" id="bw-money">${tot.monthly
+        ? bMoney(tot.monthly, bWizCur())
+        : '<span style="color:var(--mut);font-size:13px;font-weight:400">nothing priced yet</span>'}</div>
+      <div class="lede" style="font-size:11.5px">${tot.seats
+        ? tot.seats + ' seat' + (tot.seats === 1 ? '' : 's') + ' across '
+        : 'Covering '}${eff} tool${eff === 1 ? '' : 's'} on one licence.</div>
+    </div></div>`;
+}
+
+function bwBodyTool() {
+  const w = BWIZ;
+  const tools = (REGTOOLS || []).slice().sort((a, b) => a.name.localeCompare(b.name));
+  const linked = new Set((BUDGET.subscriptions || []).map(s => s.tool_id));
+  const picker = w.editing ? `<span class="mono">${esc(w.tool_id)}</span>` : (() => {
+    // Observed tools first: the one being linked is almost always one the
+    // estate already uses, and the whole registry in one flat list buries it.
+    const seen = new Set(Object.keys(G.tools || {}));
+    const coveredBy = {};
+    (BUDGET.subscriptions || []).forEach(o => {
+      bCovers(o).forEach(t => { coveredBy[t] = o.tool_id; });
+    });
+    const opt = t => {
+      const taken = t.id !== w.tool_id && (linked.has(t.id) || coveredBy[t.id]);
+      const label = !taken ? '' : linked.has(t.id) ? ' (linked)'
+        : ` (covered by ${coveredBy[t.id]})`;
+      return `<option value="${esc(t.id)}"${t.id === w.tool_id ? ' selected' : ''}
+        ${taken ? 'disabled' : ''}>${esc(t.name)}${esc(label)}</option>`;
+    };
+    const obs = tools.filter(t => seen.has(t.id));
+    const rest = tools.filter(t => !seen.has(t.id));
+    return `<select id="bw-tool" class="mfield" style="min-width:240px">
+      ${obs.length ? `<optgroup label="Seen in your estate">${obs.map(opt).join('')}</optgroup>
+        <optgroup label="Registry watchlist">${rest.map(opt).join('')}</optgroup>`
+        : tools.map(opt).join('')}</select>`;
+  })();
+  const covers = (() => {
+    // One licence often entitles several tools - a Claude seat covers claude
+    // AND claude-code - and linking them separately bills the same licence
+    // twice while halving every observed-use answer.
+    const primary = w.tool_id, byId = {};
+    (REGTOOLS || []).forEach(t => { byId[t.id] = t; });
+    const group = (byId[primary] || {}).license_group || '';
+    const vendor = (byId[primary] || {}).vendor || '';
+    const coveredBy = {};
+    (BUDGET.subscriptions || []).forEach(o => {
+      if (o.tool_id === primary) return;
+      bCovers(o).forEach(t => { coveredBy[t] = o.tool_id; });
+    });
+    const others = (REGTOOLS || []).filter(t => t.id !== primary);
+    const mates = others.filter(t => group && t.license_group === group);
+    const kin = others.filter(t => !mates.includes(t) && vendor && t.vendor === vendor);
+    const rest = others.filter(t => !mates.includes(t) && !kin.includes(t));
+    const on = new Set(w.covers == null
+      ? mates.filter(t => !coveredBy[t.id]).map(t => t.id) : w.covers);
+    const box = t => `<label${coveredBy[t.id] ? ' class="off"' : ''}>
+      <input type="checkbox" id="bwc-${esc(t.id)}"
+        ${on.has(t.id) ? 'checked' : ''} ${coveredBy[t.id] ? 'disabled' : ''}>
+      <span>${esc(t.name)}</span>${coveredBy[t.id]
+        ? `<span class="tag mut">covered by ${esc(coveredBy[t.id])}</span>`
+        : mates.includes(t) ? '<span class="tag">same licence</span>' : ''}</label>`;
+    const suggested = mates.length + kin.length;
+    return `${suggested
+      ? `<div class="covers">${mates.map(box).join('')}${kin.map(box).join('')}</div>`
+      : `<div class="src-note" style="margin:6px 0 0">Nothing in the registry
+         shares a licence group or vendor with this tool, so there is nothing to
+         suggest. If its licence does entitle others, tick them below.</div>`}
+      ${rest.length ? `<details style="margin-top:8px"><summary
+        style="font-size:12px;color:var(--mut);cursor:pointer">${suggested
+          ? 'more tools…' : 'choose from every tool…'}</summary>
+        <div class="covers" style="margin-top:7px">${rest.map(box).join('')}</div>
+      </details>` : ''}`;
+  })();
+  return `<h4>Which tool</h4>
+  <p>The registry is the menu: a tool that is not in it yet gets added in the
+  Tool registry first, so detection and spend stay one list.</p>
+  <dl class="kv">
+    <dt>Tool</dt><dd>${picker}</dd>
+    <dt>Vendor</dt><dd><input id="bw-vendor" class="mfield"
+      value="${esc(w.vendor || '')}" placeholder="e.g. Anthropic"></dd>
+    <dt>Plan</dt><dd><input id="bw-plan" class="mfield"
+      value="${esc(w.plan || '')}" placeholder="e.g. Team (standard + premium seats)"></dd>
+    <dt>Also covers</dt><dd>${covers}</dd>
+  </dl>
+  <p class="src-note wnote">Every tool this one licence entitles. One
+  subscription per licence: a member seen on any covered tool counts as
+  observed, and the spend is counted once. Getting this wrong bills the same
+  licence twice and halves every observed-use answer.</p>`;
+}
+
+function bwBodySource() {
+  const w = BWIZ;
+  const providers = (BUDGET && BUDGET.providers) || {};
+  const list = ents(providers);
+  // Which vendors can actually be synced, stated up front. It used to be a
+  // bare dropdown, so the only way to learn that a tool had no connector was
+  // to open the list and not find it - and the only plan requirement anywhere
+  // was buried in the key hint of whichever provider happened to be selected.
+  // One table, not two. There used to be a second listing just the built
+  // connectors directly above this, which said nothing this does not and put
+  // a two-row table immediately above a two-entry dropdown - so the dropdown
+  // read as "the vendors that exist" rather than "the ones with code behind
+  // them". "Not supported" is two very different situations - the vendor
+  // offers nothing, or it offers something nobody has connected - and only
+  // the second is worth raising an issue about.
+  const apis = (BUDGET && BUDGET.member_apis) || {};
+  const nameOf = id => ((REGTOOLS || []).find(t => t.id === id) || {}).name || id;
+  const STATUS = {
+    built:   ['Automatic, here', 'p-ok'],
+    vendor:  ['Vendor API, no connector yet', 'p-warn'],
+    none:    ['No seat list exists', 'p-mut'],
+    unknown: ['Not documented', 'p-mut'],
+  };
+  const bucket = a => a.connector ? 'built'
+    : (a.api === 'rest' || a.api === 'scim') ? 'vendor'
+    : a.api === 'none' ? 'none' : 'unknown';
+  const rows = ents(apis)
+    .map(([id, a]) => [id, a, bucket(a)])
+    .sort((x, y) => {
+      const order = {built: 0, vendor: 1, unknown: 2, none: 3};
+      return (order[x[2]] - order[y[2]]) || nameOf(x[0]).localeCompare(nameOf(y[0]));
+    });
+  const counts = {};
+  rows.forEach(r => { counts[r[2]] = (counts[r[2]] || 0) + 1; });
+  const everything = !rows.length ? '' : `<details style="margin:0 0 12px">
+    <summary style="font-size:12.5px;color:var(--mut);cursor:pointer">The
+      dropdown below lists the ${counts.built || 0} tools with a sync written
+      for them. What the ${rows.length} SHIPPED tools' vendors offer${counts.vendor
+        ? ` - ${counts.vendor} have an admin API nobody has connected yet`
+        : ''} (tools you define yourself are not in here)</summary>
+    <div class="rvw" style="margin:9px 0 0"><table>
+      <tr><th>tool</th><th>status</th><th>plan, and how</th></tr>
+      ${rows.map(([id, a, b]) => `<tr>
+        <td class="sname">${esc(nameOf(id))}</td>
+        <td><span class="pill ${STATUS[b][1]}">${STATUS[b][0]}</span></td>
+        <td>${a.plan ? esc(a.plan) + ' ' : ''}<span
+          style="color:var(--mut)">${esc(a.how || '')}</span></td>
+      </tr>`).join('')}
+    </table></div>
+    <p class="src-note">Checked against vendor documentation in August 2026.
+    Vendors move these gates often - if one of these has gone stale, that is
+    worth an issue too.</p>
+  </details>`;
+  return `<h4>Where does the member list come from?</h4>
+  <p>Who actually holds a seat. Without it the spend is a number with nobody
+  attached, and none of the seat-economics questions can be answered.</p>
+  <div id="bw-source" class="srcpick">${BW_SOURCES.map(([v, name, blurb]) => `
+    <label data-act="b-source" data-key="${v}">
+      <input type="radio" name="bw-source" value="${v}"
+        ${w.source === v ? 'checked' : ''}>
+      <span><span class="nm">${name}</span><span class="bl">${blurb}</span></span>
+    </label>`).join('')}</div>
+  ${w.source === 'api' ? `
+    ${everything}
+    <dl class="kv">
+      <dt>Provider</dt><dd><select id="bw-provider" class="mfield"
+        style="min-width:300px">
+        ${list.map(([id, p]) => `<option value="${esc(id)}"
+          ${id === w.provider ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}
+      </select></dd>
+      <dt>API key</dt><dd><input id="bw-key" class="mfield" type="password"
+        style="min-width:300px"
+        placeholder="${w.key_set ? 'saved - paste to replace' : 'paste the vendor API key'}"
+        autocomplete="off" value="${esc(w.api_key || '')}"></dd>
+    </dl>
+    ${((providers[w.provider] || {}).unverified)
+      ? `<div class="note" style="margin-top:22px">This connector is written from
+         ${esc((providers[w.provider] || {}).label || w.provider)}'s documented
+         endpoint and has never been run against a real organisation. If the
+         first sync is refused, the message names the vendor and the status -
+         that is worth an issue rather than an afternoon.</div>` : ''}
+    <p class="src-note wnote">Stored by the receiver and spent server-side; no
+    page ever reads it back. ${esc(((providers[w.provider] || {}).key_hint) || '')}</p>
+  ` : ''}
+  <div class="callout">${w.source === 'api' ? esc(BPROVIDER_NONE) : (() => {
+    // Import and Manual used to carry a paragraph about ChatGPT, whichever
+    // tool you were linking. It was a stale example the moment a ChatGPT
+    // connector existed - it told an Enterprise workspace to use Import when
+    // Automatic had started working for it. Say what is true of THIS tool
+    // instead: the answer is already in member_apis, per tool.
+    const a = apis[w.tool_id] || {};
+    const me = esc(bToolName(w.tool_id));
+    const plan = a.plan ? ' ' + esc(a.plan) : '';
+    // A tool YOU defined has no row in member_apis, and the absence of a row
+    // is not a finding. Falling through to the "not documented" branch made
+    // the page state, about a tool invented five minutes earlier, that its
+    // vendor documents no members API - something nobody had ever looked at.
+    // "We have no record" and "we looked and there is nothing" are different
+    // sentences and only one of them is true here.
+    if (!a.api) {
+      return `<b>${me} is a tool you defined</b>, so there is no record here of
+        what its vendor offers - that list covers the tools this release ships
+        with. Import and Manual work for it exactly as they do for any other.
+        If its vendor does have an admin API worth connecting, that is worth
+        an issue.`;
+    }
+    if (a.connector && providers[a.connector]) {
+      return `<b>${me} can sync automatically.</b>${plan} Import and Manual
+        still work and the numbers are identical - Automatic only saves you
+        keeping the list up to date by hand.`;
+    }
+    if (a.api === 'rest' || a.api === 'scim') {
+      // The plan is a sentence of its own, not an insert: several of them end
+      // in a full stop, so splicing one mid-clause read as
+      // "a members API Enterprise. The Admin API is in preview. - nothing".
+      return `<b>${me}'s vendor does expose a members API</b>, but nothing here
+        connects to it yet - so Import or Manual until it does, and that one is
+        worth an issue.${plan ? ` On the vendor's side:${plan}` : ''}`;
+    }
+    if (a.api === 'none') {
+      return `<b>${me} has no organisation or seat list to read.</b>
+        ${esc(a.how || '')} Import or Manual is the only way, and that is the
+        vendor's boundary rather than this page's.`;
+    }
+    return `<b>${me}'s vendor does not document a members API.</b>
+      ${esc(a.how || '')} Import or Manual.`;
+  })()}
+    ${w.source === 'csv' ? ' The paste box comes right after the review step: '
+      + 'link the tool first, then drop the export in.' : ''}</div>
+  <p class="src-note" style="margin-top:0">Want a vendor connected? Automatic
+    setup lands by request - open an issue at
+    <a href="https://github.com/AmanSK5/shadow-ai-guard/issues"
+      target="_blank" rel="noopener">github.com/AmanSK5/shadow-ai-guard/issues</a>.</p>`;
+}
+
+function bwBodySeats() {
+  const w = BWIZ;
+  const eff = [w.tool_id].concat(w.covers || []);
+  const tot = bWizTotals();
+  return `<h4>Seats and pricing</h4>
+  <p>What the organisation pays. Tier names matter: a member whose seat tier
+  matches a name here is counted against that tier's seats.</p>
+  ${bTierRows(w.tiers, eff, bWizCur())}
+  <div class="tsum"><span class="big" id="bw-tsum">${tot.monthly
+    ? bMoney(tot.monthly, bWizCur())
+    : '<span style="color:var(--mut);font-weight:400;font-size:13px">nothing priced yet</span>'}</span>
+    <span style="color:var(--mut)">per month, <span id="bw-tseats">${tot.seats}</span>
+      seats</span></div>
+  <dl class="kv" style="margin-top:16px">
+    <dt>Currency</dt><dd><input id="bw-currency" class="mfield" style="max-width:110px"
+      value="${esc(w.currency || '')}" placeholder="GBP"></dd>
+    <dt>Renews</dt><dd><input id="bw-renewal" class="mfield" style="max-width:180px"
+      value="${esc(w.renewal || '')}" placeholder="YYYY-MM-DD"></dd>
+    <dt>Owner</dt><dd><input id="bw-owner" class="mfield"
+      value="${esc(w.owner || '')}" placeholder="who holds this budget"></dd>
+  </dl>
+  <p class="src-note wnote">The vendor APIs do not expose per-user tiers, so
+  tiers come from you either way.${eff.length > 1 ? ' Per-tier coverage is how '
+    + '"premium includes claude-code, standard does not" gets said - it powers '
+    + 'the seat-economics findings on the card.' : ''}</p>`;
+}
+
+function bwBodyReview() {
+  const w = BWIZ;
+  const eff = [w.tool_id].concat(w.covers || []);
+  const tot = bWizTotals();
+  return `<h4>Review and link</h4>
+  <p>One subscription, covering ${eff.length} tool${eff.length === 1 ? '' : 's'}.
+  Everything here can be changed later.</p>
+  <div class="rvw"><table>
+    <tr><th>what</th><th>value</th></tr>
+    <tr><td class="sname">Licence</td><td>${esc(w.plan || '—')}
+      <div style="color:var(--mut);font-size:12px">${esc(w.vendor || 'no vendor recorded')}</div></td></tr>
+    <tr><td class="sname">Covers</td><td>
+      ${eff.map(t => `<span class="pill p-mut">${esc(t)}</span>`).join(' ')}
+      <div style="color:var(--mut);font-size:12px">Counted once. A member seen on
+      any of these counts as observed.</div></td></tr>
+    <tr><td class="sname">Members</td><td>${esc(bwSrcName(w.source))}
+      ${w.source === 'api' ? `<span class="pill p-mut">${esc(w.provider || '')}</span>` : ''}
+      ${w.source === 'csv' && !w.editing
+        ? '<span class="pill p-warn">paste due after linking</span>' : ''}</td></tr>
+    <tr><td class="sname">Seats</td><td>${tot.tiers.length
+      ? tot.tiers.map(t => `<div>${esc(t.name)} — ${t.seats || 0}
+          × ${bMoney(t.unit_price_monthly || 0, w.currency)}
+          = ${bMoney((t.seats || 0) * (t.unit_price_monthly || 0), w.currency)} / mo</div>`).join('')
+      : '<span style="color:var(--mut)">none set</span>'}</td></tr>
+    <tr><td class="sname">Monthly</td><td><b>${bMoney(tot.monthly, w.currency)}</b>
+      <div style="color:var(--mut);font-size:12px">Renews ${esc(w.renewal || '—')}
+      · owner ${esc(w.owner || '—')}</div></td></tr>
+  </table></div>
+  <div class="callout"><b>Also covers</b> is the one worth a second look.
+  Linking two tools that share a licence separately bills it twice and halves
+  every observed-use answer, and nothing downstream can tell that happened.</div>`;
+}
+
 function budgetWizard() {
   const w = BWIZ;
-  const tools = (REGTOOLS || []).slice()
-    .sort((a, b) => a.name.localeCompare(b.name));
-  const providers = (BUDGET && BUDGET.providers) || {};
-  const step = n => w.step === n;
-  const linked = new Set((BUDGET.subscriptions || []).map(s => s.tool_id));
+  const body = w.step === 2 ? bwBodySource()
+    : w.step === 3 ? bwBodySeats()
+    : w.step === 4 ? bwBodyReview() : bwBodyTool();
   return `<h2>${w.editing ? 'Edit ' + esc(w.tool_id) : 'Link a tool'}</h2>
-  <p class="lede">Three steps: which tool, where its member list comes
-  from, and what the seats cost. Everything here can be changed later.</p>
   ${BMSG ? `<div class="note">${esc(BMSG)}</div>` : ''}
-  <div class="wcard" style="max-width:760px">
-  <p class="src-note" style="margin-top:0">step ${w.step} of 3</p>
-  ${step(1) ? `
-    <dl class="kv">
-      <dt>Tool</dt><dd>
-        ${w.editing ? `<span class="mono">${esc(w.tool_id)}</span>` : (() => {
-          // Observed tools first: the one being linked is almost always
-          // one the estate already uses, and 38 registry entries in one
-          // flat list buries it.
-          const seen = new Set(Object.keys(G.tools || {}));
-          const coveredBy = {};
-          (BUDGET.subscriptions || []).forEach(o => {
-            bCovers(o).forEach(t => { coveredBy[t] = o.tool_id; });
-          });
-          const opt = t => {
-            const taken = t.id !== w.tool_id
-              && (linked.has(t.id) || coveredBy[t.id]);
-            const label = !taken ? ''
-              : linked.has(t.id) ? ' (linked)'
-              : ` (covered by ${coveredBy[t.id]})`;
-            return `<option value="${esc(t.id)}"
-            ${t.id === w.tool_id ? 'selected' : ''}
-            ${taken ? 'disabled' : ''}>
-            ${esc(t.name)}${esc(label)}</option>`;
-          };
-          const obs = tools.filter(t => seen.has(t.id));
-          const rest = tools.filter(t => !seen.has(t.id));
-          return `<select id="bw-tool" class="mfield" style="min-width:220px">
-          ${obs.length ? `<optgroup label="Seen in your estate">${obs.map(opt).join('')}</optgroup>
-            <optgroup label="Registry watchlist">${rest.map(opt).join('')}</optgroup>`
-            : tools.map(opt).join('')}
-        </select>
-        <div class="src-note">The registry is the menu. A tool that is not
-        in it yet is added in the Tool registry view first, so detection
-        and spend stay one list.</div>`; })()}</dd>
-      <dt>Vendor</dt><dd><input id="bw-vendor" class="mfield" value="${esc(w.vendor || '')}" placeholder="e.g. Anthropic"></dd>
-      <dt>Plan</dt><dd><input id="bw-plan" class="mfield" value="${esc(w.plan || '')}" placeholder="e.g. Team (standard + premium seats)"></dd>
-      ${(() => {
-        // One licence often entitles several tools - a Claude seat covers
-        // claude AND claude-code - and linking them separately bills the
-        // same licence twice while halving every observed-use answer.
-        // Tools sharing the primary's licence group arrive pre-ticked.
-        const primary = w.tool_id;
-        const byId = {};
-        (REGTOOLS || []).forEach(t => { byId[t.id] = t; });
-        const group = (byId[primary] || {}).license_group || '';
-        const vendor = (byId[primary] || {}).vendor || '';
-        const coveredBy = {};
-        (BUDGET.subscriptions || []).forEach(o => {
-          if (o.tool_id === primary) return;
-          bCovers(o).forEach(t => { coveredBy[t] = o.tool_id; });
-        });
-        const others = (REGTOOLS || []).filter(t => t.id !== primary);
-        const mates = others.filter(t => group && t.license_group === group);
-        const kin = others.filter(t => !mates.includes(t) && vendor && t.vendor === vendor);
-        const rest = others.filter(t => !mates.includes(t) && !kin.includes(t));
-        const on = new Set(w.covers == null
-          ? mates.filter(t => !coveredBy[t.id]).map(t => t.id)
-          : w.covers);
-        const box = t => `<label style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px;cursor:pointer">
-          <input type="checkbox" id="bwc-${esc(t.id)}"
-            style="min-width:0;margin:0;accent-color:var(--pri)"
-            ${on.has(t.id) ? 'checked' : ''} ${coveredBy[t.id] ? 'disabled' : ''}>
-          <span><span class="mono">${esc(t.id)}</span>${coveredBy[t.id]
-            ? ` <span style="color:var(--mut)">(covered by ${esc(coveredBy[t.id])})</span>`
-            : mates.includes(t) ? ' <span class="pill p-acc">same licence</span>' : ''}</span>
-        </label>`;
-        return `<dt>Also covers</dt><dd>
-          ${mates.map(box).join('')}${kin.map(box).join('')}
-          ${rest.length ? `<details><summary style="font-size:12px;color:var(--mut);cursor:pointer">more tools…</summary>${rest.map(box).join('')}</details>` : ''}
-          <div class="src-note">Every tool this one licence entitles. One
-          subscription per licence: a member seen on any covered tool
-          counts as observed, and the spend is counted once.</div></dd>`;
-      })()}
-    </dl>
-    <button class="mini" data-act="b-step" data-key="2">Next</button>` : ''}
-  ${step(2) ? `
-    <p style="margin-top:0"><strong>Where does the member list come from?</strong></p>
-    <div id="bw-source" style="margin-bottom:12px">
-    ${[['api', 'Automatic', "the vendor's admin API, synced on demand"],
-       ['csv', 'Import', "paste the member export from the vendor's admin page"],
-       ['manual', 'Manual', "add members by hand on the tool's card"]]
-      .map(([v, name, blurb]) => `
-    <label style="display:flex;align-items:baseline;gap:10px;margin-bottom:8px;cursor:pointer"
-      data-act="b-source" data-key="${v}">
-      <input type="radio" name="bw-source" value="${v}"
-        style="min-width:0;margin:0;accent-color:var(--pri)"
-        ${w.source === v ? 'checked' : ''}>
-      <span><strong>${name}</strong> — ${blurb}</span>
-    </label>`).join('')}
-    <div class="src-note" style="margin-top:4px">${esc(BPROVIDER_NONE)}
-      Automatic setup for more vendors lands by request: if you want a
-      particular tool supported, open an issue at
-      <a href="https://github.com/AmanSK5/shadow-ai-guard/issues" target="_blank" rel="noopener">github.com/AmanSK5/shadow-ai-guard/issues</a>.</div>
-    </div>
-    ${w.source === 'api' ? `<dl class="kv"><dt>Provider</dt><dd>
-      <select id="bw-provider" class="mfield" style="min-width:280px">
-        ${ents(providers).map(([id, p]) => `<option value="${esc(id)}"
-          ${id === w.provider ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}
-      </select>
-    </dd>
-    <dt>API key</dt><dd>
-      <input id="bw-key" class="mfield" type="password" style="min-width:280px"
-        placeholder="${w.key_set ? 'saved - paste to replace' : 'paste the vendor API key'}"
-        autocomplete="off" value="${esc(w.api_key || '')}">
-      <div class="src-note">Stored by the receiver and spent server-side;
-      no page ever reads it back.
-      ${esc(((providers[w.provider] || {}).key_hint) || '')}</div>
-    </dd></dl>` : ''}
-    ${w.source === 'csv' ? `<p class="src-note" style="margin:0 0 10px">The
-      paste box comes right after the last step - link the tool first, then
-      drop the export in.</p>` : ''}
-    <button class="mini" data-act="b-step" data-key="1">Back</button>
-    <button class="mini" data-act="b-step" data-key="3">Next</button>` : ''}
-  ${step(3) ? `
-    <p style="margin-top:0"><strong>Seats and pricing</strong></p>
-    ${bTierRows(w.tiers, [w.tool_id].concat(w.covers || []))}
-    <dl class="kv">
-      <dt>Currency</dt><dd><input id="bw-currency" class="mfield" style="min-width:80px"
-        value="${esc(w.currency || '')}" placeholder="GBP"></dd>
-      <dt>Renews</dt><dd><input id="bw-renewal" class="mfield" style="min-width:140px"
-        value="${esc(w.renewal || '')}" placeholder="YYYY-MM-DD"></dd>
-      <dt>Owner</dt><dd><input id="bw-owner" class="mfield"
-        value="${esc(w.owner || '')}" placeholder="who holds this budget"></dd>
-    </dl>
-    <p class="src-note">Tier names matter: a user row whose seat tier
-    matches a name here is counted against that tier's seats. The vendor
-    APIs do not expose per-user tiers, so tiers come from you either way.
-    ${(w.covers || []).length ? 'Per-tier coverage is how "premium includes '
-      + 'claude-code, standard does not" is said - it powers the '
-      + 'seat-economics findings on the card.' : ''}</p>
-    <button class="mini" data-act="b-step" data-key="2">Back</button>
-    <button class="mini" data-act="b-save">${w.editing ? 'Save changes' : 'Link tool'}</button>` : ''}
-  <p class="src-note" style="margin-bottom:0">
-    <button class="mini" data-act="b-cancel">Cancel</button></p>
-  </div>`;
+  <div class="ssow">${bwRail()}
+    <div class="ssmain">${body}
+      <div class="ssfoot">
+        <button class="mini" data-act="b-cancel">Cancel</button>
+        <span class="sp"></span>
+        ${w.step > 1 ? `<button class="mini" data-act="b-step"
+          data-key="${w.step - 1}">Back</button>` : ''}
+        ${w.step < 4
+          ? `<button class="mini pri" data-act="b-step" data-key="${w.step + 1}"
+              ${w.tool_id ? '' : 'disabled'}>Next</button>`
+          : `<button class="mini pri" data-act="b-save">${w.editing
+              ? 'Save changes' : 'Link tool'}</button>`}
+      </div></div></div>`;
 }
+
+// The money has to move as it is typed: this wizard's whole subject is a
+// number, and a rail quoting a stale total is worse than one quoting none. A
+// full re-render would take focus out of the field mid-digit, so only the rail
+// and the three totals are redrawn.
+function bwLive() {
+  if (!BWIZ || BWIZ.step !== 3) return;
+  const w = BWIZ, tot = bWizTotals();
+  const rail = document.querySelector('.ssrail');
+  if (rail) rail.outerHTML = bwRail();
+  const sum = document.getElementById('bw-tsum');
+  if (sum) sum.innerHTML = tot.monthly ? esc(bMoney(tot.monthly, bWizCur()))
+    : '<span style="color:var(--mut);font-weight:400;font-size:13px">nothing priced yet</span>';
+  // The rail was replaced above, so its money node is the new one.
+  const st = document.getElementById('bw-tseats');
+  if (st) st.textContent = tot.seats;
+  tot.tiers.forEach((t, i) => {
+    const cell = document.getElementById('bt-line-' + i);
+    const line = (t.seats || 0) * (t.unit_price_monthly || 0);
+    if (cell) cell.textContent = line ? bMoney(line, bWizCur()) : '';
+  });
+}
+app.addEventListener('input', e => {
+  if (!e.target || !e.target.matches) return;
+  if (e.target.matches('[id^="bt-"],#bw-currency')) bwLive();
+});
+app.addEventListener('change', e => {
+  if (!e.target || !e.target.matches || !BWIZ) return;
+  // Per-tier coverage only exists for a row that has a name, so naming one has
+  // to draw its checkboxes. On change rather than input: focus has already
+  // left the field by then, so the re-render cannot steal it mid-word.
+  if (e.target.matches('[id^="bt-name-"]')) { bStash(); render(); return; }
+  // Every provider's key is created somewhere different, so the hint under the
+  // field belongs to the provider selected. It was only read when the step was
+  // LEFT, so switching provider left the previous one's instructions standing
+  // - the page said "create it at claude.ai" under a Fireflies key.
+  if (e.target.matches('#bw-provider')) { bStash(); render(); }
+});
 
 // Days since an ISO timestamp, or null. Past this many, a member list
 // is presumed drifting: on plans with no admin API the import is a
@@ -5215,12 +6347,21 @@ async function budget() {
     ${ro ? '' : '<button class="mini" data-act="b-open">Link a tool</button>'}
     ${subs.length ? '<button class="mini" data-act="b-report">Share / export</button>' : ''}</p>
   <p class="src-note">Automatic user sync currently supports
-  ${ents((BUDGET.providers) || {}).map(([, p]) => esc(p.label)).join(' and ') || 'no vendors yet'}.
-  More vendors will be added for automatic configuration - if you want a
+  ${(() => {
+    // Commas and a final "and", not "and" seven times: this list grew from
+    // two vendors to seven and read as one breathless sentence. The trailing
+    // line about ChatGPT Business went too - it is one plan of one vendor,
+    // it stopped being the only notable absence a while ago, and the wizard's
+    // own step says what applies to the tool being linked.
+    const labels = ents((BUDGET.providers) || {}).map(([, p]) => esc(p.label));
+    if (!labels.length) return 'no vendors yet';
+    if (labels.length === 1) return labels[0];
+    return labels.slice(0, -1).join(', ') + ' and ' + labels[labels.length - 1];
+  })()}.
+  Everything else comes in by CSV import or by hand, and the numbers work the
+  same either way. More vendors get added by request - if you want a
   particular tool, please raise an issue on
-  <a href="https://github.com/AmanSK5/shadow-ai-guard/issues" target="_blank" rel="noopener">GitHub</a>.
-  ChatGPT Business has no admin API on that plan, so it uses the CSV
-  import.</p>`;
+  <a href="https://github.com/AmanSK5/shadow-ai-guard/issues" target="_blank" rel="noopener">GitHub</a>.</p>`;
 }
 
 async function budgetAction(act, el) {
@@ -5233,9 +6374,21 @@ async function budgetAction(act, el) {
   if (act === 'b-open') {
     BMSG = '';
     const seen = new Set(Object.keys(G.tools || {}));
-    const first = (REGTOOLS || []).slice()
+    // Skip anything already linked, or already covered by another licence.
+    // The wizard used to open on the first OBSERVED tool whichever it was, so
+    // on a deployment whose busiest tool is already linked it opened on that
+    // one - and pressing through to the end overwrote the subscription that
+    // existed, with nothing on screen saying so. The review step made it
+    // visible; the fix belongs here.
+    const taken = new Set();
+    (BUDGET.subscriptions || []).forEach(o => {
+      taken.add(o.tool_id);
+      bCovers(o).forEach(t => taken.add(t));
+    });
+    const free = (REGTOOLS || []).slice()
       .sort((a, b) => a.name.localeCompare(b.name))
-      .find(t => seen.has(t.id)) || (REGTOOLS || [])[0];
+      .filter(t => !taken.has(t.id));
+    const first = free.find(t => seen.has(t.id)) || free[0];
     BWIZ = {step: 1, tool_id: first ? first.id : '',
             source: 'csv', provider: 'anthropic', tiers: [], api_key: '',
             covers: null, currency: bPrefCur()};
@@ -5285,7 +6438,11 @@ async function budgetAction(act, el) {
     BWIZ.source = el.getAttribute('data-key');
     render(); return;
   }
-  if (act === 'b-step') { bStash(); BWIZ.step = parseInt(key, 10); render(); return; }
+  if (act === 'b-step') {
+    bStash();
+    BWIZ.step = Math.max(1, Math.min(4, parseInt(key, 10) || 1));
+    BMSG = ''; render(); return;
+  }
   if (act === 'b-save') {
     bStash();
     const w = BWIZ;
@@ -5682,8 +6839,43 @@ async function managedAction(act, el) {
     if (offer) await tourStart(TOUR_AFTER_WIZARD);
     return;
   }
-  if (act === 'reg-add') { REDIT = ''; RPRE = null; RERR = ''; RADV = false; render(); return; }
-  if (act === 'reg-cancel') { REDIT = null; RPRE = null; RERR = ''; RADV = false; render(); return; }
+  if (act === 'wiz-step') {
+    // managedAction takes (act, el) and does NOT have `key` in scope - the
+    // handler that does is a different function. Reading it off el is what
+    // every other branch here does; borrowing the name silently threw a
+    // ReferenceError and the click did nothing at all.
+    const n = parseInt(el ? el.getAttribute('data-key') : '', 10);
+    WIZSTEP = Math.max(1, Math.min(7, n || 1));
+    SETMSG = ''; render(); return;
+  }
+  if (act === 'reg-add') { rwOpen({}); render(); return; }
+  if (act === 'reg-cancel') {
+    RW = null; REDIT = null; RPRE = null; RERR = ''; RADV = false; render(); return;
+  }
+  if (act === 'rw-step') {
+    // Sync before moving: the step being left owns live inputs, and a name
+    // typed and not read back is a name the proposals never saw.
+    rwSync();
+    RW.step = Math.max(0, Math.min(2, parseInt(el.getAttribute('data-key'), 10) || 0));
+    RERR = ''; render(); return;
+  }
+  if (act === 'rw-tick') {
+    const i = parseInt(el.getAttribute('data-key'), 10);
+    if (RW.sugs[i]) RW.sugs[i].on = el.checked;
+    render(); return;
+  }
+  if (act === 'rw-add') {
+    const v = (document.getElementById('rw-newv') || {}).value || '';
+    const f = (document.getElementById('rw-newf') || {}).value || 'domains';
+    const t = v.trim();
+    if (!t) return;
+    // A hand-typed value that duplicates a proposal ticks that proposal rather
+    // than adding a second row saying the same thing.
+    const dup = RW.sugs.find(x => x.f === f && x.v === t);
+    if (dup) dup.on = true;
+    else RW.sugs.push({f: f, v: t, why: 'me', conf: 'high', on: true});
+    render(); return;
+  }
   if (act === 'reg-adv') {
     // Toggling into JSON carries the form's current state with it, so
     // nothing typed is lost; toggling back re-renders the form from the
@@ -5695,7 +6887,7 @@ async function managedAction(act, el) {
   if (act === 'reg-edit') {
     const id = el.getAttribute('data-key');
     const x = (RENTRIES || []).find(r => r.tool_id === id);
-    REDIT = id; RPRE = x ? x.entry : null; RERR = ''; RADV = false;
+    rwFromEntry(id, (x && x.entry) || {});
     render(); return;
   }
   if (act === 'reg-suggest') {
@@ -5704,9 +6896,9 @@ async function managedAction(act, el) {
     const t = el.getAttribute('data-key');
     const slug = t.toLowerCase().replace(/[^a-z0-9-]+/g, '-')
       .replace(/^-+|-+$/g, '').replace(/^[^a-z0-9]+/, '') || 'new-tool';
-    RPRE = {id: slug, name: t};
-    if (t.indexOf('.') > 0 && t.indexOf(' ') < 0) RPRE.domains = [t.toLowerCase()];
-    REDIT = ''; RERR = ''; RADV = false;
+    const domainish = t.indexOf('.') > 0 && t.indexOf(' ') < 0;
+    rwOpen({id: slug, name: t,
+            domains: domainish ? [t.toLowerCase()] : []});
     view = 'registry'; detail = null;
     history.replaceState(null, '', '#registry');
     drawNav(); render(); return;
@@ -5721,11 +6913,17 @@ async function managedAction(act, el) {
     if (!c) return;
     const slug = c.name.toLowerCase().replace(/[^a-z0-9-]+/g, '-')
       .replace(/^-+|-+$/g, '') || 'new-tool';
-    RPRE = {id: slug, name: c.name};
-    if (c.vendor) RPRE.vendor = c.vendor;
-    if (REG_CATEGORIES.indexOf(c.category) >= 0) RPRE.category = c.category;
-    if ((c.domains || []).length) RPRE.domains = c.domains;
-    REDIT = ''; RERR = ''; RADV = false;
+    rwOpen({
+      id: slug, name: c.name, vendor: c.vendor || '',
+      category: REG_CATEGORIES.indexOf(c.category) >= 0 ? c.category : 'unreviewed',
+      domains: c.domains || [],
+      // What discovery actually saw, shown as its own card. It is the only
+      // thing on the next step that is evidence rather than a guess.
+      evidence: {kind: c.kind, what: c.kind === 'mcp_server'
+                   ? (c.evidence || c.name) : (c.domains || []).join(', ') || c.name,
+                 devices: c.devices || 0, confidence: c.confidence || '',
+                 category: c.category || ''},
+    });
     view = 'registry'; detail = null;
     history.replaceState(null, '', '#registry');
     drawNav(); render(); return;
@@ -5821,6 +7019,51 @@ async function managedAction(act, el) {
       alert('Could not clear the decision: ' + d);
     }
     REG = null; EV = null; render(); return;
+  }
+  if (act === 'settings-discard') {
+    // Re-rendering IS the discard: every field is drawn from SETTINGS again.
+    SETMSG = ''; render(); return;
+  }
+  if (act === 'settings-save-all') {
+    const dirty = sDirty();
+    if (!dirty.length) return;
+    const body = {};
+    dirty.forEach(f => { body[f.getAttribute('data-sfield')] = sValue(f); });
+    // People paste the whole dashboard URL, reasonably - the same trim the
+    // per-field save does, kept here because this is now the path Settings
+    // takes and the wizard's is the other one.
+    if (typeof body.grafana_dashboard_uid === 'string'
+        && body.grafana_dashboard_uid.indexOf('/d/') >= 0) {
+      body.grafana_dashboard_uid =
+        body.grafana_dashboard_uid.split('/d/')[1].split('/')[0].split('?')[0];
+    }
+    const keys = Object.keys(body);
+    const r = await mfetch('/api/settings',
+      {method: 'POST', body: JSON.stringify(body)});
+    if (!r.ok) {
+      if (r.status === 401) { sessionLost(); return; }
+      let d = r.statusText; try { d = (await r.json()).detail || d; } catch (e) {}
+      // Reported INTO the bar rather than through SETMSG, because SETMSG
+      // needs a render and a render redraws every field from SETTINGS -
+      // which would throw away the several edits that just failed to save.
+      const err = document.getElementById('setbar-err');
+      const msg = 'Not saved: ' + (typeof d === 'string' ? d : 'check the values.');
+      if (err) err.textContent = msg; else { SETMSG = msg; render(); }
+      return;
+    }
+    SETTINGS = await r.json();
+    SETMSG = keys.length === 1 ? 'Saved. It takes effect immediately.'
+      : 'Saved ' + keys.length + ' changes. They take effect immediately.';
+    if (keys.indexOf('receiver_public_url') >= 0) {
+      const cr = await fetch('/api/config');
+      if (cr.ok) CFG = await cr.json();
+    }
+    // Checked before the log store, and the opposite way round from the
+    // per-field save: a reload re-reads the findings anyway, so a batch
+    // touching both needs the reload and not the load before it.
+    if (keys.some(k => k.indexOf('grafana') === 0)) { location.reload(); return; }
+    if (keys.some(k => k.indexOf('log_store') === 0)) { await load(true); return; }
+    render(); return;
   }
   if (act === 'save-markings' || act === 'clear-markings') {
     const marks = act === 'clear-markings' ? null
@@ -5928,13 +7171,21 @@ async function managedAction(act, el) {
     return;
   }
   if (act === 'open-wizard') {
-    view = 'wizard'; detail = null;
+    view = 'wizard'; detail = null; WIZSTEP = 1;
     history.replaceState(null, '', '#wizard');
     drawNav(); render(); return;
   }
   if (act === 'ext-open') {
+    EXTFROM = view === 'wizard' ? 'wizard' : '';
     view = 'extsetup'; detail = null;
     history.replaceState(null, '', '#extsetup');
+    drawNav(); render(); return;
+  }
+  if (act === 'ext-back-to-setup') {
+    EXTFROM = '';
+    WIZSTEP = 5;
+    view = 'wizard'; detail = null;
+    history.replaceState(null, '', '#wizard');
     drawNav(); render(); return;
   }
   if (act === 'ext-page') {
@@ -5957,21 +7208,55 @@ async function managedAction(act, el) {
     }
     render(); return;
   }
+  if (act === 'open-password') { pwShow(); return; }
+  if (act === 'close-password') { pwHide(); return; }
   if (act === 'change-password') {
-    const r = await mfetch('/api/password', {method: 'POST', body: JSON.stringify(
-      {current: _val('set-curpass'), new: _val('set-newpass')})});
-    if (r.ok) SETMSG = 'Password changed. Every other session was signed out.';
-    else {
-      let d = r.statusText; try { d = (await r.json()).detail || d; } catch (e) {}
-      // A wrong current password is also a 401, from the receiver rather
-      // than the session gate; only the gate's refusal means signed out.
-      if (r.status === 401 && String(d).indexOf('current password') < 0) {
-        sessionLost(); return;
-      }
-      SETMSG = 'Password unchanged: ' + (typeof d === 'string' ? d
-        : 'the new password needs 12 characters or more.');
+    // The form lives in a modal off the header menu now, reachable from every
+    // view - so the answer goes back into the modal. SETMSG only ever renders
+    // on Settings, and reporting a password change to a page the person is
+    // not looking at is the same as not reporting it.
+    const msg = document.getElementById('pw-msg');
+    const say = (t, ok) => {
+      if (!msg) { SETMSG = t; render(); return; }
+      msg.className = 'pwmsg ' + (ok ? 'ok' : 'bad');
+      msg.textContent = t; msg.hidden = false;
+    };
+    const nw = _val('set-newpass');
+    // Answered here rather than by the receiver, which never sees the second
+    // copy: a mismatch is a typo in one of the two, and the round trip would
+    // report it as whichever one was sent being wrong.
+    if (nw !== _val('set-confpass')) {
+      say('The two new passwords do not match.', false);
+      const f = document.getElementById('set-confpass');
+      if (f) { f.focus(); f.select(); }
+      return;
     }
-    render(); return;
+    const r = await mfetch('/api/password', {method: 'POST', body: JSON.stringify(
+      {current: _val('set-curpass'), new: nw})});
+    if (r.ok) {
+      pwWipe();
+      // The modal stays up to carry the answer, with nothing left to submit.
+      const sub = document.getElementById('pw-submit');
+      if (sub) sub.hidden = true;
+      const can = document.getElementById('pw-cancel');
+      if (can) can.textContent = 'Done';
+      // The note says what WILL happen. The message below now says it
+      // happened, and the two together read as a warning about a change
+      // that is already made.
+      const note = document.getElementById('pw-note');
+      if (note) note.hidden = true;
+      say('Password changed. Every other session was signed out.', true);
+      return;
+    }
+    let d = r.statusText; try { d = (await r.json()).detail || d; } catch (e) {}
+    // A wrong current password is also a 401, from the receiver rather
+    // than the session gate; only the gate's refusal means signed out.
+    if (r.status === 401 && String(d).indexOf('current password') < 0) {
+      sessionLost(); return;
+    }
+    say('Password unchanged: ' + (typeof d === 'string' ? d
+      : 'the new password needs 12 characters or more.'), false);
+    return;
   }
   if (act === 'dismiss-minted') { MINTED = null; render(); return; }
   if (act === 'copy') {
@@ -6069,10 +7354,10 @@ function drawNav() {
   }).join('');
   n.querySelectorAll('button').forEach(b => b.onclick = () => {
     const sec = NAV.find(s => s.id === b.dataset.s);
-    view = SECTAB[sec.id] || sec.items[0][0]; detail = null;
+    view = SECTAB[sec.id] || sec.items[0][0]; detail = null; EXTFROM = '';
     // Replace rather than push: clicking through the nav should not fill the
     // back button with every tab you glanced at.
-    history.replaceState(null, '', '#' + view);
+    history.replaceState(null, '', frag(view));
     drawNav(); render();
   });
   const fv = document.getElementById('footver');
@@ -6201,6 +7486,17 @@ function open_(kind, key) {
   drawDetail();
 }
 
+// Escape closes the inspector, which is what every drawer in every tool the
+// operator already uses does. It was × or a click outside only, and the ×
+// is 500px away from whatever they were reading. Deliberately quiet while
+// the tour is up: the overlay owns the keyboard then, and its own way out
+// is the End tour button, which records that it was skipped.
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape' || TOUR || pwIsOpen()) return;
+  if (!document.body.classList.contains('open')) return;
+  open_(null);
+});
+
 // One delegated listener rather than an onclick per row. The handlers used to
 // be inline, which put a finding's own text inside executable script: a device
 // name containing an apostrophe closed the JS string and ran what followed,
@@ -6222,8 +7518,8 @@ app.addEventListener('click', e => {
 app.addEventListener('click', e => {
   const el = e.target.closest('[data-nav]');
   if (!el) return;
-  view = el.getAttribute('data-nav'); detail = null;
-  history.replaceState(null, '', '#' + view);
+  view = el.getAttribute('data-nav'); detail = null; EXTFROM = '';
+  history.replaceState(null, '', frag(view));
   drawNav(); render();
 });
 // Changing the wizard's tool re-suggests what the licence covers: the
@@ -6341,7 +7637,7 @@ app.addEventListener('click', e => {
   SETTAB = tab;
   // In the fragment like every other navigation in this page, so a
   // reload keeps the tab and a colleague can be sent the one you mean.
-  history.replaceState(null, '', '#settings/' + SETTAB);
+  history.replaceState(null, '', frag('settings'));
   render();
 });
 // The per-field i: toggles the note in the field's own dd. Delegated on
@@ -6376,7 +7672,10 @@ drawerEl.addEventListener('click', e => {
 });
 document.getElementById('overlay').addEventListener('click', () => open_(null));
 window.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && document.body.classList.contains('open')) open_(null);
+  // The modal owns Escape while it is up, or dismissing it would also close
+  // the drawer somebody left open behind it.
+  if (e.key === 'Escape' && !pwIsOpen()
+      && document.body.classList.contains('open')) open_(null);
 });
 // Managed actions, same delegation for the same reason. A separate listener
 // rather than branches in the one above, because data-open is navigation and
@@ -6388,7 +7687,18 @@ app.addEventListener('click', e => {
 // Someone editing the fragment, or arriving on a link to a view.
 window.addEventListener('hashchange', () => {
   const h = fromHash();
-  if (h !== view) { view = h; detail = null; drawNav(); render(); }
+  // Before the guard below, which returns early: a bare #settings has to be
+  // normalised even when it changes nothing else.
+  if (h.view === 'settings' && !h.tab) {
+    history.replaceState(null, '', frag('settings'));
+  }
+  // A settings sub-tab changes what is on screen without changing the view
+  // id, so the guard has to ask about both or the tab half never draws.
+  const tabbed = h.tab && h.tab !== SETTAB;
+  if (h.view === view && !tabbed) return;
+  view = h.view; detail = null; EXTFROM = '';
+  if (h.tab) SETTAB = h.tab;
+  drawNav(); render();
 });
 // Enter in a login field is the same as clicking its button. Delegated like
 // the clicks, because the form is re-rendered on every failed attempt.
@@ -6483,7 +7793,7 @@ const TOURS = {
      body: 'One thing worth setting today: your corporate domains, which '
          + 'is what decides whether an account counts as personal. Open '
          + 'Settings.'},
-    {view: 'settings', sel: '#set-domains',
+    {view: 'settings', tab: 'fleet', sel: '#set-domains',
      title: 'Corporate domains',
      body: 'Every domain your people legitimately sign in with. Anything '
          + 'else is a personal account and warns. Get this wrong and the '
@@ -6532,7 +7842,7 @@ const TOURS = {
      body: 'One setting decides what counts as a personal account, and it '
          + 'is worth seeing even though this account cannot change it. '
          + 'Open Settings.'},
-    {view: 'settings', sel: '#set-domains',
+    {view: 'settings', tab: 'fleet', sel: '#set-domains',
      title: 'Corporate domains - read it, do not take it on trust',
      body: 'Anything not on this list is treated as a personal account. '
          + 'Every figure on the Personal accounts page rests on it, so a '
@@ -6657,10 +7967,14 @@ async function tourGo(n) {
 async function tourShow() {
   const st = TOUR.steps[TOUR.i];
   // The step owns where it happens, so Back works across views and a step
-  // never describes a page somebody navigated away from.
-  if (st.view && st.view !== view) {
+  // never describes a page somebody navigated away from. A step on Settings
+  // owns the sub-tab too: #set-domains exists only on Fleet, so a tour taken
+  // by somebody whose last Settings visit was Account used to find nothing
+  // and quietly fall back to the un-aimed card.
+  if (st.view && (st.view !== view || (st.tab && st.tab !== SETTAB))) {
     view = st.view;
-    history.replaceState(null, '', '#' + view);
+    if (st.tab) SETTAB = st.tab;
+    history.replaceState(null, '', frag(view));
     drawNav();
     await render();
   }
