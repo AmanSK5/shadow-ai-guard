@@ -456,3 +456,203 @@ def test_covers_survives_a_database_from_before_it(tmp_path, monkeypatch):
     st2 = state_mod.State(db)
     sub = st2.list_budget()["subscriptions"][0]
     assert sub["covers"] == []
+
+
+def test_every_provider_says_what_plan_it_needs():
+    """The wizard now lists the connectors with their plan requirement, so a
+    provider with no `plan` renders "not recorded" - which is honest but
+    useless. Both entries carry one, and they carry different KINDS of claim:
+    Anthropic documents that Team has no admin keys, so that is stated as
+    fact; Fireflies does not document its tiers, so that one says what was
+    tested rather than inventing a minimum an operator would plan around."""
+    from app import budget
+
+    for name, p in budget.PROVIDERS.items():
+        assert p.get("plan"), name
+        assert p.get("syncs"), name
+        assert p.get("label"), name
+    assert "Team plans have no admin API" in budget.PROVIDERS["anthropic"]["plan"]
+    # Fireflies was first written as "verified on Enterprise, lower plans
+    # untested", which was not research - it was the one plan we happened to
+    # have used. Their knowledge base says API access exists at every plan
+    # level, and the Business gate applies to the analytics query this
+    # connector does not call.
+    ff = budget.PROVIDERS["fireflies"]["plan"]
+    assert "Any plan" in ff
+    assert "untested" not in ff
+
+
+def test_every_shipped_tool_says_what_its_vendor_offers():
+    """"Not supported" is two different situations - the vendor offers
+    nothing, or the vendor offers something and this receiver has not built
+    it - and only the second is worth an operator raising an issue about. The
+    map covers every tool the registry ships, so the wizard can say which.
+
+    It is checked against the registry rather than a hand-count, because the
+    two drifting apart is exactly how a tool ends up with no answer."""
+    import pathlib
+
+    import yaml
+
+    from app import budget
+
+    root = pathlib.Path(__file__).resolve().parents[2]
+    reg = yaml.safe_load((root / "registry" / "registry.yaml").read_text())
+    ids = {t["id"] for t in reg["tools"]}
+    assert set(budget.MEMBER_APIS) == ids
+
+    for tool, m in budget.MEMBER_APIS.items():
+        assert m["api"] in ("rest", "scim", "none", "unknown"), tool
+        assert m.get("how"), tool
+        # A vendor that offers something must say on what plan; one that
+        # offers nothing has no plan to state.
+        if m["api"] in ("rest", "scim") and tool != "codex-cli":
+            assert m.get("plan"), tool
+        if m["api"] == "none":
+            assert not m.get("plan"), tool
+
+    # Every connector this receiver implements is claimed by at least one tool.
+    claimed = {m["connector"] for m in budget.MEMBER_APIS.values()
+               if m.get("connector")}
+    assert claimed == set(budget.PROVIDERS)
+
+
+def test_sync_cursor_uses_basic_auth_and_drops_removed(managed, monkeypatch):
+    """Cursor authenticates with HTTP Basic - the key as the USERNAME with no
+    password, which is what `curl -u YOUR_API_KEY:` means - rather than a
+    bearer token, the one thing easy to get wrong from a docs page. Removed
+    members keep appearing with isRemoved set; counting them would overstate
+    what the licence pays for."""
+    import base64
+
+    def handler(request):
+        assert request.url.host == "api.cursor.com"
+        want = base64.b64encode(b"cur-key-123:").decode()
+        assert request.headers["Authorization"] == "Basic " + want
+        return httpx.Response(200, json=[
+            {"email": "Ash@Corp.example", "name": "Ash", "role": "owner"},
+            {"email": "bo@corp.example", "name": "Bo", "role": "member"},
+            {"email": "gone@corp.example", "name": "Gone", "isRemoved": True},
+            {"name": "no email at all"},
+        ])
+
+    monkeypatch.setattr(budget_mod.httpx, "AsyncClient",
+                        _mock_async_client(handler))
+    put = client.put("/admin/budget/connection", headers=ADMIN, json={
+        "tool_id": "cursor", "provider": "cursor", "api_key": "cur-key-123"})
+    assert put.status_code == 200, put.text
+    r = client.post("/admin/budget/sync", headers=ADMIN,
+                    json={"tool_id": "cursor"})
+    assert r.json() == {"ok": True, "count": 2}
+
+
+def test_sync_openai_pages_with_a_cursor(managed, monkeypatch):
+    """Cursor-paginated on `after`, and the admin key goes in as a bearer.
+    An ordinary project key is refused by the vendor, which is why the hint
+    says admin key rather than API key."""
+    pages = {
+        "": {"data": [{"id": "user_1", "email": "One@Corp.example",
+                       "name": "One", "role": "owner"}],
+             "has_more": True, "last_id": "user_1"},
+        "user_1": {"data": [{"id": "user_2", "email": "two@corp.example",
+                             "name": "Two", "role": "reader"}],
+                   "has_more": False},
+    }
+
+    def handler(request):
+        assert request.url.host == "api.openai.com"
+        assert request.headers["Authorization"] == "Bearer sk-admin-k"
+        return httpx.Response(200, json=pages[request.url.params.get("after", "")])
+
+    monkeypatch.setattr(budget_mod.httpx, "AsyncClient",
+                        _mock_async_client(handler))
+    client.put("/admin/budget/connection", headers=ADMIN, json={
+        "tool_id": "openai-api-platform", "provider": "openai",
+        "api_key": "sk-admin-k"})
+    r = client.post("/admin/budget/sync", headers=ADMIN,
+                    json={"tool_id": "openai-api-platform"})
+    assert r.json() == {"ok": True, "count": 2}
+
+
+def test_a_connector_written_from_docs_says_so():
+    """Anthropic and Fireflies have been run against real orgs. OpenAI and
+    Cursor have not - they are written from the vendors' documented endpoints
+    and nothing more. That belongs in the data rather than in somebody's
+    memory, because "it is in the dropdown" reads as "it works"."""
+    assert budget_mod.PROVIDERS["openai"].get("unverified") is True
+    assert budget_mod.PROVIDERS["cursor"].get("unverified") is True
+    assert not budget_mod.PROVIDERS["anthropic"].get("unverified")
+    assert not budget_mod.PROVIDERS["fireflies"].get("unverified")
+    # Everything offered can be synced, and every syncer is offered.
+    assert set(budget_mod.SYNCERS) == set(budget_mod.PROVIDERS)
+
+
+def test_sync_chatgpt_reads_scim_users_and_pages(managed, monkeypatch):
+    """SCIM was ruled out here at first as "an IdP integration, not a vendor
+    API". That is wrong for ChatGPT: OpenAI issues the token from its own
+    admin console and the endpoint answers a plain GET, so it is a bearer key
+    like any other. What stays out is a vendor whose token is issued by
+    support during onboarding - there is nothing to paste.
+
+    Paging is SCIM's own: 1-based startIndex, totalResults says when to stop.
+    A deactivated user is not holding a seat and must not be counted."""
+    pages = {
+        1: {"totalResults": 3, "startIndex": 1, "itemsPerPage": 2,
+            "Resources": [
+                {"userName": "Ash@Corp.example", "active": True,
+                 "name": {"givenName": "Ash", "familyName": "One"},
+                 "emails": [{"value": "Ash@Corp.example", "primary": True}]},
+                {"userName": "gone@corp.example", "active": False,
+                 "emails": [{"value": "gone@corp.example"}]},
+            ]},
+        3: {"totalResults": 3, "startIndex": 3, "itemsPerPage": 1,
+            "Resources": [
+                {"userName": "bo@corp.example", "active": True,
+                 "name": {"formatted": "Bo Two"}},
+            ]},
+    }
+
+    def handler(request):
+        assert request.url.host == "api.openai.com"
+        assert request.url.path == "/scim/v2/Users"
+        assert request.headers["Authorization"] == "Bearer scim-tok-123"
+        return httpx.Response(
+            200, json=pages[int(request.url.params.get("startIndex", "1"))])
+
+    monkeypatch.setattr(budget_mod.httpx, "AsyncClient",
+                        _mock_async_client(handler))
+    put = client.put("/admin/budget/connection", headers=ADMIN, json={
+        "tool_id": "chatgpt", "provider": "chatgpt",
+        "api_key": "scim-tok-123"})
+    assert put.status_code == 200, put.text
+    r = client.post("/admin/budget/sync", headers=ADMIN,
+                    json={"tool_id": "chatgpt"})
+    # Three resources, one deactivated.
+    assert r.json() == {"ok": True, "count": 2}
+
+
+def test_a_scim_answer_without_resources_is_named_not_guessed(managed,
+                                                              monkeypatch):
+    """Pointing this at a non-SCIM URL returns 200 and JSON that simply has no
+    Resources. Treating that as "zero members" would wipe a member list; it
+    has to refuse and say what it wanted."""
+    def handler(request):
+        return httpx.Response(200, json={"object": "list", "data": []})
+
+    monkeypatch.setattr(budget_mod.httpx, "AsyncClient",
+                        _mock_async_client(handler))
+    client.put("/admin/budget/connection", headers=ADMIN, json={
+        "tool_id": "chatgpt", "provider": "chatgpt", "api_key": "scim-tok-1"})
+    r = client.post("/admin/budget/sync", headers=ADMIN,
+                    json={"tool_id": "chatgpt"})
+    body = r.json()
+    assert body["ok"] is False
+    assert "SCIM Resources" in body["detail"]
+
+
+def test_codex_rides_the_chatgpt_workspace():
+    """Codex CLI has no member list of its own, so it points at the ChatGPT
+    connector rather than getting one - the "also covers" tick is what links
+    the two."""
+    assert budget_mod.MEMBER_APIS["codex-cli"]["connector"] == "chatgpt"
+    assert budget_mod.MEMBER_APIS["chatgpt"]["connector"] == "chatgpt"

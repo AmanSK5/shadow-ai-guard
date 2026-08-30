@@ -42,6 +42,11 @@ _TIMEOUT = 15.0
 
 ANTHROPIC_URL = "https://api.anthropic.com/v1/organizations/users"
 FIREFLIES_URL = "https://api.fireflies.ai/graphql"
+OPENAI_URL = "https://api.openai.com/v1/organization/users"
+CURSOR_URL = "https://api.cursor.com/teams/members"
+CHATGPT_SCIM_URL = "https://api.openai.com/scim/v2"
+NOTION_SCIM_URL = "https://api.notion.com/scim/v2"
+GRAMMARLY_SCIM_URL = "https://app.grammarly.com/scim/v2"
 
 # What the portal needs to offer the wizard: which providers exist, what
 # each one's key looks like and where an admin creates it. Data, not
@@ -49,6 +54,11 @@ FIREFLIES_URL = "https://api.fireflies.ai/graphql"
 PROVIDERS = {
     "anthropic": {
         "label": "Anthropic (Claude Enterprise / Console)",
+        # What plan the admin API needs. Stated only where it is actually
+        # known: Anthropic documents that Team has no admin keys, so that
+        # one is a fact. Fireflies below does not get a guess.
+        "plan": "Enterprise, or a Console org. Team plans have no admin "
+                "API at all.",
         "key_hint": "Scoped Admin API key with the read:members scope. The "
                     "org's primary owner creates it at claude.ai > "
                     "Organization settings > API (Console orgs: Settings > "
@@ -60,12 +70,269 @@ PROVIDERS = {
         "syncs": "members and roles. Seat tiers are not in the API - "
                  "record them on the subscription.",
     },
+    "chatgpt": {
+        "label": "ChatGPT workspace (Enterprise or Edu)",
+        "plan": "Enterprise or Edu. Business - the plan renamed from Team in "
+                "2025 - has SSO but no SCIM, so it uses Import.",
+        "key_hint": "SCIM API token from the workspace admin console, "
+                    "Settings > Security > SCIM Provisioning. It is issued by "
+                    "OpenAI rather than by your identity provider, and this "
+                    "reads the same endpoint your IdP writes to - no IdP is "
+                    "needed to use it. Codex CLI has no member list of its "
+                    "own: tick it under \"also covers\".",
+        "syncs": "members and whether the account is active. SCIM carries no "
+                 "seat tier or usage - record tiers on the subscription.",
+        "unverified": True,
+    },
+    "notion": {
+        "label": "Notion (Enterprise)",
+        "plan": "Enterprise only - Free, Plus and Business cannot mint a "
+                "SCIM token at all.",
+        "key_hint": "SCIM API token created by an organisation owner under "
+                    "Manage organization. Notion issues it, not your identity "
+                    "provider, and this reads the same endpoint an IdP would "
+                    "write to.",
+        "syncs": "members and whether the account is active. No seat tier or "
+                 "usage - record tiers on the subscription.",
+        "unverified": True,
+    },
+    "grammarly": {
+        "label": "Grammarly (Pro or Enterprise)",
+        "plan": "Pro or Enterprise, and SAML SSO has to be configured first - "
+                "Grammarly will not issue the token before it is.",
+        "key_hint": "SCIM token from the Admin Panel, Settings > SSO & "
+                    "Provisioning.",
+        "syncs": "members and whether the account is active.",
+        "unverified": True,
+    },
+    "openai": {
+        "label": "OpenAI (API platform organisation)",
+        "plan": "Any organisation, with an Admin API key. This is the API "
+                "platform org - a ChatGPT workspace is SCIM-only and uses "
+                "Import.",
+        "key_hint": "Admin API key, created at platform.openai.com > "
+                    "Settings > Organization > Admin keys by an owner. An "
+                    "ordinary project API key will not work: admin keys are "
+                    "the only ones the organization endpoints accept.",
+        "syncs": "members and their org role. Seat tiers are not in the "
+                 "API - record them on the subscription.",
+        # Written from OpenAI's documented endpoint and NOT yet run against a
+        # real organisation. The first operator to point it at one is the
+        # test; a refusal here names the vendor and the status rather than
+        # failing silently.
+        "unverified": True,
+    },
+    "cursor": {
+        "label": "Cursor (Team or Enterprise)",
+        "plan": "Team or Enterprise - both expose it, unusually.",
+        "key_hint": "Team API key from cursor.com > Settings > Cursor "
+                    "Admin API. Sent as HTTP Basic with the key as the "
+                    "username and no password, which is what their curl "
+                    "example shows.",
+        "syncs": "members and their team role. Removed members are dropped "
+                 "rather than counted as seats.",
+        "unverified": True,
+    },
     "fireflies": {
         "label": "Fireflies.ai",
+        # Fireflies' own knowledge base says API access is available on every
+        # plan level, and neither the `users` query nor the API-key article
+        # names a tier or an admin role. The "Business or higher" gate people
+        # quote is on the separate `analytics` query, which this connector
+        # does not use: the per-user counters it reports are fields on
+        # `users` itself.
+        "plan": "Any plan. Fireflies documents API access at every plan "
+                "level, and the team-users query names no tier.",
         "key_hint": "API key from fireflies.ai > Integrations > Fireflies "
                     "API. A team admin's key lists the whole team.",
         "syncs": "members, admin flag, and per-user usage (transcripts, "
                  "minutes).",
+    },
+}
+
+
+# What each SHIPPED registry tool's vendor can tell an administrator about who
+# holds a seat. PROVIDERS above is the subset this receiver has actually
+# implemented; this is the wider map, so the portal can answer the operator's
+# real question - "why is my tool not in the Automatic list?" - with either
+# "its vendor offers nothing" or "its vendor does, and we have not built it
+# yet", which is a far more useful thing to open an issue about.
+#
+# `api` is what the VENDOR offers, not what we support:
+#   rest      a REST/GraphQL admin endpoint that lists members
+#   scim      SCIM 2.0 only, which means provisioning through an IdP
+#   none      no organisation or seat list exists to read
+#   unknown   not documented publicly, or not established
+#
+# `plan` records the tier, and says so honestly where a tier is not documented.
+# Checked against vendor documentation in August 2026. Vendors move these gates
+# often - anything here that starts costing an operator a wasted afternoon
+# should be re-checked rather than trusted because it is written down.
+MEMBER_APIS = {
+    "claude": {
+        "api": "rest", "connector": "anthropic",
+        "plan": "Enterprise, or a Console org. Team plans have no admin API.",
+        "how": "Admin API, GET /v1/organizations/users.",
+    },
+    "claude-code": {
+        "api": "rest", "connector": "anthropic",
+        "plan": "Enterprise, or a Console org.",
+        "how": "Same Anthropic org as Claude - one licence, one member list.",
+    },
+    "chatgpt": {
+        "api": "scim", "connector": "chatgpt",
+        "plan": "Enterprise or Edu only. Business (renamed from Team in 2025) "
+                "has SSO but not SCIM.",
+        "how": "SCIM 2.0 at api.openai.com/scim/v2. The token comes from "
+               "OpenAI's own admin console, so no IdP is involved.",
+    },
+    "codex-cli": {
+        "api": "rest", "connector": "chatgpt",
+        "plan": "Whatever pays for it.",
+        "how": "No member list of its own - it rides the ChatGPT workspace or "
+               "the API platform org. Tick it under \"also covers\".",
+    },
+    "openai-api-platform": {
+        "api": "rest", "connector": "openai",
+        "plan": "Any organisation, with an Admin API key.",
+        "how": "GET /v1/organization/users.",
+    },
+    "gemini": {
+        "api": "rest",
+        "plan": "Google Workspace, Business Standard or higher for Gemini.",
+        "how": "Licences are assigned in Workspace; the Admin SDK Directory "
+               "and Enterprise License Manager APIs list who holds one.",
+    },
+    "gemini-cli": {
+        "api": "rest",
+        "plan": "Google Workspace, or a Google Cloud project for Code Assist.",
+        "how": "Same Workspace licence assignment as Gemini.",
+    },
+    "github-copilot": {
+        "api": "rest",
+        "plan": "Copilot Business or Copilot Enterprise.",
+        "how": "GET /orgs/{org}/copilot/billing/seats. Org owner, with a token "
+               "carrying manage_billing:copilot and read:org.",
+    },
+    "cursor": {
+        "api": "rest", "connector": "cursor",
+        "plan": "Team or Enterprise - both, unusually.",
+        "how": "Admin API, GET /teams/members with a Team API key.",
+    },
+    "codeium": {
+        "api": "rest",
+        "plan": "Enterprise. Teams sees admin analytics in-app; the API and "
+                "SCIM are Enterprise.",
+        "how": "Windsurf enterprise API for team management and analytics.",
+    },
+    "tabnine": {
+        "api": "rest",
+        "plan": "Enterprise, SaaS console or self-hosted.",
+        "how": "Admin APIs for teams and users, plus SCIM IdP sync.",
+    },
+    "cline": {
+        "api": "unknown",
+        "plan": "Enterprise.",
+        "how": "Cline Enterprise manages members in its own dashboard; a "
+               "public members API is not documented.",
+    },
+    "roo-code": {
+        "api": "none", "plan": "",
+        "how": "An open-source extension on your own model keys. There is no "
+               "vendor account, so there is no seat list to read.",
+    },
+    "continue": {
+        "api": "none", "plan": "",
+        "how": "An open-source extension on your own model keys. No vendor "
+               "seat list.",
+    },
+    "otter": {
+        "api": "rest",
+        "plan": "Enterprise. SCIM Directory Sync additionally needs 100+ seats.",
+        "how": "The public API is Enterprise-only, bearer authenticated.",
+    },
+    "grammarly": {
+        "api": "scim", "connector": "grammarly",
+        "plan": "Pro or Enterprise, and SAML SSO has to be on first.",
+        "how": "SCIM 2.0 at app.grammarly.com/scim/v2.",
+    },
+    "wispr-flow": {
+        "api": "scim",
+        "plan": "Enterprise.",
+        "how": "Admin portal at admin.wisprflow.ai with SCIM provisioning; the "
+               "enterprise API covers audit logs rather than a member list.",
+    },
+    "perplexity": {
+        "api": "scim",
+        "plan": "Enterprise Pro at 50+ seats, or Enterprise Max at any size.",
+        "how": "SCIM through your IdP only - there is no admin REST API, and "
+               "the SCIM token is issued during onboarding, not self-served.",
+    },
+    "mistral": {
+        "api": "rest",
+        "plan": "Enterprise. The Admin API is in preview.",
+        "how": "console.mistral.ai/api/admin, x-api-key.",
+    },
+    "grok": {
+        "api": "rest",
+        "plan": "Grok Business, or an xAI organisation.",
+        "how": "Management API at management-api.x.ai with a management key.",
+    },
+    "microsoft-copilot": {
+        "api": "rest",
+        "plan": "Any tenant with a Microsoft 365 admin.",
+        "how": "Microsoft Graph: subscribedSkus and per-user licenseDetails "
+               "say who holds the add-on.",
+    },
+    "microsoft-365-copilot": {
+        "api": "rest",
+        "plan": "An add-on to M365 E3/E5 or Business Standard/Premium.",
+        "how": "Microsoft Graph, the same licence assignment as any other "
+               "M365 service.",
+    },
+    "atlassian-rovo": {
+        "api": "rest",
+        "plan": "Not documented. An organisation API key is what it needs; "
+                "which plans can mint one is not stated publicly.",
+        "how": "Organizations REST API, GET /v2/orgs/{orgId}/directories/"
+               "{directoryId}/users.",
+    },
+    "notion-ai": {
+        "api": "scim", "connector": "notion",
+        "plan": "Enterprise only - Free, Plus and Business cannot use SCIM.",
+        "how": "SCIM for provisioning; the ordinary Notion API's /v1/users "
+               "also lists workspace members with an integration token.",
+    },
+    "fireflies": {
+        "api": "rest", "connector": "fireflies",
+        "plan": "Any plan - API access is documented at every plan level.",
+        "how": "One GraphQL query for the team's users, with per-user usage. "
+               "The separate analytics query needs Business or higher; this "
+               "does not use it.",
+    },
+    "hugging-face": {
+        "api": "rest",
+        "plan": "Any organisation for the members list; SCIM needs Enterprise "
+                "Hub with SSO enabled.",
+        "how": "GET /api/organizations/{org}/members.",
+    },
+    "deepseek": {
+        "api": "unknown", "plan": "",
+        "how": "The open platform issues API keys; no organisation member "
+               "endpoint is documented publicly.",
+    },
+    "midjourney": {
+        "api": "none", "plan": "",
+        "how": "Individual subscriptions. There is no organisation, so there "
+               "is no seat list.",
+    },
+    "ollama": {
+        "api": "none", "plan": "",
+        "how": "Runs locally with no account at all - there is nobody to list.",
+    },
+    "lm-studio": {
+        "api": "none", "plan": "",
+        "how": "A local desktop app with no account.",
     },
 }
 
@@ -203,7 +470,235 @@ async def sync_fireflies(api_key: str) -> list[dict]:
     return members
 
 
-SYNCERS = {"anthropic": sync_anthropic, "fireflies": sync_fireflies}
+async def sync_openai(api_key: str) -> list[dict]:
+    """The organisation's members via the OpenAI Admin API, all pages.
+
+    This is the API PLATFORM organisation - the one that owns API keys and
+    projects - not a ChatGPT workspace. ChatGPT's member list is SCIM-only
+    and Enterprise-only, which is an identity-provider integration rather
+    than a vendor endpoint this could call, so it stays on the Import path.
+
+    Pagination is cursor-based: page with `after` until has_more is false.
+    """
+    members: list[dict] = []
+    after = ""
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        for _ in range(MAX_MEMBERS // 100 + 1):
+            params = {"limit": "100"}
+            if after:
+                params["after"] = after
+            try:
+                r = await client.get(
+                    OPENAI_URL, params=params,
+                    headers={"Authorization": "Bearer " + api_key})
+            except httpx.HTTPError as e:
+                raise SyncError("could not reach the OpenAI API (%s)"
+                                % type(e).__name__)
+            if r.status_code != 200:
+                raise _refusal(r.status_code, "the OpenAI API")
+            try:
+                body = r.json()
+            except json.JSONDecodeError:
+                raise SyncError("the OpenAI API answered 200, but not with "
+                                "JSON")
+            page = body.get("data") or []
+            for u in page:
+                email = str(u.get("email") or "").strip().lower()
+                if not email:
+                    continue
+                members.append({
+                    "email": email,
+                    "name": str(u.get("name") or "")[:200],
+                    "role": str(u.get("role") or "")[:64],
+                    "seat_tier": "",
+                    "usage": {},
+                })
+                if len(members) > MAX_MEMBERS:
+                    raise SyncError("more than %d members: refusing rather "
+                                    "than store a partial member list as if "
+                                    "it were complete" % MAX_MEMBERS)
+            if not body.get("has_more"):
+                return members
+            after = str(body.get("last_id") or "")
+            if not after and page:
+                after = str(page[-1].get("id") or "")
+            if not after:
+                # has_more with no cursor would loop on page one forever.
+                return members
+    raise SyncError("the OpenAI API kept paginating past %d members"
+                    % MAX_MEMBERS)
+
+
+async def sync_cursor(api_key: str) -> list[dict]:
+    """The team's members via the Cursor Admin API.
+
+    One unpaginated call. Authentication is HTTP Basic with the API key as
+    the USERNAME and an empty password - the shape their docs show as
+    `curl -u YOUR_API_KEY:` - not a bearer token.
+
+    Removed members keep appearing with isRemoved set; they are dropped
+    here, because a seat that has been taken away is not a seat somebody
+    holds and counting it would overstate what the licence is paying for.
+    """
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        try:
+            r = await client.get(CURSOR_URL, auth=(api_key, ""))
+        except httpx.HTTPError as e:
+            raise SyncError("could not reach the Cursor API (%s)"
+                            % type(e).__name__)
+    if r.status_code != 200:
+        raise _refusal(r.status_code, "the Cursor API")
+    try:
+        body = r.json()
+    except json.JSONDecodeError:
+        raise SyncError("the Cursor API answered 200, but not with JSON")
+    # Their docs show a bare array; a wrapped object would be a kindness to
+    # accept too rather than a reason to fail the whole sync.
+    rows = body if isinstance(body, list) else (body.get("teamMembers")
+                                                or body.get("members") or [])
+    if not isinstance(rows, list):
+        raise SyncError("the Cursor API answered with JSON this does not "
+                        "recognise as a member list")
+    if len(rows) > MAX_MEMBERS:
+        raise SyncError("more than %d members: refusing rather than store a "
+                        "partial member list as if it were complete"
+                        % MAX_MEMBERS)
+    members = []
+    for u in rows:
+        if not isinstance(u, dict) or u.get("isRemoved"):
+            continue
+        email = str(u.get("email") or "").strip().lower()
+        if not email:
+            continue
+        members.append({
+            "email": email,
+            "name": str(u.get("name") or "")[:200],
+            "role": str(u.get("role") or "")[:64],
+            "seat_tier": "",
+            "usage": {},
+        })
+    return members
+
+async def _scim_users(base_url: str, token: str, vendor: str) -> list[dict]:
+    """Members from any SCIM 2.0 /Users endpoint.
+
+    SCIM was ruled out here at first as "an identity-provider integration
+    rather than a vendor API". That is wrong wherever the VENDOR issues the
+    token from its own admin console and the endpoint answers a plain GET -
+    which is a bearer key like any other, and no IdP is involved. What stays
+    ruled out is a vendor whose token is issued by its support team during
+    onboarding, because there is nothing an operator can paste.
+
+    Pagination is SCIM's own: 1-based startIndex, and totalResults says when
+    to stop. Written once because the three vendors that qualify differ only
+    in their base URL.
+    """
+    members: list[dict] = []
+    start = 1
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        for _ in range(MAX_MEMBERS // 100 + 1):
+            try:
+                r = await client.get(
+                    base_url.rstrip("/") + "/Users",
+                    params={"startIndex": str(start), "count": "100"},
+                    headers={"Authorization": "Bearer " + token,
+                             "Accept": "application/scim+json"})
+            except httpx.HTTPError as e:
+                raise SyncError("could not reach %s (%s)"
+                                % (vendor, type(e).__name__))
+            if r.status_code != 200:
+                raise _refusal(r.status_code, vendor)
+            try:
+                body = r.json()
+            except json.JSONDecodeError:
+                raise SyncError("%s answered 200, but not with JSON" % vendor)
+            page = body.get("Resources")
+            if page is None:
+                raise SyncError("%s answered without a SCIM Resources list - "
+                                "check the base URL is the SCIM one" % vendor)
+            for u in page:
+                if not isinstance(u, dict):
+                    continue
+                # userName is the email on every vendor here, but the emails
+                # array is the spec's own answer, so prefer it and fall back.
+                email = ""
+                for e in (u.get("emails") or []):
+                    if isinstance(e, dict) and e.get("value"):
+                        email = str(e["value"])
+                        if e.get("primary"):
+                            break
+                email = (email or str(u.get("userName") or "")).strip().lower()
+                if not email or "@" not in email:
+                    continue
+                nm = u.get("name") or {}
+                name = str(nm.get("formatted") or
+                           " ".join(x for x in [nm.get("givenName"),
+                                                nm.get("familyName")] if x) or
+                           u.get("displayName") or "")
+                # A deactivated SCIM user is not holding a seat. Counting one
+                # would overstate what the licence pays for, the same way a
+                # removed Cursor member would.
+                if u.get("active") is False:
+                    continue
+                members.append({
+                    "email": email,
+                    "name": name[:200],
+                    "role": "",
+                    "seat_tier": "",
+                    "usage": {},
+                })
+                if len(members) > MAX_MEMBERS:
+                    raise SyncError("more than %d members: refusing rather "
+                                    "than store a partial member list as if "
+                                    "it were complete" % MAX_MEMBERS)
+            total = body.get("totalResults")
+            got = start - 1 + len(page)
+            if not page or (isinstance(total, int) and got >= total):
+                return members
+            start = got + 1
+    raise SyncError("%s kept paginating past %d members"
+                    % (vendor, MAX_MEMBERS))
+
+
+async def sync_chatgpt(api_key: str) -> list[dict]:
+    """The ChatGPT workspace's members, via its SCIM 2.0 endpoint.
+
+    Enterprise and Edu only - Business (renamed from Team in 2025) has SSO
+    but no SCIM, and so stays on the Import path. The token comes from the
+    workspace's own admin console, Settings > Security > SCIM Provisioning,
+    not from an identity provider.
+
+    Codex CLI has no member list of its own: it rides whichever workspace
+    pays for it, so tick it under "also covers" rather than looking for a
+    connector of its own.
+    """
+    return await _scim_users(CHATGPT_SCIM_URL, api_key, "the ChatGPT SCIM API")
+
+
+async def sync_notion(api_key: str) -> list[dict]:
+    """The workspace's members via Notion's SCIM endpoint.
+
+    Enterprise only - Free, Plus and Business cannot mint a SCIM token at
+    all. An organisation owner creates it under Manage organization, so it
+    is a vendor-issued key even though an IdP is the usual consumer.
+    """
+    return await _scim_users(NOTION_SCIM_URL, api_key, "the Notion SCIM API")
+
+
+async def sync_grammarly(api_key: str) -> list[dict]:
+    """The account's members via Grammarly's SCIM endpoint.
+
+    Pro and Enterprise, and SAML SSO has to be configured first - Grammarly
+    will not issue the token before it is. The token comes from the Admin
+    Panel, Settings > SSO & Provisioning.
+    """
+    return await _scim_users(GRAMMARLY_SCIM_URL, api_key,
+                             "the Grammarly SCIM API")
+
+SYNCERS = {"anthropic": sync_anthropic, "fireflies": sync_fireflies,
+           "openai": sync_openai, "cursor": sync_cursor,
+           "chatgpt": sync_chatgpt, "notion": sync_notion,
+           "grammarly": sync_grammarly}
 
 
 # ----------------------------------------------------------------- fx --
