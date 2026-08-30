@@ -404,6 +404,16 @@ table.plain td{border-bottom:0;padding:4.5px 10px 4.5px 0;vertical-align:middle}
    command in step 2, the zip line in step 5 - pushed the whole panel wider
    than the card, and .ssow's overflow:hidden then cut off the buttons. */
 .ssmain{padding:22px 24px;min-width:0}
+/* The first-run rail groups its steps and says what each one costs to skip. */
+.ssrail .wact{font-size:10.5px;font-weight:700;color:var(--mut);
+  text-transform:uppercase;letter-spacing:.07em;margin:14px 0 4px 2px}
+.ssrail ol:first-of-type .wact:first-child{margin-top:0}
+.wtag{font-size:10px;padding:0 6px;border-radius:99px;margin-left:6px;
+  background:var(--sf2);color:var(--mut);border:1px solid var(--bd);
+  vertical-align:1px;font-weight:500}
+.wtag.req{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+.ssstep .need{font-size:11.5px;color:var(--warn);display:block}
+.ssstep.opt .dot{border-style:dashed}
 .ssmain h4{margin:0 0 8px;font-size:16px}
 /* A wizard column is already narrow; capping the prose again wrapped every
    sentence two-thirds of the way across and left a ragged margin. */
@@ -778,6 +788,15 @@ let REGTOOLS = null, GOVDECS = null, WIZOWNER = '', WIZREVIEW = '';
 // Which log-store shape the wizard's step 2 shows, and the last result of
 // each connection test, keyed by API name, so a result survives re-renders.
 let WIZSTORE = 'self', TESTS = {};
+// Which screen sent you into the extension setup. It is reachable from the
+// first-run wizard's step 5 and from Settings, and the way out is different:
+// somebody mid-setup wants to land back on step 5, and somebody who came from
+// Settings has no setup to return to. Offering both to everybody would send
+// half of them somewhere they were not.
+let EXTFROM = '';
+// Which first-run step is showing. The seven used to render at once on
+// one page, which is how it became 841 lines nobody could scan.
+let WIZSTEP = 1;
 // The budget view: the fetched spend data, the link-a-tool wizard's state
 // (null = closed), the last action's one-line outcome, and a parsed CSV
 // preview waiting for confirmation.
@@ -3588,14 +3607,20 @@ async function extSetup() {
   <div class="ssow">${rail}
     <div class="ssmain">${body}
       <div class="ssfoot">
-        <button class="mini" data-nav="settings">Close</button>
+        ${EXTPAGE === 6 ? '' : EXTFROM === 'wizard'
+          ? `<button class="mini" data-act="ext-back-to-setup">Back to
+              deployment setup</button>`
+          : '<button class="mini" data-nav="settings">Close</button>'}
         <span class="sp"></span>
         ${EXTPAGE > 1 ? `<button class="mini" data-act="ext-page"
           data-key="${EXTPAGE - 1}">Back</button>` : ''}
         ${EXTPAGE < 6
           ? `<button class="mini pri" data-act="ext-page"
               data-key="${EXTPAGE + 1}">Next</button>`
-          : `<button class="mini pri" data-act="open-wizard">Back to the setup wizard</button>`}
+          : EXTFROM === 'wizard'
+          ? `<button class="mini pri" data-act="ext-back-to-setup">Back to
+              deployment setup</button>`
+          : '<button class="mini pri" data-nav="settings">Done</button>'}
       </div></div></div>`;
 }
 
@@ -3642,31 +3667,123 @@ async function wizard() {
     ${WIZSTORE === k ? 'style="border-color:var(--pri)"' : ''}
     data-act="wiz-store" data-key="${k}">${lbl}</button>`;
 
-  return `<h2>Welcome — set up your deployment</h2>
-  <p class="lede">Work through the steps top to bottom. Everything here can
-  be changed later under Settings, and changes take effect immediately - no
-  redeploys.</p>
-  ${SETMSG ? `<div class="note">${esc(SETMSG)}</div>` : ''}
+    const WIZ_STEPS = [
+    {t: 'Receiver URL',         need: 'req', act: 'Start collecting'},
+    {t: 'Log store',            need: 'rec', act: 'Start collecting'},
+    {t: 'Corporate domains',    need: 'req', act: 'Start collecting'},
+    {t: 'Governance baseline',  need: 'opt', act: 'Make it useful'},
+    {t: 'Browser extension',    need: 'opt', act: 'Make it useful'},
+    {t: 'Alerting and Grafana', need: 'opt', act: 'Make it useful'},
+    {t: 'Deployment downloads', need: 'out', act: 'Make it useful'},
+  ];
+  // A first-run wizard that only counts steps tells you how far down the page
+  // you are. This says what the deployment can do yet, and what it will get
+  // WRONG if you stop here. Corporate domains is "required" not because the
+  // platform refuses to run without it but because it runs wrong: every
+  // account reads as personal, and the Overview headline, the Personal
+  // accounts page and the ISO evidence all inherit that.
+  const wv = k => ((SETTINGS && SETTINGS.settings || {})[k] || {}).value || '';
+  const wDone = n =>
+    n === 1 ? !!wv('receiver_public_url') :
+    n === 2 ? !!wv('log_store_url') :
+    n === 3 ? ((cd.value || []).length > 0) :
+    n === 4 ? (GOVDECS || []).length > 0 :
+    n === 5 ? !!extSettingsState().id :
+    n === 6 ? !!(wv('alertmanager_url') || wv('grafana_url')) : false;
+  const wLine = n => {
+    if (n === 1) return wv('receiver_public_url')
+      ? {c: 'val', t: wv('receiver_public_url').replace(/^https?:\/\//, '')}
+      : {c: 'need', t: 'nothing can deploy without it'};
+    if (n === 2) return wv('log_store_url')
+      ? {c: 'val', t: 'reading from it'}
+      : {c: 'pend', t: 'findings stay in container logs'};
+    if (n === 3) return (cd.value || []).length
+      ? {c: 'val', t: (cd.value || []).join(', ')}
+      : {c: 'need', t: 'every account reads as personal'};
+    if (n === 4) return (GOVDECS || []).length
+      ? {c: 'val', t: (GOVDECS || []).length + ' recorded'}
+      : {c: 'pend', t: 'nothing decided yet'};
+    if (n === 5) return extSettingsState().id
+      ? {c: 'val', t: 'packed and hosted'} : {c: 'pend', t: 'not set up'};
+    if (n === 6) return (wv('alertmanager_url') || wv('grafana_url'))
+      ? {c: 'val', t: wv('alertmanager_url') ? 'alerting on' : 'grafana embedded'}
+      : {c: 'pend', t: 'nothing pages'};
+    return (CFG.managed && CFG.managed.artifacts_ready)
+      ? {c: 'val', t: 'ready'} : {c: 'pend', t: 'needs the receiver URL'};
+  };
+  const reqN = WIZ_STEPS.filter(x => x.need === 'req').length;
+  const reqDone = WIZ_STEPS.filter((x, i) => x.need === 'req' && wDone(i + 1)).length;
+  const canGo = reqDone === reqN;
+  let wact = '';
+  const rail = `<div class="ssrail"><h3>Set up your deployment</h3><ol>${
+    WIZ_STEPS.map((x, i) => {
+      const n = i + 1, dn = wDone(n), ln = wLine(n);
+      const hdr = x.act !== wact
+        ? `</ol><div class="wact">${esc(x.act)}</div><ol>` : '';
+      wact = x.act;
+      const tag = x.need === 'req' ? '<span class="wtag req">required</span>'
+        : x.need === 'rec' ? '<span class="wtag">recommended</span>'
+        : x.need === 'opt' ? '<span class="wtag">optional</span>' : '';
+      return `${hdr}<li class="ssstep ${dn ? 'done' : ''}
+        ${WIZSTEP === n ? 'on' : ''} ${x.need === 'opt' ? 'opt' : ''}"
+        data-act="wiz-step" data-key="${n}">
+        <span class="dot">${dn ? '&#10003;' : n}</span>
+        <span style="min-width:0"><span class="t">${esc(x.t)}${tag}</span>
+        <span class="${ln.c}">${esc(ln.t)}</span></span></li>`;
+    }).join('')}</ol>
+    <div class="sssum">${canGo
+      ? `<div class="lede" style="font-size:11.5px;color:var(--pri);font-weight:600">You can deploy now</div>
+         <div class="barwrap"><div class="bar" style="width:100%"></div></div>
+         <div class="lede" style="font-size:11.5px">Both required steps are in.
+           The rest can wait - collectors start reporting as soon as you push
+           the downloads.</div>
+         <p style="margin:9px 0 0"><button class="mini pri" data-act="wiz-step"
+           data-key="7">Go to downloads</button></p>`
+      : `<div class="lede" style="font-size:11.5px">${reqDone} of ${reqN} required steps done</div>
+         <div class="barwrap"><div class="bar"
+           style="width:${reqDone / reqN * 100}%"></div></div>
+         <div class="lede" style="font-size:11.5px">Optional steps can be left
+           for later; everything stays editable under Settings.</div>`}
+    </div></div>`;
 
-  <div class="wcard" style="margin-bottom:10px"><h3>1 · Where your machines reach the receiver</h3>
+  let body = '';
+  if (WIZSTEP === 1) body = `<h4>Where your machines reach the receiver</h4>
   <p class="lede" style="margin-bottom:10px">The URL your laptops and servers
   will send findings to. It gets baked into every download below, so it has
   to work from those machines - not just from inside the cluster. That means
   a DNS record pointing this name at your ingress or reverse proxy, plus a
   certificate - unless something like a Tailscale operator handles both for
-  you. Save it, then hit probe to check.</p>
+  you.</p>
+  <p class="lede" style="margin-bottom:10px">Not sure which address that is?
+  It is whatever already fronts this portal from outside. To find it:
+  <span class="mono">kubectl get ingress -A</span> for an ingress host,
+  <span class="mono">kubectl get svc -A --field-selector
+  spec.type=LoadBalancer</span> for a load-balancer address, or
+  <span class="mono">tailscale status</span> if a Tailscale operator handles
+  it. Then save it and press probe: the receiver either answers on the address
+  you typed or it does not, and that is the only confirmation worth having.</p>
   <dl class="kv">
     ${settingRow('receiver_public_url', 'Public receiver URL',
       'https://ai-guard.your-tailnet.ts.net', '')}
   </dl>
   <div style="margin-top:8px">
     <button class="mini" data-act="run-test" data-key="receiver-url">Probe the saved URL</button>
-  </div>${testNote('receiver-url')}</div>
-
-  <div class="wcard" style="margin-bottom:10px"><h3>2 · The log store</h3>
+  </div>${testNote('receiver-url')}`;
+  if (WIZSTEP === 2) body = `<h4>The log store</h4>
   <p class="lede" style="margin-bottom:10px">Findings are stored in a
   Loki-compatible log store: the receiver writes to it, this portal reads
   from it. Where is yours?</p>
+  <p class="lede" style="margin-bottom:10px">In practice that means
+  <b>Grafana Loki</b>, self-hosted in any of its deployment modes, or
+  <b>Grafana Cloud Logs</b>, which is the same API hosted. If you already run
+  the Grafana stack, this is the Loki you have.</p>
+  <p class="lede" style="margin-bottom:10px">Anything else has to implement
+  Loki's own HTTP API, and <i>both</i> halves of it: the receiver writes to
+  <span class="mono">/loki/api/v1/push</span> and this portal reads from
+  <span class="mono">/loki/api/v1/query_range</span>. Worth checking before you
+  commit - several log stores advertise Loki-compatible <i>ingest</i> while
+  answering queries in a language of their own, and one of those will take
+  every finding you send it and then show you an empty portal.</p>
   <div style="margin-bottom:10px">
     ${storeBtn('self', 'self-hosted / in-cluster')}
     ${storeBtn('cloud', 'hosted (Grafana Cloud)')}
@@ -3686,9 +3803,8 @@ async function wizard() {
     write-only token is the classic mistake - the test buttons below will
     catch it.</p>`}
   <dl class="kv">${logStoreFields(WIZSTORE === 'cloud')}</dl>
-  ${logStoreTests()}`}</div>
-
-  <div class="wcard" style="margin-bottom:10px"><h3>3 · Corporate domains</h3>
+  ${logStoreTests()}`}`;
+  if (WIZSTEP === 3) body = `<h4>Corporate domains</h4>
   <p class="lede" style="margin-bottom:10px">Your work email domains. An AI
   tool signed into one of these counts as a work account; anything else gets
   flagged as personal. Collectors pick this up automatically on their next
@@ -3706,9 +3822,8 @@ async function wizard() {
     headline converts into it at the ECB's daily reference rate (the rate's
     date is named right beside the number), newly linked tools default to
     it, and the per-currency figures stay visible.</div>
-  </div></div>
-
-  <div class="wcard" style="margin-bottom:10px"><h3>4 · Governance baseline</h3>
+  </div>`;
+  if (WIZSTEP === 4) body = `<h4>Governance baseline</h4>
   <p class="lede" style="margin-bottom:10px">Which AI tools your organisation
   has approved or banned. Only set the ones you actually have a position on -
   leaving the rest undecided is fine. You can refine any of this later on
@@ -3721,9 +3836,8 @@ async function wizard() {
       value="${esc(WIZREVIEW || yearOut)}" title="review due date for approvals">
   </div>
   <table><tr><th>tool</th><th>vendor</th><th>decision</th><th></th></tr>
-  ${REGTOOLS.map(toolRow).join('')}</table></div>
-
-  <div class="wcard" style="margin-bottom:10px"><h3>5 · Browser extension &amp; paste guard</h3>
+  ${REGTOOLS.map(toolRow).join('')}</table>`;
+  if (WIZSTEP === 5) body = `<h4>Browser extension &amp; paste guard</h4>
   <p class="lede" style="margin-bottom:10px">One extension does both jobs:
   it reports which account is signed into each AI site, and its paste guard
   warns or blocks risky pastes. It is a one-time pack-and-host, and the
@@ -3732,14 +3846,12 @@ async function wizard() {
   ready-made policy downloads in step 7. Fine to skip on a first pass and
   come back.</p>
   ${extStatusRows(true)}
-  <div style="margin-top:10px">
-    <button class="mini" style="padding:6px 14px" data-act="ext-open">Open the extension setup</button>
-    <span class="src-note" style="margin-left:8px">Six short steps: download,
-    pack, identity, hosting, Firefox, behaviour. Each value is also editable
-    flat under Settings.</span>
-  </div></div>
-
-  <div class="wcard" style="margin-bottom:10px"><h3>6 · Alerting and Grafana (optional)</h3>
+  <p class="src-note" style="margin:14px 0 8px">Six short steps: download,
+  pack, identity, hosting, Firefox, behaviour. It owns those values - Settings
+  shows where they stand and sends you here to change them.</p>
+  <p style="margin:0"><button class="mini" style="padding:6px 14px"
+    data-act="ext-open">Open the extension setup</button></p>`;
+  if (WIZSTEP === 6) body = `<h4>Alerting and Grafana</h4>
   <dl class="kv">
     ${settingRow('alertmanager_url', 'Alertmanager URL',
       'http://alertmanager.<namespace>.svc:9093',
@@ -3747,9 +3859,8 @@ async function wizard() {
     ${settingRow('grafana_url', 'Grafana URL',
       'the URL a BROWSER reaches Grafana on',
       'Saving reloads the page (the frame permission is baked into each page load). Panels and dashboard UID live under Settings; Grafana must allow embedding.')}
-  </dl></div>
-
-  <div class="wcard" style="margin-bottom:10px"><h3>7 · Deployment downloads</h3>
+  </dl>`;
+  if (WIZSTEP === 7) body = `<h4>Deployment downloads</h4>
   <p class="lede" style="margin-bottom:10px">Ready-to-deploy files with the
   receiver URL and a fresh enrollment token already inside - push them
   through your MDM or run them as-is. Machines enroll themselves and appear
@@ -3766,14 +3877,26 @@ async function wizard() {
     <button class="mini" data-act="artifact" data-key="scanner-cronjob">Scanner CronJob</button>
     <button class="mini" data-act="artifact" data-key="discovery-cronjob">Discovery CronJob</button>
   </div>` : `<div class="note">No public receiver URL yet, so downloads cannot
-  bake a URL agents can reach - save one in step 1 and these appear.</div>`}</div>
-
-  <div style="margin:18px 0">
-    <button class="mini" style="padding:8px 18px" data-act="wiz-finish">Finish setup</button>
-    <span class="src-note" style="margin-left:10px">You can come back:
-    everything above stays editable under Settings, and Settings can reopen
-    this wizard.</span>
-  </div>`;
+  bake a URL agents can reach - save one in step 1 and these appear.</div>`}`;
+  return `<h2>Welcome — set up your deployment</h2>
+  <p class="lede">One step at a time. Everything here can be changed later
+  under Settings, and changes take effect immediately - no redeploys.</p>
+  ${SETMSG ? `<div class="note">${esc(SETMSG)}</div>` : ''}
+  <div class="ssow">${rail}
+    <div class="ssmain">${body}
+      <div class="ssfoot">
+        <button class="mini" data-act="wiz-finish">${canGo
+          ? 'Finish setup' : 'Skip for now'}</button>
+        <span class="sp"></span>
+        ${WIZSTEP > 1 ? `<button class="mini" data-act="wiz-step"
+          data-key="${WIZSTEP - 1}">Back</button>` : ''}
+        ${WIZSTEP < 7
+          ? `<button class="mini pri" data-act="wiz-step"
+              data-key="${WIZSTEP + 1}">Next</button>`
+          : `<button class="mini pri" data-act="wiz-finish">Finish setup</button>`}
+      </div></div></div>
+  <p class="src-note">You can come back: everything above stays editable under
+  Settings, and Settings can reopen this wizard.</p>`;
 }
 
 // The editable deployment settings, managed mode only: what the receiver
@@ -6514,6 +6637,15 @@ async function managedAction(act, el) {
     if (offer) await tourStart(TOUR_AFTER_WIZARD);
     return;
   }
+  if (act === 'wiz-step') {
+    // managedAction takes (act, el) and does NOT have `key` in scope - the
+    // handler that does is a different function. Reading it off el is what
+    // every other branch here does; borrowing the name silently threw a
+    // ReferenceError and the click did nothing at all.
+    const n = parseInt(el ? el.getAttribute('data-key') : '', 10);
+    WIZSTEP = Math.max(1, Math.min(7, n || 1));
+    SETMSG = ''; render(); return;
+  }
   if (act === 'reg-add') { rwOpen({}); render(); return; }
   if (act === 'reg-cancel') {
     RW = null; REDIT = null; RPRE = null; RERR = ''; RADV = false; render(); return;
@@ -6837,13 +6969,21 @@ async function managedAction(act, el) {
     return;
   }
   if (act === 'open-wizard') {
-    view = 'wizard'; detail = null;
+    view = 'wizard'; detail = null; WIZSTEP = 1;
     history.replaceState(null, '', '#wizard');
     drawNav(); render(); return;
   }
   if (act === 'ext-open') {
+    EXTFROM = view === 'wizard' ? 'wizard' : '';
     view = 'extsetup'; detail = null;
     history.replaceState(null, '', '#extsetup');
+    drawNav(); render(); return;
+  }
+  if (act === 'ext-back-to-setup') {
+    EXTFROM = '';
+    WIZSTEP = 5;
+    view = 'wizard'; detail = null;
+    history.replaceState(null, '', '#wizard');
     drawNav(); render(); return;
   }
   if (act === 'ext-page') {
@@ -6978,7 +7118,7 @@ function drawNav() {
   }).join('');
   n.querySelectorAll('button').forEach(b => b.onclick = () => {
     const sec = NAV.find(s => s.id === b.dataset.s);
-    view = SECTAB[sec.id] || sec.items[0][0]; detail = null;
+    view = SECTAB[sec.id] || sec.items[0][0]; detail = null; EXTFROM = '';
     // Replace rather than push: clicking through the nav should not fill the
     // back button with every tab you glanced at.
     history.replaceState(null, '', frag(view));
@@ -7142,7 +7282,7 @@ app.addEventListener('click', e => {
 app.addEventListener('click', e => {
   const el = e.target.closest('[data-nav]');
   if (!el) return;
-  view = el.getAttribute('data-nav'); detail = null;
+  view = el.getAttribute('data-nav'); detail = null; EXTFROM = '';
   history.replaceState(null, '', frag(view));
   drawNav(); render();
 });
@@ -7317,7 +7457,7 @@ window.addEventListener('hashchange', () => {
   // id, so the guard has to ask about both or the tab half never draws.
   const tabbed = h.tab && h.tab !== SETTAB;
   if (h.view === view && !tabbed) return;
-  view = h.view; detail = null;
+  view = h.view; detail = null; EXTFROM = '';
   if (h.tab) SETTAB = h.tab;
   drawNav(); render();
 });

@@ -391,3 +391,70 @@ def test_a_long_command_cannot_widen_the_wizard_past_its_card():
     html = (main.STATIC / "index.html").read_text()
     assert ".ssmain{padding:22px 24px;min-width:0}" in html
     assert "flex:1;min-width:0;font-size:12px" in html
+
+
+def test_the_first_run_wizard_is_one_step_at_a_time():
+    """Seven numbered sections rendered on one page - the only wizard that
+    never became one, and the first thing a new deployment sees."""
+    html = (main.STATIC / "index.html").read_text()
+    assert "let WIZSTEP = 1;" in html
+    assert "const WIZ_STEPS = [" in html
+    assert 'data-act="wiz-step"' in html
+    # managedAction takes (act, el) and has no `key` in scope. Borrowing the
+    # name threw a silent ReferenceError and every rail click did nothing -
+    # the wizard looked rendered and was simply inert.
+    assert "const n = parseInt(el ? el.getAttribute('data-key') : '', 10);" in html
+
+
+def test_the_rail_says_what_each_step_costs_to_skip():
+    """A first-run wizard that only counts steps says how far down the page
+    you are. Corporate domains is marked required not because the platform
+    refuses to run without it, but because it runs WRONG - every account reads
+    as personal, and the Overview headline, the Personal accounts page and the
+    ISO evidence all inherit that. Once the required steps are in, the summary
+    says so, because the moment it starts working is worth naming."""
+    html = (main.STATIC / "index.html").read_text()
+    for needle in ("required", "recommended", "optional",
+                   "You can deploy now", "Start collecting", "Make it useful",
+                   "every account reads as personal",
+                   "nothing can deploy without it"):
+        assert needle in html, needle
+
+
+def test_the_first_two_steps_say_where_to_look_not_just_what_to_type():
+    """"The one a laptop on someone's kitchen table can resolve" told an
+    operator what the address is FOR, not how to find the one they have. And
+    "Loki-compatible" left open whether Loki itself was required.
+
+    The ingest-versus-query distinction is the trap worth naming: a store that
+    accepts Loki writes but answers queries in its own language will take every
+    finding and then show an empty portal."""
+    html = (main.STATIC / "index.html").read_text()
+    assert "kitchen table" not in html
+    for needle in ("kubectl get ingress -A", "tailscale status",
+                   "Grafana Cloud Logs", "/loki/api/v1/query_range",
+                   "advertise Loki-compatible"):
+        assert needle in html, needle
+
+
+def test_the_extension_setup_offers_the_way_back_it_actually_owes_you():
+    """It is reachable from the first-run wizard's step 5 and from Settings,
+    and the way out differs: somebody mid-setup wants to land back on step 5,
+    somebody who came from Settings has no setup to return to. The last step
+    used to offer "Back to the setup wizard" to everybody, including people
+    who had never been there.
+
+    EXTFROM is cleared by every other navigation, so the offer cannot outlive
+    the journey that earned it. And it appears once per screen - the last step
+    showed it twice, as both the escape and the primary, until the escape was
+    dropped there."""
+    html = (main.STATIC / "index.html").read_text()
+    assert "let EXTFROM = '';" in html
+    assert "EXTFROM = view === 'wizard' ? 'wizard' : '';" in html
+    assert "if (act === 'ext-back-to-setup')" in html
+    # Returning lands on the step that sent you, not the top of the wizard.
+    assert "WIZSTEP = 5;" in html
+    # Cleared on every other route out.
+    assert "view = h.view; detail = null; EXTFROM = '';" in html
+    # One exit per screen.
+    assert "${EXTPAGE === 6 ? '' : EXTFROM === 'wizard'" in html
