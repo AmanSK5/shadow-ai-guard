@@ -399,7 +399,11 @@ table.plain td{border-bottom:0;padding:4.5px 10px 4.5px 0;vertical-align:middle}
 .sssum .barwrap{height:5px;border-radius:3px;background:var(--bd);overflow:hidden;
   margin:7px 0 6px}
 .sssum .bar{height:100%;background:var(--pri);border-radius:3px;transition:width .35s ease}
-.ssmain{padding:22px 24px}
+/* min-width:0, or the column refuses to shrink below its widest child. A grid
+   item defaults to min-width:auto, so one long unbreakable line - a shell
+   command in step 2, the zip line in step 5 - pushed the whole panel wider
+   than the card, and .ssow's overflow:hidden then cut off the buttons. */
+.ssmain{padding:22px 24px;min-width:0}
 .ssmain h4{margin:0 0 8px;font-size:16px}
 /* A wizard column is already narrow; capping the prose again wrapped every
    sentence two-thirds of the way across and left a ragged margin. */
@@ -3274,33 +3278,14 @@ function pasteGuardBehaviourFields(batch) {
       only which detector matched gets reported.</div></dd>`;
 }
 
-function extensionDeliveryFields(batch) {
-  return `
-    ${settingRow('firefox_extension_id', 'Firefox extension ID (gecko id)',
-      'ai-guard@your-org.example',
-      'The id you set in the manifest (browser_specific_settings.gecko.id).'
-      + ' Not the same as the Chromium id. Needed for the Firefox'
-      + ' downloads.', batch)}
-    ${settingRow('extension_crx_url', 'Packed .crx URL (Chromium)',
-      'https://files.example.com/ai-guard-1.0.0.crx',
-      'Where you host the packed .crx. The generated updates.xml points'
-      + ' browsers at it.', batch)}
-    ${settingRow('extension_update_url', 'Chromium update manifest URL',
-      'https://files.example.com/updates.xml',
-      'Where you host the packed extension update manifest (updates.xml).'
-      + ' Needed for the Windows Chromium deploy script.', batch)}
-    ${settingRow('extension_xpi_url', 'Signed .xpi URL (Firefox)',
-      'https://files.example.com/ai-guard-1.0.0.xpi',
-      'Where you host the SIGNED .xpi from addons.mozilla.org'
-      + ' (self-distribution). Firefox only installs Mozilla-signed'
-      + ' extensions - the extension setup guide covers the one-time'
-      + ' signing step. Needed for the Firefox downloads.', batch)}`;
-}
-
-// Settings shows these under its one Save changes bar; the extension guide
-// calls pasteGuardBehaviourFields directly and keeps its per-field saves.
+// Settings shows the paste guard under its one Save changes bar. The
+// delivery values - the packed URLs and the two extension ids - are NOT here
+// any more: they are the output of the pack-host-sign sequence and mean
+// nothing apart from it, so the extension setup owns them and Settings shows
+// their state. Corporate domains and the paste guard stay, because flipping
+// warn to block is a Tuesday decision rather than a repack.
 function pasteGuardFields() {
-  return pasteGuardBehaviourFields(true) + extensionDeliveryFields(true);
+  return pasteGuardBehaviourFields(true);
 }
 
 // The last result of a connection test, rendered where its button lives.
@@ -3355,8 +3340,12 @@ function extSettingsState() {
   };
 }
 
-// The wizard step-5 summary: where extension setup stands, at a glance.
-function extStatusRows() {
+// Where extension setup stands, at a glance. `mode` is shown by the setup
+// wizard's step-5 summary, which has no paste-guard field of its own, and
+// suppressed in Settings, which has one three rows above - a status block
+// repeating an editable field on the same screen is the duplication this
+// whole change was about.
+function extStatusRows(mode) {
   const st = extSettingsState();
   const pill = val => val
     ? `<span class="pill p-ok">set</span> <span class="mono" style="font-size:11px">${esc(val)}</span>`
@@ -3365,12 +3354,15 @@ function extStatusRows() {
     <dt>Chromium extension ID</dt><dd>${pill(st.id)}</dd>
     <dt>Chromium hosting</dt><dd>${pill(st.crx && st.upd ? 'crx + updates.xml URLs' : st.crx || st.upd)}</dd>
     <dt>Firefox (optional)</dt><dd>${pill(st.gecko && st.xpi ? st.gecko : st.gecko || st.xpi)}</dd>
-    <dt>Paste guard mode</dt><dd><span class="pill ${st.mode === 'block' ? 'p-warn' : 'p-ok'}">${esc(st.mode || 'warn (default)')}</span></dd>
+    ${mode ? `<dt>Paste guard mode</dt><dd><span class="pill ${st.mode === 'block' ? 'p-warn' : 'p-ok'}">${esc(st.mode || 'warn (default)')}</span></dd>` : ''}
   </dl>`;
 }
 
+// min-width:0 for the same reason as .ssmain: a flex item will not shrink
+// below its content, so overflow-x on its own never engages - the box just
+// grows and takes the layout with it.
 const extCmd = c => `<div style="display:flex;gap:8px;align-items:flex-start;margin:8px 0">
-  <pre class="mono" style="margin:0;padding:8px 10px;background:var(--sf2);border:1px solid var(--bd);border-radius:6px;overflow-x:auto;flex:1;font-size:12px">${esc(c)}</pre>
+  <pre class="mono" style="margin:0;padding:8px 10px;background:var(--sf2);border:1px solid var(--bd);border-radius:6px;overflow-x:auto;flex:1;min-width:0;font-size:12px">${esc(c)}</pre>
   <button class="mini" data-act="copy" data-copy="${esc(c)}">Copy</button></div>`;
 
 async function extSetup() {
@@ -3384,24 +3376,55 @@ async function extSetup() {
   const crxName = 'ai-guard-' + (ver || 'VERSION') + '.crx';
   const xpiName = 'ai-guard-' + (ver || 'VERSION') + '.xpi';
 
+  // Steps 1 and 2 save nothing - a download and a pack both happen on the
+  // operator's own machine - so their state cannot be read back. It is
+  // INFERRED from the id on step 3 instead: you cannot know a 32-letter
+  // Chromium id without having packed the thing that produced it. Evidence,
+  // the way the sign-on wizard treats a verified value, rather than a tick
+  // somebody presses to say they did it.
   const PAGES = [
-    ['Download', !!ready],
-    ['Pack', null],
-    ['Identity', !!st.id],
-    ['Host it', !!(st.crx && st.upd)],
-    ['Firefox', !!(st.gecko && st.xpi)],
-    ['Behaviour', null],
+    {t: 'Download', d: 'The pre-configured source',
+     done: !!st.id, line: st.id ? 'downloaded - the id proves it'
+       : ready ? (ver ? 'source ' + ver + ', ready' : 'ready') : ''},
+    {t: 'Pack', d: 'And keep the key',
+     done: !!st.id, line: st.id ? 'packed - the id proves it' : ''},
+    {t: 'Identity', d: 'The Chromium extension ID',
+     done: !!st.id, line: st.id},
+    {t: 'Host it', d: 'Where browsers fetch it',
+     done: !!(st.crx && st.upd),
+     line: (st.crx && st.upd) ? 'crx + updates.xml hosted'
+       : st.crx ? 'crx only - no manifest yet' : ''},
+    {t: 'Firefox', d: 'Optional', opt: true,
+     done: !!(st.gecko && st.xpi),
+     line: (st.gecko && st.xpi) ? st.gecko : 'not deployed'},
+    {t: 'Behaviour', d: 'What the guard does', done: true,
+     line: (st.mode || 'warn') + ' mode'},
   ];
-  const chips = PAGES.map(([t, done], i) => `<button class="mini"
-    ${EXTPAGE === i + 1 ? 'style="border-color:var(--pri);color:var(--pri)"' : ''}
-    data-act="ext-page" data-key="${i + 1}">${i + 1} · ${t}${done === true ? ' ✓' : ''}</button>`).join(' ');
+  const need = PAGES.filter(p => !p.opt);
+  const ndone = need.filter(p => p.done).length;
+  const rail = `<div class="ssrail"><h3>Extension setup</h3>
+    <ol>${PAGES.map((p, i) => `<li class="ssstep ${p.done ? 'done' : ''}
+      ${EXTPAGE === i + 1 ? 'on' : ''}" data-act="ext-page" data-key="${i + 1}">
+      <span class="dot">${p.done ? '&#10003;' : i + 1}</span>
+      <span style="min-width:0"><span class="t">${esc(p.t)}</span>
+      <span class="${p.line ? 'val' : 'pend'}">${esc(p.line || p.d)}</span></span>
+    </li>`).join('')}</ol>
+    <div class="sssum">
+      <div class="lede" style="font-size:11.5px">${ndone} of ${need.length}
+        required steps done</div>
+      <div class="barwrap"><div class="bar"
+        style="width:${ndone / need.length * 100}%"></div></div>
+      <div class="lede" style="font-size:11.5px">Firefox is optional. Nothing
+        here needs a checkout, and every saved value can be changed by coming
+        back to the step that owns it.</div>
+    </div></div>`;
 
   const dlBtn = (kind, label) => `<button class="mini" style="padding:6px 14px"
     data-act="artifact" data-key="${kind}">${label}</button>`;
 
   let body = '';
   if (EXTPAGE === 1) body = `
-    <h3>Download the pre-configured source</h3>
+    <h4>Download the pre-configured source</h4>
     <p class="lede">The extension is not on a web store: you pack it once and
     your browsers install it from where you host it. This download is the
     extension source shipped with this portal${ver ? ` (version ${esc(ver)})` : ''},
@@ -3418,7 +3441,7 @@ async function extSetup() {
     default set is the registry's browser surface and most deployments ship
     it as is.</p>`;
   if (EXTPAGE === 2) body = `
-    <h3>Pack it, and keep the key</h3>
+    <h4>Pack it, and keep the key</h4>
     <p class="lede">Packing happens in any Chromium browser on your own
     machine and produces two files: the extension package (.crx) and its
     signing key (.pem).</p>
@@ -3445,7 +3468,7 @@ async function extSetup() {
     again - this time supplying the .pem. Rename the result to a versioned
     name: <span class="mono">${esc(crxName)}</span>.</p>`;
   if (EXTPAGE === 3) body = `
-    <h3>Save the Chromium identity</h3>
+    <h4>Save the Chromium identity</h4>
     <p class="lede">The id from the previous page's first command (or from
     <span class="mono">chrome://extensions</span> on any machine with the
     packed extension loaded). Every Chromium policy artifact is keyed on it -
@@ -3459,17 +3482,36 @@ async function extSetup() {
         read from the wrong place - it is not the key, and not a hash.</div></dd>
     </dl>`;
   if (EXTPAGE === 4) body = `
-    <h3>Host the package</h3>
+    <h4>Host the package</h4>
     <p class="lede">Two small files go on HTTPS anywhere every browser in
     the fleet can fetch: the packed <span class="mono">${esc(crxName)}</span>
     and an update manifest (<span class="mono">updates.xml</span>) that
-    points at it. Any static host or artifact pipeline your org already
-    trusts works; serve the .crx as
+    points at it. Serve the .crx as
     <span class="mono">application/x-chrome-extension</span>. Two habits
     save a later outage: if your host grants read access per file, grant it
     by prefix instead, or every new release starts life private; and keep
     the previous .crx up when you upload a new one - re-pointing updates.xml
     at it is your rollback.</p>
+    <dl class="kv" style="margin-bottom:14px"><dt>Somewhere to put
+      them${INFO}</dt><dd>
+      <span class="src-note" style="margin:6px 0 0;display:block">Two static
+      files over HTTPS - not a container registry.</span>
+      <div class="src-note fnote">Anything that serves a file over HTTPS to a
+      managed machine will do, and most teams already run one:
+      <b>AWS S3</b> (optionally behind CloudFront), <b>Azure Blob Storage</b>
+      (optionally behind Front Door), <b>Google Cloud Storage</b>, an
+      <b>artifact repository</b> such as Artifactory or Nexus, or a plain
+      internal web server. It does not have to be public to the internet -
+      only reachable by the browsers you are deploying to - so an
+      intranet-only host is fine and is often the easier approval.
+      <br><br>A container registry is the one thing that will not work: ECR,
+      ACR and friends serve image layers to a container runtime, not files to
+      a browser. If that is where your other build output goes, these two need
+      somewhere else.
+      <br><br>On S3 specifically, grant read with a wildcard resource
+      (<span class="mono">arn:aws:s3:::your-bucket/*</span>) rather than
+      per-object, or every release you upload starts life private and the
+      fleet silently stops updating.</div></dd></dl>
     <dl class="kv">
       ${settingRow('extension_crx_url', 'Packed .crx URL',
         'https://files.example.com/' + crxName,
@@ -3488,7 +3530,7 @@ async function extSetup() {
       <button class="mini" data-act="run-test" data-key="extension-updates">Probe the hosted manifest</button>
     </div>${testNote('extension-updates')}` : ''}`;
   if (EXTPAGE === 5) body = `
-    <h3>Firefox (skip if you do not deploy it)</h3>
+    <h4>Firefox</h4>
     <p class="lede">Firefox refuses unsigned extensions on release builds,
     with no enterprise override, so it takes three extra one-time steps:
     give the extension a Firefox identity, have Mozilla sign it, and host
@@ -3527,7 +3569,7 @@ async function extSetup() {
         <button class="mini" data-act="run-test" data-key="extension-xpi">Probe the hosted .xpi (checks the Mozilla signature)</button>
       </div>${testNote('extension-xpi')}` : ''}`;
   if (EXTPAGE === 6) body = `
-    <h3>What the guard does</h3>
+    <h4>What the guard does</h4>
     <p class="lede">Both values are baked into every policy download, so a
     later change here means regenerate and re-push. The usual path is warn
     for a couple of weeks, then block once the override count has had its
@@ -3536,20 +3578,25 @@ async function extSetup() {
     <p class="lede" style="margin-top:14px">That is the one-time work done.
     The policy downloads - pre-filled with all of this plus a fresh
     enrollment token each - are in the wizard's step 7, and pushing those
-    through your MDM is the actual rollout.</p>
-    <button class="mini" style="padding:6px 14px" data-act="open-wizard">Back to the setup wizard</button>`;
+    through your MDM is the actual rollout.</p>`;
 
   return `<h2>Extension setup</h2>
   <p class="lede">The browser extension, from source to hosted package, one
-  step at a time. Nothing here needs a checkout, and every saved value stays
-  editable under Settings.</p>
+  step at a time. This is where its values live - come back to a step to
+  change one.</p>
   ${SETMSG ? `<div class="note">${esc(SETMSG)}</div>` : ''}
-  <div style="margin:12px 0">${chips}</div>
-  <div class="wcard" style="margin-bottom:10px">${body}</div>
-  <div style="margin:14px 0">
-    ${EXTPAGE > 1 ? `<button class="mini" data-act="ext-page" data-key="${EXTPAGE - 1}">← back</button>` : ''}
-    ${EXTPAGE < 6 ? `<button class="mini" data-act="ext-page" data-key="${EXTPAGE + 1}">Next →</button>` : ''}
-  </div>`;
+  <div class="ssow">${rail}
+    <div class="ssmain">${body}
+      <div class="ssfoot">
+        <button class="mini" data-nav="settings">Close</button>
+        <span class="sp"></span>
+        ${EXTPAGE > 1 ? `<button class="mini" data-act="ext-page"
+          data-key="${EXTPAGE - 1}">Back</button>` : ''}
+        ${EXTPAGE < 6
+          ? `<button class="mini pri" data-act="ext-page"
+              data-key="${EXTPAGE + 1}">Next</button>`
+          : `<button class="mini pri" data-act="open-wizard">Back to the setup wizard</button>`}
+      </div></div></div>`;
 }
 
 // The first-run wizard: everything a fresh managed install needs, in
@@ -3684,7 +3731,7 @@ async function wizard() {
   source here, no checkout needed. Everything it saves gets baked into the
   ready-made policy downloads in step 7. Fine to skip on a first pass and
   come back.</p>
-  ${extStatusRows()}
+  ${extStatusRows(true)}
   <div style="margin-top:10px">
     <button class="mini" style="padding:6px 14px" data-act="ext-open">Open the extension setup</button>
     <span class="src-note" style="margin-left:8px">Six short steps: download,
@@ -3769,20 +3816,16 @@ function fleetSettings() {
         : cd.source === 'env' ? '<span class="pill p-mut">from deployment</span>' : ''}
       <div class="src-note fnote">An AI tool signed into one of these counts
       as a work account; anything else is flagged personal. ${srcNote}</div></dd>
-    <dt>Extension ID${INFO}</dt><dd>
-      <input id="set-extid" class="mfield" style="min-width:340px"
-        data-sfield="extension_id"
-        data-sinit="${esc((s.extension_id || {}).value || '')}"
-        placeholder="the browser extension's ID"
-        value="${esc((s.extension_id || {}).value || '')}">
-      <div class="src-note fnote">Used to generate the extension's managed-policy
-      artifact. Empty clears it.</div></dd>
     ${pasteGuardFields()}
   </dl>
-  <div style="margin-top:10px">
-    <button class="mini" data-act="ext-open">Open the extension setup</button>
-    <span class="src-note" style="margin-left:8px">The guided version of
-    these fields: pack, host and sign, one step at a time.</span>
+  <div class="wcard" style="margin-top:16px;background:var(--bg)">
+    <h3>Browser extension</h3>
+    ${extStatusRows()}
+    <div style="margin-top:12px">
+      <button class="mini" data-act="ext-open">Open the extension setup</button>
+      <span class="src-note" style="margin-left:8px">Six steps, and the rail
+      goes straight to the one you need.</span>
+    </div>
   </div></div>`;
 }
 
