@@ -323,3 +323,71 @@ def test_the_page_carries_the_review_queue():
     for needle in ("review_queue", "Awaiting a decision", "new today",
                    "docUrl", "github.com/AmanSK5/shadow-ai-guard/blob/"):
         assert needle in html, needle
+
+
+def test_the_extension_setup_owns_its_delivery_values():
+    """The same seven values were editable in Settings > Fleet AND in the
+    extension setup - two editors for one value, and neither screen mentioned
+    the other. The sign-on wizard has never done that: it owns its fields and
+    Settings shows a state and a door.
+
+    A field belongs in Settings if it is meaningful on its own. Corporate
+    domains and the paste guard pass that - flipping warn to block is a
+    Tuesday decision, not a repack. The pack-host-sign values do not: they
+    only mean anything as the output of that sequence."""
+    html = (main.STATIC / "index.html").read_text()
+    # Settings no longer edits any of them.
+    assert 'id="set-extid"' not in html.split("function fleetSettings()")[1] \
+        .split("function connectionSettings()")[0]
+    for gone in ("extensionDeliveryFields",):
+        assert gone not in html, gone
+    # It shows their state and a way in instead.
+    assert "function extStatusRows(mode)" in html
+    assert 'data-act="ext-open"' in html
+    # The status block suppresses paste guard mode in Settings, where the
+    # field itself sits three rows above; the setup wizard's step 5 keeps it,
+    # having no field of its own.
+    assert "${extStatusRows(true)}" in html
+    assert "${extStatusRows()}" in html
+
+
+def test_the_extension_setup_wears_the_rail_and_infers_the_early_steps():
+    """Steps 1 and 2 are a download and a pack, both on the operator's own
+    machine, so neither saves anything the rail could read back. They are
+    inferred from the extension id on step 3: you cannot know a 32-letter
+    Chromium id without having packed the thing that produced it. Evidence,
+    rather than a tick somebody presses to say they did it."""
+    html = (main.STATIC / "index.html").read_text()
+    assert "packed - the id proves it" in html
+    assert "downloaded - the id proves it" in html
+    assert 'data-act="ext-page"' in html and "ssrail" in html
+    # The numbered pill row is gone.
+    assert "${i + 1} · ${t}" not in html
+
+
+def test_the_hosting_step_says_where_not_just_how():
+    """"Any static host will do" is not an answer if you have never hosted a
+    file deliberately. The named options are the missing half - and a
+    container registry, which is where build output often goes, is the one
+    thing that cannot serve these."""
+    html = (main.STATIC / "index.html").read_text()
+    for needle in ("AWS S3", "Azure Blob Storage", "Google Cloud Storage",
+                   "artifact repository", "not a container registry"):
+        assert needle in html, needle
+    # The S3 gotcha the extension README documents, where it is needed.
+    assert "arn:aws:s3:::your-bucket/*" in html
+
+
+def test_a_long_command_cannot_widen_the_wizard_past_its_card():
+    """Steps 2 and 5 carry shell commands too long to wrap. Both a grid item
+    and a flex item default to min-width:auto, which means neither shrinks
+    below its widest child - so one unbreakable line pushed the whole panel
+    wider than the card, and .ssow's overflow:hidden then cut off the Copy
+    buttons and Back/Next entirely. Scrolling right did not reach them,
+    because the clipping was the card's rather than the page's.
+
+    min-width:0 in both places lets the column shrink and the pre's own
+    overflow-x finally engage."""
+    html = (main.STATIC / "index.html").read_text()
+    assert ".ssmain{padding:22px 24px;min-width:0}" in html
+    assert "flex:1;min-width:0;font-size:12px" in html
