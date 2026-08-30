@@ -313,13 +313,13 @@ button.mini.pri{border-color:var(--pri);background:color-mix(in srgb,var(--pri) 
    confirm field, which a 240px dropdown does not - and a typo in the new
    password is otherwise not discovered until the next sign-in, by which
    time every other session has been signed out with the old one. */
-#skipdlg{border:1px solid var(--bd);border-radius:12px;background:var(--sf);
+#skipdlg, #tourdlg{border:1px solid var(--bd);border-radius:12px;background:var(--sf);
   color:var(--fg);padding:20px 22px;width:min(430px,92vw);
   box-shadow:0 18px 50px rgba(0,0,0,.28)}
-#skipdlg::backdrop{background:rgba(15,18,20,.45)}
-#skipdlg h3{margin:0 0 2px;font-size:15px}
-#skipdlg .pwsub{font-size:12px;color:var(--mut);margin:0 0 14px}
-#skipdlg .skipbody{font-size:13px;line-height:1.5;margin:0 0 12px}
+#skipdlg::backdrop, #tourdlg::backdrop{background:rgba(15,18,20,.45)}
+#skipdlg h3, #tourdlg h3{margin:0 0 2px;font-size:15px}
+#skipdlg .pwsub, #tourdlg .pwsub{font-size:12px;color:var(--mut);margin:0 0 14px}
+#skipdlg .skipbody, #tourdlg .skipbody{font-size:13px;line-height:1.5;margin:0 0 12px}
 #pwdlg{border:1px solid var(--bd);border-radius:12px;background:var(--sf);
   color:var(--fg);padding:20px 22px;width:min(400px,92vw);
   box-shadow:0 18px 50px rgba(0,0,0,.28)}
@@ -546,8 +546,17 @@ table.plain td{border-bottom:0;padding:4.5px 10px 4.5px 0;vertical-align:middle}
   color: var(--acc); background: var(--acc-soft);
   border-radius: 999px; padding: 3px 10px;
 }
-#tour-foot { display: flex; align-items: center; gap: 8px; }
-#tour-dots { display: flex; gap: 4px; margin-right: auto; }
+/* The footer wraps, and the buttons never shrink. One dot per step and
+   three buttons came to 322px inside a 322px card at thirteen steps -
+   exact, with nothing spare - so a narrower viewport pushed Next outside
+   the card, where the card does not scroll and nothing clips it. It broke
+   at a 360px viewport by 3px and at 320px by 43px. Dots are the part that
+   should give way, not the way forward. */
+#tour-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+             row-gap: 10px; }
+#tour-dots { display: flex; gap: 4px; margin-right: auto; flex-wrap: wrap;
+             min-width: 0; }
+#tour-card button { flex: 0 0 auto; }
 #tour-dots i {
   width: 5px; height: 5px; border-radius: 50%; background: var(--bd);
   display: block; transition: background .2s, width .2s;
@@ -802,6 +811,15 @@ table.plain td{border-bottom:0;padding:4.5px 10px 4.5px 0;vertical-align:middle}
   <div id="tour-ring"></div>
   <div id="tour-card"></div>
 </div>
+<dialog id="tourdlg" aria-labelledby="tourdlg-title">
+  <h3 id="tourdlg-title">Tour ended</h3>
+  <p class="skipbody">You can take it again whenever you like, under
+  <strong>Settings &rsaquo; Getting started</strong> - along with the setup
+  wizard.</p>
+  <div class="pwfoot">
+    <button class="mini pri" data-act="tour-notice-close">Got it</button>
+  </div>
+</dialog>
 <dialog id="skipdlg" aria-labelledby="skip-title">
   <h3 id="skip-title">Skip setup for now?</h3>
   <p class="pwsub">Nothing is collected until two things are set.</p>
@@ -1115,6 +1133,7 @@ window.addEventListener('keydown', e => {
   // enough, and one Escape would dismiss the modal and the drawer behind it.
   if (pwIsOpen()) { pwHide(); e.stopImmediatePropagation(); return; }
   if (skipIsOpen()) { skipHide(); e.stopImmediatePropagation(); return; }
+  if (tourDlgIsOpen()) { tourDoneHide(); e.stopImmediatePropagation(); return; }
   const um = document.getElementById('usermenu');
   if (um && !um.hidden) umClose();
 });
@@ -1124,9 +1143,11 @@ window.addEventListener('keydown', e => {
 // deliberately carries no data-act - a click would otherwise both submit and
 // delegate, and change the password twice.
 // Outside #app like the other dialog, so it carries its own listener.
-document.getElementById('skipdlg').addEventListener('click', e => {
-  const el = e.target.closest('[data-act]');
-  if (el) managedAction(el.getAttribute('data-act'), el);
+['skipdlg', 'tourdlg'].forEach(id => {
+  document.getElementById(id).addEventListener('click', e => {
+    const el = e.target.closest('[data-act]');
+    if (el) managedAction(el.getAttribute('data-act'), el);
+  });
 });
 document.getElementById('pwform').addEventListener('submit', e => {
   e.preventDefault();
@@ -6899,6 +6920,7 @@ async function managedAction(act, el) {
     drawNav(); await render(); return;
   }
   if (act === 'skip-cancel') { skipHide(); return; }
+  if (act === 'tour-notice-close') { tourDoneHide(); return; }
   if (act === 'skip-confirm') { skipHide(); await managedAction('wiz-finish'); return; }
   if (act === 'wiz-finish') {
     const r = await mfetch('/api/settings', {method: 'POST',
@@ -7575,7 +7597,8 @@ function open_(kind, key) {
 // the tour is up: the overlay owns the keyboard then, and its own way out
 // is the End tour button, which records that it was skipped.
 document.addEventListener('keydown', e => {
-  if (e.key !== 'Escape' || TOUR || pwIsOpen() || skipIsOpen()) return;
+  if (e.key !== 'Escape' || TOUR || pwIsOpen() || skipIsOpen()
+      || tourDlgIsOpen()) return;
   if (!document.body.classList.contains('open')) return;
   open_(null);
 });
@@ -7757,7 +7780,7 @@ document.getElementById('overlay').addEventListener('click', () => open_(null));
 window.addEventListener('keydown', e => {
   // The modal owns Escape while it is up, or dismissing it would also close
   // the drawer somebody left open behind it.
-  if (e.key === 'Escape' && !pwIsOpen() && !skipIsOpen()
+  if (e.key === 'Escape' && !pwIsOpen() && !skipIsOpen() && !tourDlgIsOpen()
       && document.body.classList.contains('open')) open_(null);
 });
 // Managed actions, same delegation for the same reason. A separate listener
@@ -7851,6 +7874,12 @@ const TOURS = {
          + 'on. Everything here reads the window in the corner - findings '
          + 'age out of it, so a number falling can mean a device went '
          + 'quiet rather than a problem going away.'},
+    {view: 'overview', sel: '[data-act="ov-edit"]',
+     title: 'Read it your way',
+     body: 'Edit lets you drag these cards, stack two into one column, '
+         + 'resize them, or hide what you never look at. It is your own '
+         + 'view and changes nothing for anyone else. A few cards offer a '
+         + 'second form where the data has more than one honest reading.'},
     {view: 'overview', sel: '[data-s="inventory"]', click: true,
      title: 'What was found',
      body: 'Tools, people, devices and the accounts they are signed into. '
@@ -7865,27 +7894,46 @@ const TOURS = {
      title: 'Deciding what is allowed',
      body: 'Nothing is approved or refused until a person says so. Open '
          + 'Governance for where those decisions live.'},
-    {view: 'register', sel: '[data-s="health"]',
+    {view: 'register', sel: '[data-s="spend"]', click: true,
      title: 'Before you trust a number',
-     body: 'The AI register is what you actually use; a tool missing from '
-         + 'the registry is flagged rather than hidden. Health is the '
-         + 'check that belongs with it - a surface nobody is collecting '
-         + 'from looks exactly like a surface with nothing on it.'},
-    {view: 'setup', sel: '[data-s="system"]', click: true,
-     title: 'Making it yours',
-     body: 'One thing worth setting today: your corporate domains, which '
-         + 'is what decides whether an account counts as personal. Open '
-         + 'Settings.'},
+     body: 'The AI register is what you actually use, with what was '
+         + 'decided about each tool: owner, status, review date. A tool '
+         + 'missing from the registry is flagged rather than hidden. What '
+         + 'it all costs is next - open Budget.'},
+    {view: 'budget', sel: '[data-s="health"]', click: true,
+     title: 'What it costs',
+     body: 'Subscriptions set against what the estate is observed doing: '
+         + 'seats nobody uses, people on a tool no seat covers, personal '
+         + 'accounts running beside paid ones. All of it rests on '
+         + 'something still reporting - open Health.'},
+    {view: 'setup', sel: '[data-s="managed"]', click: true,
+     title: 'Is anything actually reporting?',
+     body: 'Which detection sources are reporting, which are set up but '
+         + 'silent, and which you have not enabled. A surface nobody '
+         + 'collects from looks exactly like a surface with nothing on '
+         + 'it. The devices themselves are next - open Fleet.'},
+    {view: 'fleet', sel: '[data-s="system"]', click: true,
+     title: 'Devices and their credentials',
+     body: 'Every device holding an enrollment credential, and the tokens '
+         + 'that invited them. Revoking cuts off one device and it holds: '
+         + 'the serial is refused even by a valid token until you allow '
+         + 'it back. Last stop - open Settings.'},
     {view: 'settings', tab: 'fleet', sel: '#set-domains',
      title: 'Corporate domains',
      body: 'Every domain your people legitimately sign in with. Anything '
          + 'else is a personal account and warns. Get this wrong and the '
          + 'whole platform reports the wrong thing, so it is the first '
          + 'field to fill in.'},
+    {view: 'settings', sel: '#who',
+     title: 'Your own account',
+     body: 'Your name in the corner opens your account, and changing your '
+         + 'own password lives there. Everything else on this screen is '
+         + 'about the deployment, or about other people\u2019s accounts.'},
     {view: 'settings', sel: '#refresh',
      title: 'One last thing',
      body: 'Findings are cached, so this is how you force a fresh read. '
-         + 'You can take this tour again from Settings, under Account.'},
+         + 'You can take this tour again from Settings, under Getting '
+         + 'started.'},
   ],
   viewer: [
     {title: 'Welcome to Shadow AI Guard',
@@ -7899,6 +7947,12 @@ const TOURS = {
          + 'on. Everything here reads the window in the corner - findings '
          + 'age out of it, so a number falling can mean a device went '
          + 'quiet rather than a problem going away.'},
+    {view: 'overview', sel: '[data-act="ov-edit"]',
+     title: 'Read it your way',
+     body: 'Edit lets you drag these cards, stack two into one column, '
+         + 'resize them, or hide what you never look at. This one is '
+         + 'yours: it is a personal view kept with your account, and '
+         + 'read-only does not stop it.'},
     {view: 'overview', sel: '[data-s="inventory"]', click: true,
      title: 'What was found',
      body: 'Tools, people, devices and the accounts they are signed into. '
@@ -7914,17 +7968,30 @@ const TOURS = {
      body: 'Approvals, owners and review dates - the evidence an audit '
          + 'asks for, and all of it readable from this account. Recording '
          + 'a decision is the admin\u2019s half. Open Governance.'},
-    {view: 'register', sel: '[data-s="health"]',
+    {view: 'register', sel: '[data-s="spend"]', click: true,
      title: 'Before you trust a number',
      body: 'The AI register is what you actually use; a tool missing from '
-         + 'the registry is flagged rather than hidden. Health is the '
-         + 'check that belongs with it - a surface nobody is collecting '
-         + 'from looks exactly like a surface with nothing on it.'},
-    {view: 'setup', sel: '[data-s="system"]', click: true,
-     title: 'Where the numbers come from',
-     body: 'One setting decides what counts as a personal account, and it '
-         + 'is worth seeing even though this account cannot change it. '
-         + 'Open Settings.'},
+         + 'the registry is flagged rather than hidden. Reading it is the '
+         + 'half this account does. What it all costs is next - open '
+         + 'Budget.'},
+    {view: 'budget', sel: '[data-s="health"]', click: true,
+     title: 'What it costs',
+     body: 'Unused seats, people on a tool no seat covers, and personal '
+         + 'accounts running beside paid ones - figures worth quoting. '
+         + 'Every one of them rests on something still reporting, which '
+         + 'is the next page - open Health.'},
+    {view: 'setup', sel: '[data-s="managed"]', click: true,
+     title: 'Is anything actually reporting?',
+     body: 'Which detection sources are reporting, which are silent, and '
+         + 'which were never enabled. A surface nobody collects from '
+         + 'looks exactly like one with nothing on it, so read this '
+         + 'before quoting a number that fell. Open Fleet.'},
+    {view: 'fleet', sel: '[data-s="system"]', click: true,
+     title: 'Devices and their credentials',
+     body: 'Every device holding an enrollment credential, and the tokens '
+         + 'that invited them. Revoking one is an admin\u2019s job; seeing '
+         + 'what is enrolled, and what was revoked and when, is not. Last '
+         + 'stop - open Settings.'},
     {view: 'settings', tab: 'fleet', sel: '#set-domains',
      title: 'Corporate domains - read it, do not take it on trust',
      body: 'Anything not on this list is treated as a personal account. '
@@ -7933,11 +8000,18 @@ const TOURS = {
          + 'it. You can read it here; an admin changes it - and if it '
          + 'looks wrong, that is the conversation to have before quoting '
          + 'any of these numbers.'},
+    {view: 'settings', sel: '#who',
+     title: 'The one thing here you can change',
+     body: 'Your name in the corner opens your account. Your own password '
+         + 'is the single thing on this whole screen a read-only account '
+         + 'can change - the rest is the deployment, and an admin\u2019s '
+         + 'to save.'},
     {view: 'settings', sel: '#refresh',
      title: 'That is the tour',
      body: 'Findings are cached, and this forces a fresh read. Saving is '
          + 'the only thing this account cannot do - every page works. You '
-         + 'can take this tour again from Settings, under Account.'},
+         + 'can take this tour again from Settings, under Getting '
+         + 'started.'},
   ],
 };
 
@@ -8020,6 +8094,7 @@ async function tourStart(intro) {
 // failed to load.
 function tourAbort() {
   if (TOUR && TOUR.drop) TOUR.drop();
+  tourRelease();
   TOUR = null;
   const t = document.getElementById('tour');
   if (t) t.className = '';
@@ -8031,6 +8106,7 @@ function tourAbort() {
 }
 
 async function tourEnd(done) {
+  tourRelease();
   TOUR = null;
   document.getElementById('tour').className = '';
   document.getElementById('tour-card').innerHTML = '';
@@ -8038,7 +8114,25 @@ async function tourEnd(done) {
   // decided they did not want it, and reopening it every sign-in would be
   // the tour arguing with them.
   await tourRemember(done ? TOUR_VERSION : 'skipped');
+  // Only when it was left early. The last step says this in its own body,
+  // and repeating it to somebody who read that line is telling them twice.
+  if (!done) tourDoneShow();
 }
+
+function tourDoneShow() {
+  const dlg = document.getElementById('tourdlg');
+  if (dlg && !dlg.open) dlg.showModal();
+}
+
+function tourDoneHide() {
+  const dlg = document.getElementById('tourdlg');
+  if (dlg && dlg.open) dlg.close();
+}
+
+const tourDlgIsOpen = () => {
+  const dlg = document.getElementById('tourdlg');
+  return !!(dlg && dlg.open);
+};
 
 async function tourGo(n) {
   if (!TOUR) return;
@@ -8061,7 +8155,16 @@ async function tourShow() {
     drawNav();
     await render();
   }
+  // The shade and the ring both pass clicks through, so a step could
+  // point at a control and leave it fully working: Edit opened the
+  // arranger behind the card, the corporate domains field took typing
+  // during a walkthrough, and Refresh reloaded the page on the last step.
+  // A step that only DESCRIBES a control makes it inert - which stops the
+  // keyboard reaching it too, not just the mouse - and a step that asks
+  // for a click deliberately does not.
+  tourRelease();
   const el = st.sel ? document.querySelector(st.sel) : null;
+  if (el && !st.click) { el.inert = true; TOUR.inert = el; }
   if (el && el.scrollIntoView) {
     el.scrollIntoView({block: 'center', behavior: 'smooth'});
     // Let the scroll settle before measuring, or the hole lands where the
@@ -8080,6 +8183,15 @@ async function tourShow() {
     document.addEventListener('click', once, true);
     TOUR.drop = () => document.removeEventListener('click', once, true);
   }
+}
+
+// Undo the inert of the step just left. Held on TOUR rather than looked up
+// again, because a render between steps replaces the element and the one
+// that was frozen would no longer be findable. #refresh and the account
+// menu live OUTSIDE #app and survive every render, so failing to release
+// them would leave the topbar dead for the rest of the session.
+function tourRelease() {
+  if (TOUR && TOUR.inert) { TOUR.inert.inert = false; TOUR.inert = null; }
 }
 
 function tourPaint(el, st) {

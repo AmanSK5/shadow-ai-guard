@@ -61,6 +61,48 @@ def test_every_id_target_is_still_rendered():
         assert f'id="{el}"' in INDEX, f"nothing renders #{el}"
 
 
+def test_every_action_target_is_still_rendered():
+    """A step can also aim at a control by its data-act, which is what the
+    overview's Edit button is. Unlike a data-tour hook that exists only for
+    the tour, a data-act is real wiring somebody may rename while doing
+    something else entirely - and the tour would then dim the page and
+    centre its card, which looks like the step meant to do that."""
+    used = set(re.findall(r'sel: \'\[data-act="([a-z-]+)"\]\'', TOURS))
+    assert used, "no data-act steps parsed; this test is guarding nothing"
+    for act in used:
+        assert f'data-act="{act}"' in INDEX, f"nothing renders data-act={act}"
+
+
+def test_the_tour_walks_every_section_of_the_nav():
+    """The tour is the only description of the whole product, and a section
+    it never mentions is one a new colleague does not know exists. Budget
+    and Fleet were both missing for exactly that reason: they shipped after
+    the tour was written, and nothing here noticed.
+
+    'home' is exempt because it is where the tour opens - there is no nav
+    click onto the page you already start on."""
+    nav = INDEX.split("const NAV = [", 1)[1].split("\n];", 1)[0]
+    sections = set(re.findall(r"\{id:'([a-z]+)'", nav)) - {"home"}
+    for role in ("admin", "viewer"):
+        block = TOURS.split(role + ": [", 1)[1].split("\n  ],", 1)[0]
+        reached = set(re.findall(r'sel: \'\[data-s="([a-z]+)"\]\'', block))
+        missing = sections - reached
+        assert not missing, f"{role} tour never reaches: {sorted(missing)}"
+
+
+def test_both_roles_walk_the_same_number_of_steps():
+    """The two tours are deliberately separate copy - a viewer is told who
+    to ask where an admin is told what to change - but they describe one
+    product. A step added to one and forgotten in the other is how the
+    read-only account ends up with a shorter, quietly different tool."""
+    counts = {}
+    for role in ("admin", "viewer"):
+        block = TOURS.split(role + ": [", 1)[1].split("\n  ],", 1)[0]
+        counts[role] = block.count("{title:") + block.count("{view:")
+    assert counts["admin"] == counts["viewer"], counts
+    assert counts["admin"] >= 13, f"steps went missing: {counts}"
+
+
 def test_both_roles_have_a_tour():
     """An admin and a viewer are looking at different products, and a
     missing role would silently fall back to the other one's."""
@@ -121,3 +163,35 @@ def test_every_step_carries_a_way_forward():
     assert "st.click ? '' : 'pri'" in card, \
         "next should be secondary on a click step, not absent"
     assert "'End tour'" in card, "the way out has to say what it does"
+
+
+def test_a_described_control_cannot_be_used_during_the_tour():
+    """The shade and the ring both pass clicks through, deliberately, so a
+    step that asks somebody to press a real control can let them. The cost
+    was that every spotlighted control stayed fully live: Edit opened the
+    arranger behind the card, the corporate domains field took typing in
+    the middle of a walkthrough, and Refresh reloaded the page on the last
+    step. inert rather than pointer-events, because the keyboard reaches a
+    focusable field whatever the mouse is allowed to do."""
+    assert "if (el && !st.click) { el.inert = true; TOUR.inert = el; }" in INDEX
+
+
+def test_the_frozen_control_is_always_released():
+    """#refresh and the account menu live outside #app and survive every
+    render, so a step that froze one and never released it would leave the
+    topbar dead for the rest of the session - long after the tour ended."""
+    assert "function tourRelease()" in INDEX
+    end = INDEX.split("async function tourEnd(", 1)[1][:300]
+    assert "tourRelease()" in end, "ending the tour has to release it"
+    abort = INDEX.split("function tourAbort()", 1)[1][:300]
+    assert "tourRelease()" in abort, "a session going away has to release it"
+    show = INDEX.split("async function tourShow()", 1)[1][:1400]
+    assert "tourRelease()" in show, "each step has to release the last one"
+
+
+def test_leaving_the_tour_early_says_where_it_lives():
+    """Somebody who ends the tour on step two never reaches the last step,
+    which is the only place that says the tour can be taken again."""
+    assert '<dialog id="tourdlg"' in INDEX
+    assert "if (!done) tourDoneShow();" in INDEX
+    assert "Settings &rsaquo; Getting started" in INDEX
