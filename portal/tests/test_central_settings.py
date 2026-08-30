@@ -218,3 +218,99 @@ def test_the_settings_tabs_share_one_save_and_secrets_keep_their_own():
     assert 'data-act="save-domains"' in html
     assert 'data-act="save-extid"' in html
     assert "${batch ? '' : '<button class=\"mini\" data-act=\"save-markings\">Save</button>'}" in html
+
+
+def test_getting_started_has_its_own_tab():
+    """"Run the setup wizard again" and "Take the tour again" sat at the
+    bottom of the Account tab, under the accounts table and single sign-on -
+    nowhere anybody would look, since neither has anything to do with
+    accounts. The first UX pass found the tour re-entry 1,002 pixels down an
+    1,105-pixel page."""
+    html = (main.STATIC / "index.html").read_text()
+    assert "['start', 'Getting started']" in html
+    assert "function gettingStarted()" in html
+    assert "else if (SETTAB === 'start') body = gettingStarted();" in html
+
+
+def test_the_fleet_tab_is_renamed_but_keeps_its_id():
+    """"Fleet" also names a whole nav section - enrolled devices and
+    enrollment tokens - and two different things called Fleet in one product
+    is a coin toss every time somebody says it. The id stays so existing
+    #settings/fleet links, and the tour step that targets this tab, still
+    land."""
+    html = (main.STATIC / "index.html").read_text()
+    assert "['fleet', 'Detection & paste guard']" in html
+    assert "{view: 'settings', tab: 'fleet', sel: '#set-domains'," in html
+
+
+def test_your_own_password_lives_in_the_account_menu():
+    """Changing your own password is not an administrative setting, and
+    Settings > Account is about OTHER people's accounts and single sign-on. It
+    matters most for a viewer: that tab is read-only for them, so their
+    password was the one editable field on it, three blocks down.
+
+    The menu sits outside #app, where the delegated data-act listeners never
+    reach - so it carries its own."""
+    html = (main.STATIC / "index.html").read_text()
+    assert 'id="usermenu"' in html
+    assert "function umClose()" in html
+    assert "e.target.closest('#usermenu [data-act]')" in html
+    assert 'data-act="open-password"' in html
+    # Gone from the administrative tab.
+    account = html.split("function accountSettings()")[1].split("\nfunction ")[0]
+    assert "set-curpass" not in account
+
+
+def test_the_password_form_is_a_modal_and_not_the_menu_itself():
+    """The menu offers an ITEM; the form is a dialog. A menu closes on any
+    click outside it and on Escape, and umClose() would take half-typed
+    fields with it - and a password manager rarely offers to save from a
+    panel that disappears on blur.
+
+    The dialog is outside #app for the same reason the menu is, so it needs
+    its own listener, and the result is reported INTO the dialog: SETMSG only
+    ever renders on Settings, and telling a page the person is not looking at
+    is the same as not telling them."""
+    html = (main.STATIC / "index.html").read_text()
+    assert '<dialog id="pwdlg"' in html
+    assert "dlg.showModal()" in html
+    assert 'id="pw-msg"' in html
+    assert "document.getElementById('pwdlg').addEventListener('click'" in html
+    # Every field is cleared on the way out. Escape is closed by hand rather
+    # than left to the dialog element: measured in Chrome 151, main world, it
+    # closes itself but fires neither 'cancel' nor 'close', so the listener
+    # would never run and a typed password would sit in the field behind a
+    # dismissed dialog.
+    # And it takes the keystroke outright: the drawer's Escape handler is a
+    # later window listener, and by the time it runs pwHide() has already made
+    # pwIsOpen() false - so one Escape would dismiss the modal AND the drawer
+    # sitting open behind it.
+    assert "if (pwIsOpen()) { pwHide(); e.stopImmediatePropagation(); return; }" in html
+    assert "document.getElementById('pwdlg').addEventListener('close', pwWipe)" in html
+    # Signing out takes the dialog with it.
+    assert "pwHide(); }" in html
+
+
+def test_the_new_password_is_typed_twice():
+    """Without a confirm field a typo is not discovered until the next
+    sign-in - by which time every other session has been signed out with the
+    old password. The mismatch is answered here rather than by the receiver,
+    which never sees the second copy and would report the typo as whichever
+    password was sent being wrong."""
+    html = (main.STATIC / "index.html").read_text()
+    assert 'id="set-confpass"' in html
+    assert "if (nw !== _val('set-confpass'))" in html
+    assert "The two new passwords do not match." in html
+
+
+def test_the_primary_button_submits_the_form_and_carries_no_act():
+    """Enter in any field has to do what the button does. The button is
+    therefore the form's submit - and it deliberately carries no data-act,
+    because a click would otherwise both submit AND delegate, changing the
+    password twice."""
+    html = (main.STATIC / "index.html").read_text()
+    dlg = html.split('<dialog id="pwdlg"')[1].split("</dialog>")[0]
+    assert 'id="pw-submit"' in dlg and 'type="submit"' in dlg
+    assert "data-act" not in dlg.split('id="pw-submit"')[1].split(">")[0]
+    assert 'data-act="close-password"' in dlg
+    assert "document.getElementById('pwform').addEventListener('submit'" in html
