@@ -633,8 +633,15 @@ def test_a_bare_url_lands_on_the_overview_not_on_sources():
     assert "return VIEWS.includes(h) ? h : 'setup';" not in html
     # The first-run paths are untouched: the wizard still parks on Sources,
     # and it still opens itself over an empty fragment.
+    #
+    # `first` is the one exemption, and it is not a loophole in this rule:
+    # it is set only where the FIRST account on a deployment is created and
+    # is consumed by the very next load(). Everything this test guards - a
+    # bare URL, and a fragment the operator chose - is unchanged, because by
+    # then there is no first account left to create.
     assert "view = 'setup'; detail = null;" in html
-    assert "(!location.hash || location.hash === '#wizard')" in html
+    assert "(first || !location.hash || location.hash === '#wizard')" in html
+    assert "if (act === 'do-setup') FIRSTRUN = true;" in html
 
 
 def test_a_map_keyed_on_the_bare_serial_still_finds_the_machine():
