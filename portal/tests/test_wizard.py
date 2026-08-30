@@ -244,6 +244,51 @@ def test_the_page_carries_the_tool_registry_view():
         assert needle in html, needle
 
 
+def test_defining_a_tool_proposes_rather_than_asks():
+    """Nineteen flat fields became a three-step wizard, because the operator
+    does not know a tool's bundle id or CLI binary - working that out is what
+    they run the platform for. Discovery only sees DNS
+    (_CANDIDATE_KINDS = domain, mcp_server) and collectors report only what
+    already matches the registry, so the estate cannot answer it either.
+
+    So proposals are DERIVED and offered UNTICKED, and where each one came
+    from is on screen beside it. A wrong identifier is worse than a missing
+    one: a blank leaves a tool unseen on a surface, a wrong one hangs somebody
+    else's findings on it."""
+    html = (main.STATIC / "index.html").read_text()
+    for needle in ("function rwDerive(", "function rwOpen(", "function rwEntry(",
+                   "rw-step", "rw-tick", "rw-add",
+                   "seen in your estate", "derived from the name",
+                   "already saved", "you added"):
+        assert needle in html, needle
+    # Derived guesses are never on by default; evidence and saved values are.
+    assert "why: 'derived', conf: 'low', on: false" in html
+    # The four fields registry/schema.json requires are always written. vendor
+    # was conditional, which produced an entry the receiver refused - found by
+    # saving one, not by reading the code.
+    assert "const e = {id: RW.editing || RW.id, name: RW.name, vendor: RW.vendor};" in html
+    assert "const rwReady = () => !!(RW.name && RW.vendor && (RW.editing || RW.id));" in html
+    # Typing has to reach the Next button, or the wizard cannot be walked at
+    # all: nothing else re-renders while a field has focus.
+    assert "function rwLive()" in html
+    assert "matches('#rw-name,#rw-vendor,#rw-id')" in html
+    # The JSON escape hatch survives the rewrite.
+    assert "reg-adv" in html and "re-json" in html
+
+
+def test_the_review_queue_button_lands_in_the_wizard():
+    """cand-add already opened the same form the Tool registry did, so making
+    that form a wizard puts the review queue's own button into it. What
+    discovery saw rides along as evidence - the one thing on the identifier
+    step that is not a guess."""
+    html = (main.STATIC / "index.html").read_text()
+    assert "if (act === 'cand-add')" in html
+    assert "evidence: {kind: c.kind" in html
+    # An entry being edited arrives already confirmed, not re-proposed.
+    assert "function rwFromEntry(" in html
+    assert "why: 'saved', conf: 'high', on: true" in html
+
+
 def test_the_js_category_list_matches_the_schema():
     """REG_CATEGORIES is a hand-mirror of registry/schema.json's category
     enum; a value added to one and not the other makes the form refuse (or

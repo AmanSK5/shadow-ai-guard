@@ -142,3 +142,129 @@ def test_printing_drops_the_furniture():
     assert "@media print" in INDEX
     for hidden in ("aside", ".topbar", ".drawer", "[data-act]"):
         assert hidden in INDEX.split("@media print")[1][:600], hidden
+
+
+def test_linking_a_tool_is_four_steps_with_a_review():
+    """The budget wizard was already three steps; what it lacked was the
+    language. Its only progress marker was the italic text "step 1 of 3", the
+    seat tiers were three inputs whose only labels were placeholders that
+    vanish once anything is typed, and it committed straight from the last
+    step with nothing showing the licence, its covered tools and the cost
+    together."""
+    for needle in ("function bwRail(", "function bwBodyReview(",
+                   "const BW_STEPS", "Review and link",
+                   'class="tiers"', "<th>Tier</th>", "Price / seat",
+                   "bw-tsum", "bw-money"):
+        assert needle in INDEX, needle
+    # The rail summary carries the money, not a step count: this is the one
+    # wizard whose subject is a number.
+    assert "Monthly spend" in INDEX
+    assert "function bwLive()" in INDEX
+    # Currency is read off the screen too, or every figure renders unitless
+    # until the step is left.
+    assert "function bWizCur()" in INDEX
+    assert "step 1 of 3" not in INDEX and "step ${w.step} of 3" not in INDEX
+
+
+def test_the_rail_does_not_tick_a_step_nobody_has_visited():
+    """Both the tool and the member source are prefilled when the wizard
+    opens, so keying "done" off the value alone ticked steps 1 and 2 green
+    before the operator had looked at either."""
+    assert "const passed = w.editing || w.step > st.k;" in INDEX
+
+
+def test_linking_does_not_open_on_an_already_linked_tool():
+    """b-open picked the first OBSERVED tool whichever it was, so on a
+    deployment whose busiest tool is already linked it opened on that one -
+    and pressing through to the end overwrote the subscription that existed,
+    with nothing on screen saying so. Caught by driving the wizard and reading
+    the review step, which named a tool the Budget view already listed."""
+    assert "const taken = new Set();" in INDEX
+    assert "const free = (REGTOOLS || []).slice()" in INDEX
+    assert "filter(t => !taken.has(t.id));" in INDEX
+
+
+def test_the_member_step_names_every_connector_and_its_plan():
+    """Automatic sync exists for two of the thirty tools the registry ships,
+    and the only way to find that out was to open the dropdown and not see
+    yours. The step now lists the connectors with the plan each needs.
+
+    The general note replaced a ChatGPT-specific one: naming a single absence
+    made it look like the only one, when every tool without a connector is in
+    exactly the same position."""
+    assert "plan, and how" in INDEX
+    # There used to be a SECOND table listing only the built connectors,
+    # directly above a dropdown containing exactly those same connectors. It
+    # said nothing the full table does not, and having both invited the
+    # reading that the dropdown was the list of vendors rather than the list
+    # of ones with code behind them.
+    assert "The complete list of vendors" not in INDEX
+    assert "plan it needs" not in INDEX
+    assert "Anything not listed" in INDEX
+    assert "under Automatic uses Import or Manual" in INDEX
+    # The old copy spoke only about ChatGPT in the general slot.
+    assert "const BPROVIDER_NONE = `ChatGPT Business" not in INDEX
+
+
+def test_a_tool_with_no_licence_mates_says_so():
+    """Atlassian Rovo shares a licence group with nothing, so "Also covers"
+    rendered an empty chip row and a bare "more tools..." - which reads as a
+    control that failed to load rather than one with nothing to offer."""
+    assert "Nothing in the registry" in INDEX
+    assert "choose from every tool" in INDEX
+
+
+def test_the_member_step_answers_why_a_tool_is_missing():
+    """Naming only the two built connectors left the operator of the other
+    twenty-eight with no answer. The step now separates "the vendor offers
+    nothing" from "the vendor offers something nobody has connected", which is
+    the only one of the two worth opening an issue about."""
+    for needle in ("member_apis", "Vendor API, no connector yet",
+                   "No seat list exists", "Not documented",
+                   "an admin API nobody has connected yet",
+                   "tools with a sync written"):
+        assert needle in INDEX, needle
+    # A connector written from a docs page is not a connector anybody has
+    # run. Being in the dropdown reads as "this works", so the ones that have
+    # never touched a real tenant say so where the key gets pasted.
+    assert "unverified" in INDEX
+    assert "has never been run against a real organisation" in INDEX
+
+
+def test_import_and_manual_speak_about_the_tool_being_linked():
+    """Import and Manual carried a paragraph about ChatGPT whichever tool you
+    were linking. It went stale the moment a ChatGPT connector existed: it
+    told an Enterprise workspace to use Import when Automatic had just started
+    working for it. The answer is per-tool and already in member_apis, so the
+    note is built from that instead of from one vendor's example."""
+    assert "BPROVIDER_CHATGPT" not in INDEX
+    assert "ChatGPT Business (Team) is the usual surprise" not in INDEX
+    for needle in ("can sync automatically",
+                   "vendor does expose a members API",
+                   "has no organisation or seat list to read",
+                   "does not document a members API"):
+        assert needle in INDEX, needle
+
+
+def test_a_tool_you_defined_is_not_reported_as_undocumented():
+    """member_apis covers the tools this release ships with. A tool the
+    operator defined has no row, and an absent row is not a finding - falling
+    through to the "not documented" branch made the page state, about a tool
+    invented five minutes earlier, that its vendor documents no members API.
+    Nobody had looked. "We have no record" and "we looked and there is
+    nothing" are different sentences."""
+    assert "is a tool you defined" in INDEX
+    assert "there is no record here of" in INDEX
+    # And the table says which tools it is actually about.
+    assert "SHIPPED tools" in INDEX
+    assert "tools you define yourself are not in here" in INDEX
+
+
+def test_the_budget_page_lists_providers_as_a_list_not_a_chain():
+    """The empty state joined every provider with " and ". At two vendors that
+    read fine; at seven it was one breathless sentence. The trailing line
+    about ChatGPT Business went with it - it is one plan of one vendor, it
+    stopped being the only notable absence, and the wizard's own step now says
+    what applies to the tool being linked."""
+    assert "ChatGPT Business has no admin API on that plan" not in INDEX
+    assert "labels.slice(0, -1).join(', ')" in INDEX
