@@ -458,3 +458,64 @@ def test_the_extension_setup_offers_the_way_back_it_actually_owes_you():
     assert "view = h.view; detail = null; EXTFROM = '';" in html
     # One exit per screen.
     assert "${EXTPAGE === 6 ? '' : EXTFROM === 'wizard'" in html
+
+
+def test_the_first_account_created_goes_to_the_wizard_not_the_tour():
+    """The wizard otherwise opens only on a bare fragment, so that an
+    operator who navigated somewhere on purpose is not dragged back to it.
+    The very first sign-in has no such intent to respect: a tab still
+    carrying #settings/start from before the volume was wiped skipped the
+    wizard entirely, and maybeTour() then handed a brand new deployment the
+    walkthrough instead of the setup it had not done."""
+    html = (main.STATIC / "index.html").read_text()
+    assert "if (act === 'do-setup') FIRSTRUN = true;" in html
+    assert "const first = FIRSTRUN;" in html
+    assert "FIRSTRUN = false;" in html
+    assert "(first || !location.hash || location.hash === '#wizard')" in html
+
+
+def test_skipping_the_wizard_says_where_it_went():
+    """Skip and Finish wrote the same thing, so skipping retired the wizard
+    for good without a word about it - and the two required steps are the
+    ones whose absence makes the deployment run WRONG rather than not run.
+    Skip is now its own action, and it asks first."""
+    html = (main.STATIC / "index.html").read_text()
+    # The button is Skip only while a required step is outstanding.
+    assert "canGo ? 'wiz-finish' : 'wiz-skip'" in html
+    assert "if (act === 'wiz-skip') { skipShow(); return; }" in html
+    assert '<dialog id="skipdlg"' in html
+    assert "Settings &rsaquo; Getting started" in html
+    # Confirming does exactly what finishing does, rather than a second copy
+    # of it that can drift.
+    assert "await managedAction('wiz-finish')" in html
+
+
+def test_the_skip_dialog_owns_escape_like_the_other_one():
+    """Same trap as the password modal: the drawer's Escape handler is a
+    later window listener, so guarding it on live state alone let one
+    keystroke dismiss the dialog AND whatever was open behind it."""
+    html = (main.STATIC / "index.html").read_text()
+    assert "if (skipIsOpen()) { skipHide(); e.stopImmediatePropagation(); return; }" in html
+    assert "pwIsOpen() || skipIsOpen()" in html
+
+
+def test_a_viewer_can_leave_the_wizard():
+    """Finish and Skip both write onboarding_done, and the receiver refuses
+    the write from a read-only account - so the only way out of a wizard a
+    viewer can reach from Settings answered 'this account is read-only' and
+    left them on it. The nav was the only escape.
+
+    Nothing is being saved either way, so for a viewer leaving is
+    navigation: one button, no write, no refusal to report."""
+    html = (main.STATIC / "index.html").read_text()
+    assert "const wizRO = AUTH && AUTH.role === 'viewer';" in html
+    assert "if (act === 'wiz-close') {" in html
+    # BOTH exits are role-aware: the footer button, and the one step 7
+    # shows in place of Next. Missing either leaves a viewer stuck on that
+    # step instead of on the wizard, which is the same trap in one place.
+    assert html.count("wizRO ? 'wiz-close'") == 2
+    assert html.count("${wizRO ? 'wiz-close' : 'wiz-finish'}") == 1
+    # And it lands back on the tab the button that opens the wizard is on.
+    close = html.split("if (act === 'wiz-close') {", 1)[1][:400]
+    assert "SETTAB = 'start'" in close
+    assert "mfetch" not in close, "a viewer's exit must not attempt a write"

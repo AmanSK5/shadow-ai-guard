@@ -313,6 +313,13 @@ button.mini.pri{border-color:var(--pri);background:color-mix(in srgb,var(--pri) 
    confirm field, which a 240px dropdown does not - and a typo in the new
    password is otherwise not discovered until the next sign-in, by which
    time every other session has been signed out with the old one. */
+#skipdlg{border:1px solid var(--bd);border-radius:12px;background:var(--sf);
+  color:var(--fg);padding:20px 22px;width:min(430px,92vw);
+  box-shadow:0 18px 50px rgba(0,0,0,.28)}
+#skipdlg::backdrop{background:rgba(15,18,20,.45)}
+#skipdlg h3{margin:0 0 2px;font-size:15px}
+#skipdlg .pwsub{font-size:12px;color:var(--mut);margin:0 0 14px}
+#skipdlg .skipbody{font-size:13px;line-height:1.5;margin:0 0 12px}
 #pwdlg{border:1px solid var(--bd);border-radius:12px;background:var(--sf);
   color:var(--fg);padding:20px 22px;width:min(400px,92vw);
   box-shadow:0 18px 50px rgba(0,0,0,.28)}
@@ -795,6 +802,20 @@ table.plain td{border-bottom:0;padding:4.5px 10px 4.5px 0;vertical-align:middle}
   <div id="tour-ring"></div>
   <div id="tour-card"></div>
 </div>
+<dialog id="skipdlg" aria-labelledby="skip-title">
+  <h3 id="skip-title">Skip setup for now?</h3>
+  <p class="pwsub">Nothing is collected until two things are set.</p>
+  <p class="skipbody">The receiver address is all a collector download bakes
+  in, and with no corporate domains every account reads as a personal one -
+  so the Overview headline, Personal accounts and the ISO evidence would all
+  report the wrong thing rather than report nothing.</p>
+  <p class="skipbody">You can pick this up again whenever you like, under
+  <strong>Settings &rsaquo; Getting started</strong>.</p>
+  <div class="pwfoot">
+    <button class="mini pri" data-act="skip-cancel">Keep setting up</button>
+    <button class="back" style="margin:0" data-act="skip-confirm">Skip for now</button>
+  </div>
+</dialog>
 <dialog id="pwdlg" aria-labelledby="pw-title">
   <form id="pwform">
     <h3 id="pw-title">Change password</h3>
@@ -869,6 +890,13 @@ let EXTFROM = '';
 // Which first-run step is showing. The seven used to render at once on
 // one page, which is how it became 841 lines nobody could scan.
 let WIZSTEP = 1;
+// Set the moment the FIRST account on a deployment is created, and read
+// once by load(). The wizard otherwise opens only on a bare fragment, so
+// that an operator who navigated somewhere on purpose is not dragged back
+// - but the very first sign-in has no such intent to respect, and a tab
+// still carrying #settings/start from before the volume was wiped skipped
+// the wizard and handed a brand new deployment the walkthrough instead.
+let FIRSTRUN = false;
 // The budget view: the fetched spend data, the link-a-tool wizard's state
 // (null = closed), the last action's one-line outcome, and a parsed CSV
 // preview waiting for confirmation.
@@ -1034,6 +1062,22 @@ function pwShow() {
   if (f) f.focus();
 }
 
+function skipShow() {
+  const dlg = document.getElementById('skipdlg');
+  if (!dlg) { managedAction('wiz-finish'); return; }
+  if (!dlg.open) dlg.showModal();
+}
+
+function skipHide() {
+  const dlg = document.getElementById('skipdlg');
+  if (dlg && dlg.open) dlg.close();
+}
+
+const skipIsOpen = () => {
+  const dlg = document.getElementById('skipdlg');
+  return !!(dlg && dlg.open);
+};
+
 function pwHide() {
   const dlg = document.getElementById('pwdlg');
   if (dlg && dlg.open) dlg.close();
@@ -1070,6 +1114,7 @@ window.addEventListener('keydown', e => {
   // already made pwIsOpen() false - so guarding it on live state is not
   // enough, and one Escape would dismiss the modal and the drawer behind it.
   if (pwIsOpen()) { pwHide(); e.stopImmediatePropagation(); return; }
+  if (skipIsOpen()) { skipHide(); e.stopImmediatePropagation(); return; }
   const um = document.getElementById('usermenu');
   if (um && !um.hidden) umClose();
 });
@@ -1078,6 +1123,11 @@ window.addEventListener('keydown', e => {
 // form's SUBMIT so that Enter in any field does what the button does, and it
 // deliberately carries no data-act - a click would otherwise both submit and
 // delegate, and change the password twice.
+// Outside #app like the other dialog, so it carries its own listener.
+document.getElementById('skipdlg').addEventListener('click', e => {
+  const el = e.target.closest('[data-act]');
+  if (el) managedAction(el.getAttribute('data-act'), el);
+});
 document.getElementById('pwform').addEventListener('submit', e => {
   e.preventDefault();
   managedAction('change-password', document.getElementById('pw-submit'));
@@ -1230,7 +1280,13 @@ async function load(force) {
     }
     const done = SETTINGS && SETTINGS.settings
       && SETTINGS.settings.onboarding_done.value;
-    if (SETTINGS && !done && (!location.hash || location.hash === '#wizard')) {
+    // A just-created deployment goes to the wizard whatever the fragment
+    // says; after that, a fragment means the operator asked for a page and
+    // a wizard that overrides them traps rather than helps.
+    const first = FIRSTRUN;
+    FIRSTRUN = false;
+    if (SETTINGS && !done
+        && (first || !location.hash || location.hash === '#wizard')) {
       view = 'wizard';
       history.replaceState(null, '', '#wizard');
     }
@@ -3901,6 +3957,12 @@ async function wizard() {
     return (CFG.managed && CFG.managed.artifacts_ready)
       ? {c: 'val', t: 'ready'} : {c: 'pend', t: 'needs the receiver URL'};
   };
+  // A viewer can neither finish the wizard nor skip it: both write
+  // onboarding_done, and the receiver refuses the write. Pressing the only
+  // way out returned "this account is read-only" and left them on the
+  // wizard, reachable from Settings and escapable only through the nav.
+  // Nothing is being saved either way, so for them leaving is navigation.
+  const wizRO = AUTH && AUTH.role === 'viewer';
   const reqN = WIZ_STEPS.filter(x => x.need === 'req').length;
   const reqDone = WIZ_STEPS.filter((x, i) => x.need === 'req' && wDone(i + 1)).length;
   const canGo = reqDone === reqN;
@@ -4075,15 +4137,17 @@ async function wizard() {
   <div class="ssow">${rail}
     <div class="ssmain">${body}
       <div class="ssfoot">
-        <button class="mini" data-act="wiz-finish">${canGo
-          ? 'Finish setup' : 'Skip for now'}</button>
+        <button class="mini" data-act="${wizRO ? 'wiz-close'
+          : canGo ? 'wiz-finish' : 'wiz-skip'}">${wizRO ? 'Close'
+          : canGo ? 'Finish setup' : 'Skip for now'}</button>
         <span class="sp"></span>
         ${WIZSTEP > 1 ? `<button class="mini" data-act="wiz-step"
           data-key="${WIZSTEP - 1}">Back</button>` : ''}
         ${WIZSTEP < 7
           ? `<button class="mini pri" data-act="wiz-step"
               data-key="${WIZSTEP + 1}">Next</button>`
-          : `<button class="mini pri" data-act="wiz-finish">Finish setup</button>`}
+          : `<button class="mini pri" data-act="${wizRO ? 'wiz-close' : 'wiz-finish'}"
+              >${wizRO ? 'Close' : 'Finish setup'}</button>`}
       </div></div></div>
   <p class="src-note">You can come back: everything above stays editable under
   Settings, and Settings can reopen this wizard.</p>`;
@@ -6780,6 +6844,9 @@ async function managedAction(act, el) {
     if (r.ok) {
       const o = await r.json();
       AUTH = {mode: 'login', authenticated: true, username: o.username, setup_needed: false};
+      // Creating the first account IS the first run, whatever the address
+      // bar happens to say.
+      if (act === 'do-setup') FIRSTRUN = true;
       // /api/auth also carries the account's role, which gates the
       // account-management card and labels the read-only state.
       try { AUTH = await (await fetch('/api/auth')).json(); } catch (e) { /* keep the basics */ }
@@ -6817,6 +6884,22 @@ async function managedAction(act, el) {
     }
     render(); return;
   }
+  // Skipping and finishing write the same thing, so somebody who skips has
+  // retired the wizard for good without being told - and the two required
+  // steps are exactly the ones whose absence makes the deployment run WRONG
+  // rather than not run. Said once, here, rather than as prose on a screen
+  // they are in the act of leaving.
+  if (act === 'wiz-skip') { skipShow(); return; }
+  if (act === 'wiz-close') {
+    // No write, so no refusal to report - and back to the tab the button
+    // that opens this wizard lives on.
+    SETMSG = ''; EXTFROM = '';
+    view = 'settings'; SETTAB = 'start'; detail = null;
+    history.replaceState(null, '', frag('settings'));
+    drawNav(); await render(); return;
+  }
+  if (act === 'skip-cancel') { skipHide(); return; }
+  if (act === 'skip-confirm') { skipHide(); await managedAction('wiz-finish'); return; }
   if (act === 'wiz-finish') {
     const r = await mfetch('/api/settings', {method: 'POST',
       body: JSON.stringify({onboarding_done: true})});
@@ -7492,7 +7575,7 @@ function open_(kind, key) {
 // the tour is up: the overlay owns the keyboard then, and its own way out
 // is the End tour button, which records that it was skipped.
 document.addEventListener('keydown', e => {
-  if (e.key !== 'Escape' || TOUR || pwIsOpen()) return;
+  if (e.key !== 'Escape' || TOUR || pwIsOpen() || skipIsOpen()) return;
   if (!document.body.classList.contains('open')) return;
   open_(null);
 });
@@ -7674,7 +7757,7 @@ document.getElementById('overlay').addEventListener('click', () => open_(null));
 window.addEventListener('keydown', e => {
   // The modal owns Escape while it is up, or dismissing it would also close
   // the drawer somebody left open behind it.
-  if (e.key === 'Escape' && !pwIsOpen()
+  if (e.key === 'Escape' && !pwIsOpen() && !skipIsOpen()
       && document.body.classList.contains('open')) open_(null);
 });
 // Managed actions, same delegation for the same reason. A separate listener
