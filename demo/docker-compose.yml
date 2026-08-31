@@ -157,6 +157,23 @@ services:
   # Reads the compiled registry the builder produced, so tool names arriving
   # from different detectors (chatgpt.com from the extension, chatgpt from
   # everything else) resolve to one tool.
+  # A mailbox you can read, so invites can be seen rather than assumed.
+  # Mailpit accepts anything on 1025 and shows it at http://localhost:8025 -
+  # nothing leaves the machine, which is the only sane default for a demo
+  # that sends mail to addresses it invented.
+  mailpit:
+    image: axllent/mailpit:v1.21
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "true"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+    ports:
+      - "127.0.0.1:8025:8025"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://localhost:8025/readyz || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   # A stand-in for Microsoft Entra, so the single sign-on wizard can be
   # walked without a real tenant, an app registration or a client secret.
   #

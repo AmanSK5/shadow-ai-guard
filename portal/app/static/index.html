@@ -10,6 +10,11 @@
   --pri:#177245; --acc:#0e6e8c; --warn:#8a5b00; --dstr:#b3261e;
   --mut:#5c636e; --bd:#e4e5e0; --line:var(--bd);
   --pri-soft:#e7f3ec; --acc-soft:#e3f0f5; --warn-soft:#fdf0d3; --dstr-soft:#fbeae9;
+  /* Floating surfaces. A popover sitting on cards that share its
+     background reads as part of the page; elevation has to be a
+     colour step and a border, not only a shadow. */
+  --pop:#ffffff; --pop-bd:#c9ccc4;
+  --pop-shadow:0 18px 44px rgba(20,23,27,.20), 0 3px 10px rgba(20,23,27,.12);
   /* Data marks, deliberately not --acc. The interface palette is tuned
      for chrome: --acc sits below the chroma floor a fill needs and reads
      grey once it is an area rather than a 1px border. These two are the
@@ -27,6 +32,11 @@
   --pri:#46c07f; --acc:#67c1dd; --warn:#e3b341; --dstr:#f28b82;
   --mut:#9aa3ad; --bd:#2b313a;
   --pri-soft:#1c3328; --acc-soft:#12303a; --warn-soft:#33290f; --dstr-soft:#3a1f1d;
+  /* Dark elevation is a LIGHTER surface, not a darker shadow - a shadow on
+     a dark page is invisible. Two steps above --sf so it separates from the
+     cards it floats over, with a border bright enough to draw the edge. */
+  --pop:#2c323a; --pop-bd:#454d58;
+  --pop-shadow:0 20px 50px rgba(0,0,0,.62), 0 3px 12px rgba(0,0,0,.5);
   /* Its own step, not the light one lightened: the dark band is narrower
      (0.48-0.67) and every candidate that looked right by eye sat above it. */
   --chart:#2b9ec4; --chart-soft:#2b9ec42e;
@@ -482,6 +492,46 @@ table.plain td{border-bottom:0;padding:4.5px 10px 4.5px 0;vertical-align:middle}
 /* The sign-in screen's federated option: a rule with the word set into
    it, and an anchor that carries a button's shape because it is a
    navigation, not a form post. */
+/* Outstanding setup. A dot rather than a number in a circle: the count is
+   in the panel, and a badge that says 4 invites somebody to clear it to
+   zero rather than read it. Pulses until it has been opened once and then
+   stops for good - a thing that pulses forever becomes wallpaper, and then
+   it is worse than nothing because people learn to ignore it. */
+#setupbell{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;
+  position:relative}
+.bcount{font-variant-numeric:tabular-nums}
+/* On the bell rather than beside it, which is where people look for it. */
+.bdot{position:absolute;top:3px;right:3px;width:7px;height:7px;
+  border-radius:50%;background:var(--warn);border:1.5px solid var(--sf)}
+#setupbell.new .bdot{animation:bpulse 2.4s ease-in-out infinite}
+@keyframes bpulse{0%,100%{opacity:1;box-shadow:0 0 0 0 var(--warn)}
+  50%{opacity:.55;box-shadow:0 0 0 4px transparent}}
+@media (prefers-reduced-motion: reduce){
+  #setupbell.new .bdot{animation:none}
+}
+#setuppanel{position:absolute;right:0;top:calc(100% + 8px);z-index:60;
+  width:min(420px,88vw);background:var(--pop);border:1px solid var(--pop-bd);
+  border-radius:10px;box-shadow:var(--pop-shadow);padding:14px 16px;
+  text-align:left}
+#setuppanel h4{margin:0 0 4px;font-size:13px}
+/* Same treatment for the account menu: it floats over the same page. */
+#usermenu{background:var(--pop);border-color:var(--pop-bd);
+  box-shadow:var(--pop-shadow)}
+/* --bd is picked to read against the page and the cards. On the lighter
+   popover surface it disappears, which took the dividers and every button
+   outline with it - the panel became one block of text. Everything with an
+   edge inside here uses the popover's own border colour. */
+#setuppanel .si{border-top:1px solid var(--pop-bd);padding:11px 0;
+  font-size:12.5px}
+#setuppanel .si:last-of-type{border-bottom:1px solid var(--pop-bd)}
+#setuppanel .si b{display:block;font-size:12.5px;font-weight:600;
+  margin-bottom:3px}
+#setuppanel .si span{color:var(--mut)}
+#setuppanel button.mini{border-color:var(--pop-bd)}
+#setuppanel button.mini:hover{border-color:var(--pri)}
+/* The action on its own line rather than trailing the sentence: it was
+   wrapping into the prose and reading as part of it. */
+#setuppanel .si button.mini{display:block;margin-top:7px}
 .lidiv{display:flex;align-items:center;gap:10px;margin:16px 0;
   color:var(--mut);font-size:12px}
 .lidiv::before,.lidiv::after{content:'';flex:1;height:1px;background:var(--bd)}
@@ -832,6 +882,18 @@ a.libtn:hover{border-color:var(--pri)}
       </span>
       <button id="signout" class="back" style="margin:0;display:none">Sign out</button>
       <button id="themebtn" class="back" style="margin:0" title="light / dark">◐</button>
+      <span id="setupwrap" style="position:relative">
+        <button id="setupbell" class="back" style="margin:0;display:none"
+          aria-haspopup="true" aria-expanded="false"
+          aria-label="Outstanding setup" title="Outstanding setup">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="1.9" stroke-linecap="round"
+            stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0
+            0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4
+            0"/></svg><span class="bcount"></span><span class="bdot"></span>
+        </button>
+        <div id="setuppanel" hidden></div>
+      </span>
     </div>
     <main id="app"></main>
   </div>
@@ -976,6 +1038,8 @@ let AUDITLOG = null;
 // The accounts list (admins only), which row has its reset form open, and
 // the last account-management refusal.
 let USERS = null, URFORM = null, USERR = '';
+// The mail test's answer, shown beside the button that asked for it.
+let MAILMSG = '';
 let S = null, CFG = {}, loadError = '';
 // What /api/auth said: {mode, authenticated, username, setup_needed}.
 // The session itself is an HttpOnly cookie this script can never read -
@@ -1002,14 +1066,32 @@ function prefsLocal() {
   catch (e) { return {}; }
 }
 
+// Whether PREFS is a real answer or just an empty default. Anything that
+// interrupts somebody BECAUSE a preference is absent has to know the
+// difference: absent and unread look identical, and acting on the second
+// as though it were the first is how a thing that should happen once
+// happens every time.
+let PREFS_READ = false;
+// Whether they came from the RECEIVER rather than this browser. In managed
+// mode the receiver is the record: an empty answer from it means "nothing
+// recorded", not "go and ask localStorage".
+let PREFS_SERVER = false;
+
 async function prefsLoad() {
   if (CFG.managed && CFG.managed.enabled && AUTH && AUTH.mode === 'login') {
     try {
       const r = await mfetch('/api/preferences');
-      if (r.ok) { PREFS = (await r.json()).preferences || {}; return; }
+      if (r.ok) {
+        PREFS = (await r.json()).preferences || {};
+        PREFS_READ = true;
+        PREFS_SERVER = true;
+        return;
+      }
     } catch (e) { /* fall through to the browser copy */ }
   }
   PREFS = prefsLocal();
+  PREFS_READ = true;
+  PREFS_SERVER = false;
 }
 
 const pref = (k, dflt) => PREFS[k] === undefined ? dflt : PREFS[k];
@@ -1309,6 +1391,18 @@ async function load(force) {
     const cr = await fetch('/api/config');
     if (cr.status === 401 && AUTH && AUTH.mode === 'login') { sessionLost(); return; }
     CFG = await cr.json();
+    // Preferences BEFORE anything that can throw. They lived below the
+    // graph read, so a deployment whose log store is unreachable - which
+    // is a normal state, and one the overview says out loud - threw past
+    // this and left PREFS empty on every single load. Every preference
+    // went with it: the card arrangement, the widget forms, and the
+    // record of who has already sat through the guided tour, which is why
+    // the tour reopened on every sign-in. Preferences do not depend on
+    // findings, so nothing about them belongs after that read.
+    //
+    // Its own try as well: failing to read a preference is a reason to
+    // fall back to the browser copy, never a reason to lose the page.
+    try { await prefsLoad(); } catch (e) { /* prefsLoad has its own fallback */ }
     const gr = await fetch('/api/graph' + q);
     if (!gr.ok) throw new Error((await gr.json()).detail || gr.statusText);
     G = await gr.json();
@@ -1318,10 +1412,6 @@ async function load(force) {
     // guard widget and a widget that fetches on render would flash empty.
     const pr = await fetch('/api/paste-guard' + q);
     if (pr.ok) PG = await pr.json();
-    // Before the first render: widgets read their form choice straight out
-    // of PREFS while drawing, so a late fetch would draw every card once in
-    // the default form and then again in the chosen one.
-    await prefsLoad();
     // The recorded answers to findings (acknowledged / accepted), managed
     // mode only. Failure leaves PSTAT null and every row simply reads open.
     if (CFG.managed && CFG.managed.enabled && AUTH && AUTH.mode === 'login') {
@@ -1401,6 +1491,12 @@ async function maybeTour() {
   // here would mean the tour never ran at all on the sign-in it is for.
   // Leaving the wizard renders, and this runs again.
   if (view === 'wizard') return;
+  // Not until the record has actually been read. The tour is an
+  // interruption justified only by "you have not seen this yet", and an
+  // unread preference cannot support that claim. Deliberately does not
+  // spend the one attempt: a later load that reads them can still offer
+  // it to somebody who genuinely has not.
+  if (!PREFS_READ) return;
   TOURTRIED = true;
   const seen = await tourProgress();
   const role = tourRole();
@@ -1409,6 +1505,130 @@ async function maybeTour() {
   // which is worth saying out loud before offering a second walkthrough.
   const other = seen[role === 'admin' ? 'viewer' : 'admin'];
   await tourStart(other ? TOUR_ROLE_CHANGED[role] : null);
+}
+
+// ---- somebody else changed this -----------------------------------------
+// Two people in Settings at once is not rare on a platform whose whole
+// point is that more than one person watches it. The write is a partial
+// upsert of only the keys sent, so two people editing DIFFERENT settings
+// never collide - which is exactly why this is a notice and not a lock.
+// A version check would be machinery for a conflict this shape mostly
+// cannot have; what it can have is somebody reading a value that changed
+// under them a minute ago.
+let SETCHANGE = null;
+
+async function checkSettingsChanged() {
+  if (!(CFG.managed && CFG.managed.enabled && AUTH && AUTH.mode === 'login')) return;
+  try {
+    const r = await mfetch('/api/audit?limit=50');
+    if (!r.ok) return;
+    const me = (AUTH && AUTH.username) || '';
+    const now = Date.now();
+    const hit = ((await r.json()).events || []).find(e => {
+      if (!/^setting_(changed|cleared)$/.test(e.kind || '')) return false;
+      const by = (e.detail && e.detail.by) || '';
+      if (!by || by === me) return false;
+      const at = Date.parse(e.at || '');
+      // Half an hour: long enough to catch the colleague who saved while
+      // you had the page open, short enough not to report last Tuesday.
+      return at && (now - at) < 30 * 60 * 1000;
+    });
+    SETCHANGE = hit ? {by: (hit.detail || {}).by, at: Date.parse(hit.at)} : null;
+  } catch (e) { /* an advisory that cannot be fetched is simply absent */ }
+}
+
+function settingsChangedNote() {
+  if (!SETCHANGE) return '';
+  const mins = Math.max(1, Math.round((Date.now() - SETCHANGE.at) / 60000));
+  return `<div class="note" style="margin-bottom:10px">Settings were changed by
+    <b>${esc(SETCHANGE.by)}</b> ${mins} minute${mins === 1 ? '' : 's'} ago.
+    This page was loaded before that, so what you are looking at may be out of
+    date. <button class="mini" data-act="setup-reload"
+    style="margin-left:6px">Reload</button>
+    <div class="src-note" style="margin:6px 0 0">Saving here changes only the
+    fields you edit, so you will not overwrite theirs by accident.</div></div>`;
+}
+
+// ---- outstanding setup ------------------------------------------------
+// onboarding_done is a single boolean meaning "stop showing me the wizard",
+// NOT "everything is configured". The moment somebody skips, every ongoing
+// signal disappears - including for the two steps the wizard itself calls
+// required. A deployment can sit like that indefinitely and look fine.
+//
+// This is that signal, and it is deliberately quiet: a dot in the topbar
+// that a person opens when they choose to, rather than a screen that
+// interrupts them. Blocking was never on the table - the operator with a
+// colleague standing next to them should be able to make an account.
+let SETUPOPEN = false;
+
+function setupOutstanding() {
+  const v = k => ((SETTINGS && SETTINGS.settings || {})[k] || {}).value || '';
+  const cd = (SETTINGS && SETTINGS.settings && SETTINGS.settings.corp_domains) || {};
+  const owner = AUTH && AUTH.role === 'owner';
+  const out = [];
+  if (!v('receiver_public_url')) out.push({need: 'req', tab: 'connection',
+    t: 'The receiver address', w: 'Nothing can deploy without it: every '
+      + 'collector download bakes this in.'});
+  if (!((cd.value || []).length)) out.push({need: 'req', tab: 'fleet',
+    t: 'Corporate domains', w: 'Without them every account reads as a '
+      + 'personal one, and the Overview headline inherits that.'});
+  if (!v('log_store_url')) out.push({need: 'rec', tab: 'connection',
+    t: 'A log store', w: 'Findings stay in container logs, so no page here '
+      + 'can count them.'});
+  if (v('smtp_ready') !== '1') {
+    const missed = (USERS || []).filter(u => u.email && !u.invited_at).length;
+    out.push({need: 'rec', tab: 'alerting', t: 'Email',
+      w: missed ? missed + (missed === 1 ? ' person has' : ' people have')
+            + ' an account here and ' + (missed === 1 ? 'has' : 'have')
+            + ' never been told.'
+        : 'Nobody can be told an account was made for them.'});
+  }
+  // Owner-gated at the receiver, so an admin cannot act on it and must not
+  // be nagged about it.
+  if (owner && v('sso_enabled') !== '1') out.push({need: 'opt', tab: 'account',
+    t: 'Single sign-on', w: 'People sign in with a portal password rather '
+      + 'than their work account.'});
+  return out;
+}
+
+function drawSetup() {
+  const bell = document.getElementById('setupbell');
+  const panel = document.getElementById('setuppanel');
+  if (!bell || !panel) return;
+  const managed = CFG.managed && CFG.managed.enabled;
+  const viewer = AUTH && AUTH.role === 'viewer';
+  const items = (managed && SETTINGS && !viewer) ? setupOutstanding() : [];
+  // A viewer can change none of this, and an empty list is not worth a
+  // control at all.
+  if (!items.length) {
+    bell.style.display = 'none'; panel.hidden = true; SETUPOPEN = false; return;
+  }
+  const req = items.filter(i => i.need === 'req').length;
+  bell.style.display = '';
+  bell.classList.toggle('new', !pref('setup.seen'));
+  bell.querySelector('.bdot').style.background =
+    req ? 'var(--dstr)' : 'var(--warn)';
+  bell.querySelector('.bcount').textContent = String(items.length);
+  bell.setAttribute('aria-expanded', SETUPOPEN ? 'true' : 'false');
+  panel.hidden = !SETUPOPEN;
+  if (!SETUPOPEN) return;
+  const TAB = {req: ['p-dstr', 'required'], rec: ['p-amb', 'recommended'],
+               opt: ['p-mut', 'optional']};
+  panel.innerHTML = '<h4>' + (req
+      ? 'Some of this deployment is not set up'
+      : 'A few things are still worth doing') + '</h4>'
+    + '<p class="lede" style="font-size:12px;margin:0 0 8px">' + (req
+      ? 'The required ones are not about it refusing to run. They are about '
+        + 'it running <b>wrong</b>.'
+      : 'Nothing here is broken. These are the parts that are not earning '
+        + 'their keep yet.') + '</p>'
+    + items.map(i => '<div class="si"><b>' + esc(i.t)
+        + ' <span class="pill ' + TAB[i.need][0] + '">' + TAB[i.need][1]
+        + '</span></b><span>' + i.w + '</span>'
+        + '<button class="mini" data-act="setup-go"'
+        + ' data-key="' + i.tab + '">Set it up</button></div>').join('')
+    + '<p class="src-note" style="margin-bottom:0">Shown because setup was '
+      + 'skipped or left part-done. It never blocks anything.</p>';
 }
 
 // The graph is cached, and a cache you cannot see is indistinguishable from a
@@ -4323,6 +4543,491 @@ function connectionSettings() {
   </dl>${logStoreTests()}</div>`;
 }
 
+// The relays people actually have, and what each one wants. Host, port and
+// security are stable facts and get filled in. The CREDENTIAL is where
+// every provider differs and where the guidance has to be honest rather
+// than confident: what kind of secret it is, where it comes from, and what
+// bites people. Anything policy-shaped points at the provider's own page,
+// because those change and a stale instruction here is worse than none.
+const MAIL_PRESETS = {
+  cluster: {
+    label: 'A relay you already run (Postfix, smarthost, on-prem Exchange)',
+    host: '', port: '25', security: 'none',
+    help: `<p>The shape most self-hosted estates already have, and the one
+      worth checking for first. In Kubernetes the host is the service name
+      (<span class="mono">postfix.mail.svc.cluster.local</span>, or just
+      <span class="mono">postfix</span> from the same namespace); elsewhere
+      it is the relay's hostname. Port <b>25</b>, security <b>none</b>:
+      inside a network you control it decides what to accept by who is
+      asking rather than by TLS.</p>
+    <p><b>You probably do not have to work these out.</b> Whatever else you
+      run that sends mail - GitLab, Grafana, Alertmanager - already has
+      them. Copy that config across:</p>
+    <p class="mono" style="font-size:12px">helm get values &lt;release&gt; -n &lt;namespace&gt;</p>
+    <p>Other tools name things differently. GitLab's
+      <span class="mono">authentication: plain</span> is the SMTP AUTH
+      mechanism, <b>not</b> the encryption - it maps to leaving Security on
+      <b>none</b> here with a username and password filled in. Its
+      <span class="mono">tls</span> and
+      <span class="mono">starttls_auto</span> are what correspond to this
+      Security field.</p>
+    <p>On-prem Exchange is usually the same: a receive connector that
+      accepts anonymous relay from known addresses on port 25. If yours
+      wants credentials instead, that is port 587 and STARTTLS.</p>`,
+  },
+  m365: {
+    label: 'Microsoft 365 / Exchange Online',
+    host: 'smtp.office365.com', port: '587', security: 'starttls',
+    help: `<p><b>Read this before typing anything.</b> Microsoft is retiring
+      SMTP AUTH client submission - the username-and-password route this
+      form takes. Many tenants already have it disabled and new ones
+      generally do. A test failing on authentication is usually that, and
+      it is not something this portal can fix.</p>
+    <p>What to use instead, in order of how little work it is:</p>
+    <ul>
+      <li><b>A relay you already run.</b> Pick the first option in this
+        list and stop.</li>
+      <li><b>Direct Send</b>:
+        <span class="mono">yourdomain-com.mail.protection.outlook.com</span>,
+        port 25, no credentials, security <b>none</b>. Delivers only to
+        mailboxes in your own tenant, which is exactly what an invite is.
+        Needs this portal's IP allowed by your SPF, and Microsoft now gives
+        tenants a switch to reject it, so check yours.</li>
+      <li><b>High Volume Email</b>, or <b>Azure Communication Services</b>
+        (its own entry below). Both are set up in Azure first.</li>
+    </ul>
+    <p>If SMTP AUTH is still on for you: username is a real licensed
+      mailbox's full address, password is that mailbox's, and the From
+      address must be one it may send as.</p>
+    <p><a href="https://learn.microsoft.com/exchange/mail-flow-best-practices/how-to-set-up-a-multifunction-device-or-application-to-send-email-using-microsoft-365-or-office-365"
+      target="_blank" rel="noopener">Microsoft's page on the three
+      options</a> is the thing to check, because this is moving.</p>`,
+  },
+  acs: {
+    label: 'Azure Communication Services',
+    host: 'smtp.azurecomm.net', port: '587', security: 'starttls',
+    help: `<p>Microsoft's own answer for applications that need to send
+      mail, and where they point people as SMTP AUTH goes away.</p>
+    <p>Set up in Azure first: a Communication Services resource, an Email
+      Communication Service with a verified domain, and an Entra app
+      registration authorised against the resource. The username is built
+      from those three identifiers joined by dots, and the password is that
+      app registration's client secret - so it is not a mailbox credential
+      and there is no mailbox involved.</p>
+    <p>The exact username format is given in the Azure portal when you
+      create the SMTP credential; copy it from there rather than
+      assembling it by hand, because getting one segment wrong fails as an
+      authentication error that says nothing useful.</p>`,
+  },
+  google: {
+    label: 'Google Workspace / Gmail',
+    host: 'smtp.gmail.com', port: '587', security: 'starttls',
+    help: `<p>Username is the full address. The password is an <b>app
+      password</b>, not the account's own - generated on that account's
+      Security page, which needs 2-step verification on first.</p>
+    <p>Better for a shared sender: <span class="mono">smtp-relay.gmail.com</span>,
+      authorising this portal's IP under Apps &rsaquo; Google Workspace
+      &rsaquo; Gmail &rsaquo; Routing &rsaquo; SMTP relay service. No
+      password, and your invites stop depending on one person's account.</p>
+    <p>Running on Google Cloud? GCP blocks outbound port 25, so an
+      in-project relay is not an option - this or a transactional provider
+      is the route.</p>`,
+  },
+  ses: {
+    label: 'Amazon SES',
+    host: 'email-smtp.eu-west-1.amazonaws.com', port: '587', security: 'starttls',
+    help: `<p>Change the region in the host to yours. The credentials are
+      <b>SMTP credentials</b>, generated in the SES console under SMTP
+      settings. They are derived from an IAM user but they are not your
+      access key and secret, and pasting those fails.</p>
+    <p>The From address must be a verified identity in that region, and a
+      new SES account sits in the sandbox until you request production
+      access - meaning it will only deliver to addresses you have verified.
+      That catches everybody once.</p>`,
+  },
+  provider: {
+    label: 'A transactional provider (SendGrid, Mailgun, Postmark, Brevo)',
+    host: '', port: '587', security: 'starttls',
+    help: `<p>All the same shape - port 587, STARTTLS, and an API key in
+      place of a password. What differs is the host and what goes in the
+      username:</p>
+    <table><tr><th>Provider</th><th>Server</th><th>Username</th></tr>
+      <tr><td>SendGrid</td><td><span class="mono">smtp.sendgrid.net</span></td>
+        <td>the literal word <span class="mono">apikey</span></td></tr>
+      <tr><td>Mailgun</td><td><span class="mono">smtp.mailgun.org</span></td>
+        <td><span class="mono">postmaster@your-domain</span></td></tr>
+      <tr><td>Postmark</td><td><span class="mono">smtp.postmarkapp.com</span></td>
+        <td>the server API token, in both fields</td></tr>
+      <tr><td>Brevo</td><td><span class="mono">smtp-relay.brevo.com</span></td>
+        <td>the login shown on its SMTP page</td></tr></table>
+    <p>All of them need the sending domain verified before anything
+      delivers, and most start you in a sandbox or on a shared IP.</p>`,
+  },
+  other: {
+    label: 'Something else',
+    host: '', port: '', security: 'starttls',
+    help: `<p>Port 587 with STARTTLS is the modern default. If a relay
+      offers 465 that is implicit TLS - choose it in the Security field
+      rather than STARTTLS, or the connection hangs rather than failing.</p>
+    <p>Not sure what your organisation uses? Whoever runs your mail can
+      answer it in a line, and it is the same answer every other
+      self-hosted tool you run already needed.</p>`,
+  },
+};
+
+// Where these can be set other than here. Raised by somebody who noticed
+// the Helm path and asked what a Compose deployment is supposed to do: the
+// answer is that this form is always enough, and the rest is for estates
+// that would rather not paste a credential into a browser at all.
+const MAIL_ELSEWHERE = `
+  <p><b>This form always works</b>, on every kind of deployment. Everything
+    below is an alternative for when the relay's password is already a
+    secret somewhere and copying it here is the step you would rather not
+    take. A value saved in this form wins over any of them.</p>
+  <p><b>Docker Compose</b> - on the receiver service, or a
+    <span class="mono">.env</span> file beside it:</p>
+  <pre class="mono">receiver:
+  environment:
+    SMTP_HOST: postfix.internal
+    SMTP_PORT: "25"
+    SMTP_SECURITY: none
+    SMTP_USERNAME: relay-user
+    SMTP_PASSWORD: \${SMTP_PASSWORD}
+    SMTP_FROM: ai-guard@example.com</pre>
+  <p><b>Helm</b> - and if the password is already a Secret in the cluster,
+    point at that one rather than making a second copy:</p>
+  <pre class="mono">managed:
+  smtp:
+    host: postfix.mail.svc.cluster.local
+    port: "25"
+    security: none
+    username: relay-user
+    from: ai-guard@example.com
+    password:
+      existingSecret: smtp-credentials
+      key: password</pre>
+  <p><b>Anything else</b> - the receiver reads
+    <span class="mono">SMTP_HOST</span>,
+    <span class="mono">SMTP_PORT</span>,
+    <span class="mono">SMTP_SECURITY</span>,
+    <span class="mono">SMTP_USERNAME</span>,
+    <span class="mono">SMTP_PASSWORD</span> and
+    <span class="mono">SMTP_FROM</span> from its environment however they
+    get there.</p>
+  <p>Set that way, the fields above read <b>from deployment</b> and the
+    password shows as set with nothing to display.</p>`;
+
+
+// Outbound mail. A card that says where things stand, and a wizard behind
+// it - the same shape single sign-on uses, and for the same reason. This
+// was a card with everything on it until the guidance went in: seven
+// fields, a provider panel that runs to five paragraphs for Microsoft, and
+// two YAML blocks, all on a tab that already carries alerting. That is a
+// wall, and a wall is where people stop reading.
+//
+// The card is what you see when you are not setting it up, which is almost
+// always. The wizard is the one time you are.
+const MAIL_STEPS = [
+  {k: 'who',    t: 'What sends your mail', d: 'Fills in what it can'},
+  {k: 'server', t: 'Where to send it',     d: 'Host, port, encryption'},
+  {k: 'from',   t: 'Who it is from',       d: 'Credentials and the address'},
+  {k: 'words',  t: 'What it says',         d: 'Add your own lines'},
+  {k: 'test',   t: 'Prove it works',       d: 'A real message, then done'},
+];
+
+let MAILW = null;
+
+function mailIdx(k) { return MAIL_STEPS.findIndex(x => x.k === k); }
+
+function mailOpen() {
+  const g = k => (((SETTINGS && SETTINGS.settings || {})[k]) || {}).value || '';
+  MAILW = {
+    step: 0, busy: '', err: '', done: {}, provider: '',
+    host: g('smtp_host'), port: g('smtp_port'),
+    security: g('smtp_security') || 'starttls',
+    username: g('smtp_username'), password: '',
+    subject: g('invite_subject') || g('invite_default_subject'),
+    body: g('invite_body') || g('invite_default_body'),
+    from: g('smtp_from'), portal: g('portal_public_url') || location.origin,
+    passSet: !!(((SETTINGS && SETTINGS.settings || {}).smtp_password) || {}).set,
+    to: '',
+  };
+  // A deployment that has been through this starts from what it has.
+  if (MAILW.host) { MAILW.done.who = 'done'; MAILW.done.server = MAILW.host; }
+  if (MAILW.from) MAILW.done.from = MAILW.from;
+  render();
+}
+
+function mailStash() {
+  const g = id => { const e = document.getElementById(id); return e ? e.value : null; };
+  const set = (k, id) => { const v = g(id); if (v !== null) MAILW[k] = v; };
+  set('host', 'mw-host'); set('port', 'mw-port'); set('security', 'mw-sec');
+  set('username', 'mw-user'); set('from', 'mw-from'); set('portal', 'mw-portal');
+  set('to', 'mw-to'); set('subject', 'mw-subject'); set('body', 'mw-body');
+  const pw = g('mw-pass'); if (pw) MAILW.password = pw;
+}
+
+function mailReach() {
+  let n = 0;
+  for (const s of MAIL_STEPS) { if (MAILW.done[s.k]) n++; else break; }
+  return Math.min(n, MAIL_STEPS.length - 1);
+}
+
+async function mailSave() {
+  mailStash();
+  MAILW.busy = 'save'; MAILW.err = ''; render();
+  const body = {smtp_host: MAILW.host.trim(), smtp_port: MAILW.port.trim(),
+                smtp_security: MAILW.security,
+                smtp_username: MAILW.username.trim(),
+                smtp_from: MAILW.from.trim(),
+                portal_public_url: MAILW.portal.trim(),
+                invite_subject: (MAILW.subject || '').trim(),
+                invite_body: (MAILW.body || '').trim()};
+  if (MAILW.password) body.smtp_password = MAILW.password;
+  const r = await mfetch('/api/settings', {method: 'POST',
+    body: JSON.stringify(body)});
+  MAILW.busy = '';
+  if (r.status === 401) { sessionLost(); return false; }
+  if (!r.ok) { MAILW.err = await _refusal(r); render(); return false; }
+  SETTINGS = await r.json();
+  MAILW.passSet = MAILW.passSet || !!MAILW.password;
+  return true;
+}
+
+// The preview and the link warning, recomputed from the boxes. Kept out of
+// the step render so a keystroke can patch these two nodes instead of
+// rebuilding the step - a full render replaces the textarea and takes the
+// caret with it, which makes the box unusable to actually type in.
+function mailPreviewHtml() {
+  const name = (AUTH && AUTH.username) || 'somebody';
+  const portal = (MAILW.portal || '').trim() || 'the Shadow AI Guard portal';
+  const fill = t => (t || '').split('{username}').join(name)
+                             .split('{portal_url}').join(portal);
+  // The HOST, compared exactly - not a substring of the URL. A substring
+  // test says portal.example.com.elsewhere.net is fine, and a lookalike
+  // domain is the entire thing this warning exists to catch.
+  const hostOf = u => { try { return new URL(u).host.toLowerCase(); }
+                        catch (e) { return ''; } };
+  const host = hostOf(portal);
+  const links = (fill(MAILW.body).match(/https?:\/\/[^\s<>"')]+/g) || [])
+    .filter(u => !host || hostOf(u) !== host);
+  const warn = links.length ? `<div class="note" style="border-color:var(--warn);
+    margin-top:12px"><b>This links somewhere other than your portal.</b>
+    <div class="src-note" style="margin-top:6px;font-style:normal;
+      color:var(--mut)">${links.map(u => `<span class="mono">${esc(u)}</span>`)
+      .join(', ')} - worth a second look. Mail from a security tool telling
+      people to go and sign in is already the shape of an attack, and a link to
+      somewhere other than ${esc(portal)} is what makes a real invite
+      indistinguishable from a fake one. Not blocked; it is your
+      deployment.</div></div>` : '';
+  return warn + `<div class="note" style="margin-top:12px"><b>What arrives</b>
+    <div class="src-note" style="margin:2px 0 6px;font-style:normal">Preview,
+      with the placeholders filled in.</div>
+    <pre class="mono" style="white-space:pre-wrap;margin:0;font-size:12px;
+      color:var(--mut)">Subject: ${esc(fill(MAILW.subject))}
+
+${esc(fill(MAILW.body))}</pre></div>`;
+}
+
+function mailIsDefault() {
+  const g = k => (((SETTINGS && SETTINGS.settings || {})[k]) || {}).value || '';
+  return (MAILW.subject || '').trim() === g('invite_default_subject').trim()
+    && (MAILW.body || '').trim() === g('invite_default_body').trim();
+}
+
+// A keystroke updates only what depends on the text. No render, so the
+// caret stays where the person left it.
+function mailPreviewSync() {
+  mailStash();
+  const box = document.getElementById('mw-preview');
+  if (box) box.innerHTML = mailPreviewHtml();
+  const rst = document.getElementById('mw-reset');
+  if (rst) rst.disabled = mailIsDefault();
+  const lbl = document.getElementById('mw-isdefault');
+  if (lbl) lbl.textContent = mailIsDefault() ? 'this is the default' : '';
+}
+
+function mailBody(k) {
+  const busy = MAILW.busy === k;
+  const err = MAILW.err ? `<div class="note" style="border-color:var(--warn)"
+    >${esc(MAILW.err)}</div>` : '';
+  if (k === 'who') return `
+    <h4>What sends your mail</h4>
+    <p class="lede">Pick the closest and this fills in the host, the port and
+      the encryption, then tells you what kind of credential that one wants
+      and where it comes from. Nothing is saved yet, and every field stays
+      editable afterwards.</p>
+    <p><select id="mw-who" class="mfield" style="min-width:340px">
+      <option value=""${MAILW.provider ? '' : ' selected'}></option>
+      ${Object.keys(MAIL_PRESETS).map(key => `<option value="${key}"${
+        MAILW.provider === key ? ' selected' : ''
+      }>${esc(MAIL_PRESETS[key].label)}</option>`).join('')}
+    </select></p>
+    ${MAILW.provider ? `<div class="note"><b>${
+      esc(MAIL_PRESETS[MAILW.provider].label)}</b>
+      <div class="src-note" style="margin-top:6px;font-style:normal;
+        color:var(--mut)">${MAIL_PRESETS[MAILW.provider].help}</div></div>` : ''}
+    <details class="how"><summary>Or set it outside the portal (Compose, Helm,
+      environment)</summary><div>${MAIL_ELSEWHERE}</div></details>
+    ${err}<div class="ssacts">
+      <button class="mini" data-act="mail-who-next">Continue</button>
+      ${MAILW.provider ? '' : `<span class="lede">or skip this and type the
+        values yourself</span>`}</div>`;
+  if (k === 'server') return `
+    <h4>Where to send it</h4>
+    <p class="lede">The relay that accepts the mail. Nothing is contacted
+      until the last step, so a wrong value here costs you one click, not a
+      hunt.</p>
+    <p><input id="mw-host" class="mfield" style="min-width:340px"
+      placeholder="smtp.example.com" value="${esc(MAILW.host)}"></p>
+    <p><input id="mw-port" class="mfield" style="min-width:140px"
+      placeholder="587" value="${esc(MAILW.port)}">
+      <select id="mw-sec" class="mfield" style="min-width:230px">
+      ${[['starttls', 'STARTTLS (usual, port 587)'],
+         ['tls', 'Implicit TLS (port 465)'],
+         ['none', 'None (trusted network only)']].map(o => `<option value="${o[0]}"${
+        MAILW.security === o[0] ? ' selected' : ''}>${o[1]}</option>`).join('')}
+      </select></p>
+    <p class="lede" style="font-size:12.5px">Port blank means 587, or 465 when
+      the encryption is implicit TLS. A relay offering 465 wants that option
+      rather than STARTTLS, or the connection hangs instead of failing.</p>
+    ${err}<div class="ssacts">
+      <button class="mini" data-act="mail-server-next">Continue</button></div>`;
+  if (k === 'from') return `
+    <h4>Who it is from</h4>
+    <p class="lede">The credential, if the relay wants one, and the address the
+      mail says it is from. Plenty of relays authenticate as one identity and
+      send as another, which is why these are separate.</p>
+    <p><input id="mw-user" class="mfield" style="min-width:340px"
+      placeholder="username (leave empty if the relay does not authenticate)"
+      value="${esc(MAILW.username)}"></p>
+    <p><input id="mw-pass" class="mfield" type="password" style="min-width:340px"
+      autocomplete="new-password"
+      placeholder="${MAILW.passSet ? 'Stored - leave blank to keep it'
+                                   : 'password or API key'}"></p>
+    <p><input id="mw-from" class="mfield" style="min-width:340px"
+      placeholder="ai-guard@example.com" value="${esc(MAILW.from)}"></p>
+    <p><input id="mw-portal" class="mfield" style="min-width:340px"
+      placeholder="https://ai-guard.example.com" value="${esc(MAILW.portal)}"></p>
+    <p class="lede" style="font-size:12.5px">The last one is the address people
+      are told to go to. The receiver has no idea what hostname this portal is
+      reached on, and a link to the wrong one is worse than none.</p>
+    ${err}<div class="ssacts">
+      <button class="mini" data-act="mail-save" ${busy ? 'disabled' : ''}>${busy
+        ? '<span class="ssspin"></span>Saving…' : 'Save and continue'}</button></div>`;
+  if (k === 'words') {
+    const def = mailIsDefault();
+    return `
+    <h4>What it says</h4>
+    <p class="lede">The whole message, yours to change. Two placeholders get
+      filled in when it sends: <span class="mono">{username}</span> and
+      <span class="mono">{portal_url}</span>. Leave both boxes empty to go
+      back to the wording this ships with.</p>
+    <p><input id="mw-subject" class="mfield" style="min-width:340px;width:100%;
+      max-width:560px" placeholder="subject" value="${esc(MAILW.subject)}"></p>
+    <p><textarea id="mw-body" class="mfield" rows="12"
+      style="min-width:340px;width:100%;max-width:560px;
+      font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+      font-size:12.5px;line-height:1.5">${esc(MAILW.body)}</textarea></p>
+    <div class="ssacts" style="margin-top:0">
+      <button class="mini" id="mw-reset" data-act="mail-reset"
+        ${def ? 'disabled' : ''}>Reset to the default</button>
+      <span class="lede" id="mw-isdefault">${def ? 'this is the default' : ''}</span>
+    </div>
+    <div id="mw-preview">${mailPreviewHtml()}</div>
+    ${err}<div class="ssacts">
+      <button class="mini" data-act="mail-words-next" ${busy ? 'disabled' : ''}>${busy
+        ? '<span class="ssspin"></span>Saving…' : 'Save and continue'}</button></div>`;
+  }
+  const missed = (USERS || []).filter(u => u.email && !u.invited_at).length;
+  return `
+    <h4>Prove it works</h4>
+    <p class="lede">Saved. Nothing has been sent yet: configuration that looks
+      right and silently does not send is how an invite vanishes and the person
+      who never got it is blamed for not checking their inbox.</p>
+    <p><input id="mw-to" class="mfield" style="min-width:340px"
+      placeholder="send a test to…" value="${esc(MAILW.to)}"></p>
+    ${MAILW.done.test ? `<div class="note" style="border-color:var(--pri)"
+      >${esc(MAILW.done.test)}</div>` : ''}
+    ${err}<div class="ssacts">
+      <button class="mini" data-act="mail-try" ${busy ? 'disabled' : ''}>${busy
+        ? '<span class="ssspin"></span>Sending…' : 'Send a test'}</button>
+      ${missed ? `<button class="mini" data-act="user-invite-all"
+        ${MAILW.done.test ? '' : 'disabled'}>Send the ${missed} invite${
+        missed === 1 ? '' : 's'} nobody got</button>` : ''}
+      ${missed && !MAILW.done.test ? `<span class="lede">after a test has
+        arrived</span>` : ''}</div>`;
+}
+
+function mailWizard() {
+  const reach = mailReach();
+  const n = MAIL_STEPS.filter(s => MAILW.done[s.k]).length;
+  // The wizard chrome is the sign-on one's. It was never specific to it -
+  // rail, steps, summary, actions - and a second copy would drift.
+  return `<div class="ssow">
+    <div class="ssrail">
+      <h3>Email</h3>
+      <ol>${MAIL_STEPS.map((s, i) => {
+        const d = MAILW.done[s.k], on = i === MAILW.step;
+        const locked = i > reach && !on;
+        return `<li class="ssstep ${d ? 'done' : ''} ${on ? 'on' : ''}
+          ${locked ? 'locked' : ''}"${locked ? '' : ` data-act="mail-step"
+          data-key="${i}"`}>
+          <span class="dot">${d ? '&#10003;' : i + 1}</span>
+          <span style="min-width:0"><span class="t">${esc(s.t)}</span>
+          ${d && d !== 'done' ? `<span class="val">${esc(d)}</span>`
+            : `<span class="pend">${esc(s.d)}</span>`}</span></li>`;
+      }).join('')}</ol>
+      <div class="sssum">
+        <div class="lede" style="font-size:11.5px">${n} of ${MAIL_STEPS.length} done</div>
+        <div class="barwrap"><div class="bar"
+          style="width:${n / MAIL_STEPS.length * 100}%"></div></div>
+        <div class="lede" style="font-size:11.5px">Email stays optional.
+          Accounts are created either way.</div>
+      </div>
+    </div>
+    <div class="ssmain">${mailBody(MAIL_STEPS[MAILW.step].k)}
+      <div class="ssfoot"><button class="mini" data-act="mail-close">Close</button>
+        <span class="sp"></span>
+        ${MAILW.step > 0 ? `<button class="mini" data-act="mail-step"
+          data-key="${MAILW.step - 1}">Back</button>` : ''}
+      </div></div></div>`;
+}
+
+// What the tab shows when nobody is setting it up, which is almost always.
+function mailSettings() {
+  if (MAILW) return mailWizard();
+  const g = k => (((SETTINGS && SETTINGS.settings || {})[k]) || {}).value || '';
+  const ready = g('smtp_ready') === '1';
+  const host = g('smtp_host'), from = g('smtp_from');
+  const src = (((SETTINGS && SETTINGS.settings || {}).smtp_host) || {}).source;
+  const missed = (USERS || []).filter(u => u.email && !u.invited_at).length;
+  return `<div class="wcard" style="margin-bottom:10px"><h3>Email</h3>
+  <p style="margin:0 0 6px"><span class="pill ${ready ? 'p-ok' : 'p-mut'}">${
+    ready ? 'On' : 'Off'}</span>${src === 'env'
+    ? ' <span class="pill p-mut">from deployment</span>' : ''}</p>
+  <p class="lede">${ready
+    ? `Invites go out through <span class="mono">${esc(host)}</span> as
+       <span class="mono">${esc(from)}</span>.`
+    : `Used to tell somebody an account has been made for them. Optional:
+       without it accounts are created exactly as before and the portal says
+       plainly that nobody was emailed, rather than refusing to create
+       them.`}</p>
+  <p><button class="mini" data-act="mail-open">${ready
+    ? 'Review the configuration' : 'Set it up'}</button>
+    ${ready ? `<button class="mini" data-act="mail-quick-test"
+      style="margin-left:6px">Send a test</button>` : ''}
+    ${MAILMSG ? `<span class="lede" style="margin:0 0 0 8px;font-size:12.5px"
+      >${MAILMSG}</span>` : ''}</p>
+  ${missed ? `<div class="note">${missed}
+    ${missed === 1 ? 'person has' : 'people have'} an account here and
+    ${missed === 1 ? 'has' : 'have'} never been told.
+    ${ready ? `<button class="mini" data-act="user-invite-all"
+      style="margin-left:6px">Send the invites nobody got</button>`
+    : 'Set email up and this becomes one button.'}</div>` : ''}
+  </div>`;
+}
+
 function alertingSettings() {
   return `<div class="wcard" style="margin-bottom:10px"><h3>Display and alerting</h3>
   <dl class="kv">
@@ -4740,7 +5445,7 @@ function accountSettings() {
     sign-in: nobody has to sign out, though a page already open shows its
     old buttons until it is reloaded.</p>
     ${USERR ? `<div class="note">${esc(USERR)}</div>` : ''}
-    <table><tr><th>username</th><th>email</th><th>role</th><th>created</th><th>last sign-in</th><th></th></tr>
+    <table><tr><th>username</th><th>email</th><th>role</th><th>invited</th><th>last sign-in</th><th></th></tr>
     ${USERS.map(u => {
       // The same rank rule the receiver enforces, so the page does not
       // offer a control that is going to come back 403. Equal rank is not
@@ -4769,7 +5474,13 @@ function accountSettings() {
                `<option value="${r}"${u.role === r ? ' selected' : ''}>${r}</option>`).join('')}
            </select>`
         : `<span class="pill ${u.role === 'viewer' ? 'p-mut' : 'p-ok'}">${esc(u.role)}</span>`}</td>
-      <td style="color:var(--mut)">${esc((u.created_at || '').slice(0, 10))}</td>
+      <td>${u.invited_at
+        ? `<span style="color:var(--mut)">${esc(u.invited_at.slice(0, 10))}</span>`
+        : !u.email
+          ? '<span style="color:var(--mut)">—</span>'
+          : `<span class="pill p-amb">not told</span>${may
+              ? ` <button class="mini" data-act="user-invite"
+                   data-key="${esc(u.id)}">Send</button>` : ''}`}</td>
       <td style="color:var(--mut)">${esc((u.last_login_at || '').slice(0, 10)) || '—'}</td>
       <td class="nw">${URFORM === u.id
         ? `<input id="ur-new" class="mfield" type="password" style="min-width:190px"
@@ -4787,7 +5498,7 @@ function accountSettings() {
         placeholder="password (12+ characters)"
         name="ai-guard-new-account-secret" autocomplete="new-password"
         data-lpignore="true" data-1p-ignore data-bwignore>
-      <input id="user-email" class="mfield" placeholder="email (optional)"
+      <input id="user-email" class="mfield" placeholder="email (required)"
         autocomplete="off" data-lpignore="true" data-1p-ignore data-bwignore>
       <select id="user-role" class="mfield" style="min-width:110px">
         ${ROLE_ORDER.filter(r =>
@@ -4796,13 +5507,29 @@ function accountSettings() {
       </select>
       <button class="mini" data-act="user-create">Add account</button>
     </div>
-    <p class="src-note">An email address is what a federated sign-in would
-    match on; an account without one can only be reached with its password,
-    which is what makes it usable as a shared break-glass credential.
-    Deleting an account kills its sessions; the last owner can be neither
-    deleted nor demoted. A role change leaves the
-    account's password and sessions alone. Every action here lands in the
-    audit trail.</p>
+    ${(() => {
+      // The retroactive half. A deployment that made accounts before it had
+      // a relay should not carry a permanent gap for everybody it onboarded
+      // early, and this is the one button that closes it.
+      const missed = USERS.filter(u => u.email && !u.invited_at).length;
+      if (!missed || viewer) return '';
+      const ready = ((SETTINGS && SETTINGS.settings
+        && SETTINGS.settings.smtp_ready || {}).value) === '1';
+      return `<div class="note" style="margin-top:12px">${missed}
+        ${missed === 1 ? 'person has' : 'people have'} an account here and
+        ${missed === 1 ? 'has' : 'have'} never been told.
+        ${ready ? `<button class="mini" data-act="user-invite-all"
+          style="margin-left:6px">Send the invites nobody got</button>`
+        : `Set up email under <b>Settings &rsaquo; Receiver &amp; log store</b>
+           and this becomes one button.`}</div>`;
+    })()}
+    <p class="src-note">An email address is what a federated sign-in matches
+    on and where an invite goes, so it is required. The break-glass account
+    is the one this deployment was set up with and is marked as such - it is
+    no longer inferred from a missing address, which is what that used to
+    mean here. Deleting an account kills its sessions; the last owner can be
+    neither deleted nor demoted. A role change leaves the account's password
+    and sessions alone. Every action here lands in the audit trail.</p>
   </div>`;
   return `${viewer ? `<div class="note">This account is read-only: every
     page works, saving does not. An admin manages accounts from this tab.</div>` : ''}
@@ -5029,7 +5756,8 @@ async function settings() {
       if (ar.ok) AUDITLOG = (await ar.json()).events || [];
     } catch (e) { /* the card simply stays absent */ }
   }
-  if (managed && SETTAB === 'account' && USERS === null
+  if (managed) await checkSettingsChanged();
+  if (managed && (SETTAB === 'account' || SETTAB === 'alerting') && USERS === null
       && AUTH && AUTH.role !== 'viewer') {
     try {
       const ur = await mfetch('/api/users');
@@ -5045,12 +5773,13 @@ async function settings() {
   // dispatch on here at all, and nothing to get wrong twice.
   let body;
   if (SETTAB === 'connection') body = connectionSettings();
-  else if (SETTAB === 'alerting') body = alertingSettings();
+  else if (SETTAB === 'alerting') body = mailSettings() + alertingSettings();
   else if (SETTAB === 'account') body = accountSettings();
   else if (SETTAB === 'start') body = gettingStarted();
   else if (SETTAB === 'diagnostics') body = diagnosticsCards();
   else { SETTAB = 'fleet'; body = fleetSettings(); }
   return `<h2>Settings</h2>
+  ${settingsChangedNote()}
   <p class="lede">Central settings are editable and reach the fleet at
   runtime - a value saved here overrides the matching environment variable.
   Diagnostics is the read-only view: what the portal verified about itself.</p>
@@ -6920,13 +7649,158 @@ async function managedAction(act, el) {
 
   if (act === 'user-create') {
     const role = (document.getElementById('user-role') || {}).value || 'viewer';
+    const email = _val('user-email').trim();
+    // Required, and checked here so the refusal names the field rather
+    // than arriving as a 422 about a key. An address is what a federated
+    // sign-in matches on and where an invite goes: an account without one
+    // is an account somebody has to be told about by other means, every
+    // time, forever.
+    if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      USERR = 'An email address is needed: it is what a sign-in matches on, '
+        + 'and where the invite goes.';
+      render(); return;
+    }
     const r = await mfetch('/api/users', {method: 'POST', body: JSON.stringify(
-      {username: _val('user-name'), password: _val('user-pass'), role,
-       email: _val('user-email')})});
+      {username: _val('user-name'), password: _val('user-pass'), role, email})});
     if (r.status === 401) { sessionLost(); return; }
-    USERR = r.ok ? '' : 'Not created: ' + await _refusal(r);
-    if (r.ok) USERS = null;
+    if (!r.ok) { USERR = 'Not created: ' + await _refusal(r); render(); return; }
+    // Created either way. What varies is whether anybody was told, and
+    // that is said out loud rather than implied.
+    const out = await r.json();
+    USERR = out.invited
+      ? 'Account created, and ' + esc(email) + ' has been emailed.'
+      : 'Account created. Nobody was emailed: ' + (out.invite_error
+          || 'no mail server is configured') + '. Tell them yourself, or set '
+        + 'up email and send the invites that were missed.';
+    USERS = null; render(); return;
+  }
+  if (act === 'setup-reload') { SETTINGS = null; SETCHANGE = null; await load(true); return; }
+  if (act === 'mail-open') { mailOpen(); return; }
+  if (act === 'mail-close') { MAILW = null; MAILMSG = ''; render(); return; }
+  if (act === 'mail-step') {
+    mailStash(); MAILW.step = +el.getAttribute('data-key'); MAILW.err = '';
     render(); return;
+  }
+  if (act === 'mail-who') {
+    // Fills in what it can and never over anything already typed. Render
+    // first: the fields below are rebuilt by it, so anything written
+    // beforehand is thrown away.
+    MAILW.provider = el.value || '';
+    const p = MAIL_PRESETS[MAILW.provider];
+    if (p) {
+      if (!MAILW.host) MAILW.host = p.host;
+      if (!MAILW.port) MAILW.port = p.port;
+      MAILW.security = MAILW.security || p.security;
+      if (p.security && !((SETTINGS.settings.smtp_security || {}).value)) {
+        MAILW.security = p.security;
+      }
+    }
+    render(); return;
+  }
+  if (act === 'mail-who-next') {
+    MAILW.done.who = 'done'; MAILW.step = mailIdx('server'); MAILW.err = '';
+    render(); return;
+  }
+  if (act === 'mail-server-next') {
+    mailStash();
+    if (!MAILW.host.trim()) {
+      MAILW.err = 'A server is needed: it is the one value nothing else can '
+        + 'stand in for.';
+      render(); return;
+    }
+    MAILW.done.server = MAILW.host.trim();
+    MAILW.step = mailIdx('from'); MAILW.err = ''; render(); return;
+  }
+  if (act === 'mail-save') {
+    mailStash();
+    if (!MAILW.from.trim()) {
+      MAILW.err = 'A from address is needed: most relays refuse mail without '
+        + 'one, and the refusal is rarely legible.';
+      render(); return;
+    }
+    if (await mailSave()) {
+      MAILW.done.from = MAILW.from.trim();
+      MAILW.step = mailIdx('words'); MAILW.err = '';
+      if (!MAILW.to) MAILW.to = MAILW.from.trim();
+      render();
+    }
+    return;
+  }
+  if (act === 'mail-reset') {
+    // Back to the wording this ships with, in the boxes rather than saved -
+    // so it can be looked at before it is committed to.
+    const g = k => (((SETTINGS && SETTINGS.settings || {})[k]) || {}).value || '';
+    mailStash();
+    MAILW.subject = g('invite_default_subject');
+    MAILW.body = g('invite_default_body');
+    render(); return;
+  }
+  if (act === 'mail-words-next') {
+    mailStash();
+    if (await mailSave()) {
+      MAILW.done.words = (MAILW.note || '').trim() ? 'your lines added' : 'default';
+      MAILW.step = mailIdx('test'); MAILW.err = ''; render();
+    }
+    return;
+  }
+  if (act === 'mail-try') {
+    mailStash();
+    if (!MAILW.to.trim()) { MAILW.err = 'An address to send it to, first.';
+      render(); return; }
+    MAILW.busy = 'test'; MAILW.err = ''; render();
+    const r = await mfetch('/api/test/mail',
+      {method: 'POST', body: JSON.stringify({to: MAILW.to.trim()})});
+    MAILW.busy = '';
+    if (r.status === 401) { sessionLost(); return; }
+    if (!r.ok) { MAILW.err = await _refusal(r); render(); return; }
+    const out = await r.json();
+    if (out.ok) { MAILW.done.test = 'Sent. Check that inbox.'; }
+    // The relay's own words. "Could not send" is undebuggable, and relays
+    // say useful things here.
+    else { MAILW.err = 'Not sent: ' + out.detail; }
+    render(); return;
+  }
+  if (act === 'mail-quick-test') {
+    const to = (AUTH && (USERS || []).filter(u => u.username === AUTH.username)
+      .map(u => u.email)[0]) || '';
+    if (!to) { MAILMSG = 'Your account has no address to send it to.';
+      render(); return; }
+    MAILMSG = 'Sending…'; render();
+    const r = await mfetch('/api/test/mail',
+      {method: 'POST', body: JSON.stringify({to})});
+    if (r.status === 401) { sessionLost(); return; }
+    if (!r.ok) { MAILMSG = 'Refused: ' + await _refusal(r); render(); return; }
+    const out = await r.json();
+    MAILMSG = out.ok ? 'Sent to ' + esc(to) + '.' : 'Not sent: ' + out.detail;
+    render(); return;
+  }
+  if (act === 'mail-test') {
+    const to = _val('mail-to').trim();
+    if (!to) { MAILMSG = 'An address to send it to, first.'; render(); return; }
+    MAILMSG = 'Sending…'; render();
+    const r = await mfetch('/api/test/mail',
+      {method: 'POST', body: JSON.stringify({to})});
+    if (r.status === 401) { sessionLost(); return; }
+    if (!r.ok) { MAILMSG = 'Refused: ' + await _refusal(r); render(); return; }
+    const out = await r.json();
+    // The relay's own words on failure. "Could not send" is undebuggable,
+    // and relays say useful things here.
+    MAILMSG = out.ok ? 'Sent. Check that inbox.' : 'Not sent: ' + out.detail;
+    render(); return;
+  }
+  if (act === 'user-invite' || act === 'user-invite-all') {
+    const body = act === 'user-invite'
+      ? {user_id: el.getAttribute('data-key')} : {};
+    const r = await mfetch('/api/users/invite',
+      {method: 'POST', body: JSON.stringify(body)});
+    if (r.status === 401) { sessionLost(); return; }
+    if (!r.ok) { USERR = 'Not sent: ' + await _refusal(r); render(); return; }
+    const out = await r.json();
+    USERR = out.failed && out.failed.length
+      ? 'Sent ' + out.sent + ' of ' + out.considered + '. '
+        + out.failed.map(f => esc(f.username) + ': ' + esc(f.detail)).join('; ')
+      : (out.sent === 1 ? 'Invite sent.' : 'Sent ' + out.sent + ' invites.');
+    USERS = null; render(); return;
   }
   if (act === 'user-delete') {
     const r = await mfetch('/api/users/' + el.getAttribute('data-key') + '/delete',
@@ -7815,6 +8689,7 @@ async function renderView() {
 // per branch is a call somebody adding the twelfth view forgets.
 async function render() {
   await renderView();
+  drawSetup();
   maybeTour();
 }
 // A detail opens in the inspector beside the list rather than replacing it.
@@ -7883,10 +8758,20 @@ app.addEventListener('click', e => {
 });
 // Changing the wizard's tool re-suggests what the licence covers: the
 // checkboxes belong to the selected tool's licence group, not the page.
+// Typing in the invite refreshes the preview beside it. input, not change:
+// change fires on blur, and a preview that waits until you click away is one
+// nobody sees while they are writing it.
+app.addEventListener('input', e => {
+  if (!MAILW || !e.target) return;
+  if (e.target.id === 'mw-body' || e.target.id === 'mw-subject') mailPreviewSync();
+});
 app.addEventListener('change', e => {
   const roleFor = e.target && e.target.getAttribute
     && e.target.getAttribute('data-role-for');
   if (roleFor) { userRole(roleFor, e.target.value); return; }
+  if (e.target && e.target.id === 'mw-who') {
+    managedAction('mail-who', e.target); return;
+  }
   if (e.target && e.target.id === 'bw-tool' && BWIZ) {
     BWIZ.tool_id = e.target.value;
     BWIZ.covers = null;
@@ -8091,6 +8976,31 @@ fold.onclick = () => {
   try { localStorage.setItem('aiguard-side', on ? '1' : ''); } catch (e) {}
 };
 try { if (localStorage.getItem('aiguard-side')) fold.onclick(); } catch (e) {}
+// Opening it is what stops the pulse, for good and for everybody on this
+// account: the point was to be noticed once, not to keep asking.
+document.getElementById('setupbell').onclick = async () => {
+  SETUPOPEN = !SETUPOPEN;
+  if (SETUPOPEN && !pref('setup.seen')) await prefSet('setup.seen', '1');
+  drawSetup();
+};
+// The panel hangs off the topbar, which is outside the element every other
+// data-act is delegated from - so its buttons did nothing at all until this
+// existed. Its own listener, rather than moving the panel into the view:
+// it has to survive a re-render of the view it points at.
+document.getElementById('setuppanel').addEventListener('click', e => {
+  const el = e.target.closest('[data-act="setup-go"]');
+  if (!el) return;
+  SETUPOPEN = false;
+  view = 'setup'; SETTAB = el.getAttribute('data-key'); detail = null;
+  history.replaceState(null, '', '#settings/' + SETTAB);
+  drawNav(); render();
+});
+document.addEventListener('click', e => {
+  if (!SETUPOPEN) return;
+  if (e.target.closest('#setupwrap')) return;
+  SETUPOPEN = false; drawSetup();
+});
+
 document.getElementById('signout').onclick = async () => {
   await mfetch('/api/logout', {method: 'POST'});
   // Re-ask rather than compose one. A hand-written AUTH is missing every
@@ -8349,8 +9259,18 @@ async function tourProgress() {
   // The same store every other preference uses. The per-key localStorage
   // entries an earlier build wrote are still honoured, so nobody in
   // classic mode is shown a tour they have already sat through.
-  const legacy = k => { try {
-    return localStorage.getItem('aiguard-tour.seen.' + k); } catch (e) { return null; } };
+  //
+  // NOT when the receiver answered, though. That fallback silently
+  // outranked a brand-new deployment: wipe the state volume, set the
+  // portal up again on the same address, and the browser still said the
+  // tour had been seen - so the walkthrough never ran for the person it
+  // exists for. The receiver saying "nothing recorded" IS the answer in
+  // managed mode; only a portal with nowhere to ask consults the browser.
+  const legacy = k => {
+    if (PREFS_SERVER) return null;
+    try { return localStorage.getItem('aiguard-tour.seen.' + k); }
+    catch (e) { return null; }
+  };
   return {admin: pref('tour.seen.admin', legacy('admin')),
           viewer: pref('tour.seen.viewer', legacy('viewer'))};
 }

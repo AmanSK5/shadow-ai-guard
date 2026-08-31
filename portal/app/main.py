@@ -1678,6 +1678,14 @@ class SettingsWrite(BaseModel):
     sso_redirect_uri: str | None = Field(default=None, max_length=500)
     sso_enabled: str | None = Field(default=None, max_length=1)
     sso_enforce: str | None = Field(default=None, max_length=1)
+    smtp_host: str | None = Field(default=None, max_length=255)
+    smtp_port: str | None = Field(default=None, max_length=5)
+    smtp_username: str | None = Field(default=None, max_length=255)
+    smtp_password: str | None = Field(default=None, max_length=512)
+    smtp_from: str | None = Field(default=None, max_length=320)
+    smtp_security: str | None = Field(default=None, max_length=16)
+    invite_note: str | None = Field(default=None, max_length=1000)
+    portal_public_url: str | None = Field(default=None, max_length=500)
     paste_guard_mode: str | None = Field(default=None, max_length=8)
     firefox_extension_id: str | None = Field(default=None, max_length=128)
     classification_markings: list[str] | None = Field(default=None,
@@ -1839,6 +1847,31 @@ def api_users_role(uid: str, req: UserRoleWrite, _=Depends(require_auth),
         raise HTTPException(422, "malformed user id")
     return _receiver("POST", "/admin/users/%s/role" % uid, token,
                      req.model_dump())
+
+
+class InviteWrite(BaseModel):
+    model_config = {"extra": "forbid"}
+    user_id: str = Field(default="", max_length=64)
+
+
+@app.post("/api/users/invite")
+def api_users_invite(req: InviteWrite, _=Depends(require_auth),
+                     token: str = Depends(_admin_forward)):
+    """Tell one account, or everybody who was never told."""
+    if req.user_id and not _UID_RE.match(req.user_id):
+        raise HTTPException(422, "malformed user id")
+    return _receiver("POST", "/admin/users/invite", token, req.model_dump())
+
+
+class MailTestWrite(BaseModel):
+    model_config = {"extra": "forbid"}
+    to: str = Field(min_length=3, max_length=320)
+
+
+@app.post("/api/test/mail")
+def api_test_mail(req: MailTestWrite, _=Depends(require_auth),
+                  token: str = Depends(_admin_forward)):
+    return _receiver("POST", "/admin/test/mail", token, req.model_dump())
 
 
 class SSOProbe(BaseModel):

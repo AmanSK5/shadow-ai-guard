@@ -94,6 +94,29 @@ spec:
             {{- end }}
             - name: STATE_DB_PATH
               value: /var/lib/ai-guard/state.db
+            {{- with .Values.managed.smtp }}
+            {{- range $k, $v := dict "SMTP_HOST" .host "SMTP_PORT" .port "SMTP_SECURITY" .security "SMTP_USERNAME" .username "SMTP_FROM" .from }}
+            {{- if $v }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+            {{- end }}
+            {{- if .password.existingSecret }}
+            # The relay credential stays a Secret. A value saved in the
+            # portal still wins over this, the same as every other setting.
+            - name: SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .password.existingSecret }}
+                  key: {{ .password.key | default "password" }}
+            {{- else if .password.value }}
+            - name: SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ai-guard.fullname" $ }}-smtp
+                  key: password
+            {{- end }}
+            {{- end }}
             {{- if or .Values.managed.adminToken.value .Values.managed.adminToken.existingSecret }}
             # Optional since 0.8.12: the admin API credential for automation
             # and break-glass. Humans sign in through the portal instead

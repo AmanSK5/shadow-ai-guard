@@ -11,6 +11,7 @@ authorization", because addresses get reassigned. A joiner inheriting a
 leaver's address would otherwise inherit their account and their role.
 """
 
+import json
 import os
 import time
 
@@ -274,3 +275,184 @@ def test_the_authority_is_microsoft_unless_something_says_otherwise():
     assert main._DISCOVERY.startswith(main._MS_AUTHORITY), (
         "SSO_AUTHORITY_URL must not be set in the test environment")
     assert "%s/v2.0/.well-known/openid-configuration" in main._DISCOVERY
+
+
+# ------------------------------------------------------------------ mail --
+# Telling somebody an account has been made for them. What matters here is
+# what the invite does NOT do: block an account being created, and carry
+# anything worth intercepting.
+
+
+def _owner(st):
+    return "Bearer " + st.login("root", PASSWORD)["token"]
+
+
+def test_an_account_is_created_even_when_no_relay_exists(managed, monkeypatch):
+    """The half a blocked Add account gets wrong. The account is real, and
+    the response says plainly that nobody was emailed."""
+    out = main.post_user(
+        main.UserCreate(username="jo", password=PASSWORD, role="admin",
+                        email="jo@example.com"),
+        authorization="Bearer admin-test-token")
+    assert out["username"] == "jo"
+    assert out["invited"] is False
+    assert "no mail server" in out["invite_error"]
+    assert any(u["username"] == "jo" for u in managed.list_users())
+
+
+def test_a_configured_relay_invites_on_creation(managed, monkeypatch):
+    sent = []
+    monkeypatch.setattr(main, "_smtp_send",
+                        lambda to, subject, body: sent.append((to, subject, body)) or "")
+    managed.set_setting("smtp_host", "smtp.example.com", "t")
+    managed.set_setting("smtp_from", "noreply@example.com", "t")
+    out = main.post_user(
+        main.UserCreate(username="jo", password=PASSWORD, role="admin",
+                        email="jo@example.com"),
+        authorization="Bearer admin-test-token")
+    assert out["invited"] is True and out["invite_error"] == ""
+    assert sent[0][0] == "jo@example.com"
+    rec = next(u for u in managed.list_users() if u["username"] == "jo")
+    assert rec["invited_at"]
+
+
+def test_a_failing_relay_does_not_lose_the_account(managed, monkeypatch):
+    monkeypatch.setattr(main, "_smtp_send",
+                        lambda *a: "SMTPAuthenticationError: bad credentials")
+    managed.set_setting("smtp_host", "smtp.example.com", "t")
+    managed.set_setting("smtp_from", "noreply@example.com", "t")
+    out = main.post_user(
+        main.UserCreate(username="jo", password=PASSWORD, role="admin",
+                        email="jo@example.com"),
+        authorization="Bearer admin-test-token")
+    assert out["invited"] is False
+    # The relay's own words, because "could not send" is undebuggable.
+    assert "bad credentials" in out["invite_error"]
+    rec = next(u for u in managed.list_users() if u["username"] == "jo")
+    assert rec["invited_at"] is None
+
+
+def test_the_invite_can_be_rewritten_whole(managed):
+    """It is their mail on their deployment. Both placeholders are filled,
+    and a stray brace does not lose the message."""
+    managed.set_setting("portal_public_url", "https://portal.example.com", "t")
+    managed.set_setting("invite_subject", "Welcome to {portal_url}", "t")
+    managed.set_setting(
+        "invite_body", "Hi {username},\n\nGo to {portal_url}.\n{oops}\n", "t")
+    subject, body = main._invite_text("jo")
+    lines = body.splitlines()
+    assert subject == "Welcome to https://portal.example.com"
+    # Whole lines, compared exactly. "the URL appears somewhere in here" is
+    # a weaker claim than the one worth making, and checking a URL by
+    # substring is the habit that lets portal.example.com.elsewhere.net
+    # through everywhere else it is done.
+    assert "Hi jo," in lines
+    assert "Go to https://portal.example.com." in lines
+    # An unknown placeholder arrives as itself rather than raising.
+    assert "{oops}" in lines
+
+
+def test_an_empty_template_falls_back_to_the_built_in_one(managed):
+    managed.set_setting("portal_public_url", "https://portal.example.com", "t")
+    managed.set_setting("invite_body", "   ", "t")
+    subject, body = main._invite_text("jo")
+    assert subject == main.INVITE_SUBJECT
+    assert "An account has been created for you." in body
+    assert "{username}" not in body and "{portal_url}" not in body
+
+
+def test_the_default_invite_carries_nothing_worth_intercepting(managed):
+    managed.set_setting("smtp_from", "noreply@example.com", "t")
+    managed.set_setting("smtp_host", "smtp.example.com", "t")
+    managed.set_setting("portal_public_url", "https://portal.example.com", "t")
+    subject, body = main._invite_text("jo")
+    lines = body.splitlines()
+    # The whole line, so the address is the entire value of the field
+    # rather than something appearing inside a longer one.
+    assert "Username: jo" in lines
+    assert "Where: https://portal.example.com" in lines
+    # No token, no password, no link that grants anything. An estate can
+    # replace all of this - the guarantee is about what ships, not about
+    # what somebody chooses to write instead.
+    for word in ("token", "password reset", "tok_", "?t=", "invite/"):
+        assert word not in body.lower()
+
+
+def test_the_missed_can_be_invited_afterwards(managed, monkeypatch):
+    """A deployment that made accounts before it had a relay should not be
+    left with a permanent gap for everybody it onboarded early."""
+    main.post_user(main.UserCreate(username="jo", password=PASSWORD,
+                                   role="admin", email="jo@example.com"),
+                   authorization="Bearer admin-test-token")
+    main.post_user(main.UserCreate(username="sam", password=PASSWORD,
+                                   role="viewer", email="sam@example.com"),
+                   authorization="Bearer admin-test-token")
+    assert len(managed.uninvited()) == 2
+
+    sent = []
+    monkeypatch.setattr(main, "_smtp_send",
+                        lambda to, s_, b_: sent.append(to) or "")
+    managed.set_setting("smtp_host", "smtp.example.com", "t")
+    managed.set_setting("smtp_from", "noreply@example.com", "t")
+    out = main.send_invites(main.InviteRequest(),
+                            authorization="Bearer admin-test-token")
+    assert out["sent"] == 2 and out["failed"] == []
+    assert sorted(sent) == ["jo@example.com", "sam@example.com"]
+    assert managed.uninvited() == []
+
+
+def test_smtp_security_and_port_are_checked(managed):
+    owner = _owner(managed)
+    with pytest.raises(main.HTTPException) as e:
+        main.put_settings(main.SettingsUpdate(smtp_security="ssl-ish"),
+                          authorization=owner)
+    assert e.value.status_code == 422
+    with pytest.raises(main.HTTPException) as e:
+        main.put_settings(main.SettingsUpdate(smtp_port="99999"),
+                          authorization=owner)
+    assert e.value.status_code == 422
+    main.put_settings(main.SettingsUpdate(smtp_security="tls", smtp_port="465"),
+                      authorization=owner)
+    assert managed.get_setting("smtp_port") == "465"
+
+
+def test_the_smtp_password_is_never_echoed(managed):
+    managed.set_setting("smtp_password", "hunter2hunter2", "t")
+    out = main.get_settings(authorization="Bearer admin-test-token")
+    assert out["settings"]["smtp_password"] == {"set": True, "source": "db"}
+    assert "hunter2hunter2" not in json.dumps(out)
+
+
+def test_a_relay_refusal_comes_back_as_the_relay_said_it(managed, monkeypatch):
+    """The relay's own words are the useful half of a failure. What must
+    not come back is whatever else an exception happened to carry."""
+    import smtplib
+
+    class Boom:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def starttls(self): pass
+        def login(self, *a): pass
+        def send_message(self, *a):
+            raise smtplib.SMTPSenderRefused(
+                550, b"5.7.1 relay access denied", "noreply@example.com")
+
+    managed.set_setting("smtp_host", "smtp.example.com", "t")
+    managed.set_setting("smtp_from", "noreply@example.com", "t")
+    monkeypatch.setattr(main.smtplib, "SMTP", lambda *a, **k: Boom())
+    why = main._smtp_send("jo@example.com", "s", "b")
+    assert "550" in why and "relay access denied" in why
+
+
+def test_anything_else_is_named_rather_than_quoted(managed, monkeypatch):
+    def blow_up(*a, **k):
+        raise ConnectionRefusedError("connection refused to 10.1.2.3:25")
+
+    managed.set_setting("smtp_host", "smtp.example.com", "t")
+    managed.set_setting("smtp_from", "noreply@example.com", "t")
+    monkeypatch.setattr(main.smtplib, "SMTP", blow_up)
+    why = main._smtp_send("jo@example.com", "s", "b")
+    # The wall it hit, not the message: an exception string is not a thing
+    # to relay into an API response.
+    assert why == "ConnectionRefusedError"
+    assert "10.1.2.3" not in why

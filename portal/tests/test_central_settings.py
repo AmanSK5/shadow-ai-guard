@@ -349,3 +349,40 @@ def test_the_primary_button_submits_the_form_and_carries_no_act():
     assert "data-act" not in dlg.split('id="pw-submit"')[1].split(">")[0]
     assert 'data-act="close-password"' in dlg
     assert "document.getElementById('pwform').addEventListener('submit'" in html
+
+
+# ----------------------------------------------------------- mail proxies --
+
+
+def test_the_mail_settings_are_all_accepted(login_mode):
+    """Same failure as the sso_* keys: extra=forbid means a key the receiver
+    takes but this model omits is a 422 the page renders as "check the
+    values", pointing at a field that was never the problem."""
+    for k in ("smtp_host", "smtp_port", "smtp_username", "smtp_password",
+              "smtp_from", "smtp_security", "portal_public_url"):
+        assert k in main.SettingsWrite.model_fields
+
+
+def test_an_invite_for_one_account_forwards_its_id(login_mode):
+    main.api_users_invite(main.InviteWrite(user_id="a" * 16), _=None, token="t")
+    assert login_mode[0]["path"] == "/admin/users/invite"
+    assert login_mode[0]["body"] == {"user_id": "a" * 16}
+
+
+def test_an_invite_with_no_id_means_everybody_missed(login_mode):
+    main.api_users_invite(main.InviteWrite(), _=None, token="t")
+    assert login_mode[0]["body"] == {"user_id": ""}
+
+
+def test_a_malformed_user_id_is_refused_at_the_edge(login_mode):
+    with pytest.raises(HTTPException) as e:
+        main.api_users_invite(main.InviteWrite(user_id="../../etc"),
+                              _=None, token="t")
+    assert e.value.status_code == 422
+
+
+def test_the_mail_test_forwards_the_address(login_mode):
+    main.api_test_mail(main.MailTestWrite(to="jo@example.com"),
+                       _=None, token="t")
+    assert login_mode[0]["path"] == "/admin/test/mail"
+    assert login_mode[0]["body"] == {"to": "jo@example.com"}
