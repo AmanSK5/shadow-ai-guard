@@ -340,10 +340,16 @@ def test_the_invite_can_be_rewritten_whole(managed):
     managed.set_setting(
         "invite_body", "Hi {username},\n\nGo to {portal_url}.\n{oops}\n", "t")
     subject, body = main._invite_text("jo")
+    lines = body.splitlines()
     assert subject == "Welcome to https://portal.example.com"
-    assert "Hi jo," in body and "Go to https://portal.example.com." in body
+    # Whole lines, compared exactly. "the URL appears somewhere in here" is
+    # a weaker claim than the one worth making, and checking a URL by
+    # substring is the habit that lets portal.example.com.elsewhere.net
+    # through everywhere else it is done.
+    assert "Hi jo," in lines
+    assert "Go to https://portal.example.com." in lines
     # An unknown placeholder arrives as itself rather than raising.
-    assert "{oops}" in body
+    assert "{oops}" in lines
 
 
 def test_an_empty_template_falls_back_to_the_built_in_one(managed):
@@ -360,10 +366,11 @@ def test_the_default_invite_carries_nothing_worth_intercepting(managed):
     managed.set_setting("smtp_host", "smtp.example.com", "t")
     managed.set_setting("portal_public_url", "https://portal.example.com", "t")
     subject, body = main._invite_text("jo")
-    # The whole URL, not the host as a substring: a bare host check passes
-    # for portal.example.com.elsewhere.net too, which is the shape of the
-    # thing the invite is trying not to look like.
-    assert "jo" in body and "https://portal.example.com" in body
+    lines = body.splitlines()
+    # The whole line, so the address is the entire value of the field
+    # rather than something appearing inside a longer one.
+    assert "Username: jo" in lines
+    assert "Where: https://portal.example.com" in lines
     # No token, no password, no link that grants anything. An estate can
     # replace all of this - the guarantee is about what ships, not about
     # what somebody chooses to write instead.
