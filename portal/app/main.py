@@ -1678,6 +1678,7 @@ class SettingsWrite(BaseModel):
     sso_redirect_uri: str | None = Field(default=None, max_length=500)
     sso_enabled: str | None = Field(default=None, max_length=1)
     sso_enforce: str | None = Field(default=None, max_length=1)
+    sso_max_age_hours: str | None = Field(default=None, max_length=4)
     smtp_host: str | None = Field(default=None, max_length=255)
     smtp_port: str | None = Field(default=None, max_length=5)
     smtp_username: str | None = Field(default=None, max_length=255)

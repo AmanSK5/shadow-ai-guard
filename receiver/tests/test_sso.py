@@ -11,6 +11,7 @@ authorization", because addresses get reassigned. A joiner inheriting a
 leaver's address would otherwise inherit their account and their role.
 """
 
+import asyncio
 import json
 import os
 import time
@@ -456,3 +457,134 @@ def test_anything_else_is_named_rather_than_quoted(managed, monkeypatch):
     # to relay into an API response.
     assert why == "ConnectionRefusedError"
     assert "10.1.2.3" not in why
+
+
+# ------------------------------------------- how recently they signed in --
+# The weakness this closes: somebody already signed in to the provider in
+# that browser was returned straight here with no interaction. Clicking a
+# link was enough to be inside a tool that says who uses which AI.
+
+
+def _request_with_query(qs):
+    """A bare Request, which is all sso_start reads."""
+    from starlette.requests import Request
+    return Request({"type": "http", "method": "GET", "path": "/",
+                    "scheme": "https", "headers": [(b"host", b"r")],
+                    "query_string": qs.encode()})
+
+
+def _callback_with(st, auth_time, subject="subject-root"):
+    """Drive the callback with a token carrying the auth_time we choose.
+
+    The exchange itself is stubbed: what is under test is what the receiver
+    checks about the claims, not httpx.
+    """
+    from fastapi.testclient import TestClient
+
+    now = int(time.time())
+    claims = {"iss": "https://issuer.example.com", "aud": "c", "nonce": "n",
+              "exp": now + 600, "tid": TENANT, "oid": subject,
+              "email": "root@example.com"}
+    if auth_time is not None:
+        claims["auth_time"] = auth_time
+    token = "%s.%s.x" % (main._b64u(b'{"alg":"none"}'),
+                         main._b64u(json.dumps(claims).encode()))
+
+    class Resp:
+        status_code = 200
+
+        def json(self):
+            return {"id_token": token}
+
+    class FakeClient:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        async def post(self, *a, **k): return Resp()
+
+    st.set_setting("sso_client_id", "c", "t")
+    st.set_setting("sso_tenant_id", TENANT, "t")
+    st.set_setting("sso_client_secret", "s", "t")
+    st.set_setting("sso_redirect_uri", "https://portal.example.com/sso/callback", "t")
+    _bind_owner(st)
+    orig = main.httpx.AsyncClient
+    main.httpx.AsyncClient = lambda *a, **k: FakeClient()
+    try:
+        c = TestClient(main.app)
+        return c.post("/admin/sso/callback",
+                      json={"code": "c", "state": "state-x"}).json()
+    finally:
+        main.httpx.AsyncClient = orig
+
+
+def _flight(st, **over):
+    """A sign-in in flight, as /admin/sso/start would have recorded it."""
+    f = {"nonce": "n", "verifier": "v", "at": time.time(),
+         "issuer": "https://issuer.example.com", "token_endpoint": "https://t",
+         "max_age": 12 * 3600, "test": False}
+    f.update(over)
+    main._SSO_FLIGHT["state-x"] = f
+    return f
+
+
+def test_the_authorize_request_is_never_silent(managed, monkeypatch):
+    """prompt=select_account is the floor: signing in has to be something a
+    person did, not something that happened to them."""
+    async def fake_discover(tenant):
+        return {"issuer": "https://issuer.example.com",
+                "authorization_endpoint": "https://login.example.com/authorize",
+                "token_endpoint": "https://login.example.com/token"}
+
+    monkeypatch.setattr(main, "_sso_discover", fake_discover)
+    for k, v in [("sso_tenant_id", TENANT), ("sso_client_id", "c"),
+                 ("sso_client_secret", "s"),
+                 ("sso_redirect_uri", "https://portal.example.com/sso/callback")]:
+        managed.set_setting(k, v, "t")
+
+    req = _request_with_query("")
+    out = asyncio.run(main.sso_start(req))
+    url = out["authorize_url"]
+    assert "prompt=select_account" in url
+    assert "max_age=43200" in url        # the twelve hour default
+
+
+def test_a_stale_provider_session_is_refused(managed):
+    """A token minted a second ago off a week-old sign-in. exp says the
+    token is fresh; auth_time says the person is not."""
+    _flight(managed, max_age=12 * 3600)
+    week = int(time.time()) - 7 * 24 * 3600
+    out = _callback_with(managed, auth_time=week)
+    assert out["ok"] is False
+    assert "Sign in again" in out["detail"]
+
+
+def test_a_recent_sign_in_is_allowed(managed):
+    _flight(managed, max_age=12 * 3600)
+    out = _callback_with(managed, auth_time=int(time.time()) - 60)
+    assert out.get("ok") is True
+
+
+def test_a_token_with_no_auth_time_is_refused(managed):
+    """max_age is a request. A provider that ignores it silently must not
+    be indistinguishable from one that honoured it."""
+    _flight(managed, max_age=12 * 3600)
+    out = _callback_with(managed, auth_time=None)
+    assert out["ok"] is False
+    assert "when this person last signed in" in out["detail"]
+
+
+def test_the_window_is_configurable_and_checked(managed):
+    managed.set_setting("sso_max_age_hours", "1", "t")
+    assert main._sso_max_age() == 3600
+    _flight(managed, max_age=3600)
+    out = _callback_with(managed, auth_time=int(time.time()) - 2 * 3600)
+    assert out["ok"] is False
+    managed.set_setting("sso_max_age_hours", "", "t")
+    assert main._sso_max_age() == main.SSO_MAX_AGE_DEFAULT_HOURS * 3600
+
+
+def test_the_window_is_bounded(managed):
+    owner = "Bearer " + managed.login("root", PASSWORD)["token"]
+    with pytest.raises(main.HTTPException) as e:
+        main.put_settings(main.SettingsUpdate(sso_max_age_hours="9999"),
+                          authorization=owner)
+    assert e.value.status_code == 422

@@ -1403,6 +1403,33 @@ SSO_FLIGHT_SECONDS = 600
 SSO_FLIGHT_MAX = 64
 
 
+# How long a sign-in at the provider stays good for. Twelve hours by
+# default: a working day, so nobody is asked twice before lunch, and a
+# laptop left open overnight cannot be walked up to the next morning.
+#
+# Sent as max_age AND checked on the way back. max_age is a request - a
+# provider is meant to honour it and Entra does, but a control that is only
+# ever asked for is not a control. The token's auth_time is what proves it,
+# and a token that arrives without one when max_age was asked for is
+# refused rather than trusted.
+SSO_MAX_AGE_DEFAULT_HOURS = 12
+# Clocks differ. Two minutes is enough for that and far too little to
+# matter against a window measured in hours.
+SSO_AUTH_TIME_SKEW = 120
+
+
+def _sso_max_age() -> int:
+    """The window in seconds. 0 means re-authenticate every time."""
+    raw = ((STATE.get_setting("sso_max_age_hours") if STATE else None) or "").strip()
+    if raw == "":
+        return SSO_MAX_AGE_DEFAULT_HOURS * 3600
+    try:
+        hours = int(raw)
+    except ValueError:
+        return SSO_MAX_AGE_DEFAULT_HOURS * 3600
+    return max(0, hours) * 3600
+
+
 def _sso_conf() -> dict:
     g = (lambda k, d="": (STATE.get_setting(k) if STATE else None) or d)
     return {
@@ -1548,9 +1575,11 @@ async def sso_start(request: Request):
     # state, because the answer comes back as a cross-site form post
     # carrying nothing but a code and that state - there is no cookie on
     # it and no fragment, so the browser cannot be asked afterwards.
+    max_age = _sso_max_age()
     _SSO_FLIGHT[state] = {"nonce": nonce, "verifier": verifier,
                           "at": time.time(), "issuer": doc["issuer"],
                           "token_endpoint": doc["token_endpoint"],
+                          "max_age": max_age,
                           "test": request.query_params.get("test") == "1"}
     challenge = _b64u(hashlib.sha256(verifier.encode()).digest())
     return {"authorize_url": doc["authorization_endpoint"] + "?" + urllib.parse.urlencode({
@@ -1565,6 +1594,15 @@ async def sso_start(request: Request):
         "nonce": nonce,
         "code_challenge": challenge,
         "code_challenge_method": "S256",
+        # Never a silent redirect. Without this, somebody already signed in
+        # to the provider in that browser is returned straight here with no
+        # interaction at all - click a link and you are inside a tool that
+        # says who uses which AI. select_account is the floor: signing in
+        # has to be something a person did, not something that happened.
+        "prompt": "select_account",
+        # And how recently they proved it. 0 asks the provider to
+        # reauthenticate outright.
+        "max_age": str(max_age),
     })}
 
 
@@ -1634,6 +1672,24 @@ async def sso_callback(req: SSOCallback):
         return _sso_refuse("the token did not answer this sign-in")
     if int(claims.get("exp") or 0) <= int(time.time()):
         return _sso_refuse("the token had already expired")
+    # How recently they actually proved who they are, not how recently a
+    # token was minted. exp says the token is fresh; auth_time says the
+    # PERSON is. Without this max_age is a polite request, and a browser
+    # holding a week-old provider session would be let in on a token
+    # issued a second ago.
+    want = flight.get("max_age")
+    if want is not None:
+        auth_time = int(claims.get("auth_time") or 0)
+        if not auth_time:
+            return _sso_refuse(
+                "the provider did not say when this person last signed in, "
+                "so how recent it was cannot be checked")
+        age = int(time.time()) - auth_time
+        if age > want + SSO_AUTH_TIME_SKEW:
+            return _sso_refuse(
+                "that sign-in is %d minutes old and this deployment asks "
+                "for one within %d. Sign in again."
+                % (age // 60, max(1, want // 60)))
     tid, sub = claims.get("tid") or "", claims.get("oid") or ""
     if not tid or not sub:
         return _sso_refuse("the token carried no tenant or object id")
@@ -1749,6 +1805,10 @@ _STR_SETTINGS = (
     # this on without a federated sign-in ever having completed is how a
     # deployment locks itself down to a single password.
     ("sso_enforce", False, 1),
+    # How stale an existing session at the provider may be before somebody
+    # has to prove who they are again. Hours; empty means the default
+    # below, "0" means every single time. See _sso_max_age.
+    ("sso_max_age_hours", False, 4),
     # The currency the Budget view's headline reports in, and the default
     # for newly linked tools. A display preference, not money math: the
     # portal never converts between currencies.
@@ -1802,6 +1862,7 @@ class SettingsUpdate(BaseModel):
     sso_redirect_uri: str | None = Field(default=None, max_length=500)
     sso_enabled: str | None = Field(default=None, max_length=1)
     sso_enforce: str | None = Field(default=None, max_length=1)
+    sso_max_age_hours: str | None = Field(default=None, max_length=4)
     sso_client_secret: str | None = Field(default=None, max_length=512)
     alertmanager_url: str | None = Field(default=None, max_length=500)
     grafana_url: str | None = Field(default=None, max_length=500)
@@ -1934,6 +1995,9 @@ def get_settings(authorization: str = Header(default="")):
         # What the portal needs to draw the enforcement control honestly:
         # whether it is on, and whether it could be turned on at all.
         "sso_enforce": plain("sso_enforce"),
+        "sso_max_age_hours": plain("sso_max_age_hours"),
+        "sso_max_age_default": {"value": str(SSO_MAX_AGE_DEFAULT_HOURS),
+                                "source": "derived"},
         "sso_enforce_ready": {"value": "1" if STATE.an_owner_is_bound() else "",
                               "source": "derived"},
         "sso_break_glass": {"value": STATE.break_glass_username(),
@@ -2067,6 +2131,13 @@ def put_settings(req: SettingsUpdate, authorization: str = Header(default="")):
                 422, "no owner has completed a single sign-on yet. Sign in "
                      "through the provider once first: requiring a door "
                      "nobody has opened leaves only the break-glass account")
+
+    if "sso_max_age_hours" in req.model_fields_set:
+        raw = (req.sso_max_age_hours or "").strip()
+        if raw and not (raw.isdigit() and 0 <= int(raw) <= 720):
+            raise HTTPException(
+                422, "sso_max_age_hours is a whole number of hours from 0 "
+                     "to 720, or empty for the default")
 
     if "smtp_security" in req.model_fields_set:
         mode = (req.smtp_security or "").strip()

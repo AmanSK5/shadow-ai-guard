@@ -103,6 +103,10 @@ def _id_token(person: dict, nonce: str) -> str:
         "nonce": nonce,
         "iat": now,
         "exp": now + 600,
+        # When the person proved who they are, as distinct from when this
+        # token was minted. The receiver checks it against the max_age it
+        # asked for, and refuses a token that omits it.
+        "auth_time": now,
         "name": person["name"],
         "email": person["email"],
         "preferred_username": person["email"],
