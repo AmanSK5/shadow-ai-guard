@@ -125,14 +125,14 @@ The same thing without Helm, if you would rather see the pieces.
 Published to GHCR by CI, so nothing needs building:
 
 ```
-ghcr.io/amansk5/shadow-ai-guard/receiver:0.17.0
+ghcr.io/amansk5/shadow-ai-guard/receiver:0.17.1
 ```
 
 Built for `linux/amd64` and `linux/arm64` under one tag, so it resolves on
 Graviton, Apple Silicon and a Pi without anything extra:
 
 ```bash
-docker buildx imagetools inspect ghcr.io/amansk5/shadow-ai-guard/receiver:0.17.0
+docker buildx imagetools inspect ghcr.io/amansk5/shadow-ai-guard/receiver:0.17.1
 ```
 
 Pin a version. `latest` moves when a release is tagged, which means a pod
