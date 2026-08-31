@@ -129,6 +129,41 @@ def test_an_unknown_settings_key_is_refused_at_the_edge():
         main.SettingsWrite(corp_domain=["typo.com"])
 
 
+# Every key the page can save, in one list. extra=forbid means a key the
+# receiver takes but this model omits is a 422 raised before the request
+# leaves the portal - and the 422 body is a list, so the page falls back to
+# its generic "check the values" and the person retypes a value that was
+# never the problem. That is how the sign-on wizard shipped unable to save
+# its fourth step.
+UI_SETTINGS_KEYS = (
+    "corp_domains", "extension_id", "onboarding_done", "receiver_public_url",
+    "log_store_url", "log_store_push_url", "log_store_username",
+    "log_store_password", "alertmanager_url", "grafana_url", "grafana_panels",
+    "grafana_dashboard_uid", "overview_widgets", "extension_update_url",
+    "extension_crx_url", "extension_xpi_url", "webhook_url", "sso_tenant_id",
+    "sso_client_id", "sso_client_secret", "sso_redirect_uri", "sso_enabled",
+    "paste_guard_mode", "firefox_extension_id", "classification_markings",
+    "budget_currency",
+)
+
+
+def test_every_settings_key_the_page_can_save_is_accepted():
+    missing = [k for k in UI_SETTINGS_KEYS
+               if k not in main.SettingsWrite.model_fields]
+    assert missing == []
+
+
+def test_the_sign_on_wizard_can_save_its_step(login_mode):
+    """The exact body the redirect step posts, which 0.17.0 refused."""
+    main.api_settings_write(main.SettingsWrite(
+        sso_tenant_id="t", sso_client_id="c",
+        sso_client_secret="s", sso_redirect_uri="https://portal/sso/callback",
+    ), _=None, token="t")
+    assert login_mode[0]["body"] == {
+        "sso_tenant_id": "t", "sso_client_id": "c", "sso_client_secret": "s",
+        "sso_redirect_uri": "https://portal/sso/callback"}
+
+
 def test_a_governance_write_kills_the_register_cache(login_mode):
     main._cache["register"] = {"value": ["stale"], "at": 9e12, "hours": 168}
     main.api_governance_write(
