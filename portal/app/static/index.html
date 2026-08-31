@@ -1268,8 +1268,10 @@ function showLogin(msg) {
 // response is the login screen with a line saying why, not a broken view.
 async function sessionLost() {
   if (AUTH) AUTH.authenticated = false;
-  try { AUTH = await (await fetch('/api/auth')).json(); } catch (e) { /* keep what we had */ }
-  showLogin('Signed out — the session expired or was revoked. Sign in again.');
+  // Same reason sign-out re-asks: the screen this is about to draw depends
+  // on fields only the server knows.
+  await refreshAuth();
+  showLogin('Signed out - the session expired or was revoked. Sign in again.');
 }
 
 async function boot() {
@@ -8078,9 +8080,41 @@ fold.onclick = () => {
 try { if (localStorage.getItem('aiguard-side')) fold.onclick(); } catch (e) {}
 document.getElementById('signout').onclick = async () => {
   await mfetch('/api/logout', {method: 'POST'});
-  AUTH = {mode: 'login', authenticated: false, username: '', setup_needed: false};
+  // Re-ask rather than compose one. A hand-written AUTH is missing every
+  // field somebody adds later, and it was: sso and sso_enforced were both
+  // absent, so signing out took the Microsoft button off the screen and a
+  // manual reload was the only way to get it back - on a deployment where
+  // single sign-on is REQUIRED, that left a password form nobody but the
+  // break-glass account could use.
+  await refreshAuth();
   showLogin('Signed out.');
 };
+
+// The one place that knows what the sign-in screen needs. Falls back to a
+// signed-out shape if the receiver cannot be reached, because a sign-out
+// that leaves somebody looking at a stale dashboard is worse than one that
+// offers a password box it is not certain about.
+async function refreshAuth() {
+  try {
+    AUTH = await (await fetch('/api/auth')).json();
+  } catch (e) {
+    AUTH = {mode: 'login', authenticated: false, username: '', role: '',
+            setup_needed: false, sso: false, sso_enforced: false};
+  }
+}
+
+// Coming back to a page the browser kept: a bfcache restore, or a second
+// tab woken up after somebody signed out in the first. Both repaint the
+// last thing rendered, which can be a whole dashboard belonging to a
+// session that no longer exists. Nothing here trusts what is on screen -
+// it asks, and shows the sign-in screen when the answer is nobody.
+window.addEventListener('pageshow', async e => {
+  if (!e.persisted) return;
+  await refreshAuth();
+  if (AUTH && AUTH.mode === 'login' && !AUTH.authenticated) {
+    showLogin('That session has ended. Sign in again.');
+  }
+});
 // ---- the guided tour -------------------------------------------------
 // A first sign-in lands on eleven views with no way to tell which of them
 // answers the question the person came with. This walks them through the
