@@ -488,6 +488,19 @@ table.plain td{border-bottom:0;padding:4.5px 10px 4.5px 0;vertical-align:middle}
 a.libtn{display:inline-flex;align-items:center;gap:9px;text-decoration:none;
   font:inherit;font-size:12.5px;font-weight:550;padding:7px 16px;
   border:1px solid var(--bd);border-radius:7px;color:var(--pri);cursor:pointer}
+/* The sign-in card centres, and its two buttons go full width. With
+   single sign-on required the provider button is the ONLY control on
+   the card, and a lone left-aligned button in a centred card reads as
+   an accident. Scoped: .wcard is on every page. */
+.licard,.licard .lede,.licard h2,.licard .src-note{text-align:center}
+.licard button.mini{display:block;width:100%;padding:9px 16px}
+.licard a.libtn{display:flex;width:100%;justify-content:center;
+  padding:9px 16px;box-sizing:border-box}
+/* The disclosure summary is width:max-content so its arrow sits by the
+   text; centring it needs the box centred, not the text. */
+.licard details.how{max-width:none}
+.licard details.how summary{margin-left:auto;margin-right:auto}
+.licard details.how>div{text-align:left}
 a.libtn:hover{border-color:var(--pri)}
 .ssfoot{display:flex;gap:8px;align-items:center;margin-top:18px;padding-top:14px;
   border-top:1px solid var(--bd)}
@@ -1224,9 +1237,9 @@ function showLogin(msg) {
       data-act="${create ? 'do-setup' : 'do-login'}">${
       create ? 'Create account' : 'Sign in'}</button>`;
   app.innerHTML = `<div style="max-width:470px;margin:9vh auto 0">
-    <div class="wcard" style="padding:28px 30px">
+    <div class="wcard licard" style="padding:28px 30px">
     <img src="/logo.png" alt="Shadow AI Guard"
-      style="width:230px;max-width:100%;display:block;margin:0 0 20px">
+      style="width:230px;max-width:100%;display:block;margin:0 auto 20px">
     <h2>${create ? 'Create the admin account' : 'Sign in'}</h2>
     <p class="lede">${create
       ? `No admin account exists yet. The receiver printed a one-time setup
