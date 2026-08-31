@@ -33,6 +33,7 @@ import re
 import secrets
 import sys
 import smtplib
+import ssl
 import threading
 from email.message import EmailMessage
 import time
@@ -2411,11 +2412,24 @@ def _smtp_send(to: str, subject: str, body: str) -> str:
             if conf["username"]:
                 server.login(conf["username"], conf["password"])
             server.send_message(msg)
-    except Exception as e:  # noqa: BLE001 - the reason is the whole point
-        # The class name and the provider's own words, trimmed. Relays say
-        # useful things here ("relay access denied", "authentication
-        # failed") and swallowing them makes this impossible to debug.
-        return ("%s: %s" % (type(e).__name__, e))[:300]
+    except smtplib.SMTPResponseException as e:
+        # The relay's own refusal, which is the useful half: "relay access
+        # denied", "authentication failed", "sender rejected". Taken from
+        # the structured fields rather than str(e), so what comes back is
+        # the server's answer and not whatever else the exception carried.
+        why = e.smtp_error
+        if isinstance(why, bytes):
+            why = why.decode("utf-8", "replace")
+        return ("%s %s" % (e.smtp_code, why or ""))[:300].strip()
+    except smtplib.SMTPException as e:
+        # Everything else smtplib raises. The class name says which wall it
+        # hit - SMTPAuthenticationError, SMTPServerDisconnected - without
+        # relaying an arbitrary message into an API response.
+        return type(e).__name__
+    except (OSError, ssl.SSLError) as e:  # noqa: BLE001
+        # Reached it or did not: DNS, refused, timed out, TLS. Named, not
+        # quoted, for the same reason.
+        return type(e).__name__
     return ""
 
 

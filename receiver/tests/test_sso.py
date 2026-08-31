@@ -360,7 +360,10 @@ def test_the_default_invite_carries_nothing_worth_intercepting(managed):
     managed.set_setting("smtp_host", "smtp.example.com", "t")
     managed.set_setting("portal_public_url", "https://portal.example.com", "t")
     subject, body = main._invite_text("jo")
-    assert "jo" in body and "portal.example.com" in body
+    # The whole URL, not the host as a substring: a bare host check passes
+    # for portal.example.com.elsewhere.net too, which is the shape of the
+    # thing the invite is trying not to look like.
+    assert "jo" in body and "https://portal.example.com" in body
     # No token, no password, no link that grants anything. An estate can
     # replace all of this - the guarantee is about what ships, not about
     # what somebody chooses to write instead.
@@ -411,3 +414,38 @@ def test_the_smtp_password_is_never_echoed(managed):
     out = main.get_settings(authorization="Bearer admin-test-token")
     assert out["settings"]["smtp_password"] == {"set": True, "source": "db"}
     assert "hunter2hunter2" not in json.dumps(out)
+
+
+def test_a_relay_refusal_comes_back_as_the_relay_said_it(managed, monkeypatch):
+    """The relay's own words are the useful half of a failure. What must
+    not come back is whatever else an exception happened to carry."""
+    import smtplib
+
+    class Boom:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def starttls(self): pass
+        def login(self, *a): pass
+        def send_message(self, *a):
+            raise smtplib.SMTPSenderRefused(
+                550, b"5.7.1 relay access denied", "noreply@example.com")
+
+    managed.set_setting("smtp_host", "smtp.example.com", "t")
+    managed.set_setting("smtp_from", "noreply@example.com", "t")
+    monkeypatch.setattr(main.smtplib, "SMTP", lambda *a, **k: Boom())
+    why = main._smtp_send("jo@example.com", "s", "b")
+    assert "550" in why and "relay access denied" in why
+
+
+def test_anything_else_is_named_rather_than_quoted(managed, monkeypatch):
+    def blow_up(*a, **k):
+        raise ConnectionRefusedError("connection refused to 10.1.2.3:25")
+
+    managed.set_setting("smtp_host", "smtp.example.com", "t")
+    managed.set_setting("smtp_from", "noreply@example.com", "t")
+    monkeypatch.setattr(main.smtplib, "SMTP", blow_up)
+    why = main._smtp_send("jo@example.com", "s", "b")
+    # The wall it hit, not the message: an exception string is not a thing
+    # to relay into an API response.
+    assert why == "ConnectionRefusedError"
+    assert "10.1.2.3" not in why

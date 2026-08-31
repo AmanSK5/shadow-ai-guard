@@ -4803,9 +4803,14 @@ function mailPreviewHtml() {
   const portal = (MAILW.portal || '').trim() || 'the Shadow AI Guard portal';
   const fill = t => (t || '').split('{username}').join(name)
                              .split('{portal_url}').join(portal);
-  const host = (portal.match(/^https?:\/\/([^/]+)/) || [])[1] || '';
+  // The HOST, compared exactly - not a substring of the URL. A substring
+  // test says portal.example.com.elsewhere.net is fine, and a lookalike
+  // domain is the entire thing this warning exists to catch.
+  const hostOf = u => { try { return new URL(u).host.toLowerCase(); }
+                        catch (e) { return ''; } };
+  const host = hostOf(portal);
   const links = (fill(MAILW.body).match(/https?:\/\/[^\s<>"')]+/g) || [])
-    .filter(u => !host || u.indexOf(host) === -1);
+    .filter(u => !host || hostOf(u) !== host);
   const warn = links.length ? `<div class="note" style="border-color:var(--warn);
     margin-top:12px"><b>This links somewhere other than your portal.</b>
     <div class="src-note" style="margin-top:6px;font-style:normal;
