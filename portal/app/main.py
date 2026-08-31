@@ -1366,7 +1366,7 @@ def esc_attr(v) -> str:
 
 
 def _sso_page(title: str, body: str, go: str = "",
-              who: str = "") -> HTMLResponse:
+              who: str = "", test: bool = False) -> HTMLResponse:
     """The callback's own answer, as a page rather than a redirect.
 
     A redirect would be a cross-site navigation - the chain started at the
@@ -1386,20 +1386,25 @@ def _sso_page(title: str, body: str, go: str = "",
     # other, and a static script reads them back. There is no injection
     # point left to get the escaping wrong in.
     payload = json.dumps({"ssoTest": "ok" if go else "fail",
-                          "username": who, "detail": body, "go": go})
-    # An opener means this tab was opened BY the portal - the wizard's test
-    # sign-in, which already has its answer the moment the message lands.
-    # Navigating such a tab into the portal drops somebody into whatever
-    # the app decides a fresh load should show (on a deployment that has
-    # not finished setup, that is the first-run wizard) in a tab they only
-    # opened to prove a configuration. So: report to the opener and stop.
-    # A tab with no opener is a real sign-in from the sign-in screen, and
-    # going to the portal is the whole point of it.
+                          "username": who, "detail": body, "go": go,
+                          "test": test})
+    # Whether this was the wizard proving a configuration, or somebody
+    # actually arriving. The wizard's tab has its answer the moment the
+    # message lands, and navigating it into the portal drops somebody into
+    # whatever a fresh load shows, in a tab they opened only to run a test.
+    # A real sign-in has to go to the portal, which is the whole point.
+    #
+    # This asked window.opener until it was tried in anger. An opener is
+    # set by ANY link opened in a new tab or window, so somebody opening
+    # the sign-in screen that way and then signing in normally was told to
+    # close their tab and go back to a wizard they had never opened - and
+    # was left sitting on the callback page. The flag now travels with the
+    # sign-in itself, from the wizard that started it.
     tell = (f'<div id="ssor" hidden data-r="{esc_attr(payload)}"></div>'
             '<script>(function(){try{'
             'var r=JSON.parse(document.getElementById("ssor").dataset.r);'
-            'if(window.opener){window.opener.postMessage(r,location.origin);'
-            'document.documentElement.dataset.opener="1";return;}'
+            'if(window.opener)window.opener.postMessage(r,location.origin);'
+            'if(r.test){document.documentElement.dataset.test="1";return;}'
             'if(r.go)location.replace(r.go);'
             '}catch(e){}})()</script>')
     # Shown to whoever did not get navigated away: the test tab, and
@@ -1419,7 +1424,7 @@ def _sso_page(title: str, body: str, go: str = "",
         "@media(prefers-color-scheme:dark){p{color:#9aa3ad}}"
         # The test tab keeps the closing line and drops the link that
         # would take it into the portal; a real sign-in does the reverse.
-        "[data-opener] a{display:none}[data-opener] p.t{display:block!important}"
+        "[data-test] a{display:none}[data-test] p.t{display:block!important}"
         "</style>"
         f"<h1>{esc_attr(title)}</h1><p>{esc_attr(body)}</p>{onward}")
 
@@ -1429,8 +1434,13 @@ def sso_start(request: Request):
     """Send the browser to the identity provider."""
     _login_mode_only()
     try:
-        out = managed.receiver_request(RECEIVER_URL, "GET", "/admin/sso/start",
-                                       "", None)
+        # ?test=1 says the sign-on wizard started this, not a person
+        # arriving. It rides to the receiver, which remembers it against
+        # the state, because nothing on the way back could carry it.
+        path = "/admin/sso/start"
+        if request.query_params.get("test") == "1":
+            path += "?test=1"
+        out = managed.receiver_request(RECEIVER_URL, "GET", path, "", None)
     except managed.ReceiverError as e:
         if e.status == 404:
             return _sso_page("Single sign-on is not set up",
@@ -1475,8 +1485,14 @@ async def sso_callback(request: Request):
     if not out.get("ok"):
         return _sso_page("Signed in, but not here",
                          str(out.get("detail") or "that sign-in was refused"))
-    resp = _sso_page("Signed in", "Taking you to the portal.", go="/",
-                     who=str(out.get("username", "")))
+    is_test = bool(out.get("test"))
+    resp = _sso_page("Signed in",
+                     # The test tab is not going anywhere, so it must not
+                     # say it is. The body is the sentence somebody reads
+                     # while deciding whether to wait or to act.
+                     "That is the configuration proved."
+                     if is_test else "Taking you to the portal.",
+                     go="/", who=str(out.get("username", "")), test=is_test)
     resp.set_cookie(SESSION_COOKIE, str(out.get("token", "")),
                     httponly=True, samesite="strict",
                     secure=_cookie_secure(request), path="/")

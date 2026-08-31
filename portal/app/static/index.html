@@ -7055,7 +7055,7 @@ async function managedAction(act, el) {
     // Not noopener: the new tab reports its result back by postMessage,
     // and that needs an opener to report to. Same origin both ways.
     SSOW.busy = 'test'; SSOW.err = ''; render();
-    window.open('/sso/start', 'aiguard-sso-test');
+    window.open('/sso/start?test=1', 'aiguard-sso-test');
     return;
   }
   if (act === 'sso-enable') {

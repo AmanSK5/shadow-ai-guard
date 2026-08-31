@@ -360,25 +360,36 @@ def test_diagnostics_report_the_login_mode(login_mode):
 # --------------------------------------------------- the callback's two jobs --
 
 
-def test_a_test_sign_in_reports_to_its_opener_and_stays_put():
-    """The wizard's test opens a second tab. That tab has told the opener
-    everything the moment its message lands, so navigating it into the
-    portal drops somebody into whatever a fresh load decides to show - on a
-    deployment still mid-setup, the first-run wizard - in a tab they only
-    opened to prove a configuration."""
+def test_the_wizards_test_sign_in_stays_put():
+    """The wizard's test has its answer the moment the message lands, so
+    the tab must not navigate into the portal afterwards."""
     html = main._sso_page("Signed in", "Taking you to the portal.",
-                          go="/", who="gengar").body.decode()
+                          go="/", who="gengar", test=True).body.decode()
     assert 'window.opener.postMessage' in html
+    # The payload is HTML-escaped into an attribute on purpose - see the
+    # note in _sso_page about provider text and script contexts.
+    assert "&quot;test&quot;: true" in html
     # The return is what stops the navigation below it running.
-    assert 'dataset.opener="1";return;' in html
+    assert 'dataset.test="1";return;' in html
     assert "You can close this tab" in html
 
 
-def test_a_real_sign_in_still_goes_to_the_portal():
-    """No opener means the sign-in screen sent them, and arriving at the
-    portal is the entire point."""
+def test_a_real_sign_in_goes_to_the_portal():
+    """Somebody actually arriving must land in the portal, and must not be
+    told to close their tab and go back to a wizard they never opened."""
     html = main._sso_page("Signed in", "Taking you to the portal.",
                           go="/", who="gengar").body.decode()
+    assert "&quot;test&quot;: false" in html
+    assert 'dataset.test' in html          # the branch exists
     assert "if(r.go)location.replace(r.go)" in html
-    # And the link a browser running no script at all would need.
     assert 'href="/"' in html
+
+
+def test_the_marker_does_not_come_from_window_opener():
+    """It used to. An opener is set by ANY link opened in a new tab, so
+    somebody who opened the sign-in screen that way and signed in normally
+    was told to close their tab and left sitting on the callback page.
+    The flag now travels with the sign-in that started it."""
+    html = main._sso_page("Signed in", "x", go="/", who="a").body.decode()
+    assert "if(window.opener){" not in html
+    assert 'dataset.opener' not in html

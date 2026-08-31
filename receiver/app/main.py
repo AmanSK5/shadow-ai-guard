@@ -1462,9 +1462,15 @@ async def sso_start(request: Request):
     verifier = _b64u(secrets.token_bytes(48))
     state = _b64u(secrets.token_bytes(24))
     nonce = _b64u(secrets.token_bytes(24))
+    # Whether this is the wizard proving a configuration rather than
+    # somebody actually arriving. It has to be remembered HERE, against the
+    # state, because the answer comes back as a cross-site form post
+    # carrying nothing but a code and that state - there is no cookie on
+    # it and no fragment, so the browser cannot be asked afterwards.
     _SSO_FLIGHT[state] = {"nonce": nonce, "verifier": verifier,
                           "at": time.time(), "issuer": doc["issuer"],
-                          "token_endpoint": doc["token_endpoint"]}
+                          "token_endpoint": doc["token_endpoint"],
+                          "test": request.query_params.get("test") == "1"}
     challenge = _b64u(hashlib.sha256(verifier.encode()).digest())
     return {"authorize_url": doc["authorization_endpoint"] + "?" + urllib.parse.urlencode({
         "client_id": conf["client_id"],
@@ -1572,7 +1578,8 @@ async def sso_callback(req: SSOCallback):
     out = STATE.sso_login(user["id"], ttl_hours=SESSION_TTL_HOURS)
     return {"ok": True, "token": out["token"], "username": out["username"],
             "role": out["role"], "expires_at": out["expires_at"],
-            "bound_now": not user["bound"]}
+            "bound_now": not user["bound"],
+            "test": bool(flight.get("test"))}
 
 # ------------------------------------------------------- central settings --
 # Deployment configuration the portal edits and the fleet hears at runtime.
