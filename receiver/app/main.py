@@ -1284,9 +1284,30 @@ def put_preferences(req: PreferencesWrite,
 # revisiting the day a token arrives by any route other than this one.
 
 _MS_AUTHORITY = "https://login.microsoftonline.com"
+# SSO_AUTHORITY_URL points federated sign-in at something other than
+# Microsoft. It exists for the demo stack, which ships a stand-in provider
+# so the flow can be walked without a real tenant, and it is the kind of
+# setting that must never be set by accident: everything this receiver
+# believes about who somebody is comes from the host named here.
+#
+# So it is loud rather than clever. There is no auto-detection and no
+# "looks like localhost" heuristic - a deployment either says this in so
+# many words or it talks to Microsoft. When it has been said, the boot log
+# says so every single time, next to the value, in the same voice
+# PORTAL_AUTH=none uses on the portal.
+_AUTHORITY = os.environ.get("SSO_AUTHORITY_URL", "").rstrip("/") or _MS_AUTHORITY
+if _AUTHORITY != _MS_AUTHORITY:
+    print(json.dumps({
+        "app": "ai-guard-receiver", "kind": "sso_authority_override",
+        "authority": _AUTHORITY,
+        "warning": "federated sign-in is pointed at a NON-MICROSOFT identity "
+                   "provider. Every account it vouches for will be signed in. "
+                   "This is for the demo stack; unset SSO_AUTHORITY_URL for "
+                   "any real deployment.",
+    }), flush=True)
 # Guessing at endpoint paths is how an integration breaks silently when a
 # cloud instance differs; these come from the tenant's own document.
-_DISCOVERY = _MS_AUTHORITY + "/%s/v2.0/.well-known/openid-configuration"
+_DISCOVERY = _AUTHORITY + "/%s/v2.0/.well-known/openid-configuration"
 # A tenant is a GUID or a verified domain. Anything else is somebody's
 # typo, and refusing it here beats a confusing failure three steps later.
 _TENANT_RE = re.compile(r"^[0-9a-fA-F-]{36}$|^[a-zA-Z0-9.-]{3,120}$")

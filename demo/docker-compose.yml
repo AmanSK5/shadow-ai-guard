@@ -83,6 +83,11 @@ services:
       # wizard.
       MANAGED_MODE: "true"
       STATE_DB_PATH: /var/lib/ai-guard/state.db
+      # Federated sign-in talks to the stand-in provider below instead of
+      # Microsoft. DEMO ONLY - it is the trust root for who gets signed in,
+      # and the receiver prints a warning naming it on every boot. Delete
+      # this line and the wizard talks to the real Entra.
+      SSO_AUTHORITY_URL: "http://entra-mock:8092"
     volumes:
       - registry-dist:/etc/ai-guard:ro
       - managed-state:/var/lib/ai-guard
@@ -152,6 +157,38 @@ services:
   # Reads the compiled registry the builder produced, so tool names arriving
   # from different detectors (chatgpt.com from the extension, chatgpt from
   # everything else) resolve to one tool.
+  # A stand-in for Microsoft Entra, so the single sign-on wizard can be
+  # walked without a real tenant, an app registration or a client secret.
+  #
+  # It is not a fake button: the receiver runs its ordinary code path
+  # against this - discovery, PKCE, the code exchange, and every claim
+  # check afterwards. Only the host answering changes. See the long note at
+  # the top of demo/entra-mock/provider.py for what it deliberately is not.
+  #
+  # Stdlib only, so it runs on a bare python image with no build step.
+  entra-mock:
+    image: python:3.12-slim
+    command: python /src/demo/entra-mock/provider.py
+    environment:
+      # Reachable from the BROWSER here, which is what the issuer has to
+      # say: the receiver compares the token's iss against the discovery
+      # document, and the browser is what visits the authorize endpoint.
+      MOCK_PUBLIC_URL: "http://localhost:8092"
+      # And from the RECEIVER here, over the compose network, which is
+      # where the code exchange happens.
+      MOCK_INTERNAL_URL: "http://entra-mock:8092"
+      MOCK_TENANT: "11111111-2222-3333-4444-555555555555"
+      MOCK_CLIENT_ID: "66666666-7777-8888-9999-000000000000"
+    volumes:
+      - ../:/src:ro
+    ports:
+      - "127.0.0.1:8092:8092"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8092/healthz')\" || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   portal:
     build: ../portal
     environment:

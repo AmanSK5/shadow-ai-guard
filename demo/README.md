@@ -85,6 +85,48 @@ the honest path here.
 The portal is never in the ingest path. Stop that one service and
 collection carries on, which is a property worth seeing for yourself.
 
+## Single sign-on, without a tenant
+
+The stack ships a stand-in identity provider, so the sign-on wizard can be
+walked without a real Entra tenant, an app registration or a client secret.
+
+It is not a fake button. The receiver runs its ordinary code path against
+it - discovery, the authorization request with PKCE, the code exchange, and
+every claim check afterwards: issuer, audience, nonce, expiry, tenant. Only
+the host answering changes. So what you walk here is the real integration.
+
+In **Settings > Account > Single sign-on**, choose *Set it up* and use:
+
+| Step | Value |
+| --- | --- |
+| Your tenant | `11111111-2222-3333-4444-555555555555` |
+| Application (client) ID | `66666666-7777-8888-9999-000000000000` |
+| Client secret | anything non-empty |
+| Where sign-ins return | leave the prefilled value |
+
+Before that, the wizard's first step asks for an email address on your own
+account. Use `gengar@example.com` - the stand-in provider offers three
+people to sign in as, and that is the one it matches. `snorlax@example.com`
+works too if you have created a second account with that address, and
+`nobody@example.com` exists to show the refusal a sign-in with no matching
+account gets.
+
+Then **Test sign-in**, pick an account, and the wizard's last step unlocks.
+
+Once it is on you can also try **Require single sign-on**, which stops
+passwords working for every account except the break-glass one - the
+account the setup code created. That is what puts a tenant's multi-factor
+policy in front of the portal in a real deployment.
+
+### It is a demo provider, and only that
+
+It signs nothing, it believes any secret it is given, and it will issue a
+token for whoever is picked off a list. The receiver refuses to talk to
+anything but Microsoft unless `SSO_AUTHORITY_URL` says otherwise in so many
+words, and prints a warning naming the host on every boot when it has been
+told to. That variable is set here, in this compose file, and belongs
+nowhere else.
+
 ## The dashboard
 
 Open http://localhost:3000 and look at the "Shadow AI" dashboard. It opens
@@ -108,7 +150,7 @@ contains what you pasted. Deploying the real extension is covered in
 
 ## What is running
 
-Six containers:
+Seven containers:
 
 - **loki** - the log store, where findings land
 - **receiver** - the real receiver, built from `../receiver`, running
@@ -122,6 +164,8 @@ Six containers:
   healthy, then exits
 - **extension-demo** - serves the paste-guard demo page and the real
   `guard.js` it loads
+- **entra-mock** - a stand-in identity provider, so federated sign-in can be
+  tried without a tenant. Demo only; see the note above
 
 The seed data covers all six surfaces and all three endpoint OSes, with a
 mix of personal accounts (which show as warnings) and corporate accounts, so
