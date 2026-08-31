@@ -228,8 +228,8 @@ holds no database of its own, so it is a view rather than a store and it is
 never in the ingest path: losing it loses nothing.
 
 In managed mode it is also where the platform is run: the wizard, central
-settings, accounts (admin and read-only viewer), the review queue, the
-fleet, notifications, and pre-configured deployment downloads. Every one of
+settings, accounts (owner, admin and read-only viewer), the review queue,
+the fleet, notifications, and pre-configured deployment downloads. Every one of
 those writes is proxied to the receiver and authorized there with the
 operator's own session - the portal stores no credentials, so a compromised
 portal yields readable findings, which it always did, and nothing that can

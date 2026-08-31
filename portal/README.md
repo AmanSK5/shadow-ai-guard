@@ -115,13 +115,27 @@ with a fresh enrollment token baked in as the script's own fallback default
 (MDM-supplied values still win; corporate domains are never baked - the
 receiver serves those at runtime).
 
-On a fresh managed install the portal opens on a **first-run wizard**:
-corporate domains, a governance baseline over the registry's watchlist, the
-extension ID, and pre-configured deployment downloads for all five surfaces
-(three collectors, the extension's managed-storage policy plist, a scanner
-CronJob manifest with its token in a Secret). Every step is skippable and
-everything it sets is editable later; Finish records `onboarding_done` so
-the portal stops opening there. The extension policy is the one artifact
+On a fresh managed install the portal opens on a **first-run wizard** of
+seven steps, one screen at a time with a rail down the side: the public
+receiver URL, the log store, corporate domains, a governance baseline over
+the registry's watchlist, the browser extension, alerting and Grafana, and
+pre-configured deployment downloads for all five surfaces (three collectors,
+the extension's managed-storage policy plist, a scanner CronJob manifest
+with its token in a Secret).
+
+The rail marks each step required, recommended or optional. Two are
+required - the receiver URL and corporate domains - and the line is drawn
+where a blank value makes the deployment run WRONG rather than not run:
+collectors need only the receiver URL, and with no corporate domains every
+account reads as a personal one, which the Overview headline, Personal
+accounts and the ISO evidence all inherit quietly. Once both are in, the
+summary says the deployment can go out.
+
+Everything it sets is editable later, and leaving is allowed at any point:
+Finish and Skip both record `onboarding_done` so the portal stops opening
+there, and Skip says so first, naming Settings > Getting started as the way
+back. A viewer cannot record either - the receiver refuses the write - so
+for them the same button simply closes the wizard. The extension policy is the one artifact
 that bakes corporate domains - the extension reads no central config, so a
 domain change means regenerating that file (its header says so).
 
@@ -136,17 +150,30 @@ and the card says "set in the portal" so the two are never mistaken for one
 another. Exceptions stay file-only
 ([docs/governance.md](../docs/governance.md)).
 
-**Accounts and roles.** The first account (the one the setup code creates)
-is an admin. Admins can add more under Settings, as admin or as viewer. A
-viewer reads every page and can change nothing - every write comes back as
-a 403 that says so - which is the right shape for an auditor or an exec.
+**Accounts and roles.** The first account - the one the setup code creates -
+is the **owner**. Owners and admins add more under Settings > Account, as
+admin or as viewer. A viewer reads every page and can change nothing - every
+write comes back as a 403 that says so - which is the right shape for an
+auditor or an exec.
+
+The three roles are ranked, and the rank is enforced on every account
+action: you cannot act on an account that outranks you, and you cannot grant
+a role above your own. Otherwise an admin reaches an owner through any of
+three doors - reset the password and sign in as them, set their email and
+sign in through the identity provider, or simply change their role.
+
 A role changes from the dropdown on the account's row, and applies to that
 account's next request rather than its next sign-in - nobody has to sign
 out, though a page already open keeps showing its old buttons until it is
-reloaded. Passwords and sessions are untouched by the change. The last
-admin can be neither deleted nor demoted, password resets revoke the
-sessions the old password minted, and everything lands in the audit
-trail.
+reloaded. Passwords and sessions are untouched by the change. **The last
+owner can be neither deleted nor demoted** - an admin cannot make an owner,
+so losing the last one could not be undone from inside. Password resets
+revoke the sessions the old password minted, and everything lands in the
+audit trail.
+
+Changing your OWN password is not on that tab, which is about other
+people's accounts: it lives in the menu under your name in the header, and
+it is the one thing a viewer can change about themselves.
 
 **The audit trail.** Every change made through the portal - settings,
 decisions, accounts, enrollments, revocations - is recorded by the receiver
