@@ -5604,6 +5604,29 @@ function ssoEnforceBlock() {
       owner has completed a sign-in through Entra yet. Requiring it before
       the door has been opened once would leave only the break-glass
       account, so this stays available until one has.</div>` : ''}
+    <div style="border-top:1px solid var(--bd);margin-top:14px;padding-top:14px">
+      <p style="margin:0 0 6px"><b style="font-size:13px">How recently they
+        must have signed in</b></p>
+      <p class="lede">Somebody already signed in to Microsoft in their
+        browser was being returned straight here with no interaction at all -
+        click a link and you are inside a tool that says who uses which AI.
+        Signing in now always asks them to pick an account, and this decides
+        how stale that sign-in may be before the provider makes them prove it
+        again.</p>
+      <p><select id="sso-maxage" class="mfield" style="min-width:260px">
+        ${[['', 'Every 12 hours (the default)'], ['0', 'Every single time'],
+           ['1', 'Every hour'], ['4', 'Every 4 hours'],
+           ['8', 'Every 8 hours'], ['24', 'Every 24 hours'],
+           ['168', 'Every 7 days']].map(o => `<option value="${o[0]}"${
+          v('sso_max_age_hours') === o[0] ? ' selected' : ''}>${o[1]}</option>`).join('')}
+      </select></p>
+      <p class="src-note" style="margin:0">Twelve hours is a working day:
+      nobody is asked twice before lunch, and a laptop left open overnight
+      cannot be walked up to the next morning. It is sent to Microsoft as
+      max_age and checked again on the way back against what the token says
+      about when they actually signed in, because a control that is only ever
+      asked for is not a control.</p>
+    </div>
     <p style="margin:12px 0 0"><button class="mini" data-act="sso-enforce"
       data-key="${on ? '' : '1'}"
       ${(on || (ready && bg)) ? '' : 'disabled'}>${
@@ -7862,6 +7885,14 @@ async function managedAction(act, el) {
   }
   if (act === 'take-tour') { await tourStart(); return; }
   if (act === 'sso-open') { await ssoOpen(); return; }
+  if (act === 'sso-maxage') {
+    const r = await mfetch('/api/settings', {method: 'POST',
+      body: JSON.stringify({sso_max_age_hours: el.value})});
+    if (r.status === 401) { sessionLost(); return; }
+    SETMSG = r.ok ? '' : 'Not saved: ' + await _refusal(r);
+    if (r.ok) SETTINGS = await r.json();
+    render(); return;
+  }
   if (act === 'sso-enforce') {
     const want = el.getAttribute('data-key') === '1';
     if (want && !confirm('Require single sign-on?\n\nEvery account except '
@@ -8769,6 +8800,9 @@ app.addEventListener('change', e => {
   const roleFor = e.target && e.target.getAttribute
     && e.target.getAttribute('data-role-for');
   if (roleFor) { userRole(roleFor, e.target.value); return; }
+  if (e.target && e.target.id === 'sso-maxage') {
+    managedAction('sso-maxage', e.target); return;
+  }
   if (e.target && e.target.id === 'mw-who') {
     managedAction('mail-who', e.target); return;
   }
