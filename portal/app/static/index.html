@@ -10,6 +10,11 @@
   --pri:#177245; --acc:#0e6e8c; --warn:#8a5b00; --dstr:#b3261e;
   --mut:#5c636e; --bd:#e4e5e0; --line:var(--bd);
   --pri-soft:#e7f3ec; --acc-soft:#e3f0f5; --warn-soft:#fdf0d3; --dstr-soft:#fbeae9;
+  /* Floating surfaces. A popover sitting on cards that share its
+     background reads as part of the page; elevation has to be a
+     colour step and a border, not only a shadow. */
+  --pop:#ffffff; --pop-bd:#c9ccc4;
+  --pop-shadow:0 18px 44px rgba(20,23,27,.20), 0 3px 10px rgba(20,23,27,.12);
   /* Data marks, deliberately not --acc. The interface palette is tuned
      for chrome: --acc sits below the chroma floor a fill needs and reads
      grey once it is an area rather than a 1px border. These two are the
@@ -27,6 +32,11 @@
   --pri:#46c07f; --acc:#67c1dd; --warn:#e3b341; --dstr:#f28b82;
   --mut:#9aa3ad; --bd:#2b313a;
   --pri-soft:#1c3328; --acc-soft:#12303a; --warn-soft:#33290f; --dstr-soft:#3a1f1d;
+  /* Dark elevation is a LIGHTER surface, not a darker shadow - a shadow on
+     a dark page is invisible. Two steps above --sf so it separates from the
+     cards it floats over, with a border bright enough to draw the edge. */
+  --pop:#2c323a; --pop-bd:#454d58;
+  --pop-shadow:0 20px 50px rgba(0,0,0,.62), 0 3px 12px rgba(0,0,0,.5);
   /* Its own step, not the light one lightened: the dark band is narrower
      (0.48-0.67) and every candidate that looked right by eye sat above it. */
   --chart:#2b9ec4; --chart-soft:#2b9ec42e;
@@ -482,6 +492,46 @@ table.plain td{border-bottom:0;padding:4.5px 10px 4.5px 0;vertical-align:middle}
 /* The sign-in screen's federated option: a rule with the word set into
    it, and an anchor that carries a button's shape because it is a
    navigation, not a form post. */
+/* Outstanding setup. A dot rather than a number in a circle: the count is
+   in the panel, and a badge that says 4 invites somebody to clear it to
+   zero rather than read it. Pulses until it has been opened once and then
+   stops for good - a thing that pulses forever becomes wallpaper, and then
+   it is worse than nothing because people learn to ignore it. */
+#setupbell{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;
+  position:relative}
+.bcount{font-variant-numeric:tabular-nums}
+/* On the bell rather than beside it, which is where people look for it. */
+.bdot{position:absolute;top:3px;right:3px;width:7px;height:7px;
+  border-radius:50%;background:var(--warn);border:1.5px solid var(--sf)}
+#setupbell.new .bdot{animation:bpulse 2.4s ease-in-out infinite}
+@keyframes bpulse{0%,100%{opacity:1;box-shadow:0 0 0 0 var(--warn)}
+  50%{opacity:.55;box-shadow:0 0 0 4px transparent}}
+@media (prefers-reduced-motion: reduce){
+  #setupbell.new .bdot{animation:none}
+}
+#setuppanel{position:absolute;right:0;top:calc(100% + 8px);z-index:60;
+  width:min(420px,88vw);background:var(--pop);border:1px solid var(--pop-bd);
+  border-radius:10px;box-shadow:var(--pop-shadow);padding:14px 16px;
+  text-align:left}
+#setuppanel h4{margin:0 0 4px;font-size:13px}
+/* Same treatment for the account menu: it floats over the same page. */
+#usermenu{background:var(--pop);border-color:var(--pop-bd);
+  box-shadow:var(--pop-shadow)}
+/* --bd is picked to read against the page and the cards. On the lighter
+   popover surface it disappears, which took the dividers and every button
+   outline with it - the panel became one block of text. Everything with an
+   edge inside here uses the popover's own border colour. */
+#setuppanel .si{border-top:1px solid var(--pop-bd);padding:11px 0;
+  font-size:12.5px}
+#setuppanel .si:last-of-type{border-bottom:1px solid var(--pop-bd)}
+#setuppanel .si b{display:block;font-size:12.5px;font-weight:600;
+  margin-bottom:3px}
+#setuppanel .si span{color:var(--mut)}
+#setuppanel button.mini{border-color:var(--pop-bd)}
+#setuppanel button.mini:hover{border-color:var(--pri)}
+/* The action on its own line rather than trailing the sentence: it was
+   wrapping into the prose and reading as part of it. */
+#setuppanel .si button.mini{display:block;margin-top:7px}
 .lidiv{display:flex;align-items:center;gap:10px;margin:16px 0;
   color:var(--mut);font-size:12px}
 .lidiv::before,.lidiv::after{content:'';flex:1;height:1px;background:var(--bd)}
@@ -832,6 +882,18 @@ a.libtn:hover{border-color:var(--pri)}
       </span>
       <button id="signout" class="back" style="margin:0;display:none">Sign out</button>
       <button id="themebtn" class="back" style="margin:0" title="light / dark">◐</button>
+      <span id="setupwrap" style="position:relative">
+        <button id="setupbell" class="back" style="margin:0;display:none"
+          aria-haspopup="true" aria-expanded="false"
+          aria-label="Outstanding setup" title="Outstanding setup">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" stroke-width="1.9" stroke-linecap="round"
+            stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0
+            0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4
+            0"/></svg><span class="bcount"></span><span class="bdot"></span>
+        </button>
+        <div id="setuppanel" hidden></div>
+      </span>
     </div>
     <main id="app"></main>
   </div>
@@ -1443,6 +1505,130 @@ async function maybeTour() {
   // which is worth saying out loud before offering a second walkthrough.
   const other = seen[role === 'admin' ? 'viewer' : 'admin'];
   await tourStart(other ? TOUR_ROLE_CHANGED[role] : null);
+}
+
+// ---- somebody else changed this -----------------------------------------
+// Two people in Settings at once is not rare on a platform whose whole
+// point is that more than one person watches it. The write is a partial
+// upsert of only the keys sent, so two people editing DIFFERENT settings
+// never collide - which is exactly why this is a notice and not a lock.
+// A version check would be machinery for a conflict this shape mostly
+// cannot have; what it can have is somebody reading a value that changed
+// under them a minute ago.
+let SETCHANGE = null;
+
+async function checkSettingsChanged() {
+  if (!(CFG.managed && CFG.managed.enabled && AUTH && AUTH.mode === 'login')) return;
+  try {
+    const r = await mfetch('/api/audit?limit=50');
+    if (!r.ok) return;
+    const me = (AUTH && AUTH.username) || '';
+    const now = Date.now();
+    const hit = ((await r.json()).events || []).find(e => {
+      if (!/^setting_(changed|cleared)$/.test(e.kind || '')) return false;
+      const by = (e.detail && e.detail.by) || '';
+      if (!by || by === me) return false;
+      const at = Date.parse(e.at || '');
+      // Half an hour: long enough to catch the colleague who saved while
+      // you had the page open, short enough not to report last Tuesday.
+      return at && (now - at) < 30 * 60 * 1000;
+    });
+    SETCHANGE = hit ? {by: (hit.detail || {}).by, at: Date.parse(hit.at)} : null;
+  } catch (e) { /* an advisory that cannot be fetched is simply absent */ }
+}
+
+function settingsChangedNote() {
+  if (!SETCHANGE) return '';
+  const mins = Math.max(1, Math.round((Date.now() - SETCHANGE.at) / 60000));
+  return `<div class="note" style="margin-bottom:10px">Settings were changed by
+    <b>${esc(SETCHANGE.by)}</b> ${mins} minute${mins === 1 ? '' : 's'} ago.
+    This page was loaded before that, so what you are looking at may be out of
+    date. <button class="mini" data-act="setup-reload"
+    style="margin-left:6px">Reload</button>
+    <div class="src-note" style="margin:6px 0 0">Saving here changes only the
+    fields you edit, so you will not overwrite theirs by accident.</div></div>`;
+}
+
+// ---- outstanding setup ------------------------------------------------
+// onboarding_done is a single boolean meaning "stop showing me the wizard",
+// NOT "everything is configured". The moment somebody skips, every ongoing
+// signal disappears - including for the two steps the wizard itself calls
+// required. A deployment can sit like that indefinitely and look fine.
+//
+// This is that signal, and it is deliberately quiet: a dot in the topbar
+// that a person opens when they choose to, rather than a screen that
+// interrupts them. Blocking was never on the table - the operator with a
+// colleague standing next to them should be able to make an account.
+let SETUPOPEN = false;
+
+function setupOutstanding() {
+  const v = k => ((SETTINGS && SETTINGS.settings || {})[k] || {}).value || '';
+  const cd = (SETTINGS && SETTINGS.settings && SETTINGS.settings.corp_domains) || {};
+  const owner = AUTH && AUTH.role === 'owner';
+  const out = [];
+  if (!v('receiver_public_url')) out.push({need: 'req', tab: 'connection',
+    t: 'The receiver address', w: 'Nothing can deploy without it: every '
+      + 'collector download bakes this in.'});
+  if (!((cd.value || []).length)) out.push({need: 'req', tab: 'fleet',
+    t: 'Corporate domains', w: 'Without them every account reads as a '
+      + 'personal one, and the Overview headline inherits that.'});
+  if (!v('log_store_url')) out.push({need: 'rec', tab: 'connection',
+    t: 'A log store', w: 'Findings stay in container logs, so no page here '
+      + 'can count them.'});
+  if (v('smtp_ready') !== '1') {
+    const missed = (USERS || []).filter(u => u.email && !u.invited_at).length;
+    out.push({need: 'rec', tab: 'alerting', t: 'Email',
+      w: missed ? missed + (missed === 1 ? ' person has' : ' people have')
+            + ' an account here and ' + (missed === 1 ? 'has' : 'have')
+            + ' never been told.'
+        : 'Nobody can be told an account was made for them.'});
+  }
+  // Owner-gated at the receiver, so an admin cannot act on it and must not
+  // be nagged about it.
+  if (owner && v('sso_enabled') !== '1') out.push({need: 'opt', tab: 'account',
+    t: 'Single sign-on', w: 'People sign in with a portal password rather '
+      + 'than their work account.'});
+  return out;
+}
+
+function drawSetup() {
+  const bell = document.getElementById('setupbell');
+  const panel = document.getElementById('setuppanel');
+  if (!bell || !panel) return;
+  const managed = CFG.managed && CFG.managed.enabled;
+  const viewer = AUTH && AUTH.role === 'viewer';
+  const items = (managed && SETTINGS && !viewer) ? setupOutstanding() : [];
+  // A viewer can change none of this, and an empty list is not worth a
+  // control at all.
+  if (!items.length) {
+    bell.style.display = 'none'; panel.hidden = true; SETUPOPEN = false; return;
+  }
+  const req = items.filter(i => i.need === 'req').length;
+  bell.style.display = '';
+  bell.classList.toggle('new', !pref('setup.seen'));
+  bell.querySelector('.bdot').style.background =
+    req ? 'var(--dstr)' : 'var(--warn)';
+  bell.querySelector('.bcount').textContent = String(items.length);
+  bell.setAttribute('aria-expanded', SETUPOPEN ? 'true' : 'false');
+  panel.hidden = !SETUPOPEN;
+  if (!SETUPOPEN) return;
+  const TAB = {req: ['p-dstr', 'required'], rec: ['p-amb', 'recommended'],
+               opt: ['p-mut', 'optional']};
+  panel.innerHTML = '<h4>' + (req
+      ? 'Some of this deployment is not set up'
+      : 'A few things are still worth doing') + '</h4>'
+    + '<p class="lede" style="font-size:12px;margin:0 0 8px">' + (req
+      ? 'The required ones are not about it refusing to run. They are about '
+        + 'it running <b>wrong</b>.'
+      : 'Nothing here is broken. These are the parts that are not earning '
+        + 'their keep yet.') + '</p>'
+    + items.map(i => '<div class="si"><b>' + esc(i.t)
+        + ' <span class="pill ' + TAB[i.need][0] + '">' + TAB[i.need][1]
+        + '</span></b><span>' + i.w + '</span>'
+        + '<button class="mini" data-act="setup-go"'
+        + ' data-key="' + i.tab + '">Set it up</button></div>').join('')
+    + '<p class="src-note" style="margin-bottom:0">Shown because setup was '
+      + 'skipped or left part-done. It never blocks anything.</p>';
 }
 
 // The graph is cached, and a cache you cannot see is indistinguishable from a
@@ -5565,6 +5751,7 @@ async function settings() {
       if (ar.ok) AUDITLOG = (await ar.json()).events || [];
     } catch (e) { /* the card simply stays absent */ }
   }
+  if (managed) await checkSettingsChanged();
   if (managed && (SETTAB === 'account' || SETTAB === 'alerting') && USERS === null
       && AUTH && AUTH.role !== 'viewer') {
     try {
@@ -5587,6 +5774,7 @@ async function settings() {
   else if (SETTAB === 'diagnostics') body = diagnosticsCards();
   else { SETTAB = 'fleet'; body = fleetSettings(); }
   return `<h2>Settings</h2>
+  ${settingsChangedNote()}
   <p class="lede">Central settings are editable and reach the fleet at
   runtime - a value saved here overrides the matching environment variable.
   Diagnostics is the read-only view: what the portal verified about itself.</p>
@@ -7481,6 +7669,7 @@ async function managedAction(act, el) {
         + 'up email and send the invites that were missed.';
     USERS = null; render(); return;
   }
+  if (act === 'setup-reload') { SETTINGS = null; SETCHANGE = null; await load(true); return; }
   if (act === 'mail-open') { mailOpen(); return; }
   if (act === 'mail-close') { MAILW = null; MAILMSG = ''; render(); return; }
   if (act === 'mail-step') {
@@ -8495,6 +8684,7 @@ async function renderView() {
 // per branch is a call somebody adding the twelfth view forgets.
 async function render() {
   await renderView();
+  drawSetup();
   maybeTour();
 }
 // A detail opens in the inspector beside the list rather than replacing it.
@@ -8781,6 +8971,31 @@ fold.onclick = () => {
   try { localStorage.setItem('aiguard-side', on ? '1' : ''); } catch (e) {}
 };
 try { if (localStorage.getItem('aiguard-side')) fold.onclick(); } catch (e) {}
+// Opening it is what stops the pulse, for good and for everybody on this
+// account: the point was to be noticed once, not to keep asking.
+document.getElementById('setupbell').onclick = async () => {
+  SETUPOPEN = !SETUPOPEN;
+  if (SETUPOPEN && !pref('setup.seen')) await prefSet('setup.seen', '1');
+  drawSetup();
+};
+// The panel hangs off the topbar, which is outside the element every other
+// data-act is delegated from - so its buttons did nothing at all until this
+// existed. Its own listener, rather than moving the panel into the view:
+// it has to survive a re-render of the view it points at.
+document.getElementById('setuppanel').addEventListener('click', e => {
+  const el = e.target.closest('[data-act="setup-go"]');
+  if (!el) return;
+  SETUPOPEN = false;
+  view = 'setup'; SETTAB = el.getAttribute('data-key'); detail = null;
+  history.replaceState(null, '', '#settings/' + SETTAB);
+  drawNav(); render();
+});
+document.addEventListener('click', e => {
+  if (!SETUPOPEN) return;
+  if (e.target.closest('#setupwrap')) return;
+  SETUPOPEN = false; drawSetup();
+});
+
 document.getElementById('signout').onclick = async () => {
   await mfetch('/api/logout', {method: 'POST'});
   // Re-ask rather than compose one. A hand-written AUTH is missing every
