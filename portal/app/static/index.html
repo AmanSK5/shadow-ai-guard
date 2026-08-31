@@ -1002,14 +1002,32 @@ function prefsLocal() {
   catch (e) { return {}; }
 }
 
+// Whether PREFS is a real answer or just an empty default. Anything that
+// interrupts somebody BECAUSE a preference is absent has to know the
+// difference: absent and unread look identical, and acting on the second
+// as though it were the first is how a thing that should happen once
+// happens every time.
+let PREFS_READ = false;
+// Whether they came from the RECEIVER rather than this browser. In managed
+// mode the receiver is the record: an empty answer from it means "nothing
+// recorded", not "go and ask localStorage".
+let PREFS_SERVER = false;
+
 async function prefsLoad() {
   if (CFG.managed && CFG.managed.enabled && AUTH && AUTH.mode === 'login') {
     try {
       const r = await mfetch('/api/preferences');
-      if (r.ok) { PREFS = (await r.json()).preferences || {}; return; }
+      if (r.ok) {
+        PREFS = (await r.json()).preferences || {};
+        PREFS_READ = true;
+        PREFS_SERVER = true;
+        return;
+      }
     } catch (e) { /* fall through to the browser copy */ }
   }
   PREFS = prefsLocal();
+  PREFS_READ = true;
+  PREFS_SERVER = false;
 }
 
 const pref = (k, dflt) => PREFS[k] === undefined ? dflt : PREFS[k];
@@ -1309,6 +1327,18 @@ async function load(force) {
     const cr = await fetch('/api/config');
     if (cr.status === 401 && AUTH && AUTH.mode === 'login') { sessionLost(); return; }
     CFG = await cr.json();
+    // Preferences BEFORE anything that can throw. They lived below the
+    // graph read, so a deployment whose log store is unreachable - which
+    // is a normal state, and one the overview says out loud - threw past
+    // this and left PREFS empty on every single load. Every preference
+    // went with it: the card arrangement, the widget forms, and the
+    // record of who has already sat through the guided tour, which is why
+    // the tour reopened on every sign-in. Preferences do not depend on
+    // findings, so nothing about them belongs after that read.
+    //
+    // Its own try as well: failing to read a preference is a reason to
+    // fall back to the browser copy, never a reason to lose the page.
+    try { await prefsLoad(); } catch (e) { /* prefsLoad has its own fallback */ }
     const gr = await fetch('/api/graph' + q);
     if (!gr.ok) throw new Error((await gr.json()).detail || gr.statusText);
     G = await gr.json();
@@ -1318,10 +1348,6 @@ async function load(force) {
     // guard widget and a widget that fetches on render would flash empty.
     const pr = await fetch('/api/paste-guard' + q);
     if (pr.ok) PG = await pr.json();
-    // Before the first render: widgets read their form choice straight out
-    // of PREFS while drawing, so a late fetch would draw every card once in
-    // the default form and then again in the chosen one.
-    await prefsLoad();
     // The recorded answers to findings (acknowledged / accepted), managed
     // mode only. Failure leaves PSTAT null and every row simply reads open.
     if (CFG.managed && CFG.managed.enabled && AUTH && AUTH.mode === 'login') {
@@ -1401,6 +1427,12 @@ async function maybeTour() {
   // here would mean the tour never ran at all on the sign-in it is for.
   // Leaving the wizard renders, and this runs again.
   if (view === 'wizard') return;
+  // Not until the record has actually been read. The tour is an
+  // interruption justified only by "you have not seen this yet", and an
+  // unread preference cannot support that claim. Deliberately does not
+  // spend the one attempt: a later load that reads them can still offer
+  // it to somebody who genuinely has not.
+  if (!PREFS_READ) return;
   TOURTRIED = true;
   const seen = await tourProgress();
   const role = tourRole();
@@ -8349,8 +8381,18 @@ async function tourProgress() {
   // The same store every other preference uses. The per-key localStorage
   // entries an earlier build wrote are still honoured, so nobody in
   // classic mode is shown a tour they have already sat through.
-  const legacy = k => { try {
-    return localStorage.getItem('aiguard-tour.seen.' + k); } catch (e) { return null; } };
+  //
+  // NOT when the receiver answered, though. That fallback silently
+  // outranked a brand-new deployment: wipe the state volume, set the
+  // portal up again on the same address, and the browser still said the
+  // tour had been seen - so the walkthrough never ran for the person it
+  // exists for. The receiver saying "nothing recorded" IS the answer in
+  // managed mode; only a portal with nowhere to ask consults the browser.
+  const legacy = k => {
+    if (PREFS_SERVER) return null;
+    try { return localStorage.getItem('aiguard-tour.seen.' + k); }
+    catch (e) { return null; }
+  };
   return {admin: pref('tour.seen.admin', legacy('admin')),
           viewer: pref('tour.seen.viewer', legacy('viewer'))};
 }
