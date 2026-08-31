@@ -148,3 +148,129 @@ def test_a_state_is_single_use(managed):
                               "issuer": "i", "token_endpoint": "http://x"}
     c.post("/admin/sso/callback", json={"code": "c", "state": "s1"})
     assert "s1" not in main._SSO_FLIGHT
+
+
+# ----------------------------------------------------- enforced sign-in --
+# Requiring single sign-on is how an estate gets its multi-factor policy in
+# front of this portal. The whole risk of it is lockout, so most of what is
+# held here is about the one account that can still get in, and about not
+# letting the feature be switched on before it has been shown to work.
+
+
+def _bind_owner(st, email="root@example.com"):
+    """Give the setup account an address and a completed federated sign-in."""
+    uid = next(u["id"] for u in st.list_users() if u["username"] == "root")
+    st.set_user_email(uid, email, by="t", by_role="owner")
+    st.sso_bind(uid, TENANT, "subject-root")
+    return uid
+
+
+def test_the_setup_account_is_the_break_glass_account(managed):
+    """Not a choice anybody makes. An escape hatch somebody has to remember
+    to nominate is the one that is missing on the day it is needed."""
+    users = {u["username"]: u for u in managed.list_users()}
+    assert users["root"]["break_glass"] == 1
+    managed.create_user("jo", PASSWORD, "admin", by="t", by_role="owner")
+    later = {u["username"]: u for u in managed.list_users()}
+    assert later["jo"]["break_glass"] == 0
+    assert managed.break_glass_username() == "root"
+
+
+def test_enforcement_is_refused_until_an_owner_has_actually_signed_in(managed):
+    """An address on an account is an intention. A binding is the provider
+    having answered for somebody who can still turn this back off."""
+    managed.set_setting("sso_enabled", "1", "t")
+    assert managed.an_owner_is_bound() is False
+    owner = "Bearer " + managed.login("root", PASSWORD)["token"]
+    with pytest.raises(main.HTTPException) as e:
+        main.put_settings(main.SettingsUpdate(sso_enforce="1"),
+                          authorization=owner)
+    assert e.value.status_code == 422
+    assert "completed a single sign-on" in e.value.detail
+    assert managed.get_setting("sso_enforce") is None
+
+    # Bound, and now it is allowed.
+    _bind_owner(managed)
+    main.put_settings(main.SettingsUpdate(sso_enforce="1"), authorization=owner)
+    assert managed.get_setting("sso_enforce") == "1"
+
+
+def test_enforcement_is_refused_while_single_sign_on_itself_is_off(managed):
+    _bind_owner(managed)
+    owner = "Bearer " + managed.login("root", PASSWORD)["token"]
+    with pytest.raises(main.HTTPException) as e:
+        main.put_settings(main.SettingsUpdate(sso_enforce="1"),
+                          authorization=owner)
+    assert e.value.status_code == 422
+    assert "has to be on" in e.value.detail
+
+
+def test_enforced_sign_in_refuses_a_correct_password(managed):
+    managed.set_setting("sso_enabled", "1", "t")
+    _bind_owner(managed)
+    managed.create_user("jo", PASSWORD, "admin", by="t", by_role="owner")
+    managed.set_setting("sso_enforce", "1", "t")
+
+    with pytest.raises(state_mod.AuthError) as e:
+        managed.login("jo", PASSWORD)
+    # 403 and not 401: the credential was right, the policy refused. The
+    # caller needs the difference to keep this off the failure throttle.
+    assert e.value.status == 403
+    assert "single sign-on" in e.value.detail
+
+
+def test_a_wrong_password_still_answers_the_same_under_enforcement(managed):
+    """Enforcement is checked after the password verifies, so somebody with
+    no credential cannot walk a list of usernames and read off which one is
+    the escape hatch."""
+    managed.set_setting("sso_enabled", "1", "t")
+    _bind_owner(managed)
+    managed.create_user("jo", PASSWORD, "admin", by="t", by_role="owner")
+    managed.set_setting("sso_enforce", "1", "t")
+
+    for name in ("jo", "root", "nobody-at-all"):
+        with pytest.raises(state_mod.AuthError) as e:
+            managed.login(name, "the-wrong-password-entirely")
+        assert e.value.status == 401
+        assert e.value.detail == "bad username or password"
+
+
+def test_the_break_glass_account_still_gets_in_and_says_so(managed):
+    managed.set_setting("sso_enabled", "1", "t")
+    _bind_owner(managed)
+    managed.set_setting("sso_enforce", "1", "t")
+
+    out = managed.login("root", PASSWORD)
+    assert out["token"].startswith(state_mod.SESSION_PREFIX)
+    kinds = [e["kind"] for e in managed.list_events(50)]
+    assert "break_glass_login" in kinds
+
+
+def test_the_break_glass_account_cannot_be_removed_while_it_is_load_bearing(managed):
+    managed.set_setting("sso_enabled", "1", "t")
+    uid = _bind_owner(managed)
+    # A second owner, so what refuses below is the break-glass guard and
+    # not the older "cannot remove the last owner" one.
+    managed.create_user("second", PASSWORD, "owner", by="t", by_role="owner")
+    managed.set_setting("sso_enforce", "1", "t")
+
+    with pytest.raises(state_mod.AuthError) as e:
+        managed.delete_user(uid, by="t", by_role="owner")
+    assert e.value.status == 409
+    with pytest.raises(state_mod.AuthError) as e:
+        managed.set_user_role(uid, "admin", by="t", by_role="owner")
+    assert e.value.status == 409
+
+    # Off again, and it is an ordinary account.
+    managed.set_setting("sso_enforce", None, "t")
+    assert managed.set_user_role(uid, "admin", by="t", by_role="owner") is True
+
+
+def test_the_authority_is_microsoft_unless_something_says_otherwise():
+    """The override is the whole trust root of federated sign-in, so it is
+    deliberately explicit: no heuristic, no autodetection, and a boot line
+    every time it is in effect."""
+    assert main._MS_AUTHORITY == "https://login.microsoftonline.com"
+    assert main._DISCOVERY.startswith(main._MS_AUTHORITY), (
+        "SSO_AUTHORITY_URL must not be set in the test environment")
+    assert "%s/v2.0/.well-known/openid-configuration" in main._DISCOVERY

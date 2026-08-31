@@ -981,12 +981,24 @@ class PasswordChangeRequest(BaseModel):
 
 @app.get("/admin/setup")
 def setup_needed():
-    """Whether the create-account door is open. Unauthenticated by design:
-    it says one bit, and the portal needs that bit to choose between the
-    sign-in form and the create-account form honestly."""
+    """What the sign-in screen needs before anybody has authenticated.
+
+    Unauthenticated by design, and deliberately two bits that say nothing
+    about the estate. Whether the create-account door is open, so the
+    portal can choose between the sign-in form and the create-account form
+    honestly. And whether federated sign-in is on, because somebody who
+    was onboarded through the identity provider has no password here to
+    type, and a sign-in screen that only offers the one credential they do
+    not have is a locked door.
+    """
     if STATE is None:
         raise HTTPException(404, "Not Found")
-    return {"needed": not STATE.has_admin()}
+    return {"needed": not STATE.has_admin(),
+            "sso_enabled": _sso_conf()["enabled"],
+            # Enforced means the password form has nothing to offer anybody
+            # but one account, and a screen that still leads with it is
+            # inviting every other person to fail.
+            "sso_enforced": _sso_conf()["enabled"] and STATE.sso_enforced()}
 
 
 @app.post("/admin/setup")
@@ -1043,6 +1055,12 @@ def login(req: LoginRequest):
         return STATE.login(req.username, req.password, SESSION_TTL_HOURS,
                            log_failure=user_n < LOGIN_LOGGED_FAILURES)
     except _state.AuthError as e:
+        # 403 is the enforcement refusal, and the password was right. It
+        # must not touch the throttle: the counters are global as well as
+        # per-user, so counting these would let one person's habit of
+        # typing their password lock every account out of signing in.
+        if e.status == 403:
+            raise HTTPException(e.status, e.detail)
         _login_failed(req.username)
         if user_n + 1 == LOGIN_MAX_FAILURES_PER_USER:
             STATE.record_login_throttled(req.username)
@@ -1617,6 +1635,11 @@ _STR_SETTINGS = (
     ("sso_client_secret", False, 512),
     ("sso_redirect_uri", True, 500),
     ("sso_enabled", False, 1),
+    # Enforcement: a correct password stops being enough for every account
+    # except the break-glass one. Guarded in put_settings, because turning
+    # this on without a federated sign-in ever having completed is how a
+    # deployment locks itself down to a single password.
+    ("sso_enforce", False, 1),
     # The currency the Budget view's headline reports in, and the default
     # for newly linked tools. A display preference, not money math: the
     # portal never converts between currencies.
@@ -1646,6 +1669,7 @@ class SettingsUpdate(BaseModel):
     sso_client_id: str | None = Field(default=None, max_length=64)
     sso_redirect_uri: str | None = Field(default=None, max_length=500)
     sso_enabled: str | None = Field(default=None, max_length=1)
+    sso_enforce: str | None = Field(default=None, max_length=1)
     sso_client_secret: str | None = Field(default=None, max_length=512)
     alertmanager_url: str | None = Field(default=None, max_length=500)
     grafana_url: str | None = Field(default=None, max_length=500)
@@ -1741,6 +1765,13 @@ def get_settings(authorization: str = Header(default="")):
         "sso_tenant_id": plain("sso_tenant_id"),
         "sso_client_id": plain("sso_client_id"),
         "sso_redirect_uri": plain("sso_redirect_uri"),
+        # What the portal needs to draw the enforcement control honestly:
+        # whether it is on, and whether it could be turned on at all.
+        "sso_enforce": plain("sso_enforce"),
+        "sso_enforce_ready": {"value": "1" if STATE.an_owner_is_bound() else "",
+                              "source": "derived"},
+        "sso_break_glass": {"value": STATE.break_glass_username(),
+                            "source": "derived"},
         "sso_enabled": plain("sso_enabled"),
         # The secret is not. Same treatment as the log-store password: set
         # -ness and source, never the value.
@@ -1855,6 +1886,21 @@ def put_settings(req: SettingsUpdate, authorization: str = Header(default="")):
             # only reports detector hits) and is stored as one; null
             # deletes, falling back to the artifact default set.
             STATE.set_setting("classification_markings", marks, by)
+
+    # Checked before the loop writes anything: the refusal has to name the
+    # missing thing, and a partial write that enabled enforcement and then
+    # failed on a later key would be the lockout this exists to prevent.
+    if (req.sso_enforce or "").strip() == "1":
+        stored = STATE.get_settings()
+        if stored.get("sso_enabled") != "1" and (
+                req.sso_enabled or "").strip() != "1":
+            raise HTTPException(
+                422, "single sign-on has to be on before it can be required")
+        if not STATE.an_owner_is_bound():
+            raise HTTPException(
+                422, "no owner has completed a single sign-on yet. Sign in "
+                     "through the provider once first: requiring a door "
+                     "nobody has opened leaves only the break-glass account")
 
     for key, is_url, _max in _STR_SETTINGS:
         if key not in req.model_fields_set:
