@@ -258,6 +258,11 @@ _ADMIN_COLUMNS_ADDED = (
     # never offered as a choice: an escape hatch somebody has to remember
     # to nominate is one that is missing on the day it is needed.
     ("break_glass", "INTEGER NOT NULL DEFAULT 0"),
+    # When this account was last told it exists. NULL means nobody has been
+    # emailed - either there was no mail server when it was created, or the
+    # send failed. It is the difference between "we invited them" and "we
+    # assume they know", and only one of those is worth reporting.
+    ("invited_at", "TEXT"),
 )
 
 # A subscription from before licence coverage covers exactly its own tool,
@@ -907,11 +912,42 @@ class State:
                 " AND sso_bound_at IS NOT NULL LIMIT 1").fetchone()
         return row is not None
 
+    def mark_invited(self, uid: str) -> bool:
+        """Record that this account has been told it exists."""
+        with self._lock:
+            cur = self._db.execute(
+                "UPDATE admin_users SET invited_at = ? WHERE id = ?",
+                (_now(), uid))
+            self._event("user_invited", {"user": uid})
+            self._db.commit()
+        return bool(cur.rowcount)
+
+    def uninvited(self) -> list[dict]:
+        """Accounts with an address that nobody has ever been told about.
+
+        The retroactive half of invites: a deployment that created accounts
+        before it had a mail server should not be left with a permanent gap
+        for everybody it onboarded early.
+        """
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT id, username, email FROM admin_users"
+                " WHERE invited_at IS NULL AND email IS NOT NULL"
+                " ORDER BY created_at").fetchall()
+        return [dict(r) for r in rows]
+
+    def user_by_id(self, uid: str) -> dict | None:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT id, username, email, role FROM admin_users"
+                " WHERE id = ?", (uid,)).fetchone()
+        return dict(row) if row else None
+
     def list_users(self) -> list[dict]:
         with self._lock:
             rows = self._db.execute(
                 "SELECT id, username, email, role, created_at, last_login_at,"
-                " sso_bound_at, break_glass FROM admin_users"
+                " sso_bound_at, break_glass, invited_at FROM admin_users"
                 " ORDER BY created_at"
             ).fetchall()
         return [dict(r) for r in rows]

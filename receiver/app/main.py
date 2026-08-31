@@ -32,7 +32,9 @@ import os
 import re
 import secrets
 import sys
+import smtplib
 import threading
+from email.message import EmailMessage
 import time
 import urllib.parse
 from datetime import date, datetime, timedelta, timezone
@@ -1145,11 +1147,89 @@ def post_user(req: UserCreate, authorization: str = Header(default="")):
         raise HTTPException(422, "usernames are 2-64 characters of letters, "
                                  "digits, . _ @ -")
     try:
-        return STATE.create_user(req.username, req.password, req.role,
-                                 _admin_actor(authorization), req.email,
-                                 _actor_role(authorization))
+        out = STATE.create_user(req.username, req.password, req.role,
+                                _admin_actor(authorization), req.email,
+                                _actor_role(authorization))
     except _state.AuthError as e:
         raise HTTPException(e.status, e.detail)
+    # The invite goes after the account exists, never as a condition of it.
+    # Its outcome rides back on the response so the page can say what
+    # actually happened rather than implying a mail nobody sent.
+    out["invited"] = False
+    out["invite_error"] = ""
+    if out.get("email") and _smtp_conf()["ready"]:
+        why = _send_invite(out)
+        if why:
+            out["invite_error"] = why
+        else:
+            STATE.mark_invited(out["id"])
+            out["invited"] = True
+    elif out.get("email"):
+        out["invite_error"] = "no mail server is configured"
+    return out
+
+
+class InviteRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+    # Empty means everybody who has never been told. Naming one account is
+    # the resend case.
+    user_id: str = Field(default="", max_length=64)
+
+
+@app.post("/admin/users/invite")
+def send_invites(req: InviteRequest, authorization: str = Header(default="")):
+    """Tell people their account exists. One, or everybody who was missed.
+
+    Synchronous, unlike the invite that rides on account creation: somebody
+    pressed a button that does exactly this and is owed the outcome of it.
+    """
+    _admin_auth(authorization, write=True)
+    if not _smtp_conf()["ready"]:
+        raise HTTPException(400, "no mail server is configured")
+    if req.user_id:
+        user = STATE.user_by_id(req.user_id)
+        if user is None:
+            raise HTTPException(404, "no such account")
+        if not user.get("email"):
+            raise HTTPException(422, "that account has no email address")
+        targets = [user]
+    else:
+        targets = STATE.uninvited()
+    sent, failed = 0, []
+    for u in targets:
+        why = _send_invite(u)
+        if why:
+            failed.append({"username": u["username"], "detail": why})
+        else:
+            STATE.mark_invited(u["id"])
+            sent += 1
+    return {"sent": sent, "failed": failed, "considered": len(targets)}
+
+
+class MailTest(BaseModel):
+    model_config = {"extra": "forbid"}
+    to: str = Field(min_length=3, max_length=320)
+
+
+@app.post("/admin/test/mail")
+def test_mail(req: MailTest, authorization: str = Header(default="")):
+    """Prove the relay works before anybody depends on it.
+
+    The same lesson the sign-on wizard taught: configuration that looks
+    right and silently does not send is how an invite vanishes and the
+    person who never got it is blamed for not checking their inbox.
+    """
+    _admin_auth(authorization, write=True)
+    conf = _smtp_conf()
+    if not conf["ready"]:
+        raise HTTPException(400, "a server and a from address are needed first")
+    why = _smtp_send(
+        req.to.strip(), "Shadow AI Guard: test message",
+        "This is a test from the Shadow AI Guard portal.\n\n"
+        "If you are reading it, invites will reach people.\n")
+    if why:
+        return {"ok": False, "detail": why}
+    return {"ok": True, "detail": "sent to %s" % req.to.strip()}
 
 
 @app.post("/admin/users/{uid}/delete")
@@ -1672,13 +1752,36 @@ _STR_SETTINGS = (
     # for newly linked tools. A display preference, not money math: the
     # portal never converts between currencies.
     ("budget_currency", False, 8),
+    # Outbound mail, for telling somebody an account has been made for
+    # them. Optional everywhere: an estate with no relay creates accounts
+    # exactly as before and is told plainly that nobody was emailed, which
+    # is the honest half of "invites" that a blocked Add account is not.
+    ("smtp_host", False, 255),
+    ("smtp_port", False, 5),
+    ("smtp_username", False, 255),
+    ("smtp_password", False, 512),
+    # What the mail says it is from. Separate from the username because
+    # plenty of relays authenticate as one identity and send as another.
+    ("smtp_from", False, 320),
+    # starttls (the default and what almost every relay wants), tls for
+    # implicit TLS on 465, or none for a relay on a trusted network.
+    ("smtp_security", False, 16),
+    # The invite itself. Empty means the built-in wording; anything here
+    # replaces it whole. {username} and {portal_url} are substituted.
+    ("invite_subject", False, 200),
+    ("invite_body", False, 4000),
+    # The address people are told to go to. The receiver has no idea what
+    # hostname the portal is reached on, and a link to the wrong one is
+    # worse than no link.
+    ("portal_public_url", True, 500),
 )
 
 # What the paste guard does when a marked document is pasted into an AI
 # tool. Baked into every extension policy artifact; "warn" is the default
 # when unset, matching the extension's own default.
 _PASTE_GUARD_MODES = ("off", "warn", "block")
-SECRET_SETTINGS = ("log_store_password", "webhook_url", "sso_client_secret")
+SECRET_SETTINGS = ("log_store_password", "webhook_url", "sso_client_secret",
+                   "smtp_password")
 
 
 class SettingsUpdate(BaseModel):
@@ -1708,6 +1811,15 @@ class SettingsUpdate(BaseModel):
     extension_crx_url: str | None = Field(default=None, max_length=500)
     extension_xpi_url: str | None = Field(default=None, max_length=500)
     webhook_url: str | None = Field(default=None, max_length=500)
+    smtp_host: str | None = Field(default=None, max_length=255)
+    smtp_port: str | None = Field(default=None, max_length=5)
+    smtp_username: str | None = Field(default=None, max_length=255)
+    smtp_password: str | None = Field(default=None, max_length=512)
+    smtp_from: str | None = Field(default=None, max_length=320)
+    smtp_security: str | None = Field(default=None, max_length=16)
+    invite_subject: str | None = Field(default=None, max_length=200)
+    invite_body: str | None = Field(default=None, max_length=4000)
+    portal_public_url: str | None = Field(default=None, max_length=500)
     budget_currency: str | None = Field(default=None, max_length=8)
     paste_guard_mode: str | None = Field(default=None, max_length=8)
     firefox_extension_id: str | None = Field(default=None, max_length=128)
@@ -1778,6 +1890,15 @@ def get_settings(authorization: str = Header(default="")):
         # An incoming webhook URL is itself a bearer capability - whoever
         # holds it can post to the channel - so it is masked like the log
         # store password: set-ness and source, never the value.
+        "smtp_password": {
+            # Never a value, only whether one exists and where from. A
+            # password mounted by the deployment is still "set" as far as
+            # anybody configuring this needs to know.
+            "set": (stored.get("smtp_password") is not None
+                    or bool(_SMTP_ENV["smtp_password"])),
+            "source": "db" if stored.get("smtp_password") is not None
+                      else ("env" if _SMTP_ENV["smtp_password"] else "unset"),
+        },
         "webhook_url": {
             "set": stored.get("webhook_url") is not None,
             "source": "db" if stored.get("webhook_url") is not None else "unset",
@@ -1793,6 +1914,22 @@ def get_settings(authorization: str = Header(default="")):
         "sso_tenant_id": plain("sso_tenant_id"),
         "sso_client_id": plain("sso_client_id"),
         "sso_redirect_uri": plain("sso_redirect_uri"),
+        "smtp_host": plain("smtp_host", _SMTP_ENV["smtp_host"]),
+        "smtp_port": plain("smtp_port", _SMTP_ENV["smtp_port"]),
+        "smtp_username": plain("smtp_username", _SMTP_ENV["smtp_username"]),
+        "smtp_from": plain("smtp_from", _SMTP_ENV["smtp_from"]),
+        "smtp_security": plain("smtp_security", _SMTP_ENV["smtp_security"]),
+        "invite_subject": plain("invite_subject"),
+        "invite_body": plain("invite_body"),
+        # The built-in wording, so the portal can show it as the starting
+        # point and offer a way back to it.
+        "invite_default_subject": {"value": INVITE_SUBJECT, "source": "derived"},
+        "invite_default_body": {"value": INVITE_BODY, "source": "derived"},
+        "portal_public_url": plain("portal_public_url"),
+        # Derived, so the portal can say "nobody was emailed" without
+        # having to work out what "configured" means for itself.
+        "smtp_ready": {"value": "1" if _smtp_conf()["ready"] else "",
+                       "source": "derived"},
         # What the portal needs to draw the enforcement control honestly:
         # whether it is on, and whether it could be turned on at all.
         "sso_enforce": plain("sso_enforce"),
@@ -1929,6 +2066,16 @@ def put_settings(req: SettingsUpdate, authorization: str = Header(default="")):
                 422, "no owner has completed a single sign-on yet. Sign in "
                      "through the provider once first: requiring a door "
                      "nobody has opened leaves only the break-glass account")
+
+    if "smtp_security" in req.model_fields_set:
+        mode = (req.smtp_security or "").strip()
+        if mode and mode not in _SMTP_SECURITY:
+            raise HTTPException(422, "smtp_security must be one of: %s"
+                                % ", ".join(_SMTP_SECURITY))
+    if "smtp_port" in req.model_fields_set:
+        port = (req.smtp_port or "").strip()
+        if port and not (port.isdigit() and 1 <= int(port) <= 65535):
+            raise HTTPException(422, "smtp_port must be a number from 1 to 65535")
 
     for key, is_url, _max in _STR_SETTINGS:
         if key not in req.model_fields_set:
@@ -2176,6 +2323,147 @@ def _candidate_key(kind: str, name: str) -> str:
     varying its capitalisation and a key is always safe in a URL path."""
     slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "unknown"
     return "%s:%s" % (kind, slug[:80])
+
+
+# ------------------------------------------------------------- outbound mail --
+# Telling somebody an account has been made for them. Deliberately small:
+# stdlib smtplib, no templating engine, no queue, and nothing in the message
+# that is worth intercepting.
+#
+# ON WHAT THE INVITE CONTAINS. Nothing secret. It says an account exists and
+# where to sign in, and that is all. It carries no token and sets no
+# password, so an invite sitting in the wrong inbox gains its reader
+# nothing they could not have guessed. The alternative - a link that sets a
+# password - is a credential in an inbox, and it needs expiry, single use,
+# revocation and a throttle before it is safe. That is a feature of its
+# own, not a line in this one.
+#
+# ON NOT BLOCKING. Sending happens on a thread and its failure is reported
+# rather than raised. An account is created whether or not a relay answers:
+# a product that refuses to make somebody an account because the mail
+# server is not set up yet has chosen its own tidiness over the operator's
+# morning.
+
+_SMTP_SECURITY = ("starttls", "tls", "none")
+
+# Every field can come from the environment instead, and the database wins
+# when it holds one - the same precedence every other setting here uses.
+#
+# It exists for the password above all. In a cluster the relay credential is
+# already a Secret, mounted into whatever else sends mail, and asking
+# somebody to read it back out and paste it into a web form is asking them
+# to copy a secret into a place it did not need to go. The chart can mount
+# the same Secret here and the portal will show it as coming from the
+# deployment, with no value to echo.
+_SMTP_ENV = {
+    "smtp_host": os.environ.get("SMTP_HOST", ""),
+    "smtp_port": os.environ.get("SMTP_PORT", ""),
+    "smtp_username": os.environ.get("SMTP_USERNAME", ""),
+    "smtp_password": os.environ.get("SMTP_PASSWORD", ""),
+    "smtp_from": os.environ.get("SMTP_FROM", ""),
+    "smtp_security": os.environ.get("SMTP_SECURITY", ""),
+}
+
+
+def _smtp_conf() -> dict:
+    g = (lambda k, d="": ((STATE.get_setting(k) if STATE else None)
+                          or _SMTP_ENV.get(k, "") or d))
+    host = g("smtp_host").strip()
+    sender = g("smtp_from").strip()
+    return {
+        "host": host,
+        "port": int(g("smtp_port") or 0) or (465 if g("smtp_security") == "tls"
+                                             else 587),
+        "username": g("smtp_username"),
+        "password": g("smtp_password"),
+        "sender": sender,
+        "security": g("smtp_security") or "starttls",
+        "portal_url": g("portal_public_url").rstrip("/"),
+        # Ready means a message could actually be addressed and sent. A
+        # host with no from address produces mail most relays refuse, so
+        # it is not "configured" in any sense worth reporting as such.
+        "ready": bool(host and sender),
+    }
+
+
+def _smtp_send(to: str, subject: str, body: str) -> str:
+    """Send one message. Returns "" on success, or a short reason.
+
+    Synchronous and caller-timed: the test button wants the reason, and the
+    invite path runs this on a thread of its own.
+    """
+    conf = _smtp_conf()
+    if not conf["ready"]:
+        return "no mail server is configured"
+    msg = EmailMessage()
+    msg["From"] = conf["sender"]
+    msg["To"] = to
+    msg["Subject"] = subject
+    msg.set_content(body)
+    try:
+        if conf["security"] == "tls":
+            server = smtplib.SMTP_SSL(conf["host"], conf["port"], timeout=15)
+        else:
+            server = smtplib.SMTP(conf["host"], conf["port"], timeout=15)
+        with server:
+            if conf["security"] == "starttls":
+                server.starttls()
+            if conf["username"]:
+                server.login(conf["username"], conf["password"])
+            server.send_message(msg)
+    except Exception as e:  # noqa: BLE001 - the reason is the whole point
+        # The class name and the provider's own words, trimmed. Relays say
+        # useful things here ("relay access denied", "authentication
+        # failed") and swallowing them makes this impossible to debug.
+        return ("%s: %s" % (type(e).__name__, e))[:300]
+    return ""
+
+
+INVITE_SUBJECT = "You have access to Shadow AI Guard"
+
+# The default, and the thing an estate edits rather than replaces from
+# nothing. Two placeholders, both filled in below.
+INVITE_BODY = """An account has been created for you.
+
+Username: {username}
+Where: {portal_url}
+
+Sign in with your work email address. If single sign-on is not set up for
+you, whoever created the account will give you a password separately.
+
+Nothing in this message is secret, and it grants no access on its own.
+"""
+
+
+def _invite_text(username: str) -> tuple[str, str]:
+    """The invite, as this deployment has it.
+
+    Fully editable, because it is their mail on their deployment and an
+    organisation with wording standards is not wrong to have them. What
+    replaces the old refusal is a warning in the portal: mail from a
+    security tool telling staff to go and sign in is already the shape of
+    an attack, and a body that adds a link somewhere else is the version
+    of it nobody can tell apart from the real thing. Said, not enforced.
+    """
+    conf = _smtp_conf()
+    g = (lambda k, d: ((STATE.get_setting(k) if STATE else None) or "").strip() or d)
+    subject = g("invite_subject", INVITE_SUBJECT)
+    body = g("invite_body", INVITE_BODY)
+    fields = {"username": username,
+              "portal_url": conf["portal_url"] or "the Shadow AI Guard portal"}
+    for k, v in fields.items():
+        # Plain replacement rather than str.format: a body somebody typed
+        # will contain a stray brace sooner or later, and losing an invite
+        # to a KeyError is a worse outcome than a literal {oops} arriving.
+        subject = subject.replace("{%s}" % k, v)
+        body = body.replace("{%s}" % k, v)
+    return subject, body
+
+
+def _send_invite(user: dict) -> str:
+    """One invite, synchronously. Returns "" or a reason."""
+    subject, body = _invite_text(user.get("username", ""))
+    return _smtp_send(user.get("email", ""), subject, body)
 
 
 def _notify_webhook(text: str):

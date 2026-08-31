@@ -85,6 +85,31 @@ the honest path here.
 The portal is never in the ingest path. Stop that one service and
 collection carries on, which is a property worth seeing for yourself.
 
+## Email and invites, without a mail server
+
+The stack ships a mailbox. **http://localhost:8025** is Mailpit: it accepts
+anything and shows it, and nothing leaves the machine.
+
+In **Settings > Display & alerting > Email**, save:
+
+| Field | Value |
+| --- | --- |
+| Server | `mailpit` |
+| Port | `1025` |
+| Security | None (trusted network only) |
+| From address | `ai-guard@example.com` |
+| Portal address | `http://localhost:8091` |
+
+The card also has a picker - **Microsoft 365, Google Workspace, Amazon SES, or something else** - which fills in the host and port and says what kind of credential that provider wants and where it comes from. Worth reading the Microsoft 365 one even if you use it every day: the username-and-password route is being retired.
+
+Press **Send a test**, then open Mailpit and read it. After that, add an
+account under **Settings > Account** and the invite lands in the same place.
+
+Email is optional. With none of it configured, accounts are created exactly
+as before and the portal says plainly that nobody was emailed, rather than
+refusing to create them - and once a server is saved, one button sends the
+invites that were missed.
+
 ## Single sign-on, without a tenant
 
 The stack ships a stand-in identity provider, so the sign-on wizard can be
@@ -150,7 +175,7 @@ contains what you pasted. Deploying the real extension is covered in
 
 ## What is running
 
-Seven containers:
+Eight containers:
 
 - **loki** - the log store, where findings land
 - **receiver** - the real receiver, built from `../receiver`, running
@@ -166,6 +191,8 @@ Seven containers:
   `guard.js` it loads
 - **entra-mock** - a stand-in identity provider, so federated sign-in can be
   tried without a tenant. Demo only; see the note above
+- **mailpit** - a mailbox that accepts anything and shows it at
+  http://localhost:8025, so invites can be read rather than assumed
 
 The seed data covers all six surfaces and all three endpoint OSes, with a
 mix of personal accounts (which show as warnings) and corporate accounts, so

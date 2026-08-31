@@ -97,6 +97,30 @@ managed:
   adminToken:
     value: ""
     existingSecret: ""   # a Secret with an `adminToken` key
+  # Outbound mail, for telling somebody an account has been made for them.
+  # Every field here is optional and every one can also be set from the
+  # portal instead - a value saved there wins over what is set here, which
+  # is how every other setting in this chart behaves.
+  #
+  # Worth doing HERE rather than in the portal when the relay credential is
+  # already a Secret in this cluster, which it usually is: whatever else you
+  # run that sends mail (GitLab, Grafana, Alertmanager) is reading one
+  # already, and existingSecret points at that same one rather than asking
+  # somebody to read it back out and paste it into a web form.
+  #
+  # An in-cluster relay is normally: host the service's DNS name, port 25,
+  # security "none", because it decides what to accept by the sending pod
+  # rather than by a credential.
+  smtp:
+    host: ""             # e.g. postfix.mail.svc.cluster.local
+    port: ""             # blank means 587, or 465 when security is tls
+    security: ""         # starttls (default), tls, or none
+    username: ""
+    from: ""             # what the mail says it is from
+    password:
+      value: ""
+      existingSecret: ""  # a Secret to read the password from
+      key: password       # the key inside it
   persistence:
     size: 1Gi
     storageClass: ""     # empty means the cluster default
