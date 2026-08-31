@@ -4657,8 +4657,13 @@ function accountSettings() {
     ${`${(() => {
       const on = ((SETTINGS && SETTINGS.settings && SETTINGS.settings.sso_enabled
         && SETTINGS.settings.sso_enabled.value) === '1');
+      // Beta, and said where somebody is about to act on it rather than
+      // only in the docs: it has not been run against a real Entra app
+      // registration, and this card is the last screen before a team is
+      // moved onto it.
       return `<p style="margin:0 0 6px"><span class="pill p-ok">${
-        on ? 'On' : 'Off'}</span></p>
+        on ? 'On' : 'Off'}</span> <span class="pill p-amb"
+        title="not yet run against a real Entra app registration">beta</span></p>
       <p class="lede">${on
         ? 'People with an email address on their account can sign in through '
           + 'Microsoft Entra. Passwords keep working, so an account without '
