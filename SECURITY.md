@@ -80,12 +80,35 @@ In managed mode it is a real login: accounts in the receiver's state DB
 (scrypt-hashed passwords; the first is created on first boot with a one-time
 setup code the receiver prints to its log, further ones by an admin from
 inside), a session carried as an HttpOnly SameSite=Strict cookie, validated
-against the receiver per request. Accounts carry a role: an admin runs the
-platform, a viewer reads every page and is refused by every write route -
-the shape for an auditor, who gets the visibility without becoming a way
-in. The last admin cannot be deleted, password resets revoke the sessions
-the old password minted, and every admin action lands in the receiver's
-event log with who did it.
+against the receiver per request.
+
+Accounts carry one of three roles. An **owner** is what the setup code
+creates; an **admin** runs the platform; a **viewer** reads every page and
+is refused by every write route - the shape for an auditor, who gets the
+visibility without becoming a way in. The roles are ranked, and two rules
+follow from that rank: you cannot act on an account that outranks you, and
+you cannot grant a role above your own. Without them the tier above admin
+would exist in name only, because an admin reaches an owner through any of
+three doors - reset their password and sign in as them, set their email and
+sign in through the identity provider, or simply change their role. This is
+the escalation prevention Kubernetes RBAC names, and the same shape Entra
+enforces by refusing a password reset against a higher-privileged role.
+
+**The last owner cannot be removed or demoted.** This replaced a floor
+under the last admin, and is stricter than that floor ever was: an admin
+cannot make an owner, so losing the last one could not be undone from
+inside at all. Password resets revoke the sessions the old password minted,
+and every account action lands in the receiver's event log with who did it.
+
+Sign-in can also be federated to **Microsoft Entra**, which is beta: it has
+not yet been run against a real app registration. It authenticates, it does
+not provision. An account must already exist with the matching email
+address; the first successful sign-in binds that account to the tenant and
+subject GUID permanently, and a later attempt to bind it to a different
+federated identity is refused - rebinding is how an address change would
+otherwise hand somebody else's account away. Unbinding is deliberate,
+separate, and subject to the same rank rule. The account's password keeps
+working unless you remove it.
 
 A word on what the state DB holds, because it changed in 0.9.8. **Fleet
 credentials** - enrollment tokens, device credentials, sessions, the admin

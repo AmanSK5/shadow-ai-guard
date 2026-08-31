@@ -50,10 +50,9 @@ Both routes need a log store for findings. If you already run Loki, you will
 connect it in step 3 and nothing needs configuring up front. If you don't, the
 compose file includes one.
 
-## 2. Create your admin account
+## 2. Create the owner account
 
-The receiver prints a one-time setup code when it starts with no admin
-account:
+The receiver prints a one-time setup code when it starts with no account:
 
 ```bash
 # Kubernetes
@@ -67,11 +66,19 @@ On Windows, swap `grep -i` for `findstr /i` - it is built into both
 PowerShell and cmd.
 
 Open the portal, enter the code, pick a username and password. The code works
-exactly once and only for creating the first account.
+exactly once and only for creating the first account, and that account is the
+deployment's **owner** - the role that cannot be locked out, because an admin
+cannot create another one. Every account after it is added from inside the
+portal.
 
 ## 3. Follow the wizard
 
-The portal opens on a first-run wizard. Work through it top to bottom:
+The portal opens on a first-run wizard: seven steps, one screen at a time,
+with a rail down the side marking each one required, recommended or
+optional. Only two are required - the receiver URL and corporate domains -
+because a deployment missing either runs wrong rather than not running. Once
+both are in it will tell you the deployment can go out. You can leave at any
+point and pick it up again under Settings > Getting started.
 
 1. **Public receiver URL** - the URL your laptops and servers can reach the
    receiver on from outside the cluster. This gets baked into every download,
@@ -150,10 +157,17 @@ Everything below is optional and independent. Add them in any order.
 - **Discovery**: a scheduled job that spots AI domains in your fleet's DNS
   that the registry doesn't know yet, and queues them in the portal's review
   queue for you to define or dismiss. The portal generates this CronJob too.
-- **More eyes**: add accounts under Settings. Admins run the platform;
-  viewers read every page and can change nothing, which is the right shape
-  for an auditor or an exec. Every change anyone makes lands in the audit
-  trail under Diagnostics.
+- **More eyes**: add accounts under Settings > Account. The setup code made
+  you the owner; from there you can add admins, who run the platform, and
+  viewers, who read every page and can change nothing - the right shape for
+  an auditor or an exec. Nobody can act on an account that outranks them or
+  grant a role above their own, and the last owner cannot be removed. Every
+  change anyone makes lands in the audit trail under Diagnostics.
+- **Single sign-on** (beta): the same tab federates sign-in to Microsoft
+  Entra. It authenticates rather than provisions - create the account first
+  with the person's work address, and their first Entra sign-in binds it to
+  that identity for good. It has not yet been run against a real app
+  registration, so pilot it on one account before moving anybody across.
 - **Notifications**: set a webhook URL in Settings and the receiver posts to
   Slack (or anything webhook-compatible) the moment discovery finds a new
   tool. The portal can also send a weekly digest of the estate; see the

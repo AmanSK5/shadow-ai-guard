@@ -78,9 +78,12 @@ helm install ai-guard oci://ghcr.io/amansk5/shadow-ai-guard/charts/ai-guard \
 ```
 
 The receiver prints a one-time setup code to its log. Open the portal, create
-your admin account with it, and the first-run wizard walks you through the
-rest: log store, corporate domains, tool approvals, and ready-to-run downloads
-for the collectors, the browser extension and the scanners.
+the owner account with it, and the first-run wizard walks you through the
+rest in seven steps: receiver URL, log store, corporate domains, tool
+approvals, the browser extension, alerting, and ready-to-run downloads for
+the collectors and the scanners. Two of those are marked required, because a
+deployment missing them runs wrong rather than not running. You can leave the
+wizard at any point and pick it up again under Settings > Getting started.
 
 ```bash
 kubectl logs deploy/ai-guard -n ai-guard | grep setup_code
@@ -147,12 +150,25 @@ is operated:
 - **The fleet.** Devices enroll with their own credential and can be revoked
   individually. Enrollment tokens are invitations; devices are badges; both
   are managed here.
-- **Accounts.** Admins run the platform. Viewers read every page and can
-  change nothing - made for the auditor and the exec. Every change lands in
-  an audit trail with who did it.
+- **Accounts.** Three roles. The **owner** is the account the setup code
+  creates and the one that cannot be locked out: an admin cannot make
+  another owner, so the last one cannot be removed. **Admins** run the
+  platform. **Viewers** read every page and can change nothing - made for
+  the auditor and the exec. Nobody can act on an account that outranks
+  them, or grant a role above their own, which is what stops an admin
+  reaching an owner by resetting a password or changing a role. Sign-in is
+  a username and password, or Microsoft Entra where you would rather not
+  keep a second set of credentials. Every change lands in an audit trail
+  with who did it.
 - **Notifications.** A webhook fires the moment discovery finds something
   new, and a weekly digest summarises the estate to Slack or anything
   webhook-compatible.
+- **Finding your way around.** A guided walkthrough runs on a first sign-in
+  and covers every section of the portal, in the words of the role taking
+  it: an admin is told what to change, a viewer who to ask. The overview is
+  arranged per person - drag the cards, stack them, resize or hide them -
+  and that arrangement is yours, not the deployment's. Both are available
+  again at any time under Settings > Getting started.
 
 Grafana is optional and complementary: better at graphs and history, and the
 portal can embed its panels. The portal is better at relationships, current
@@ -356,6 +372,12 @@ inventory have all been fixed and tested since the first release.
 
 Current known limitations:
 
+- **Single sign-on is beta.** Microsoft Entra sign-in works against the
+  protocol but has not yet been run against a real app registration, so
+  pilot it on one account before moving anybody across. It authenticates
+  rather than provisions: the account must already exist with a matching
+  email address, and the first successful sign-in binds it to that Entra
+  identity permanently. Passwords keep working alongside it.
 - **Snap Chromium profiles.** The collectors inventory installed browser
   extensions from Chrome, Chromium, Brave and Edge profiles, but snap Chromium
   on Linux keeps its profile under `~/snap` and is not read, so an AI extension
