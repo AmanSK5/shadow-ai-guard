@@ -488,6 +488,19 @@ table.plain td{border-bottom:0;padding:4.5px 10px 4.5px 0;vertical-align:middle}
 a.libtn{display:inline-flex;align-items:center;gap:9px;text-decoration:none;
   font:inherit;font-size:12.5px;font-weight:550;padding:7px 16px;
   border:1px solid var(--bd);border-radius:7px;color:var(--pri);cursor:pointer}
+/* The sign-in card centres, and its two buttons go full width. With
+   single sign-on required the provider button is the ONLY control on
+   the card, and a lone left-aligned button in a centred card reads as
+   an accident. Scoped: .wcard is on every page. */
+.licard,.licard .lede,.licard h2,.licard .src-note{text-align:center}
+.licard button.mini{display:block;width:100%;padding:9px 16px}
+.licard a.libtn{display:flex;width:100%;justify-content:center;
+  padding:9px 16px;box-sizing:border-box}
+/* The disclosure summary is width:max-content so its arrow sits by the
+   text; centring it needs the box centred, not the text. */
+.licard details.how{max-width:none}
+.licard details.how summary{margin-left:auto;margin-right:auto}
+.licard details.how>div{text-align:left}
 a.libtn:hover{border-color:var(--pri)}
 .ssfoot{display:flex;gap:8px;align-items:center;margin-top:18px;padding-top:14px;
   border-top:1px solid var(--bd)}
@@ -1224,9 +1237,9 @@ function showLogin(msg) {
       data-act="${create ? 'do-setup' : 'do-login'}">${
       create ? 'Create account' : 'Sign in'}</button>`;
   app.innerHTML = `<div style="max-width:470px;margin:9vh auto 0">
-    <div class="wcard" style="padding:28px 30px">
+    <div class="wcard licard" style="padding:28px 30px">
     <img src="/logo.png" alt="Shadow AI Guard"
-      style="width:230px;max-width:100%;display:block;margin:0 0 20px">
+      style="width:230px;max-width:100%;display:block;margin:0 auto 20px">
     <h2>${create ? 'Create the admin account' : 'Sign in'}</h2>
     <p class="lede">${create
       ? `No admin account exists yet. The receiver printed a one-time setup
@@ -1268,8 +1281,10 @@ function showLogin(msg) {
 // response is the login screen with a line saying why, not a broken view.
 async function sessionLost() {
   if (AUTH) AUTH.authenticated = false;
-  try { AUTH = await (await fetch('/api/auth')).json(); } catch (e) { /* keep what we had */ }
-  showLogin('Signed out — the session expired or was revoked. Sign in again.');
+  // Same reason sign-out re-asks: the screen this is about to draw depends
+  // on fields only the server knows.
+  await refreshAuth();
+  showLogin('Signed out - the session expired or was revoked. Sign in again.');
 }
 
 async function boot() {
@@ -7055,7 +7070,7 @@ async function managedAction(act, el) {
     // Not noopener: the new tab reports its result back by postMessage,
     // and that needs an opener to report to. Same origin both ways.
     SSOW.busy = 'test'; SSOW.err = ''; render();
-    window.open('/sso/start', 'aiguard-sso-test');
+    window.open('/sso/start?test=1', 'aiguard-sso-test');
     return;
   }
   if (act === 'sso-enable') {
@@ -8078,9 +8093,41 @@ fold.onclick = () => {
 try { if (localStorage.getItem('aiguard-side')) fold.onclick(); } catch (e) {}
 document.getElementById('signout').onclick = async () => {
   await mfetch('/api/logout', {method: 'POST'});
-  AUTH = {mode: 'login', authenticated: false, username: '', setup_needed: false};
+  // Re-ask rather than compose one. A hand-written AUTH is missing every
+  // field somebody adds later, and it was: sso and sso_enforced were both
+  // absent, so signing out took the Microsoft button off the screen and a
+  // manual reload was the only way to get it back - on a deployment where
+  // single sign-on is REQUIRED, that left a password form nobody but the
+  // break-glass account could use.
+  await refreshAuth();
   showLogin('Signed out.');
 };
+
+// The one place that knows what the sign-in screen needs. Falls back to a
+// signed-out shape if the receiver cannot be reached, because a sign-out
+// that leaves somebody looking at a stale dashboard is worse than one that
+// offers a password box it is not certain about.
+async function refreshAuth() {
+  try {
+    AUTH = await (await fetch('/api/auth')).json();
+  } catch (e) {
+    AUTH = {mode: 'login', authenticated: false, username: '', role: '',
+            setup_needed: false, sso: false, sso_enforced: false};
+  }
+}
+
+// Coming back to a page the browser kept: a bfcache restore, or a second
+// tab woken up after somebody signed out in the first. Both repaint the
+// last thing rendered, which can be a whole dashboard belonging to a
+// session that no longer exists. Nothing here trusts what is on screen -
+// it asks, and shows the sign-in screen when the answer is nobody.
+window.addEventListener('pageshow', async e => {
+  if (!e.persisted) return;
+  await refreshAuth();
+  if (AUTH && AUTH.mode === 'login' && !AUTH.authenticated) {
+    showLogin('That session has ended. Sign in again.');
+  }
+});
 // ---- the guided tour -------------------------------------------------
 // A first sign-in lands on eleven views with no way to tell which of them
 // answers the question the person came with. This walks them through the
