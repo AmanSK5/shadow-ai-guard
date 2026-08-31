@@ -142,9 +142,34 @@ def test_auth_state_in_classic_mode_names_the_mode_and_calls_nothing(monkeypatch
 def test_auth_state_offers_create_account_on_a_fresh_receiver(login_mode):
     out = main.auth_state(_request())
     assert out == {"mode": "login", "authenticated": False, "username": "",
-                   "role": "", "setup_needed": True}
-    # It asked the receiver's unauthenticated one-bit probe, nothing else.
+                   "role": "", "setup_needed": True, "sso": False,
+                   "sso_enforced": False}
+    # It asked the receiver's unauthenticated probe, nothing else.
     assert [c["path"] for c in login_mode] == ["/admin/setup"]
+
+
+def test_the_sign_in_screen_is_told_when_federated_sign_in_is_on(monkeypatch):
+    """The screen cannot offer the Entra button to somebody who has no
+    password here unless it is told, and it is asking before anyone has
+    authenticated - so the bit rides on the one unauthenticated probe."""
+    def fake(base, method, path, token, body=None):
+        assert path == "/admin/setup"
+        return {"needed": False, "sso_enabled": True}
+
+    monkeypatch.setattr(main.managed, "receiver_request", fake)
+    monkeypatch.setattr(main, "LOGIN_MODE", True)
+    monkeypatch.setattr(main, "PORTAL_AUTH", "login")
+    assert main.auth_state(_request(cookie_token=None))["sso"] is True
+
+
+def test_a_receiver_too_old_to_report_it_reads_as_off(monkeypatch):
+    """The key is absent, not false, and absent has to mean the screen it
+    was serving before this existed."""
+    monkeypatch.setattr(main.managed, "receiver_request",
+                        lambda *a, **k: {"needed": False})
+    monkeypatch.setattr(main, "LOGIN_MODE", True)
+    monkeypatch.setattr(main, "PORTAL_AUTH", "login")
+    assert main.auth_state(_request(cookie_token=None))["sso"] is False
 
 
 def test_auth_state_with_a_live_session_says_who(login_mode):
@@ -330,3 +355,30 @@ def test_diagnostics_report_the_login_mode(login_mode):
     # to read, and this test is about auth_mode, not the registry counts.
     out = main.diagnostics(request=None, _=None)
     assert out["runtime"]["auth_mode"] == "login"
+
+
+# --------------------------------------------------- the callback's two jobs --
+
+
+def test_a_test_sign_in_reports_to_its_opener_and_stays_put():
+    """The wizard's test opens a second tab. That tab has told the opener
+    everything the moment its message lands, so navigating it into the
+    portal drops somebody into whatever a fresh load decides to show - on a
+    deployment still mid-setup, the first-run wizard - in a tab they only
+    opened to prove a configuration."""
+    html = main._sso_page("Signed in", "Taking you to the portal.",
+                          go="/", who="gengar").body.decode()
+    assert 'window.opener.postMessage' in html
+    # The return is what stops the navigation below it running.
+    assert 'dataset.opener="1";return;' in html
+    assert "You can close this tab" in html
+
+
+def test_a_real_sign_in_still_goes_to_the_portal():
+    """No opener means the sign-in screen sent them, and arriving at the
+    portal is the entire point."""
+    html = main._sso_page("Signed in", "Taking you to the portal.",
+                          go="/", who="gengar").body.decode()
+    assert "if(r.go)location.replace(r.go)" in html
+    # And the link a browser running no script at all would need.
+    assert 'href="/"' in html

@@ -1305,20 +1305,33 @@ def auth_state(request: Request):
     token = request.cookies.get(SESSION_COOKIE, "")
     authenticated = bool(token) and _session_ok(token)
     setup_needed = False
+    sso = False
+    sso_forced = False
     if not authenticated:
         try:
-            setup_needed = bool(managed.receiver_request(
-                RECEIVER_URL, "GET", "/admin/setup", "").get("needed"))
+            out = managed.receiver_request(
+                RECEIVER_URL, "GET", "/admin/setup", "")
         except managed.ReceiverError as e:
             # A login screen that cannot say whether an account exists should
             # say why, not guess a form.
             raise HTTPException(e.status, e.detail)
+        setup_needed = bool(out.get("needed"))
+        # Whether to offer the federated button beside the password form.
+        # Absent on a receiver too old to report it, which reads as off -
+        # the sign-in screen it was serving before this existed.
+        sso = bool(out.get("sso_enabled"))
+        # Enforced: the password form is no use to anybody but the
+        # break-glass account, so the screen leads with the provider and
+        # keeps the password behind a disclosure.
+        sso_forced = bool(out.get("sso_enforced"))
     hit = _session_cache.get(token) or (0, "", "admin")
     return {"mode": "login" if PORTAL_AUTH != "none" else "none",
             "authenticated": authenticated,
             "username": hit[1],
             "role": hit[2] if authenticated else "",
-            "setup_needed": setup_needed}
+            "setup_needed": setup_needed,
+            "sso": sso,
+            "sso_enforced": sso_forced}
 
 
 @app.post("/api/login")
@@ -1374,13 +1387,26 @@ def _sso_page(title: str, body: str, go: str = "",
     # point left to get the escaping wrong in.
     payload = json.dumps({"ssoTest": "ok" if go else "fail",
                           "username": who, "detail": body, "go": go})
+    # An opener means this tab was opened BY the portal - the wizard's test
+    # sign-in, which already has its answer the moment the message lands.
+    # Navigating such a tab into the portal drops somebody into whatever
+    # the app decides a fresh load should show (on a deployment that has
+    # not finished setup, that is the first-run wizard) in a tab they only
+    # opened to prove a configuration. So: report to the opener and stop.
+    # A tab with no opener is a real sign-in from the sign-in screen, and
+    # going to the portal is the whole point of it.
     tell = (f'<div id="ssor" hidden data-r="{esc_attr(payload)}"></div>'
             '<script>(function(){try{'
             'var r=JSON.parse(document.getElementById("ssor").dataset.r);'
-            'if(window.opener)window.opener.postMessage(r,location.origin);'
+            'if(window.opener){window.opener.postMessage(r,location.origin);'
+            'document.documentElement.dataset.opener="1";return;}'
             'if(r.go)location.replace(r.go);'
             '}catch(e){}})()</script>')
-    onward = (f'<p><a href="{esc_attr(go)}">Continue</a></p>') if go \
+    # Shown to whoever did not get navigated away: the test tab, and
+    # anybody whose browser ran no script at all.
+    onward = (f'<p><a href="{esc_attr(go)}">Continue</a></p>'
+              '<p class=t hidden>You can close this tab and go back to the '
+              'setup wizard.</p>') if go \
         else '<p><a href="/">Back to sign in</a></p>'
     return HTMLResponse(tell +
         "<!doctype html><meta charset=utf-8>"
@@ -1390,7 +1416,11 @@ def _sso_page(title: str, body: str, go: str = "",
         "max-width:34rem;margin:14vh auto;padding:0 1.2rem;color:#1c2024}"
         "@media(prefers-color-scheme:dark){body{background:#14171b;color:#e8eaed}}"
         "h1{font-size:19px;margin:0 0 .5rem}p{color:#5c636e}"
-        "@media(prefers-color-scheme:dark){p{color:#9aa3ad}}</style>"
+        "@media(prefers-color-scheme:dark){p{color:#9aa3ad}}"
+        # The test tab keeps the closing line and drops the link that
+        # would take it into the portal; a real sign-in does the reverse.
+        "[data-opener] a{display:none}[data-opener] p.t{display:block!important}"
+        "</style>"
         f"<h1>{esc_attr(title)}</h1><p>{esc_attr(body)}</p>{onward}")
 
 
@@ -1631,6 +1661,7 @@ class SettingsWrite(BaseModel):
     sso_client_secret: str | None = Field(default=None, max_length=512)
     sso_redirect_uri: str | None = Field(default=None, max_length=500)
     sso_enabled: str | None = Field(default=None, max_length=1)
+    sso_enforce: str | None = Field(default=None, max_length=1)
     paste_guard_mode: str | None = Field(default=None, max_length=8)
     firefox_extension_id: str | None = Field(default=None, max_length=128)
     classification_markings: list[str] | None = Field(default=None,
