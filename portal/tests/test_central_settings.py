@@ -7,6 +7,8 @@ a decision changes. Same direct-call harness as the rest of the suite.
 """
 
 import os
+import pathlib
+import re
 from datetime import date
 
 os.environ.setdefault("PORTAL_AUTH", "none")
@@ -354,13 +356,46 @@ def test_the_primary_button_submits_the_form_and_carries_no_act():
 # ----------------------------------------------------------- mail proxies --
 
 
-def test_the_mail_settings_are_all_accepted(login_mode):
-    """Same failure as the sso_* keys: extra=forbid means a key the receiver
-    takes but this model omits is a 422 the page renders as "check the
-    values", pointing at a field that was never the problem."""
-    for k in ("smtp_host", "smtp_port", "smtp_username", "smtp_password",
-              "smtp_from", "smtp_security", "portal_public_url"):
-        assert k in main.SettingsWrite.model_fields
+def test_this_model_accepts_every_key_the_receiver_does():
+    """The check that has now failed to happen twice.
+
+    extra=forbid means a key the receiver takes but this model omits is a
+    422 raised HERE, and FastAPI's 422 detail is a list, so the page falls
+    back to its generic "check the values" - pointing at a value somebody
+    just typed, which was never the problem. That shipped as 0.17.0 for the
+    sso_* keys, and again for invite_subject/invite_body.
+
+    The first version of this test listed the keys by hand, so it passed
+    happily while the two models drifted apart - a guard that has to be
+    updated alongside the thing it guards is not a guard. It reads the
+    receiver's own model now.
+    """
+    src = pathlib.Path(__file__).resolve().parents[2] / "receiver/app/main.py"
+    if not src.exists():
+        pytest.skip("receiver source not alongside this checkout")
+    body = src.read_text().split("class SettingsUpdate(BaseModel):", 1)[1]
+    body = body.split("\n@", 1)[0].split("\nclass ", 1)[0]
+    theirs = set(re.findall(r"^\s{4}(\w+):\s", body, re.M))
+    assert theirs, "could not read the receiver's settings model"
+    missing = sorted(theirs - set(main.SettingsWrite.model_fields))
+    assert missing == [], (
+        "the receiver accepts these and this model does not, so saving one "
+        "is a 422 the page renders as 'check the values': %s" % missing)
+
+
+def test_this_model_offers_nothing_the_receiver_refuses():
+    """The other direction, which is how invite_note survived a rename: the
+    portal kept a field the receiver had dropped, so anything sending it
+    got a 422 from the far side instead."""
+    src = pathlib.Path(__file__).resolve().parents[2] / "receiver/app/main.py"
+    if not src.exists():
+        pytest.skip("receiver source not alongside this checkout")
+    body = src.read_text().split("class SettingsUpdate(BaseModel):", 1)[1]
+    body = body.split("\n@", 1)[0].split("\nclass ", 1)[0]
+    theirs = set(re.findall(r"^\s{4}(\w+):\s", body, re.M))
+    extra = sorted(set(main.SettingsWrite.model_fields) - theirs)
+    assert extra == [], (
+        "this model offers keys the receiver refuses: %s" % extra)
 
 
 def test_an_invite_for_one_account_forwards_its_id(login_mode):

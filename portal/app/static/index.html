@@ -8991,7 +8991,11 @@ document.getElementById('setuppanel').addEventListener('click', e => {
   const el = e.target.closest('[data-act="setup-go"]');
   if (!el) return;
   SETUPOPEN = false;
-  view = 'setup'; SETTAB = el.getAttribute('data-key'); detail = null;
+  // 'settings', not 'setup' - setup() renders the Sources view, so this
+  // sent people to Health while the fragment said settings. The fragment
+  // was right and the view was wrong, which is why it looked like a
+  // routing bug rather than a typo.
+  view = 'settings'; SETTAB = el.getAttribute('data-key'); detail = null;
   history.replaceState(null, '', '#settings/' + SETTAB);
   drawNav(); render();
 });
