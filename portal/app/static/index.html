@@ -208,6 +208,10 @@ select.mfield{min-width:160px}
 button.mini{font:inherit;font-size:12.5px;font-weight:550;padding:4px 11px;border:1px solid var(--bd);
   border-radius:7px;background:transparent;color:var(--pri);cursor:pointer}
 button.mini:hover{border-color:var(--pri)}
+/* A disabled button that looks live is a button people click and blame
+   themselves for. Greyed, and the hover lift withdrawn with it. */
+button.mini:disabled,button.mini:disabled:hover{color:var(--mut);
+  border-color:var(--bd);cursor:not-allowed;opacity:.6}
 .mfield{font:inherit;font-size:13px;padding:5px 9px;border:1px solid var(--bd);border-radius:7px;
   background:var(--sf2);color:inherit;min-width:260px}
 /* The Settings save bar. Sticks to the bottom of the viewport so it is
@@ -472,6 +476,19 @@ table.plain td{border-bottom:0;padding:4.5px 10px 4.5px 0;vertical-align:middle}
   color:var(--mut);font-size:13px}
 .sshelpbody ol{margin:6px 0 0;padding-left:18px}
 .ssacts{margin-top:20px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+/* .lede has a bottom margin, and centring counts it, so a hint beside a
+   button rode about half of it above the button's own text. */
+.ssacts .lede{margin:0}
+/* The sign-in screen's federated option: a rule with the word set into
+   it, and an anchor that carries a button's shape because it is a
+   navigation, not a form post. */
+.lidiv{display:flex;align-items:center;gap:10px;margin:16px 0;
+  color:var(--mut);font-size:12px}
+.lidiv::before,.lidiv::after{content:'';flex:1;height:1px;background:var(--bd)}
+a.libtn{display:inline-flex;align-items:center;gap:9px;text-decoration:none;
+  font:inherit;font-size:12.5px;font-weight:550;padding:7px 16px;
+  border:1px solid var(--bd);border-radius:7px;color:var(--pri);cursor:pointer}
+a.libtn:hover{border-color:var(--pri)}
 .ssfoot{display:flex;gap:8px;align-items:center;margin-top:18px;padding-top:14px;
   border-top:1px solid var(--bd)}
 .ssfoot .sp{margin-left:auto}
@@ -1161,6 +1178,22 @@ document.getElementById('pwdlg').addEventListener('click', e => {
 // owns that this page never initiates, and for browsers that do fire it.
 document.getElementById('pwdlg').addEventListener('close', pwWipe);
 
+// Microsoft's own sign-in mark: four squares, in the colours their brand
+// guidance fixes, drawn rather than fetched so there is no asset to host
+// and nothing to load from a third party on a sign-in screen. The guidance
+// also settles the wording - the button says Microsoft, not Entra: Entra ID
+// is the directory, Microsoft is the brand people are asked to recognise.
+const MS_MARK = '<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"'
+  + ' style="flex:none"><rect width="7" height="7" x="0" y="0" fill="#F25022"/>'
+  + '<rect width="7" height="7" x="9" y="0" fill="#7FBA00"/>'
+  + '<rect width="7" height="7" x="0" y="9" fill="#00A4EF"/>'
+  + '<rect width="7" height="7" x="9" y="9" fill="#FFB900"/></svg>';
+
+function ssoButton() {
+  return `<a class="libtn" href="/sso/start">${MS_MARK}<span>Sign in with
+    Microsoft</span></a>`;
+}
+
 function showLogin(msg) {
   // Same reason as the pane below: nothing from the last session belongs on
   // this screen, and an overlay is the one piece of it that would cover the
@@ -1176,6 +1209,20 @@ function showLogin(msg) {
   IDMAP = null; IDPARSE = null; IDMSG = '';
   chrome(false);
   const create = AUTH && AUTH.setup_needed;
+  // Enforced: the provider leads and the password form moves behind a
+  // disclosure. It is not removed - the break-glass account still needs it,
+  // and that account is needed precisely when the provider is unreachable,
+  // which is the worst moment to discover the form is gone.
+  const forced = !create && AUTH && AUTH.sso && AUTH.sso_enforced;
+  const passwordFields = `
+    <p><input id="li-user" class="mfield" style="width:100%"
+      placeholder="username" autocomplete="username"></p>
+    <p><input id="li-pass" class="mfield" style="width:100%" type="password"
+      placeholder="${create ? 'password (12 characters or more)' : 'password'}"
+      autocomplete="${create ? 'new-password' : 'current-password'}"></p>
+    <button class="mini" style="padding:6px 16px"
+      data-act="${create ? 'do-setup' : 'do-login'}">${
+      create ? 'Create account' : 'Sign in'}</button>`;
   app.innerHTML = `<div style="max-width:470px;margin:9vh auto 0">
     <div class="wcard" style="padding:28px 30px">
     <img src="/logo.png" alt="Shadow AI Guard"
@@ -1187,23 +1234,33 @@ function showLogin(msg) {
          <code>kubectl logs deploy/&lt;release&gt;-ai-guard | grep setup_code</code>
          or <code>docker compose logs receiver</code>. The code works once;
          if you lose it, restart the receiver for a fresh one.`
+      : forced ? `Sign in with your work account.`
       : `Sign in with your account.`}</p>
     ${msg ? `<div class="note">${esc(msg)}</div>` : ''}
-    ${create ? `<p><input id="li-code" class="mfield" style="width:100%"
-      placeholder="setup code (aigs_…)" autocomplete="off"></p>` : ''}
-    <p><input id="li-user" class="mfield" style="width:100%"
-      placeholder="username" autocomplete="username"></p>
-    <p><input id="li-pass" class="mfield" style="width:100%" type="password"
-      placeholder="${create ? 'password (12 characters or more)' : 'password'}"
-      autocomplete="${create ? 'new-password' : 'current-password'}"></p>
-    <button class="mini" style="padding:6px 16px"
-      data-act="${create ? 'do-setup' : 'do-login'}">${create ? 'Create account' : 'Sign in'}</button>
+    ${forced ? `
+      <p style="margin:0 0 10px">${ssoButton()}</p>
+      <p class="src-note" style="margin:0 0 4px">Uses your work email.</p>
+      <details class="how"><summary>Sign in with a password</summary>
+        <div>
+          <p style="margin:8px 0 0">Single sign-on is required here, so a
+            password only works for the break-glass account - the one this
+            deployment was set up with. It is the way back in if the
+            identity provider is unreachable.</p>
+          ${passwordFields}
+        </div></details>` : `
+      ${create ? `<p><input id="li-code" class="mfield" style="width:100%"
+        placeholder="setup code (aigs_…)" autocomplete="off"></p>` : ''}
+      ${passwordFields}
+      ${!create && AUTH && AUTH.sso ? `
+        <div class="lidiv"><span>or</span></div>
+        <p style="margin:0">${ssoButton()}</p>
+        <p class="src-note" style="margin-top:10px">Uses your work email.</p>` : ''}`}
   </div>
   <p class="src-note" style="text-align:center;margin-top:14px">by Aman Karir ·
     <a href="https://github.com/AmanSK5/shadow-ai-guard" target="_blank"
        rel="noopener" style="color:inherit">Source and issues</a></p>
   </div>`;
-  const u = document.getElementById(create ? 'li-code' : 'li-user');
+  const u = forced ? null : document.getElementById(create ? 'li-code' : 'li-user');
   if (u) u.focus();
 }
 
@@ -4285,7 +4342,14 @@ function alertingSettings() {
 // difference between "the settings look right" and "somebody got in".
 let SSOW = null;
 
+// Addresses come first, and not for tidiness. The test sign-in at the end
+// signs the operator in as themselves, and the receiver matches the token's
+// address against an account here - so an owner with no address on their own
+// account walks all five configuration steps and is refused at the one that
+// was supposed to prove the configuration. Asking for it up front turns that
+// into a field to fill rather than a dead end to work backwards out of.
 const SSO_STEPS = [
+  {k:'emails',   t:'Addresses on accounts',   d:'What a sign-in is matched on'},
   {k:'register', t:'Register an application', d:'In the Entra admin center'},
   {k:'tenant',   t:'Your tenant',             d:'Checked against the provider'},
   {k:'client',   t:'Application and secret',  d:'Proved before anyone signs in'},
@@ -4293,11 +4357,33 @@ const SSO_STEPS = [
   {k:'test',     t:'Verify and enable',       d:'A real sign-in, then enable'},
 ];
 
-function ssoOpen() {
+// Step positions by key. They were written as literals until a step was
+// added in front of them and every one of those literals pointed at the
+// wrong screen.
+function ssoIdx(k) { return SSO_STEPS.findIndex(s => s.k === k); }
+
+// The signed-in account, out of whatever list of accounts we hold.
+function ssoMe() {
+  return (SSOW && SSOW.users || []).find(
+    u => AUTH && u.username === AUTH.username) || null;
+}
+
+async function ssoLoadUsers() {
+  const r = await mfetch('/api/users');
+  if (r.status === 401) { sessionLost(); return false; }
+  if (!r.ok) { SSOW.err = await _refusal(r); return false; }
+  SSOW.users = (await r.json()).users || [];
+  const me = ssoMe();
+  if (me && me.email) SSOW.done.emails = 'Yours · ' + me.email;
+  else delete SSOW.done.emails;
+  return true;
+}
+
+async function ssoOpen() {
   const s = (SETTINGS && SETTINGS.settings) || {};
   const v = k => ((s[k] || {}).value) || '';
   SSOW = {
-    step: 0, busy: '', err: '', done: {},
+    step: 0, busy: '', err: '', done: {}, users: USERS || [], eform: '',
     tenant: v('sso_tenant_id'), client: v('sso_client_id'),
     secret: '', redirect: v('sso_redirect_uri') || ssoRedirectGuess(),
     secretSet: !!((s.sso_client_secret || {}).set),
@@ -4308,6 +4394,10 @@ function ssoOpen() {
   if (SSOW.client) SSOW.done.client = 'Saved · ' + SSOW.client;
   if (v('sso_redirect_uri')) SSOW.done.redirect = 'Saved · ' + v('sso_redirect_uri');
   if (SSOW.tenant) SSOW.done.register = 'done';
+  render();
+  // Read the accounts rather than trust whatever the page last loaded: this
+  // step's whole job is to be right about which of them can sign in.
+  await ssoLoadUsers();
   render();
 }
 
@@ -4408,6 +4498,52 @@ function ssoBody(k) {
   const busy = SSOW.busy === k;
   const err = SSOW.err ? `<div class="note" style="border-color:var(--warn)"
     >${esc(SSOW.err)}</div>` : '';
+  if (k === 'emails') {
+    const me = ssoMe();
+    const rows = (SSOW.users || []).map(u => {
+      const mine = AUTH && u.username === AUTH.username;
+      return `<tr>
+        <td>${esc(u.username)}${mine
+          ? ' <span class="pill p-acc">you</span>' : ''}</td>
+        <td><span class="pill ${u.role === 'viewer' ? 'p-mut' : 'p-ok'}"
+          >${esc(u.role)}</span></td>
+        <td>${SSOW.eform === u.id
+          ? `<input id="sso-email" class="mfield" style="min-width:210px"
+               placeholder="name@example.com" value="${esc(u.email || '')}"
+               autocomplete="off">
+             <button class="mini" data-act="sso-email-set"
+               data-key="${esc(u.id)}">Set</button>
+             <button class="mini" data-act="sso-email-cancel">Cancel</button>`
+          : `${u.email
+              ? `<span class="mono">${esc(u.email)}</span>`
+              : `<span style="color:var(--mut)">no address${mine
+                  ? ' - the test sign-in cannot match this account' : ''}</span>`}
+             <button class="mini" data-act="sso-email-form"
+               data-key="${esc(u.id)}">${u.email ? 'Change' : 'Add'}</button>`}</td>
+      </tr>`;
+    }).join('');
+    return `
+    <h4>Addresses on accounts</h4>
+    <p class="lede">Entra proves an address, and the receiver looks for an
+      account here carrying that same address. It does not create one. So an
+      account signs in through Entra only once somebody has put the address
+      on it, by hand, here.</p>
+    <p class="lede">Yours comes first: the verification at the end of this
+      wizard signs <b>you</b> in, and it cannot match an account with no
+      address on it.</p>
+    <table><tr><th>account</th><th>role</th><th>email</th></tr>${rows}</table>
+    <div class="note">Leaving one account without an address is a reasonable
+      thing to do on purpose. Passwords keep working beside Entra, so that
+      account stays reachable if the identity provider is ever the thing that
+      is down.</div>
+    ${err}<div class="ssacts">
+      <button class="mini" data-act="sso-emails-next"
+        ${busy || !(me && me.email) ? 'disabled' : ''}>${busy
+          ? '<span class="ssspin"></span>Re-reading accounts…'
+          : 'Continue'}</button>
+      ${me && me.email ? '' : `<span class="lede">add an address to your own
+        account first</span>`}</div>`;
+  }
   if (k === 'register') return `
     <h4>Register an application</h4>
     <p class="lede">First you will need to create an app registration in
@@ -4482,27 +4618,29 @@ function ssoBody(k) {
     <div class="note">Saving does not switch single sign-on on. That is the
       last step, and only after a real sign-in has worked.</div>
     ${err}<div class="ssacts"><button class="mini" data-act="sso-save"
-      ${SSOW.busy === 'Save' ? 'disabled' : ''}>${SSOW.busy === 'Save'
+      ${SSOW.busy === 'save' ? 'disabled' : ''}>${SSOW.busy === 'save'
         ? '<span class="ssspin"></span>Saving…' : 'Save and continue'}</button></div>`;
+  const saving = SSOW.busy === 'save';
+  const me = ssoMe();
   return `
     <h4>Verify and enable</h4>
     <p class="lede">Config saved. Single sign-on is still disabled. To enable
       it, complete the verification by clicking Test sign-in.</p>
     <p class="lede">This opens Microsoft in a new tab. Come back here and you
       will either see who you signed in as, or the reason it did not work.</p>
-    <div class="note">Your account needs an email address on it matching the
-      one you sign in with. An account with no address can only be reached with
-      its password - which is how you would keep a shared break-glass login out
-      of Entra's reach.</div>
+    <div class="note">You will be signed in as <b>${esc(
+      (me && me.email) || (AUTH && AUTH.username) || 'your account')}</b>, and
+      the address Entra proves has to be the one on that account. That is what
+      the first step of this wizard was for.</div>
     ${SSOW.done.test ? `<div class="note" style="border-color:var(--pri)"
       >${esc(SSOW.done.test)}</div>` : ''}
     ${err}<div class="ssacts">
       <button class="mini" data-act="sso-try" ${busy ? 'disabled' : ''}>${busy
         ? '<span class="ssspin"></span>Waiting for Microsoft…' : 'Test sign-in'}</button>
       <button class="mini" data-act="sso-enable"
-        ${SSOW.done.test && SSOW.busy !== 'Save' ? '' : 'disabled'}>${
-        SSOW.busy === 'Save' ? '<span class="ssspin"></span>Turning it on…'
-                             : 'Turn on single sign-on'}</button>
+        ${SSOW.done.test && !saving ? '' : 'disabled'}>${
+        saving ? '<span class="ssspin"></span>Turning it on…'
+               : 'Turn on single sign-on'}</button>
       ${SSOW.done.test ? '' : `<span class="lede" style="font-size:12.5px"
         >unlocks once a sign-in works</span>`}</div>`;
 }
@@ -4596,7 +4734,10 @@ function accountSettings() {
       const overRank = (RANK[u.role] || 0) > mine;
       const may = !viewer && !overRank;
       return `<tr>
-      <td>${esc(u.username)}${AUTH && AUTH.username === u.username ? ' <span class="pill p-acc">you</span>' : ''}</td>
+      <td>${esc(u.username)}${AUTH && AUTH.username === u.username ? ' <span class="pill p-acc">you</span>' : ''}${
+        u.break_glass ? ` <span class="pill p-amb" title="the account this
+        deployment was set up with: its password still works when single
+        sign-on is required">break-glass</span>` : ''}</td>
       <td>${UEFORM === u.id
         ? `<input id="ue-new" class="mfield" style="min-width:190px"
              placeholder="name@example.com" value="${esc(u.email || '')}"
@@ -4664,19 +4805,70 @@ function accountSettings() {
       return `<p style="margin:0 0 6px"><span class="pill p-ok">${
         on ? 'On' : 'Off'}</span> <span class="pill p-amb"
         title="not yet run against a real Entra app registration">beta</span></p>
-      <p class="lede">${on
-        ? 'People with an email address on their account can sign in through '
-          + 'Microsoft Entra. Passwords keep working, so an account without '
-          + 'an address stays reachable as a break-glass credential.'
-        : 'Sign in with Microsoft Entra instead of a portal password. Five '
-          + 'step process through an interactive wizard.'}</p>`;
+      <p class="lede">${!on
+        ? 'Sign in with Microsoft Entra instead of a portal password. A '
+          + 'guided wizard, six steps.'
+        : (SETTINGS.settings.sso_enforce || {}).value === '1'
+        ? 'People with an email address on their account sign in through '
+          + 'Microsoft Entra. It is required here, so a password now opens '
+          + 'only the break-glass account.'
+        : 'People with an email address on their account can sign in through '
+          + 'Microsoft Entra. Passwords keep working alongside it, so an '
+          + 'account without an address stays reachable.'}</p>`;
     })()}
       <p><button class="mini" data-act="sso-open">${
         ((SETTINGS && SETTINGS.settings && SETTINGS.settings.sso_enabled
           && SETTINGS.settings.sso_enabled.value) === '1')
-        ? 'Review the configuration' : 'Set it up'}</button></p>`}
+        ? 'Review the configuration' : 'Set it up'}</button></p>
+      ${ssoEnforceBlock()}`}
   </div>`) : ''}
 `;
+}
+
+// Requiring single sign-on: what most estates actually want out of it,
+// because it is how multi-factor gets made compulsory rather than offered.
+// Shown only once single sign-on is on, because until then the control has
+// nothing to require.
+function ssoEnforceBlock() {
+  const s = (SETTINGS && SETTINGS.settings) || {};
+  const v = k => ((s[k] || {}).value) || '';
+  if (v('sso_enabled') !== '1') return '';
+  const on = v('sso_enforce') === '1';
+  const ready = v('sso_enforce_ready') === '1';
+  const bg = v('sso_break_glass');
+  return `<div style="border-top:1px solid var(--bd);margin-top:14px;padding-top:14px">
+    <p style="margin:0 0 6px"><b style="font-size:13px">Require single
+      sign-on</b> <span class="pill ${on ? 'p-ok' : 'p-mut'}">${
+      on ? 'on' : 'off'}</span></p>
+    <p class="lede">${on
+      ? `Passwords no longer sign anybody in${bg
+          ? `, except <span class="mono">${esc(bg)}</span>`
+          : ''}. Everyone else reaches this portal through Microsoft Entra,
+         which is what puts your tenant's multi-factor policy in front of it.`
+      : `Turn this on and a password stops being enough for every account
+         but one. Everyone signs in through Microsoft Entra instead, so the
+         multi-factor policy on your tenant covers this portal too.`}</p>
+    ${bg ? `<div class="note"><b>${esc(bg)}</b> is the break-glass account:
+      the one this deployment was set up with, and the only one whose
+      password still works while this is on. It is how you get back in to
+      turn it off if Entra is unreachable, so its password needs to be
+      somewhere you can reach without it. While this is on, that account
+      cannot be deleted or demoted.</div>`
+      : `<div class="note" style="border-color:var(--warn)">No break-glass
+      account is marked on this deployment, so there would be no way back in
+      through a password. Requiring single sign-on is refused until there
+      is.</div>`}
+    ${!on && !ready ? `<div class="note" style="border-color:var(--warn)">No
+      owner has completed a sign-in through Entra yet. Requiring it before
+      the door has been opened once would leave only the break-glass
+      account, so this stays available until one has.</div>` : ''}
+    <p style="margin:12px 0 0"><button class="mini" data-act="sso-enforce"
+      data-key="${on ? '' : '1'}"
+      ${(on || (ready && bg)) ? '' : 'disabled'}>${
+      on ? 'Stop requiring it' : 'Require single sign-on'}</button>
+      ${on || (ready && bg) ? '' : `<span class="lede"
+        style="margin:0 0 0 8px;font-size:12.5px">not yet available</span>`}</p>
+  </div>`;
 }
 
 function diagnosticsCards() {
@@ -6780,7 +6972,20 @@ async function managedAction(act, el) {
     render(); return;
   }
   if (act === 'take-tour') { await tourStart(); return; }
-  if (act === 'sso-open') { ssoOpen(); return; }
+  if (act === 'sso-open') { await ssoOpen(); return; }
+  if (act === 'sso-enforce') {
+    const want = el.getAttribute('data-key') === '1';
+    if (want && !confirm('Require single sign-on?\n\nEvery account except '
+        + 'the break-glass one will only be able to sign in through '
+        + 'Microsoft Entra. Make sure the break-glass password is somewhere '
+        + 'you can reach without this portal.')) return;
+    const r = await mfetch('/api/settings', {method: 'POST',
+      body: JSON.stringify({sso_enforce: want ? '1' : ''})});
+    if (r.status === 401) { sessionLost(); return; }
+    SETMSG = r.ok ? '' : 'Not saved: ' + await _refusal(r);
+    if (r.ok) SETTINGS = await r.json();
+    render(); return;
+  }
   if (act === 'sso-close') { SSOW = null; render(); return; }
   if (act === 'sso-help') { SSOW.help = !SSOW.help; render(); return; }
   if (act === 'sso-step') { ssoGo(+el.getAttribute('data-key')); return; }
@@ -6791,8 +6996,36 @@ async function managedAction(act, el) {
     } catch (e) { el.textContent = 'select it and copy'; }
     return;
   }
+  if (act === 'sso-email-form') {
+    SSOW.eform = el.getAttribute('data-key'); SSOW.err = ''; render(); return;
+  }
+  if (act === 'sso-email-cancel') { SSOW.eform = ''; render(); return; }
+  if (act === 'sso-email-set') {
+    const r = await mfetch('/api/users/' + el.getAttribute('data-key') + '/email',
+      {method: 'POST', body: JSON.stringify({email: _val('sso-email')})});
+    if (r.status === 401) { sessionLost(); return; }
+    if (!r.ok) { SSOW.err = 'Not saved: ' + await _refusal(r); render(); return; }
+    SSOW.eform = ''; SSOW.err = '';
+    // The accounts table on the tab underneath is now stale too.
+    USERS = null;
+    await ssoLoadUsers();
+    render(); return;
+  }
+  if (act === 'sso-emails-next') {
+    SSOW.busy = 'emails'; SSOW.err = ''; render();
+    const ok = await ssoLoadUsers();
+    SSOW.busy = '';
+    const me = ssoMe();
+    if (ok && !(me && me.email)) {
+      SSOW.err = 'Your own account still has no address on it.';
+    } else if (ok) {
+      SSOW.step = ssoIdx('register');
+    }
+    render(); return;
+  }
   if (act === 'sso-registered') {
-    SSOW.done.register = 'done'; SSOW.step = 1; SSOW.err = ''; render(); return;
+    SSOW.done.register = 'done'; SSOW.step = ssoIdx('tenant');
+    SSOW.err = ''; render(); return;
   }
   if (act === 'sso-check-tenant') { await ssoProbe(false); return; }
   if (act === 'sso-check-client') {
@@ -6806,7 +7039,7 @@ async function managedAction(act, el) {
     // passes through and the test sign-in is what proves it.
     if (!SSOW.secret) {
       SSOW.done.client = 'Saved · ' + SSOW.client;
-      SSOW.step = 3; SSOW.err = ''; render(); return;
+      SSOW.step = ssoIdx('redirect'); SSOW.err = ''; render(); return;
     }
     await ssoProbe(true); return;
   }
@@ -6814,7 +7047,7 @@ async function managedAction(act, el) {
     // Saved OFF. Enabling is the last step and needs a real sign-in.
     if (await ssoSave(false)) {
       SSOW.done.redirect = 'Saved · ' + SSOW.redirect;
-      SSOW.step = 4; SSOW.err = ''; render();
+      SSOW.step = ssoIdx('test'); SSOW.err = ''; render();
     }
     return;
   }

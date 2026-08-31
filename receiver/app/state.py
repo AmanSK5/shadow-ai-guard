@@ -253,6 +253,11 @@ _ADMIN_COLUMNS_ADDED = (
     ("sso_subject", "TEXT"),
     ("sso_tenant", "TEXT"),
     ("sso_bound_at", "TEXT"),
+    # The one account that can still sign in with a password when single
+    # sign-on is enforced. Set on the account the setup code created, and
+    # never offered as a choice: an escape hatch somebody has to remember
+    # to nominate is one that is missing on the day it is needed.
+    ("break_glass", "INTEGER NOT NULL DEFAULT 0"),
 )
 
 # A subscription from before licence coverage covers exactly its own tool,
@@ -407,6 +412,21 @@ class State:
                             (_now(), "owner_promoted_on_upgrade",
                              json.dumps({"user": first["id"],
                                          "why": "earliest account, no owner"})))
+                # Same reasoning for the break-glass flag: the earliest
+                # account is the one the setup code created. A deployment
+                # that deleted it falls back to the oldest owner, so the
+                # flag is never simply absent while accounts exist.
+                marked = self._db.execute(
+                    "SELECT 1 FROM admin_users WHERE break_glass = 1 LIMIT 1"
+                ).fetchone()
+                if not marked:
+                    bg = self._db.execute(
+                        "SELECT id FROM admin_users WHERE role = 'owner'"
+                        " ORDER BY created_at, id LIMIT 1").fetchone()
+                    if bg is not None:
+                        self._db.execute(
+                            "UPDATE admin_users SET break_glass = 1"
+                            " WHERE id = ?", (bg["id"],))
             # After the ALTER, never in _SCHEMA: on a database that predates
             # the column the index would be built against a column that does
             # not exist yet. Partial, so the many accounts with no address do
@@ -676,8 +696,8 @@ class State:
                 raise AuthError(409, "an admin account already exists")
             self._db.execute(
                 "INSERT INTO admin_users"
-                " (id, username, password_hash, created_at, role)"
-                " VALUES (?, ?, ?, ?, 'owner')",
+                " (id, username, password_hash, created_at, role, break_glass)"
+                " VALUES (?, ?, ?, ?, 'owner', 1)",
                 (uid, username, _hash_password(password), _now()),
             )
             self._event("admin_created", {"user": uid, "username": username})
@@ -700,7 +720,8 @@ class State:
         now = _now()
         with self._lock:
             row = self._db.execute(
-                "SELECT id, password_hash FROM admin_users WHERE username = ?",
+                "SELECT id, password_hash, break_glass FROM admin_users"
+                " WHERE username = ?",
                 (username,),
             ).fetchone()
             stored = row["password_hash"] if row else _DUMMY_HASH
@@ -709,6 +730,21 @@ class State:
                     self._event("login_failed", {"username": username[:64]})
                     self._db.commit()
                 raise AuthError(401, "bad username or password")
+
+            # The credential was right; the policy is what refuses. 403 and
+            # not 401, because the caller must be able to tell a rejected
+            # password (which should count against the throttle) from a
+            # correct one that policy turned away (which must not - it is
+            # the wrong person's mistake to be punished for).
+            if row["break_glass"] != 1 and self._sso_enforced_locked():
+                raise AuthError(
+                    403, "single sign-on is required for this account; sign "
+                         "in with your work email instead")
+            if row["break_glass"] == 1 and self._sso_enforced_locked():
+                # The one password that still opens the door while
+                # enforcement is on. Worth its own line in the trail: it
+                # should be a rare event, and a run of them is a story.
+                self._event("break_glass_login", {"user": row["id"]})
 
             # Expired sessions have nothing left to say; a login is the
             # natural moment to sweep them out.
@@ -793,6 +829,20 @@ class State:
         if self._outranks(role, by_role):
             raise AuthError(403, "you cannot grant a role above your own")
 
+    def _guard_break_glass(self, is_break_glass, verb: str):
+        """The escape hatch cannot be removed while it is the only way in.
+
+        With single sign-on enforced, this account's password is what
+        reopens the door when the identity provider is the thing that is
+        down. Deleting or demoting it then is a lockout that looks like
+        routine account tidying right up until it matters.
+        """
+        if is_break_glass == 1 and self._sso_enforced_locked():
+            raise AuthError(
+                409, "this is the break-glass account and single sign-on is "
+                     "enforced, so it cannot be %s. Turn off \"require "
+                     "single sign-on\" first." % verb)
+
     def _guard_last(self, was: str, becomes: str = ""):
         """Refuse to remove the last owner.
 
@@ -812,11 +862,57 @@ class State:
         if n <= 1:
             raise AuthError(409, "cannot remove the last owner")
 
+    # ------------------------------------------------ enforced sign-in --
+    # Enforcement means one thing at the door: a correct password is not
+    # enough on its own. It is deliberately checked AFTER the password
+    # verifies rather than before, so that a wrong password still answers
+    # exactly as it did before this existed. Refusing early would let
+    # somebody with no credential at all walk a list of usernames and read
+    # off which one is the escape hatch.
+
+    def _sso_enforced_locked(self) -> bool:
+        """Enforcement, read without taking the lock.
+
+        login() already holds it, and this lock is not reentrant - calling
+        the public reader from in there deadlocks the process rather than
+        failing a request, which is the worst shape a bug can take here.
+        """
+        row = self._db.execute(
+            "SELECT value FROM settings WHERE key = ?", ("sso_enforce",)
+        ).fetchone()
+        return bool(row) and json.loads(row["value"]) == "1"
+
+    def sso_enforced(self) -> bool:
+        with self._lock:
+            return self._sso_enforced_locked()
+
+    def break_glass_username(self) -> str:
+        """The account that keeps its password under enforcement, if any."""
+        with self._lock:
+            row = self._db.execute(
+                "SELECT username FROM admin_users WHERE break_glass = 1"
+                " LIMIT 1").fetchone()
+        return row["username"] if row else ""
+
+    def an_owner_is_bound(self) -> bool:
+        """Whether a real federated sign-in has ever completed for an owner.
+
+        The precondition for enforcing it. An address on an account is an
+        intention; a binding is the provider having actually answered for
+        somebody who can still turn this back off.
+        """
+        with self._lock:
+            row = self._db.execute(
+                "SELECT 1 FROM admin_users WHERE role = 'owner'"
+                " AND sso_bound_at IS NOT NULL LIMIT 1").fetchone()
+        return row is not None
+
     def list_users(self) -> list[dict]:
         with self._lock:
             rows = self._db.execute(
                 "SELECT id, username, email, role, created_at, last_login_at,"
-                " sso_bound_at FROM admin_users ORDER BY created_at"
+                " sso_bound_at, break_glass FROM admin_users"
+                " ORDER BY created_at"
             ).fetchall()
         return [dict(r) for r in rows]
 
@@ -902,11 +998,16 @@ class State:
         self._may_grant(by_role, role)
         with self._lock:
             row = self._db.execute(
-                "SELECT role FROM admin_users WHERE id = ?", (uid,)
+                "SELECT role, break_glass FROM admin_users WHERE id = ?",
+                (uid,)
             ).fetchone()
             if row is None:
                 return False
             was = row["role"]
+            # Demoting it is deleting it by another name: the escape hatch
+            # exists to turn enforcement back off, and only an owner can.
+            if was == "owner" and role != "owner":
+                self._guard_break_glass(row["break_glass"], "demoted")
             # Both ends: granting a role you do not hold is escalation, and
             # so is demoting somebody who outranks you out of the way.
             self._may_act_on(by_role, was)
@@ -929,12 +1030,14 @@ class State:
         it is optional."""
         with self._lock:
             row = self._db.execute(
-                "SELECT role FROM admin_users WHERE id = ?", (uid,)
+                "SELECT role, break_glass FROM admin_users WHERE id = ?",
+                (uid,)
             ).fetchone()
             if row is None:
                 return False
             self._may_act_on(by_role, row["role"])
             self._guard_last(row["role"])
+            self._guard_break_glass(row["break_glass"], "deleted")
             # Sessions reference the account (FK), and a deleted account's
             # sessions have nothing left to say - remove rather than revoke.
             self._db.execute("DELETE FROM sessions WHERE user_id = ?", (uid,))
