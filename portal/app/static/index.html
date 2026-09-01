@@ -5541,12 +5541,13 @@ function accountSettings() {
       const on = ((SETTINGS && SETTINGS.settings && SETTINGS.settings.sso_enabled
         && SETTINGS.settings.sso_enabled.value) === '1');
       // Beta, and said where somebody is about to act on it rather than
-      // only in the docs: it has not been run against a real Entra app
-      // registration, and this card is the last screen before a team is
-      // moved onto it.
+      // only in the docs. It HAS now been run against a real Entra app
+      // registration - one - which is what the tooltip says, because this
+      // card is the last screen before a team is moved onto it and
+      // "exercised once" is a different claim from "proven".
       return `<p style="margin:0 0 6px"><span class="pill p-ok">${
         on ? 'On' : 'Off'}</span> <span class="pill p-amb"
-        title="not yet run against a real Entra app registration">beta</span></p>
+        title="run against one real Entra tenant so far">beta</span></p>
       <p class="lede">${!on
         ? 'Sign in with Microsoft Entra instead of a portal password. A '
           + 'guided wizard, six steps.'
