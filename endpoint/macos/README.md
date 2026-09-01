@@ -23,10 +23,30 @@ an allowlist entry for the script path and the receiver URL if needed.
 | browser | AI extensions in Chrome, Brave, Edge | no, presence only |
 | desktop | AI apps in /Applications, local runtimes like Ollama | no, presence only |
 | mcp     | MCP servers wired into AI tool configs | no, lists server names |
+| cli     | launchd jobs that start an AI tool on their own | no, reports the cadence |
 
 Account findings carry the domain in `account_domain` and the console
 username in `user`. An account on a domain outside your corporate list
 reports as `warn`; everything else is `info`.
+
+
+### What starts a tool on its own
+
+Beyond presence, the collector reads launchd agents and daemons to find AI tools that start without
+being asked. A job qualifies when the command it runs names a binary the
+registry already lists, so covering a new tool is a registry entry rather
+than a change to this script - and the match is word-ish, so `claude` does
+not match `claudeless-backup`.
+
+Those findings carry `mode: autonomous`, the trigger in the scheduler's own
+words, and the raw cadence in `schedule` for the portal to read. See
+[Agentic AI](../../docs/agentic.md).
+
+The account scan also now says which of three states it found rather than
+leaving two of them as the same blank: an account file with an account in it
+is a `person`, an account file with none is a `machine` credential - a key
+that authenticates with nobody behind it, and the one that survives somebody
+being offboarded - and a config directory with no account file is `none`.
 
 ## Reporting behaviour
 

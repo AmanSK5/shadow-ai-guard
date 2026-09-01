@@ -109,6 +109,25 @@ after a sync, check:
   attention on your image; that is the failure mode to catch on one
   machine instead of fifty)
 
+## What starts a tool on its own
+
+Beyond presence, the collector reads Scheduled Tasks to find AI tools that
+start without being asked - logon and boot triggers, repetition intervals,
+and start boundaries. A task qualifies when what it executes names a binary
+the registry already lists, so covering a new tool is a registry entry rather
+than a change to this script, and the match is word-ish so `claude` does not
+match `claudeless-backup`.
+
+Those findings carry `mode: autonomous`, the trigger in the scheduler's own
+words, and the raw cadence in `schedule` for the portal to read. See
+[Agentic AI](../../docs/agentic.md).
+
+The account scan also now says which of three states it found rather than
+leaving two of them as the same blank: an account file with an account in it
+is a `person`, an account file with none is a `machine` credential - a key
+that authenticates with nobody behind it, and the one that survives somebody
+being offboarded - and a config directory with no account file is `none`.
+
 ## Reporting behaviour
 
 Identical to macOS: warn findings post at most once per hour, info findings
