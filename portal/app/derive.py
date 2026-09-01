@@ -1219,22 +1219,25 @@ def status_from(findings):
     and "the Entra scanner has never reported, here is the doc". Absence is
     ambiguous on its own, so each row says which of the two it is where it
     can, and says nothing more where it cannot."""
-    by_source = defaultdict(lambda: {"findings": 0, "last_seen": "", "devices": set()})
-    for f in findings:
-        src = f.get("source") or "(none)"
-        e = by_source[src]
+    def _tally(index, key, f):
+        e = index[key]
         e["findings"] += 1
-        ts = f.get("reported_at") or ""
-        e["last_seen"] = max(e["last_seen"], ts)
+        e["last_seen"] = max(e["last_seen"], f.get("reported_at") or "")
         dev = (f.get("device") or "").strip()
         if dev:
             e["devices"].add(dev)
 
-    # The authoritative list. Scanner values are DetectionSource in
-    # scanner/ai_guard/scanners/base.py; collectors and the extension set
-    # theirs directly. Guessing at these produces a setup page that reports
-    # "not reporting" for something that is reporting, which is the exact
-    # false signal this view exists to remove.
+    _blank = lambda: {"findings": 0, "last_seen": "", "devices": set()}
+    by_source = defaultdict(_blank)
+    # A second index, because not every row in the list below is a scanner.
+    # See _JUDGED_ON_SURFACE.
+    by_surface = defaultdict(_blank)
+    for f in findings:
+        _tally(by_source, f.get("source") or "(none)", f)
+        surface = (f.get("surface") or "").strip()
+        if surface:
+            _tally(by_surface, surface, f)
+
     # The authoritative list. Scanner values are DetectionSource in
     # scanner/ai_guard/scanners/base.py; collectors and the extension set
     # theirs directly. Guessing at these produces a setup page that reports
@@ -1244,6 +1247,27 @@ def status_from(findings):
     # Each carries what it needs to start reporting, because a status page
     # that says "not reporting" and nothing else leaves the reader exactly
     # where they were.
+    # Rows judged on the SURFACE a finding carries rather than on its source.
+    #
+    # MCP is the case that forced this. Its findings come from the endpoint
+    # collectors, which stamp their own source on everything they send
+    # ("collector-macos" and friends) and set the surface to "mcp"
+    # separately. Nothing in a routine scan run has ever emitted a source of
+    # "mcp_scan": the module that would is the one `ai-guard mcp-scan`
+    # points at a config file by hand.
+    #
+    # So this row matched on a value that never arrives, and reported "not
+    # reporting" on an estate whose Inventory was listing MCP servers from
+    # the very same findings. Its help text then invited the reader to
+    # conclude nobody had configured one - which is exactly the false signal
+    # the note above says this view exists to remove, and the reason a row
+    # that describes a surface has to be judged on one.
+    #
+    # Not fixed by having collectors send source "mcp_scan" instead: source
+    # is how a device is known to have a collector on it at all
+    # (COLLECTOR_SOURCES), and which collector found it is worth keeping.
+    _JUDGED_ON_SURFACE = {"mcp_scan": "mcp"}
+
     expected = [
         ("endpoint", "collector-macos", "macOS collector", "endpoint/macos/README.md",
          "Download the pre-configured script below and run it as a Jamf "
@@ -1335,7 +1359,8 @@ def status_from(findings):
 
     rows = []
     for group, src, label, doc, needs in expected:
-        e = by_source.get(src)
+        surface = _JUDGED_ON_SURFACE.get(src)
+        e = by_surface.get(surface) if surface else by_source.get(src)
         rows.append({
             "group": group,
             "source": src,
