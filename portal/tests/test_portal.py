@@ -1191,3 +1191,62 @@ def test_a_refresh_burst_reads_the_log_store_once():
         main._invalidate_all()
 
     assert reads["n"] == 1, "%d reads for one refresh" % reads["n"]
+
+
+# ------------------------------------------------- the sources status page --
+
+
+def test_the_mcp_row_reports_from_the_findings_that_actually_carry_it():
+    """The row said "not reporting" on estates whose Inventory was listing
+    MCP servers from the very same findings.
+
+    MCP findings come from the endpoint collectors, which stamp their own
+    source on everything they send and set the surface to "mcp" separately.
+    Nothing in a routine scan run has ever emitted a source of "mcp_scan" -
+    the module that would is the one `ai-guard mcp-scan` points at a config
+    file by hand. So the row matched a value that never arrives.
+
+    That is the exact false signal this page exists to remove, and it was
+    worse than a wrong pill: the row's help text invited the reader to
+    conclude nobody had configured an MCP server."""
+    st = derive.status_from([
+        finding(tool="claude-code-mcp", surface="mcp", source="collector-macos",
+                device="MAC-1", evidence="~/.claude.json mcpServers: github"),
+        finding(tool="claude-code-mcp", surface="mcp", source="collector-linux",
+                device="NIX-1", evidence="~/.claude.json mcpServers: filesystem"),
+    ])
+
+    row = [r for r in st["sources"] if r["source"] == "mcp_scan"][0]
+    assert row["reporting"] is True
+    assert row["findings"] == 2
+    assert row["devices"] == 2
+    assert [g for g in st["groups"] if g["group"] == "mcp"][0]["reporting"] == 1
+
+
+def test_the_mcp_row_stays_silent_when_nobody_has_configured_one():
+    """The other half. Judging on surface must not turn the row into
+    something that is always green - a status page that cannot say "no" is
+    as useless as one that cannot say "yes"."""
+    st = derive.status_from([
+        finding(tool="claude-code", surface="cli", source="collector-macos"),
+    ])
+
+    row = [r for r in st["sources"] if r["source"] == "mcp_scan"][0]
+    assert row["reporting"] is False
+    assert row["findings"] == 0
+
+
+def test_judging_one_row_on_surface_leaves_the_scanner_rows_alone():
+    """Every other row is a scanner and stays matched on source. If this
+    slips, a page whose whole job is telling set-up apart from silent starts
+    guessing."""
+    st = derive.status_from([
+        finding(tool="claude-code-mcp", surface="mcp", source="collector-macos"),
+    ])
+    by = {r["source"]: r for r in st["sources"]}
+
+    assert by["collector-macos"]["reporting"] is True   # it did send this
+    assert by["entra_sign_in"]["reporting"] is False
+    assert by["sentinelone_dns"]["reporting"] is False
+    # And a surface value must never be mistaken for a source.
+    assert "mcp" not in by
