@@ -80,6 +80,7 @@ import logging
 import os
 import re
 import secrets
+import threading
 import time
 import urllib.parse
 import urllib.request
@@ -94,6 +95,19 @@ from pydantic import BaseModel, Field
 
 from app import derive, evidence, governance, managed, paste_guard
 
+# The portal never configured logging, so every log.info in it went
+# nowhere - including the one whose comment promises the log-store fallback
+# is "not silent", and the one that says the weekly digest was sent. Only
+# warnings and errors were ever visible, through Python's last-resort
+# handler. Configured here the way the receiver does it, to stdout, which is
+# where a container's logs are read from.
+# Level only, and deliberately not the stream: warnings already reached
+# stderr through the last-resort handler, and a test pins them there.
+# Redirecting them to stdout to match the receiver would have moved output
+# an operator may already be grepping, which is not a trade worth making to
+# turn on some info lines.
+logging.basicConfig(level=logging.INFO,
+                    format="%(levelname)s:     %(message)s")
 log = logging.getLogger("portal")
 
 
@@ -668,14 +682,87 @@ def _registry(request) -> dict:
     return reg
 
 
+# One lock per cache key. Two people refreshing at once used to mean two
+# full reads of the same window, because these endpoints are sync defs and
+# FastAPI runs those in a threadpool - they genuinely overlap. The second
+# arrival now waits for the first build and takes its answer, which is also
+# why the check is made again after the lock: by then the value it wanted
+# usually exists.
+_cache_locks: dict = {}
+_cache_locks_guard = threading.Lock()
+
+
+def _lock_for(key):
+    with _cache_locks_guard:
+        lock = _cache_locks.get(key)
+        if lock is None:
+            lock = _cache_locks[key] = threading.Lock()
+        return lock
+
+
+def _fresh(hit, hours, now):
+    return bool(hit) and hit["hours"] == hours and now - hit["at"] < CACHE_TTL
+
+
 def _cached(key, hours, builder):
-    now = time.time()
+    """A derived value, rebuilt at most once per TTL and at most once at a
+    time.
+
+    The timestamp is taken AFTER the builder returns, not before. Stamping
+    the start meant an entry was born as old as the build that made it - so
+    on any deployment where a build took longer than CACHE_TTL the entry was
+    expired the moment it was written, the cache never returned anything,
+    and every page load paid the full cost forever. The symptom is a portal
+    that is uniformly slow rather than slow once.
+    """
     hit = _cache.get(key)
-    if hit and hit["hours"] == hours and now - hit["at"] < CACHE_TTL:
+    if _fresh(hit, hours, time.time()):
         return hit["value"], hit["at"]
-    value = builder()
-    _cache[key] = {"value": value, "at": now, "hours": hours}
-    return value, now
+    with _lock_for(key):
+        # Re-check: another thread may have built it while this one waited,
+        # and rebuilding it again would defeat the point of the lock.
+        hit = _cache.get(key)
+        if _fresh(hit, hours, time.time()):
+            return hit["value"], hit["at"]
+        started = time.time()
+        value = builder()
+        at = time.time()
+        log.info("built %r in %.2fs", key, at - started)
+        _cache[key] = {"value": value, "at": at, "hours": hours}
+        return value, at
+
+
+def _invalidate_derived(key):
+    """Drop a derived view AND the findings behind it.
+
+    Refresh means "go and look again". Dropping only the derived value
+    would rebuild it from a findings list that is still cached, so the
+    button would redraw the same numbers and look like it had worked -
+    the one outcome a refresh must never produce.
+    """
+    _cache.pop(key, None)
+    _cache.pop("findings", None)
+
+
+def _findings_cached(hours, request=None):
+    """The findings every derived view is built from, read once.
+
+    `graph`, `status`, `paste_guard` and `register` all want the same list
+    for the same window, and each used to fetch it separately - so opening
+    the portal paginated the whole window three times over, in series,
+    before anything rendered.
+
+    Sharing one read also makes a page load internally consistent. Three
+    separate reads happen at three different instants, so the overview and
+    the paste-guard card could legitimately disagree about the same
+    minute. One snapshot cannot.
+
+    Cached under its own key, so `refresh=true` clearing a derived view
+    does not silently re-read Loki when the findings behind it are still
+    fresh; the refresh path clears this key too.
+    """
+    value, _ = _cached("findings", hours, lambda: _findings(hours, request))
+    return value
 
 
 def _findings(hours, request=None):
@@ -689,6 +776,7 @@ def _findings(hours, request=None):
         )
     global _last_loki_ok, _last_loki_error, _last_read_truncated
     global _last_loki_error_at
+    started = time.time()
     try:
         out = derive.fetch_from_loki(
             # The bearer token is env configuration and belongs to the env
@@ -697,6 +785,18 @@ def _findings(hours, request=None):
             username=username or None, password=password or None,
             max_findings=LOKI_MAX_FINDINGS)
         _last_loki_ok = time.time()
+        # Where the time went, on the one line that can say. Working out
+        # that a slow portal was a quadratic graph build rather than a slow
+        # log store took a profiler; it should take a log line. Cheap, and
+        # it is the difference between answering the next performance
+        # question in a minute and guessing at pod sizes.
+        # getattr, like the line below it: a stubbed read returns a plain
+        # list, and instrumentation must never be the thing that breaks a
+        # read it was only meant to describe.
+        log.info("read %d findings over %.0fh in %.2fs%s", len(out), hours,
+                 _last_loki_ok - started,
+                 " (TRUNCATED at the cap)"
+                 if getattr(out, "truncated", False) else "")
         _last_loki_error = ""
         _last_read_truncated = getattr(out, "truncated", False)
         return out
@@ -964,9 +1064,9 @@ def graph(request: Request,
     indistinguishable from a portal that is not working."""
     hours = hours or LOOKBACK_HOURS
     if refresh:
-        _cache.pop("graph", None)
+        _invalidate_derived("graph")
     def build():
-        findings = _findings(hours, request)
+        findings = _findings_cached(hours, request)
         reg = _registry(request)
         domain_map = derive.load_domain_map_from(reg)
         return derive.graph_from(findings, domain_map,
@@ -985,9 +1085,9 @@ def status(request: Request,
            _=Depends(require_auth)):
     hours = hours or LOOKBACK_HOURS
     if refresh:
-        _cache.pop("status", None)
+        _invalidate_derived("status")
     def build():
-        return derive.status_from(_findings(hours, request))
+        return derive.status_from(_findings_cached(hours, request))
 
     value, at = _cached("status", hours, build)
     return JSONResponse(dict(value, derived_at=at, hours=hours,
@@ -1061,10 +1161,10 @@ def paste_guard_events(request: Request,
     """
     hours = hours or LOOKBACK_HOURS
     if refresh:
-        _cache.pop("paste_guard", None)
+        _invalidate_derived("paste_guard")
 
     def build():
-        findings = _findings(hours, request)
+        findings = _findings_cached(hours, request)
         reg = _registry(request)
         return paste_guard.paste_guard_from(
             findings, derive.load_domain_map_from(reg))
@@ -1101,7 +1201,7 @@ def register(request: Request,
     """
     hours = hours or LOOKBACK_HOURS
     if refresh:
-        _cache.pop("register", None)
+        _invalidate_derived("register")
 
     # Fetched outside the cached build: the unmatched section below needs it
     # on every request, and in managed mode it carries the portal-recorded
@@ -1109,7 +1209,7 @@ def register(request: Request,
     gov, exceptions, portal_decisions = _merged_governance(request)
 
     def build():
-        findings = _findings(hours, request)
+        findings = _findings_cached(hours, request)
         reg = _registry(request)
         return derive.register_from(findings, reg,
                                     derive.load_domain_map_from(reg), gov,
