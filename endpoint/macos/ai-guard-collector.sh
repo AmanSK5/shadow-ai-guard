@@ -10,7 +10,8 @@
 #
 # The identifiers for all four come from the receiver's /registry/collector
 # at runtime. Nothing tool-specific is hardcoded in this script: adding a new
-# AI tool is a registry merge request, not a script edit plus an MDM re-paste.
+# AI tool is a registry entry - defined in the portal, or by merge request -
+# not a script edit plus an MDM re-paste.
 #
 # Privacy: the account_domain field is the domain only. The console username
 # is sent in the user field (already known to IT via MDM).

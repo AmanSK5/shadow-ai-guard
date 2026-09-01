@@ -18,9 +18,17 @@
 # approved tool signed into a personal account is still the thing to act on,
 # because the risky part is the account. Approval must never come to mean safe.
 #
-# Edit it, raise a merge request, merge it. That is the audit trail, and it is
-# a better one than most portals build: signed, timestamped, reviewable, with a
-# diff of exactly what changed and who approved the change.
+# Edit it, raise a merge request, merge it. That is one audit trail, and a good
+# one: signed, timestamped, reviewable, with a diff of exactly what changed and
+# who approved the change.
+#
+# It is no longer the only one. In managed mode the register's cards gain an
+# edit control, decisions are recorded in the receiver with who and when, and
+# the same validator runs on that path - an approval with no review date is
+# refused there too. The two coexist per tool: a portal-recorded decision
+# wins, this file fills the gaps, and the register labels which kind it is
+# showing. Exceptions stay file-only on purpose, because they are rarer and
+# worth the review a merge request gives them. See docs/governance.md.
 
 version: 1
 

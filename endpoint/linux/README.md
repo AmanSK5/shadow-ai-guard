@@ -8,7 +8,8 @@ itself, because RMM and cron jobs run as root, whose home is `/root` and
 contains nothing worth scanning.
 
 Which tools to look for is fetched from the receiver's `/registry/collector`
-endpoint at runtime. Adding a new AI tool is a registry merge request, not a
+endpoint at runtime. Adding a new AI tool is a registry entry - defined in the
+portal, or by merge request against registry.yaml - not a
 change to this script.
 
 ## The one requirement

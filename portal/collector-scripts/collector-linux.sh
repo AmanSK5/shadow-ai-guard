@@ -10,7 +10,8 @@
 #
 # The identifiers for all four come from the receiver's /registry/collector
 # at runtime. Nothing tool-specific is hardcoded: adding a new AI tool is a
-# registry merge request, not a script edit plus a re-push through the RMM.
+# registry entry - defined in the portal, or by merge request - not a script
+# edit plus a re-push through the RMM.
 #
 # Delivery: any mechanism that can run this as root on a schedule - an RMM
 # (Level, NinjaOne, Action1...), an Ansible cron/systemd-timer role, or plain

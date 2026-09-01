@@ -10,8 +10,13 @@
 # fleet-wide scan would otherwise alert per device per unapproved tool every
 # morning, and every tool here ships unapproved. See receiver_reporter.py.
 #
-# Discovery-job candidates are appended with category: unreviewed and
-# added_by: discovery, then triaged in the MR.
+# Discovery-job candidates are posted to the receiver and wait in the portal's
+# review queue, where a person defines or dismisses each one - a tool defined
+# there reaches the fleet with no rebuild. With GitLab configured the
+# discovery job proposes a merge request against this file instead, which is
+# the original route and still the one to use if your registry review lives
+# in a forge. Either way a human is the gate: nothing is detected until
+# somebody decides.
 
 version: 1
 
