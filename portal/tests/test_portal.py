@@ -1250,3 +1250,191 @@ def test_judging_one_row_on_surface_leaves_the_scanner_rows_alone():
     assert by["sentinelone_dns"]["reporting"] is False
     # And a surface value must never be mistaken for a source.
     assert "mcp" not in by
+
+
+# ------------------------------------------------------------- agentic AI --
+
+REG_BIN = {"tools": [{"id": "claude-code", "cli": {"binaries": ["claude"]}}]}
+
+
+def test_a_finding_that_says_nothing_is_not_called_autonomous():
+    """The rule this whole view rests on.
+
+    "Ran with nobody watching" is an accusation, and silence is not evidence
+    for it. Every finding written before `mode` existed, and every collector
+    not yet upgraded, says nothing - so absence has to read as unknown. The
+    platform already refuses the mirror image of this for coverage: a silent
+    source is not a clean estate."""
+    out = derive.agentic_from([
+        finding(tool="claude-code", surface="cli", device="D1"),
+        finding(tool="chatgpt", surface="browser", device="D2",
+                account_domain="gmail.com"),
+    ], REG_BIN)
+
+    assert out["agents"] == []
+    assert out["counts"]["agents"] == 0
+
+
+def test_a_blank_account_is_not_read_as_a_machine_identity():
+    """The other thing that must not be inferred.
+
+    Before `identity` existed, "authenticated by a key" and "installed and
+    never signed in" both arrived as a blank account domain and could not be
+    told apart. Reading blank as a machine identity would manufacture the
+    exact finding this page exists to report, on every estate that has not
+    upgraded its collectors yet."""
+    out = derive.agentic_from([
+        finding(tool="claude-code", surface="cli", device="D1",
+                account_domain="", mode="autonomous"),
+    ], REG_BIN)
+
+    a = out["agents"][0]
+    assert a["identity"] == ""            # not "machine"
+    assert a["accountable"] is False      # but still not accountable
+    assert out["counts"]["machine_identities"] == 0
+
+
+def test_an_unattended_run_under_a_real_account_is_not_the_same_finding():
+    """Running on a timer is not the problem. Running on a timer under
+    nobody's name is. A scheduled job with a person behind it has something
+    to revoke, and the page has to say so rather than colouring everything
+    unattended red."""
+    out = derive.agentic_from([
+        finding(tool="claude-code", surface="cli", device="D1",
+                account_domain="corp.example", mode="autonomous",
+                identity="person", trigger="launchd, every 6 hours"),
+    ], REG_BIN)
+
+    a = out["agents"][0]
+    assert a["accountable"] is True
+    assert a["trigger"] == "launchd, every 6 hours"
+    assert out["counts"]["unaccountable"] == 0
+
+
+def test_a_process_that_is_not_a_browser_or_a_known_tool_is_found():
+    """The case with nothing to inventory: no config file, no registry
+    binary, no MCP server - a script with a key in it. The signal was
+    already being collected and never read, sitting in the DNS scan's
+    evidence text."""
+    out = derive.agentic_from([
+        finding(tool="claude", surface="network", device="D9",
+                evidence="DNS lookup for api.anthropic.com (via python3)"),
+    ], REG_BIN)
+
+    a = out["agents"][0]
+    assert a["process"] == "python3"
+    assert a["accountable"] is False
+    assert out["counts"]["bespoke"] == 1
+
+
+@pytest.mark.parametrize("proc,why", [
+    ("Google Chrome", "a person using a model in a browser is the ordinary case"),
+    ("firefox", "same"),
+    ("msedge.exe", "same, named the way Windows names it"),
+    ("claude", "a known binary IS the tool; that finding is claude-code, not a mystery"),
+    ("claude.exe", "same binary, Windows spelling"),
+])
+def test_browsers_and_known_binaries_are_not_mysteries(proc, why):
+    out = derive.agentic_from([
+        finding(tool="claude", surface="network", device="D9",
+                evidence="DNS lookup for api.anthropic.com (via %s)" % proc),
+    ], REG_BIN)
+    assert out["agents"] == [], why
+
+
+def test_reach_is_joined_from_the_mcp_servers_on_the_same_machine():
+    """What a thing can reach is the fourth link in the chain, and it comes
+    from findings the fleet already reports rather than anything new."""
+    out = derive.agentic_from([
+        finding(tool="claude-code", surface="cli", device="D1",
+                mode="autonomous", identity="machine"),
+        finding(tool="claude-code-mcp", surface="mcp", device="D1",
+                evidence=".claude.json mcpServers: github,postgres-prod"),
+        finding(tool="claude-code-mcp", surface="mcp", device="D2",
+                evidence=".claude.json mcpServers: elsewhere"),
+    ], REG_BIN)
+
+    assert out["agents"][0]["reach"] == ["github", "postgres-prod"]
+
+
+def test_mcp_coverage_is_derived_from_the_registry_not_written_down():
+    """Which clients get watched follows from a tool having an MCP config
+    path, so adding one is a registry entry rather than a code change. The
+    unwatched list is maintained by hand because absence cannot be derived
+    from a registry that does not mention the thing - and it exists so an
+    empty page is never mistaken for an empty estate."""
+    reg = {"tools": [
+        {"id": "claude", "name": "Claude",
+         "mcp_config_paths_macos": ["Library/Application Support/Claude/x.json"]},
+        {"id": "cursor", "name": "Cursor", "mcp_config_paths": [".cursor/mcp.json"]},
+        {"id": "otter", "name": "Otter"},          # no MCP path: not watched
+    ]}
+    cov = derive.mcp_coverage(reg)
+
+    assert cov["watched"] == ["Claude", "Cursor"]
+    assert "Otter" not in cov["watched"]
+    assert "VS Code" in cov["unwatched"]
+
+
+def test_a_client_that_gains_a_config_path_stops_being_listed_as_unwatched():
+    """The two lists must never contradict each other. Watching Windsurf is
+    a registry edit, and the page has to stop saying it is a blind spot the
+    moment that lands - without anybody remembering to edit the other list."""
+    reg = {"tools": [{"id": "codeium", "name": "Windsurf / Devin Desktop",
+                      "mcp_config_paths": [".windsurf/mcp.json"]}]}
+    cov = derive.mcp_coverage(reg)
+
+    assert "Windsurf / Devin Desktop" in cov["watched"]
+    assert "Windsurf / Devin Desktop" not in cov["unwatched"]
+
+
+# ------------------------------------------------------- schedules --------
+
+
+@pytest.mark.parametrize("spec,kind,marks", [
+    # A time somebody set. The whole point of the panel.
+    ("cron:0 2 * * *", "marks", [120]),
+    ("cron:15 2 * * *", "marks", [135]),
+    ("cron:0 */6 * * *", "marks", [0, 360, 720, 1080]),
+    ("cron:30 9,17 * * 1-5", "marks", [570, 1050]),
+    # Often enough that individual ticks stop meaning anything.
+    ("cron:*/15 * * * *", "band", []),
+    ("oncalendar:*:0/15", "band", []),
+    ("interval:900", "band", []),
+    # systemd shorthands.
+    ("oncalendar:hourly", "marks", [h * 60 for h in range(24)]),
+    ("oncalendar:daily", "marks", [0]),
+    ("oncalendar:Mon *-*-* 03:00:00", "marks", [180]),
+    # An interval with no anchor: the gaps are true, the clock times are not.
+    ("interval:21600", "unphased", [0, 360, 720, 1080]),
+    # Not cadences at all.
+    ("atlogin", "continuous", []),
+    ("event", "none", []),
+])
+def test_a_schedule_is_read_into_a_day(spec, kind, marks):
+    lane = derive.schedule_lane(spec)
+    assert lane["kind"] == kind, spec
+    assert lane["marks"] == marks, spec
+
+
+@pytest.mark.parametrize("spec", [
+    "", "cron:", "cron:nonsense here", "cron:99 99 * * *", "cron:0",
+    "interval:0", "interval:abc", "oncalendar:every other tuesday",
+    "wat:0 2 * * *", "cron:*/0 * * * *",
+])
+def test_a_schedule_it_cannot_read_draws_nothing(spec):
+    """The rule that keeps the panel honest. A spec this does not understand
+    produces no marks at all rather than a plausible-looking guess - a
+    timeline with an invented time on it is worse than a row left out, and
+    the mockup this came from made exactly that mistake."""
+    assert derive.schedule_lane(spec) == {"kind": "none", "marks": []}
+
+
+def test_the_day_is_what_is_configured_not_what_was_seen():
+    """An interval says how long between runs, not when they land. launchd's
+    StartInterval counts from whenever the job was loaded, so four evenly
+    spaced marks are honest about the gap and dishonest about the clock -
+    which is why that case is its own kind and the view labels it."""
+    lane = derive.schedule_lane("interval:21600")
+    assert lane["kind"] == "unphased"
+    assert lane["kind"] != "marks", "must not claim to know the hour"

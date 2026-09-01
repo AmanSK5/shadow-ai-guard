@@ -849,6 +849,71 @@ a.libtn:hover{border-color:var(--pri)}
 @media (prefers-reduced-motion: reduce) {
   .meterrow .fill, .ctip { transition: none; }
 }
+
+/* ---- Agentic AI ------------------------------------------------------
+   Prefixed, because this view draws a shape nothing else here draws and
+   unprefixed names like .node or .chain would collide with the cascade
+   the rest of the page already depends on. */
+.ag-verdict{margin:0 0 6px;font-size:26px;line-height:1.25;letter-spacing:-.02em;
+  font-weight:600;max-width:34ch}
+/* Its own line. Two sentences sharing one wrap put "asked." and "3 answer
+   to nobody." on the same line, which reads as one clause and buries the
+   number that matters. */
+.ag-verdict em{font-style:normal;color:var(--dstr);display:block}
+.ag-day{background:var(--sf);border:1px solid var(--bd);border-radius:12px;
+  box-shadow:var(--shadow);padding:15px 17px 12px;margin-bottom:26px;overflow-x:auto}
+.ag-grid{min-width:600px}
+.ag-lane{display:grid;grid-template-columns:174px 1fr;align-items:center;gap:13px;padding:4px 0}
+.ag-lname{font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ag-lname s{display:block;text-decoration:none;font-size:11px;color:var(--mut)}
+.ag-track{position:relative;height:18px;border-radius:5px;background:var(--sf2);overflow:hidden}
+/* 09:00-18:00, the stretch somebody is likely to be at a desk. */
+.ag-work{position:absolute;top:0;bottom:0;left:37.5%;width:37.5%;
+  background:color-mix(in srgb, var(--fg) 6%, transparent)}
+.ag-run{position:absolute;top:4px;height:10px;border-radius:3px;background:var(--dstr)}
+.ag-run.ok{background:var(--acc)}
+.ag-cont{position:absolute;top:4px;left:0;right:0;height:10px;border-radius:3px;
+  background:repeating-linear-gradient(90deg,var(--dstr) 0 7px,transparent 7px 14px);opacity:.55}
+.ag-cont.ok{background:repeating-linear-gradient(90deg,var(--acc) 0 7px,transparent 7px 14px)}
+.ag-nolane{font-size:11.5px;color:var(--mut);padding-left:2px}
+.ag-ticks{display:flex;justify-content:space-between;font-size:10.5px;color:var(--mut);
+  margin-top:5px;padding-left:187px}
+.ag-key{display:flex;gap:15px;flex-wrap:wrap;margin-top:11px;font-size:12px;color:var(--mut)}
+.ag-sw{width:15px;height:9px;border-radius:3px;display:inline-block;vertical-align:-1px;margin-right:5px}
+.ag-chain{background:var(--sf);border:1px solid var(--bd);border-radius:12px;
+  box-shadow:var(--shadow);padding:14px 16px 16px;margin-bottom:11px}
+.ag-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;
+  flex-wrap:wrap;margin-bottom:12px}
+.ag-who{font-size:14.5px;font-weight:600}
+.ag-who span{color:var(--mut);font-weight:400;font-size:12.5px}
+.ag-link{display:flex;align-items:stretch;flex-wrap:wrap}
+.ag-node{flex:1 1 148px;min-width:136px;border:1px solid var(--bd);background:var(--sf2);
+  border-radius:9px;padding:8px 11px}
+.ag-node b{font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--mut);
+  font-weight:650;display:block;margin-bottom:3px}
+.ag-node i{font-style:normal;font-size:13px;line-height:1.35;word-break:break-word;display:block}
+.ag-node s{text-decoration:none;display:block;color:var(--mut);font-size:11.5px;margin-top:2px}
+.ag-rail{flex:0 0 20px;display:flex;align-items:center}
+.ag-rail:before{content:"";height:2px;width:100%;background:var(--bd)}
+.ag-gap{border:2px dashed var(--dstr);background:transparent;display:flex;
+  flex-direction:column;justify-content:center}
+.ag-gap i{color:var(--dstr);font-weight:600}
+.ag-held{border-color:var(--acc);background:var(--acc-soft)}
+.ag-note{margin:10px 0 0;font-size:12.5px;color:var(--mut)}
+.ag-two{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:14px;margin-top:18px}
+.ag-cov{background:var(--sf);border:1px solid var(--bd);border-radius:12px;
+  box-shadow:var(--shadow);padding:15px 17px}
+.ag-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:11px}
+.ag-chip{display:flex;align-items:center;gap:6px;font-size:12px;border:1px solid var(--bd);
+  border-radius:7px;padding:4px 9px;background:var(--sf2)}
+.ag-dot{width:6px;height:6px;border-radius:50%;flex:0 0 6px;background:var(--mut);opacity:.5}
+.ag-dot.on{background:var(--pri);opacity:1}
+.ag-limit{background:var(--sf);border:1px solid var(--bd);border-left:3px solid var(--warn);
+  border-radius:12px;padding:15px 17px;margin-top:18px}
+.ag-limit ul{margin:9px 0 0;padding-left:18px;color:var(--mut);font-size:13px}
+.ag-limit li{margin-bottom:7px}
+.ag-limit li:last-child{margin-bottom:0}
+.ag-limit li b{color:var(--fg);font-weight:600}
 </style>
 <div class="overlay" id="overlay"></div>
 <div class="drawer" id="drawer"></div>
@@ -1391,7 +1456,7 @@ async function load(force) {
   const q = force ? '?refresh=true' : '';
   // Refresh must clear the views that read a second endpoint too, or the
   // button refreshes some of the page and silently not the rest.
-  if (force) { DIAG = null; REG = null; EV = null; PG = null; FLEET = null; TOKENS = null; SETTINGS = null; REGTOOLS = null; GOVDECS = null; RENTRIES = null; CAND = null; PSTAT = null; AUDITLOG = null; USERS = null; BUDGET = null; BFX = null; }
+  if (force) { AGENTIC = null; DIAG = null; REG = null; EV = null; PG = null; FLEET = null; TOKENS = null; SETTINGS = null; REGTOOLS = null; GOVDECS = null; RENTRIES = null; CAND = null; PSTAT = null; AUDITLOG = null; USERS = null; BUDGET = null; BFX = null; }
   try {
     const cr = await fetch('/api/config');
     if (cr.status === 401 && AUTH && AUTH.mode === 'login') { sessionLost(); return; }
@@ -1670,6 +1735,7 @@ const NAV = [
   {id:'governance',lbl:'Governance', items:[['register','AI register'],['registry','Tool registry'],
                                             ['paste','Paste guard'],['iso','ISO 42001 evidence']]},
   {id:'spend',     lbl:'Budget',     items:[['budget','Budget']]},
+  {id:'agentic',   lbl:'Agentic AI', items:[['agentic','What runs on its own']]},
   {id:'health',    lbl:'Health',     items:[['setup','Sources'],['coverage','Uncovered devices']]},
   {id:'managed',   lbl:'Fleet',      items:[['fleet','Devices'],['tokens','Enrollment tokens']]},
   {id:'system',    lbl:'Settings',   items:[['settings','Settings']]},
@@ -1679,6 +1745,7 @@ const NAVICONS = {
   inventory:'<rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/>',
   governance:'<path d="M12 3l8 3v5.5c0 4.7-3.2 8.2-8 10-4.8-1.8-8-5.3-8-10V6l8-3z"/>',
   spend:'<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18"/><path d="M7 15h4"/>',
+  agentic:'<circle cx="12" cy="12" r="3.2"/><path d="M12 2v3.4M12 18.6V22M2 12h3.4M18.6 12H22"/><path d="M5.6 5.6l2.4 2.4m8 8l2.4 2.4m0-12.8l-2.4 2.4m-8 8l-2.4 2.4"/>',
   health:'<path d="M3 12h4l3-7 4 14 3-7h4"/>',
   managed:'<rect x="3" y="5" width="18" height="12" rx="1.5"/><path d="M8 21h8"/>',
   system:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M4.9 4.9l2.1 2.1m10 10l2.1 2.1M19.1 4.9l-2.1 2.1m-10 10l-2.1 2.1"/>',
@@ -8703,6 +8770,161 @@ function loadBanner() {
   </div>`;
 }
 
+// What runs without a person. Every other view starts from something
+// somebody did; this one starts from the absence of that, which is why it
+// reads differently - a chain per thing, with the missing link drawn as a
+// hole rather than described in a cell.
+let AGENTIC = null;
+async function agentic() {
+  if (!AGENTIC) {
+    const r = await fetch('/api/agentic');
+    if (!r.ok) return `<h2>Agentic AI</h2><p class="lede">${
+      esc((await r.json().catch(() => ({}))).detail || r.statusText)}</p>`;
+    AGENTIC = await r.json();
+  }
+  const A = AGENTIC.agents || [], c = AGENTIC.counts || {};
+  const srv = AGENTIC.servers || [], cov = AGENTIC.coverage || {};
+
+  const head = c.agents
+    ? `<h1 class="ag-verdict">${c.agents} thing${c.agents === 1 ? '' : 's'} run${
+        c.agents === 1 ? 's' : ''} without being asked.${
+        c.unaccountable ? ` <em>${c.unaccountable} answer${
+          c.unaccountable === 1 ? 's' : ''} to nobody.</em>` : ''}</h1>`
+    : `<h1 class="ag-verdict">Nothing here is running on its own.</h1>`;
+
+  const nodes = a => {
+    // Starts / who authorised it / runs / can reach. The second is the
+    // point of the page: an empty box is a credential with nobody behind
+    // it, and there is nothing to revoke when somebody leaves.
+    const who = a.accountable
+      ? `<div class="ag-node ag-held"><b>Who authorised it</b><i>${esc(a.account || a.user)}</i>
+         <s>${esc(a.identity || 'account seen')}</s></div>`
+      : `<div class="ag-node ag-gap"><b>Who authorised it</b><i>${
+          a.identity === 'machine' ? '— a key, not a person'
+          : a.identity === 'none' ? '— nothing signed in'
+          : '— not established'}</i></div>`;
+    const runs = a.process
+      ? `<div class="ag-node ag-gap"><b>Runs</b><i>— no tool we know</i>
+         <s>${esc(a.process)}</s></div>`
+      : `<div class="ag-node"><b>Runs</b><i>${esc(a.tool)}</i>${
+          a.mode === 'autonomous' ? '<s>unattended</s>' : ''}</div>`;
+    const reach = a.reach.length
+      ? a.reach.map(x => `<span class="pill p-amb">${esc(x)}</span>`).join('')
+      : (a.process ? `<span class="pill p-mut">a model API direct</span>`
+                   : `<span class="pill p-mut">nothing configured</span>`);
+    return `<div class="ag-link">
+      <div class="ag-node"><b>Starts</b><i>${esc(a.trigger || 'not established')}</i>
+        <s>${esc(a.os || '')}</s></div>
+      <div class="ag-rail"></div>${who}<div class="ag-rail"></div>${runs}
+      <div class="ag-rail"></div>
+      <div class="ag-node"><b>Can reach</b><i>${reach}</i></div></div>`;
+  };
+
+  // The day. Configured cadence, not observed runs - a spec says what a
+  // thing is set to do, and nothing here watches it happen. Lanes whose
+  // spec is an event or unreadable are listed with no timeline rather than
+  // drawn with an invented one.
+  const pct = m => (m / 1440 * 100).toFixed(2);
+  const laneOf = a => {
+    const k = a.lane.kind, cls = a.accountable ? ' ok' : '';
+    if (k === 'continuous')
+      return `<span class="ag-cont${cls}" title="No cadence: runs while somebody is logged in"></span>`;
+    if (k === 'band')
+      return `<span class="ag-run${cls}" style="left:0;right:0" title="Often enough that individual runs stop meaning anything"></span>`;
+    return a.lane.marks.map(m =>
+      `<span class="ag-run${cls}" style="left:${pct(m)}%;width:1.1%"></span>`).join('');
+  };
+  const scheduled = A.filter(a => a.lane.kind !== 'none');
+  const unscheduled = A.filter(a => a.lane.kind === 'none');
+  const day = scheduled.length ? `<div class="ag-day"><div class="ag-grid">
+    ${scheduled.map(a => `<div class="ag-lane">
+      <div class="ag-lname">${esc(label(a.device, G.devices[a.device] || {}))}
+        <s class="mono">${esc(a.trigger || a.schedule)}${
+          a.lane.kind === 'unphased' ? ' · start unknown' : ''}</s></div>
+      <div class="ag-track"><span class="ag-work"></span>${laneOf(a)}</div>
+    </div>`).join('')}
+    </div>
+    <div class="ag-ticks mono"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div>
+    <div class="ag-key">
+      <span><span class="ag-sw" style="background:var(--dstr)"></span>nobody accountable</span>
+      <span><span class="ag-sw" style="background:var(--acc)"></span>runs under a known identity</span>
+      <span><span class="ag-sw" style="background:color-mix(in srgb,var(--fg) 6%,transparent)"></span>working hours</span>
+    </div>
+    ${unscheduled.length ? `<p class="ag-nolane" style="margin:9px 0 0">Not drawn:
+      ${unscheduled.map(a => esc(label(a.device, G.devices[a.device] || {}))).join(', ')}
+      - triggered by an event, or a spec this cannot read. Guessing at a time would be
+      worse than leaving the row out.</p>` : ''}
+  </div>` : '';
+
+  const chains = A.map(a => `<div class="ag-chain">
+    <div class="ag-head">
+      <span class="ag-who">${esc(label(a.device, G.devices[a.device] || {}))}
+        <span>${esc(a.user || 'no owner on record')}</span></span>
+      ${a.accountable
+        ? '<span class="pill p-acc">runs on a timer, but attributed</span>'
+        : a.process
+          ? '<span class="pill p-warn">nothing installed to find</span>'
+          : '<span class="pill p-warn">no accountable identity</span>'}
+    </div>${nodes(a)}
+    ${a.process ? `<p class="ag-note">No config file, no known binary, no MCP server.
+      Only the network saw it: a process that is not a browser reaching a model.
+      Evidence: <span class="mono">${esc(a.evidence)}</span></p>` : ''}
+  </div>`).join('');
+
+  const servers = srv.length ? `<div class="tcard">
+    <div class="cardhead"><h3>What they can reach</h3></div>
+    <p class="lede">Configuring an MCP server hands a model a capability. These are the
+    servers the fleet reported; the risk assessment is not applied to them yet.</p>
+    <table><tr><th>server</th><th>configured in</th><th>devices</th></tr>
+    ${srv.map(m => `<tr><td class="mono">${esc(m.server)}</td>
+      <td>${(m.tools || []).map(t => `<span class="pill p-mut">${esc(t)}</span>`).join('')}</td>
+      <td>${(m.devices || []).length}</td></tr>`).join('')}</table></div>` : '';
+
+  return `${head}
+  <p class="lede">Something started these without being asked - a timer, a scheduler, a
+  pipeline step - or reached a model from a process that is neither a browser nor a tool
+  the registry knows. The second box in each chain is the one to read: an empty box means
+  there is nothing to revoke when somebody leaves.</p>
+  ${scheduled.length ? `<p class="label" style="margin:0 0 9px">The day, as configured</p>
+    <p class="lede" style="margin:0 0 10px">What each is set to do, not what it was seen
+    doing - nothing here watches a run happen. The shaded stretch is working hours.</p>` : ''}
+  ${day}
+  ${A.length ? chains : `<div class="tcard"><p class="lede" style="margin:12px 0">
+    Nothing on this estate reported running unattended. That is either true, or the
+    collectors have not been updated to look - Health says which sources are reporting.
+    </p></div>`}
+  ${servers}
+  <div class="ag-two">
+  <div class="ag-cov">
+    <p class="label" style="margin:0">Where we would see an MCP server</p>
+    <p class="lede" style="margin:8px 0 0">Silence is only as good as this list. A client
+    nobody watches looks exactly like a client nobody uses, which is the one thing no page
+    here is allowed to imply.</p>
+    <div class="ag-chips">
+      ${(cov.watched || []).map(x =>
+        `<span class="ag-chip"><span class="ag-dot on"></span>${esc(x)}</span>`).join('')}
+      ${(cov.unwatched || []).map(x =>
+        `<span class="ag-chip"><span class="ag-dot"></span>${esc(x)}</span>`).join('')}
+    </div>
+    <p class="src-note" style="margin:11px 0 0">A name turns green by gaining an MCP config
+    path in the registry - an entry, not a release.</p>
+  </div>
+  <div class="ag-limit">
+    <p class="label" style="margin:0">What this does not answer, and why not yet</p>
+    <ul>
+      <li><b>What it was asked to do.</b> The prompt is on the machine and could be read.
+        Reading what somebody typed is a heavier intrusion than knowing which tool ran,
+        and it is not needed to answer anything on this page.</li>
+      <li><b>Whether it stayed within its brief.</b> Same material, same trade. Worth
+        revisiting once the signals above have been run on a real estate and shown to be
+        insufficient - which is also when there is a case to put to whoever approves it.</li>
+      <li><b>What it actually did.</b> Counting tool calls is an outcome with no prompt in
+        it, the same shape the paste guard already reports. Whether it is reachable depends
+        on what each client logs locally.</li>
+    </ul>
+  </div></div>`;
+}
+
 async function renderView() {
   const sec = sectionOf(view);
   if (sec) SECTAB[sec.id] = view;
@@ -8714,6 +8936,7 @@ async function renderView() {
   if (view === 'settings') { app.innerHTML = tb + await settings(); return; }
   if (view === 'register') { app.innerHTML = tb + await register(); return; }
   if (view === 'paste') { app.innerHTML = tb + await paste(); return; }
+  if (view === 'agentic') { app.innerHTML = tb + await agentic(); return; }
   if (view === 'iso') { app.innerHTML = tb + await iso(); return; }
   if (view === 'fleet') { app.innerHTML = tb + await fleet(); return; }
   if (view === 'tokens') { app.innerHTML = tb + await tokens(); return; }
@@ -9156,11 +9379,19 @@ const TOURS = {
          + 'decided about each tool: owner, status, review date. A tool '
          + 'missing from the registry is flagged rather than hidden. What '
          + 'it all costs is next - open Budget.'},
-    {view: 'budget', sel: '[data-s="health"]', click: true,
+    {view: 'budget', sel: '[data-s="agentic"]', click: true,
      title: 'What it costs',
      body: 'Subscriptions set against what the estate is observed doing: '
          + 'seats nobody uses, people on a tool no seat covers, personal '
-         + 'accounts running beside paid ones. All of it rests on '
+         + 'accounts running beside paid ones. Every page so far assumed a '
+         + 'person did something - open Agentic AI for the ones where '
+         + 'nobody did.'},
+    {view: 'agentic', sel: '[data-s="health"]', click: true,
+     title: 'The ones nobody is driving',
+     body: 'Things that start on a timer or a trigger, and what they can '
+         + 'reach once running. Read the second box in each chain: an empty '
+         + 'one is a credential with no person behind it, so revoking '
+         + 'somebody\'s sign-on does not stop it. All of it rests on '
          + 'something still reporting - open Health.'},
     {view: 'setup', sel: '[data-s="managed"]', click: true,
      title: 'Is anything actually reporting?',
@@ -9230,12 +9461,20 @@ const TOURS = {
          + 'the registry is flagged rather than hidden. Reading it is the '
          + 'half this account does. What it all costs is next - open '
          + 'Budget.'},
-    {view: 'budget', sel: '[data-s="health"]', click: true,
+    {view: 'budget', sel: '[data-s="agentic"]', click: true,
      title: 'What it costs',
      body: 'Unused seats, people on a tool no seat covers, and personal '
          + 'accounts running beside paid ones - figures worth quoting. '
-         + 'Every one of them rests on something still reporting, which '
-         + 'is the next page - open Health.'},
+         + 'Every figure so far counts something a person did - open '
+         + 'Agentic AI for what runs when nobody is there.'},
+    {view: 'agentic', sel: '[data-s="health"]', click: true,
+     title: 'What runs when nobody is there',
+     body: 'Tools that start on a schedule rather than because somebody '
+         + 'opened them, and what each can reach. The question an auditor '
+         + 'asks is who authorised it: where that box is empty there is no '
+         + 'person to name and nothing to revoke. All of it rests on '
+         + 'something still reporting, which is the next page - open '
+         + 'Health.'},
     {view: 'setup', sel: '[data-s="managed"]', click: true,
      title: 'Is anything actually reporting?',
      body: 'Which detection sources are reporting, which are silent, and '

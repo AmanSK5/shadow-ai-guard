@@ -1000,6 +1000,386 @@ def personal_accounts_from(findings, domain_map=None, corp_domains=None,
     return out
 
 
+# Processes that reaching a model API says nothing new about: a browser is
+# how a person uses one. Everything else resolving api.anthropic.com is a
+# process holding a key, and that is the thing worth naming.
+#
+# Deliberately a small list of browsers rather than a large list of runtimes.
+# python, node and pwsh are exactly what a bespoke agent runs as, so an
+# allowlist of "not interesting" is the only shape that does not quietly
+# exclude the case this exists to find.
+BROWSER_PROCESSES = {
+    "chrome", "google chrome", "chrome.exe", "chromium", "chromium.exe",
+    "firefox", "firefox.exe", "safari", "com.apple.safari",
+    "msedge", "msedge.exe", "microsoft edge", "brave", "brave.exe",
+    "brave browser", "opera", "opera.exe", "vivaldi", "vivaldi.exe", "arc",
+}
+
+# The DNS scan writes the process into its evidence as "(via python3)".
+_VIA = re.compile(r"\(via ([^)]{1,80})\)")
+
+
+def bespoke_client(f, known_binaries=()):
+    """The process name when a finding shows something OTHER than a browser
+    or a known AI tool reaching a model, else "".
+
+    This is the case with nothing to inventory. No config file, no registry
+    binary, no MCP server - a script with a key in it, which is what an agent
+    somebody wrote themselves looks like from the outside. The signal was
+    already being collected and never read: the DNS scan records which
+    process resolved the domain, and that has been sitting in evidence text.
+
+    A browser is excluded because a person using a model in a browser is the
+    ordinary case and every other page here already covers it. A known
+    binary is excluded because the tool is then the finding - `claude`
+    reaching Anthropic is claude-code, not a mystery.
+    """
+    if (f.get("surface") or "") not in ("network", "cloud"):
+        return ""
+    m = _VIA.search(f.get("evidence") or "")
+    if not m:
+        return ""
+    proc = m.group(1).strip()
+    low = proc.lower()
+    if low in BROWSER_PROCESSES:
+        return ""
+    stem = low.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    if stem in BROWSER_PROCESSES:
+        return ""
+    for b in known_binaries:
+        b = (b or "").lower()
+        if b and (stem == b or stem == b + ".exe"):
+            return ""
+    return proc[:80]
+
+
+def registry_binaries(reg):
+    """Every binary the registry knows an AI tool runs as."""
+    out = set()
+    for t in (reg or {}).get("tools", []) or []:
+        for b in ((t.get("cli") or {}).get("binaries") or []):
+            out.add(str(b).lower())
+    return out
+
+
+# MCP clients that exist and that nothing here reads yet. A maintained list,
+# not a detection: its whole job is to stop an empty page being mistaken for
+# an empty estate, which is the same reason the Sources view lists silent
+# sources rather than hiding them.
+#
+# A name leaves this list by gaining mcp_config_paths in the registry, at
+# which point it is watched and the view says so without anyone editing here.
+KNOWN_MCP_CLIENTS_UNWATCHED = [
+    "Windsurf / Devin Desktop",
+    "VS Code",
+    "Cline",
+    "Continue",
+    "Zed",
+    "JetBrains IDEs",
+    ".mcp.json in a repository",
+]
+
+
+def mcp_coverage(reg):
+    """Which MCP clients this deployment would see a server on, and which
+    it would not.
+
+    Watched is derived from the registry rather than written down: a tool
+    with an mcp config path is a tool whose servers get reported. Unwatched
+    is the list above, because absence cannot be derived from a registry
+    that does not mention the thing.
+    """
+    watched = []
+    for t in (reg or {}).get("tools", []) or []:
+        paths = []
+        for key in ("mcp_config_paths", "mcp_config_paths_macos",
+                    "mcp_config_paths_windows", "mcp_config_paths_linux"):
+            paths.extend(t.get(key) or [])
+        if paths:
+            watched.append(t.get("name") or t.get("id") or "")
+    watched = sorted({w for w in watched if w})
+    lower = {w.lower() for w in watched}
+    return {
+        "watched": watched,
+        "unwatched": [c for c in KNOWN_MCP_CLIENTS_UNWATCHED
+                      if c.lower() not in lower],
+    }
+
+
+# A day drawn from a schedule shows what something is CONFIGURED to do, not
+# what it did. "Set to fire at 03:00" is not "fired at 03:00", and a panel
+# that blurs the two would be claiming evidence it does not have. Observing
+# actual runs needs process telemetry, which is a different source.
+#
+# Marks beyond this and a lane is drawn as a band instead: ninety-six ticks
+# for a quarter-hourly timer is a smear that reads as noise, where a band
+# reads as "constantly", which is what it means.
+_BAND_ABOVE = 48
+_DAY = 24 * 60
+
+
+def _cron_field(spec, lo, hi):
+    """The values a single cron field matches, within lo..hi.
+
+    Handles the four forms that appear in real crontabs: *, */n, a-b and a
+    comma-separated list of those. Anything else returns None, which the
+    caller reads as "do not draw this" rather than guessing at it.
+    """
+    out = set()
+    for part in str(spec).split(","):
+        part = part.strip()
+        if not part:
+            return None
+        step = 1
+        if "/" in part:
+            part, _, raw = part.partition("/")
+            if not raw.isdigit() or int(raw) < 1:
+                return None
+            step = int(raw)
+        if part == "*":
+            lo_i, hi_i = lo, hi
+        elif "-" in part:
+            a, _, b = part.partition("-")
+            if not (a.isdigit() and b.isdigit()):
+                return None
+            lo_i, hi_i = int(a), int(b)
+        elif part.isdigit():
+            lo_i = hi_i = int(part)
+        else:
+            return None
+        if lo_i < lo or hi_i > hi or lo_i > hi_i:
+            return None
+        out.update(range(lo_i, hi_i + 1, step))
+    return sorted(out) or None
+
+
+def schedule_lane(spec):
+    """How to draw one thing's day, from the raw spec its scheduler holds.
+
+    Returns a kind and, where there is one, the minutes past midnight it is
+    set to run at:
+
+      marks       discrete runs at known times
+      band        so frequent that individual marks stop meaning anything
+      unphased    a known interval whose start is not known, so the gaps are
+                  true and the clock positions are not - launchd's
+                  StartInterval counts from whenever the job was loaded
+      continuous  no cadence at all; runs while somebody is logged in
+      none        an event, or a spec this does not read. Drawn as nothing
+                  rather than as a guess.
+    """
+    spec = (spec or "").strip()
+    if not spec:
+        return {"kind": "none", "marks": []}
+    kind, _, rest = spec.partition(":")
+    kind, rest = kind.lower(), rest.strip()
+
+    if kind == "atlogin":
+        return {"kind": "continuous", "marks": []}
+    if kind == "event":
+        return {"kind": "none", "marks": []}
+
+    if kind == "interval":
+        if not rest.isdigit() or int(rest) < 1:
+            return {"kind": "none", "marks": []}
+        secs = int(rest)
+        if secs < 60:
+            return {"kind": "band", "marks": []}
+        every = secs // 60
+        marks = list(range(0, _DAY, every))
+        if len(marks) > _BAND_ABOVE:
+            return {"kind": "band", "marks": []}
+        return {"kind": "unphased", "marks": marks}
+
+    if kind == "cron":
+        parts = rest.split()
+        if len(parts) < 2:
+            return {"kind": "none", "marks": []}
+        mins = _cron_field(parts[0], 0, 59)
+        hours = _cron_field(parts[1], 0, 23)
+        if mins is None or hours is None:
+            return {"kind": "none", "marks": []}
+        marks = sorted(h * 60 + m for h in hours for m in mins)
+        if len(marks) > _BAND_ABOVE:
+            return {"kind": "band", "marks": []}
+        return {"kind": "marks", "marks": marks}
+
+    if kind == "oncalendar":
+        return _oncalendar(rest)
+
+    return {"kind": "none", "marks": []}
+
+
+def _oncalendar(rest):
+    """systemd OnCalendar, in the forms that actually turn up.
+
+    Deliberately partial. It is a large grammar and the shorthands plus
+    "*:0/15" and a plain time cover what a timer running an AI tool looks
+    like; anything else draws nothing rather than something wrong.
+    """
+    low = rest.lower().strip()
+    if low in ("hourly", "*:0", "*:00"):
+        return {"kind": "marks", "marks": [h * 60 for h in range(24)]}
+    if low == "minutely":
+        return {"kind": "band", "marks": []}
+    if low in ("daily", "midnight"):
+        return {"kind": "marks", "marks": [0]}
+    if low in ("weekly", "monthly", "yearly", "annually", "quarterly"):
+        return {"kind": "marks", "marks": [0]}
+
+    # "*:0/15" - every n minutes past every hour.
+    if low.startswith("*:") and "/" in low:
+        step = low.split("/", 1)[1]
+        if step.isdigit() and int(step) >= 1:
+            marks = list(range(0, _DAY, int(step)))
+            if len(marks) > _BAND_ABOVE:
+                return {"kind": "band", "marks": []}
+            return {"kind": "marks", "marks": marks}
+
+    # A plain clock time, with or without a date part in front of it.
+    token = low.split()[-1] if low.split() else ""
+    bits = token.split(":")
+    if len(bits) >= 2 and bits[0].isdigit() and bits[1].isdigit():
+        h, m = int(bits[0]), int(bits[1])
+        if 0 <= h <= 23 and 0 <= m <= 59:
+            return {"kind": "marks", "marks": [h * 60 + m]}
+    return {"kind": "none", "marks": []}
+
+
+def agentic_from(findings, reg=None):
+    """What runs without a person, and how far it can reach.
+
+    Every other view here starts from something somebody did. This one
+    starts from the absence of that: a finding that says it ran unattended,
+    or a process reaching a model that is neither a browser nor a tool the
+    registry knows.
+
+    Two things are deliberately NOT inferred.
+
+    A finding that says nothing about mode is not autonomous. Absence reads
+    as unknown, because "this ran with nobody watching" is an accusation and
+    silence is not evidence for it - the same rule the rest of the platform
+    follows in the other direction for coverage.
+
+    A blank account domain is not a machine identity. Before `identity`
+    existed, "authenticated by a key" and "installed and never signed in"
+    both arrived blank and could not be told apart. Reading blank as a
+    machine identity would manufacture the finding this page exists to
+    report, on every estate that has not upgraded its collectors.
+    """
+    binaries = registry_binaries(reg)
+
+    # Which MCP servers sit on each machine, so a chain can say what the
+    # thing running there could reach.
+    reach = defaultdict(set)
+    for f in findings:
+        if (f.get("surface") or "") != "mcp":
+            continue
+        dev = (f.get("device") or "").strip()
+        if not dev:
+            continue
+        servers, _ = mcp_servers_in(f)
+        for srv in servers:
+            reach[dev].add(srv)
+
+    agents, seen = [], set()
+    for f in findings:
+        dev = (f.get("device") or "").strip()
+        tool = _base_tool(f.get("tool") or "")
+        mode = (f.get("mode") or "").strip()
+        proc = bespoke_client(f, binaries)
+
+        if mode != "autonomous" and not proc:
+            continue
+
+        key = (dev, tool, proc)
+        if key in seen:
+            continue
+        seen.add(key)
+
+        acct = (f.get("account_domain") or "").strip().lower()
+        identity = (f.get("identity") or "").strip()
+        if not identity and acct:
+            # An account domain is a person by construction. The reverse
+            # does not hold, which is why nothing is inferred from a blank.
+            identity = "person"
+
+        agents.append({
+            "device": dev,
+            "device_name": (f.get("device_name") or "").strip(),
+            "os": f.get("os") or "unknown",
+            "user": (f.get("user") or "").strip(),
+            "tool": tool,
+            "trigger": (f.get("trigger") or "").strip(),
+            "schedule": (f.get("schedule") or "").strip(),
+            # What its day looks like, if the spec says. Configured, not
+            # observed - see schedule_lane.
+            "lane": schedule_lane(f.get("schedule")),
+            "identity": identity,
+            "account": acct,
+            "mode": mode or "unknown",
+            "process": proc,
+            "reach": sorted(reach.get(dev, ())),
+            "evidence": (f.get("evidence") or "")[:300],
+            "last_seen": f.get("reported_at") or "",
+            # The two states worth counting separately. Accountable means
+            # there is something to revoke; the rest is the point of the page.
+            "accountable": identity == "person",
+        })
+
+    agents.sort(key=lambda a: (a["accountable"], a["device"], a["tool"]))
+    return {
+        "agents": agents,
+        "counts": {
+            "agents": len(agents),
+            "unaccountable": sum(1 for a in agents if not a["accountable"]),
+            "machine_identities": sum(1 for a in agents
+                                      if a["identity"] == "machine"),
+            "bespoke": sum(1 for a in agents if a["process"]),
+            "devices": len({a["device"] for a in agents if a["device"]}),
+            # How many could be drawn on a day at all. The rest are events
+            # or unread specs, and the panel says so rather than omitting
+            # them silently.
+            "scheduled": sum(1 for a in agents
+                             if a["lane"]["kind"] != "none"),
+        },
+        "servers": mcp_from(findings),
+        "coverage": mcp_coverage(reg),
+    }
+
+
+def mcp_servers_in(f):
+    """(servers, base tool) for one finding on the mcp surface.
+
+    Two evidence formats are read, because a log store holds both for as long
+    as the lookback window. The current collectors emit
+
+        .claude.json mcpServers: figma,context7
+
+    and older ones folded the list into the tool name instead
+
+        claude-code-mcp:figma,context7
+
+    which is why the second exists at all: every distinct combination of
+    servers became a separate tool, so a machine with two servers and a
+    machine with one looked like two unrelated tools rather than one server
+    in common.
+
+    Split out because more than one view needs it now, and the archaeology
+    above is exactly the kind of thing that rots when it is copied.
+    """
+    tool = f.get("tool") or ""
+    servers, base_tool = [], tool
+    ev = f.get("evidence") or ""
+    if "mcpServers:" in ev:
+        servers = [x.strip() for x in ev.split("mcpServers:", 1)[1].split(",")]
+    elif "-mcp:" in tool:
+        base_tool, listed = tool.split("-mcp:", 1)
+        base_tool += "-mcp"
+        servers = [x.strip() for x in listed.split(",")]
+    return [x for x in servers if x], base_tool
+
+
 def mcp_from(findings):
     """One row per MCP server, with the tools that configured it and the
     devices it was found on.
@@ -1030,15 +1410,7 @@ def mcp_from(findings):
         if not tool:
             continue
 
-        servers, base_tool = [], tool
-        ev = f.get("evidence") or ""
-        if "mcpServers:" in ev:
-            servers = [x.strip() for x in ev.split("mcpServers:", 1)[1].split(",")]
-        elif "-mcp:" in tool:
-            base_tool, listed = tool.split("-mcp:", 1)
-            base_tool += "-mcp"
-            servers = [x.strip() for x in listed.split(",")]
-        servers = [x for x in servers if x]
+        servers, base_tool = mcp_servers_in(f)
         if not servers:
             # A tool on the mcp surface with no server list is still worth
             # recording: something configured MCP and the detail did not

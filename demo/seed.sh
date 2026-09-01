@@ -41,6 +41,22 @@ post "{\"tool\":\"codex-cli\",\"surface\":\"cloud\",\"os\":\"unknown\",\"account
 post "{\"tool\":\"cursor\",\"surface\":\"desktop\",\"os\":\"macos\",\"account_domain\":\"\",\"device\":\"C02GENGAR\",\"user\":\"gengar\",\"evidence\":\"~/.cursor\",\"severity\":\"info\",\"reported_at\":\"$(now)\",\"source\":\"collector-macos\"}"
 post "{\"tool\":\"ollama\",\"surface\":\"desktop\",\"os\":\"linux\",\"account_domain\":\"\",\"device\":\"NIX-DITTO\",\"user\":\"ditto\",\"evidence\":\"ollama binary\",\"severity\":\"info\",\"reported_at\":\"$(now)\",\"source\":\"collector-linux\"}"
 
+# --- what runs without a person ---
+# The Agentic AI view. Four shapes, because the page is only worth having if
+# it can tell them apart: a timer under a key nobody owns, a machine with no
+# owner on record, a scheduled job that IS properly attributed, and the one
+# with nothing installed to find - a process that is not a browser and not a
+# tool the registry knows, reaching a model API.
+post "{\"tool\":\"claude-code\",\"surface\":\"cli\",\"os\":\"linux\",\"account_domain\":\"\",\"device\":\"NIX-BULBA\",\"user\":\"bulbasaur\",\"evidence\":\"/etc/systemd/system/nightly-triage.service\",\"severity\":\"warn\",\"reported_at\":\"$(now)\",\"source\":\"collector-linux\",\"mode\":\"autonomous\",\"identity\":\"machine\",\"trigger\":\"systemd timer, every 15 min\",\"schedule\":\"oncalendar:*:0/15\"}"
+post "{\"tool\":\"claude-code\",\"surface\":\"cli\",\"os\":\"macos\",\"account_domain\":\"\",\"device\":\"C02EEVEE\",\"user\":\"\",\"evidence\":\"~/Library/LaunchAgents/ai.helper.plist\",\"severity\":\"warn\",\"reported_at\":\"$(now)\",\"source\":\"collector-macos\",\"mode\":\"autonomous\",\"identity\":\"machine\",\"trigger\":\"launchd, at login\",\"schedule\":\"atlogin\"}"
+post "{\"tool\":\"claude-code\",\"surface\":\"cli\",\"os\":\"macos\",\"account_domain\":\"example.com\",\"device\":\"C02PIKACHU\",\"user\":\"pikachu\",\"evidence\":\"~/Library/LaunchAgents/daily-notes.plist\",\"severity\":\"info\",\"reported_at\":\"$(now)\",\"source\":\"collector-macos\",\"mode\":\"autonomous\",\"identity\":\"person\",\"trigger\":\"launchd, every 6 hours\",\"schedule\":\"interval:21600\"}"
+# No config file, no known binary, no MCP. Only the network saw it.
+post "{\"tool\":\"claude\",\"surface\":\"network\",\"os\":\"linux\",\"account_domain\":\"\",\"device\":\"NIX-GENGAR\",\"user\":\"\",\"evidence\":\"DNS lookup for api.anthropic.com (via python3)\",\"severity\":\"warn\",\"reported_at\":\"$(now)\",\"source\":\"sentinelone_dns\",\"trigger\":\"cron, 0 2 * * *\",\"schedule\":\"cron:0 2 * * *\"}"
+# A browser reaching the same place is the ordinary case and must NOT appear.
+post "{\"tool\":\"claude\",\"surface\":\"network\",\"os\":\"macos\",\"account_domain\":\"\",\"device\":\"C02MEW\",\"user\":\"mew\",\"evidence\":\"DNS lookup for claude.ai (via Google Chrome)\",\"severity\":\"info\",\"reported_at\":\"$(now)\",\"source\":\"sentinelone_dns\"}"
+# Reach for the unattended linux box, so its chain has something in the last box.
+post "{\"tool\":\"claude-code-mcp\",\"surface\":\"mcp\",\"os\":\"linux\",\"account_domain\":\"\",\"device\":\"NIX-BULBA\",\"user\":\"bulbasaur\",\"evidence\":\".claude.json mcpServers: github,postgres-prod\",\"severity\":\"info\",\"reported_at\":\"$(now)\",\"source\":\"collector-linux\"}"
+
 # --- mcp + network ---
 post "{\"tool\":\"claude-code-mcp:atlassian,figma\",\"surface\":\"mcp\",\"os\":\"macos\",\"account_domain\":\"\",\"device\":\"C02PIKACHU\",\"user\":\"pikachu\",\"evidence\":\".claude.json mcpServers\",\"severity\":\"info\",\"reported_at\":\"$(now)\",\"source\":\"collector-macos\"}"
 post "{\"tool\":\"deepseek\",\"surface\":\"network\",\"os\":\"unknown\",\"account_domain\":\"\",\"device\":\"NIX-BULBA\",\"device_name\":\"BULBASAUR-NIX\",\"user\":\"bulbasaur\",\"evidence\":\"dns:deepseek.com\",\"severity\":\"info\",\"reported_at\":\"$(now)\",\"source\":\"sentinelone_bridge\"}"

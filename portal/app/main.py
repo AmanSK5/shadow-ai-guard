@@ -734,7 +734,7 @@ def _cached(key, hours, builder):
 
 # Every view derived from one findings read. A refresh drops all of them,
 # not just the one being asked for - see _invalidate_all.
-_DERIVED_KEYS = ("graph", "status", "paste_guard", "register")
+_DERIVED_KEYS = ("graph", "status", "paste_guard", "register", "agentic")
 
 
 def _invalidate_all():
@@ -1155,6 +1155,34 @@ def evidence_snapshot(request: Request,
             headers={"Content-Disposition": 'attachment; filename="%s"' % name},
         )
     return JSONResponse(doc)
+
+
+@app.get("/api/agentic")
+def agentic(request: Request,
+            hours: float = Query(default=None, gt=0, le=24 * 90),
+            refresh: bool = Query(default=False),
+            _=Depends(require_auth)):
+    """What runs without a person, and how far it can reach.
+
+    Built from the same findings as everything else - nothing here needs a
+    source the deployment does not already have. What it adds is a reading:
+    a finding that says it ran unattended, or a process reaching a model
+    that is neither a browser nor a tool the registry knows.
+
+    It reports that something ran and what it could touch. It does not
+    report what it was asked to do, and nothing on this path carries a
+    prompt: the same line the paste guard holds, for the same reason.
+    """
+    hours = hours or LOOKBACK_HOURS
+    if refresh:
+        _invalidate_all()
+
+    def build():
+        return derive.agentic_from(_findings_cached(hours, request),
+                                   _registry(request))
+
+    value, at = _cached("agentic", hours, build)
+    return JSONResponse(dict(value, derived_at=at, hours=hours))
 
 
 @app.get("/api/paste-guard")
