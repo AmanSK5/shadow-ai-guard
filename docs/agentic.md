@@ -94,6 +94,17 @@ of lane, because four different things are true and only one of them is
 job was loaded. The gaps between runs are true; the clock positions are not,
 and the lane says so rather than implying four tidy times.
 
+### Working hours
+
+The shaded stretch is a setting, under **Settings > Display & alerting**, and
+nothing is shaded until it is set. Nothing here can know when an organisation
+works, and a shaded stretch nobody chose is a claim the platform has no basis
+for - on a fleet that runs nights, every mark would sit in the "nobody around"
+stretch and the page would say so with a straight face.
+
+A shift crossing midnight is two stretches of one day and is handled as such:
+`22:00-06:00` works.
+
 **A spec is what something is set to do, not what it was seen doing.** The
 panel is titled "as configured" for that reason. Watching runs actually
 happen needs process telemetry, which is a different source and a different
@@ -197,3 +208,10 @@ Check, in order:
    in itself.
 3. **Is the network scanner configured?** The bespoke-script signal comes from
    it, and it is the one that catches what has no config file to find.
+
+## On the overview
+
+An optional widget, off by default, under **Settings > Display & alerting**.
+It shows the count and the ones with nothing to revoke - a scheduled job
+under a real account is not the finding, so it is not what the tile leads
+with.

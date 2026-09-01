@@ -863,12 +863,21 @@ a.libtn:hover{border-color:var(--pri)}
 .ag-day{background:var(--sf);border:1px solid var(--bd);border-radius:12px;
   box-shadow:var(--shadow);padding:15px 17px 12px;margin-bottom:26px;overflow-x:auto}
 .ag-grid{min-width:600px}
-.ag-lane{display:grid;grid-template-columns:174px 1fr;align-items:center;gap:13px;padding:4px 0}
-.ag-lname{font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ag-lname s{display:block;text-decoration:none;font-size:11px;color:var(--mut)}
+.ag-lane{display:grid;grid-template-columns:210px 1fr;align-items:center;gap:13px;padding:5px 0}
+.ag-lname{font-size:12.5px;min-width:0}
+/* The device name is one line and truncates with an ellipsis that shows.
+   The cadence underneath wraps instead: it is the row's actual content -
+   "every 15 min", "start unknown" - and cutting it mid-word taught the
+   reader nothing while looking like a rendering fault, which is what it
+   was. */
+.ag-lname b{display:block;font-weight:600;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis}
+.ag-lname s{display:block;text-decoration:none;font-size:11px;color:var(--mut);
+  line-height:1.3;white-space:normal;overflow-wrap:anywhere}
+.ag-ticks{padding-left:223px}
 .ag-track{position:relative;height:18px;border-radius:5px;background:var(--sf2);overflow:hidden}
 /* 09:00-18:00, the stretch somebody is likely to be at a desk. */
-.ag-work{position:absolute;top:0;bottom:0;left:37.5%;width:37.5%;
+.ag-work{position:absolute;top:0;bottom:0;
   background:color-mix(in srgb, var(--fg) 6%, transparent)}
 .ag-run{position:absolute;top:4px;height:10px;border-radius:3px;background:var(--dstr)}
 .ag-run.ok{background:var(--acc)}
@@ -877,7 +886,7 @@ a.libtn:hover{border-color:var(--pri)}
 .ag-cont.ok{background:repeating-linear-gradient(90deg,var(--acc) 0 7px,transparent 7px 14px)}
 .ag-nolane{font-size:11.5px;color:var(--mut);padding-left:2px}
 .ag-ticks{display:flex;justify-content:space-between;font-size:10.5px;color:var(--mut);
-  margin-top:5px;padding-left:187px}
+  margin-top:5px}
 .ag-key{display:flex;gap:15px;flex-wrap:wrap;margin-top:11px;font-size:12px;color:var(--mut)}
 .ag-sw{width:15px;height:9px;border-radius:3px;display:inline-block;vertical-align:-1px;margin-right:5px}
 .ag-chain{background:var(--sf);border:1px solid var(--bd);border-radius:12px;
@@ -1509,6 +1518,13 @@ async function load(force) {
         await bFetchFx();
       } catch (e) { /* the tile simply stays absent */ }
     }
+    // The agentic tile needs its own read, and only when it is on the page.
+    if ((CFG.overview_widgets || []).some(w => w.kind === 'agentic') && !AGENTIC) {
+      try {
+        const ar = await fetch('/api/agentic');
+        if (ar.ok) AGENTIC = await ar.json();
+      } catch (e) { /* the tile says it has not been read */ }
+    }
     // Same again for the review queue: it draws from the register, and in
     // managed mode from the discovery candidates queue too.
     if ((CFG.overview_widgets || []).some(w => w.kind === 'review_queue')) {
@@ -2021,6 +2037,33 @@ function trendChart(days, a, b, aLabel, bLabel) {
 }
 
 const WIDGETS = {
+
+  // What runs with no person behind it, small enough to sit on an overview.
+  // The count is the headline; the rows are the ones with nothing to revoke,
+  // because a scheduled job under a real account is not the finding.
+  agentic: () => {
+    if (!AGENTIC) return `<div class="wcard w6"><h3>Running on its own</h3>
+      <p class="lede">Not read yet - open Agentic AI.</p></div>`;
+    const c = AGENTIC.counts || {};
+    const loose = (AGENTIC.agents || []).filter(a => !a.accountable);
+    return `<div class="wcard w6"><h3>Running on its own
+      <span class="count">${c.agents || 0}</span></h3>
+      ${!c.agents ? `<p class="lede">Nothing reported starting itself. That is either
+        true or the collectors have not been updated to look - Health says which.</p>`
+      : `<p class="lede">${c.unaccountable
+          ? `<b>${c.unaccountable}</b> of them answer to nobody: a credential with no
+             person behind it, so revoking a sign-on does not stop them.`
+          : 'All of them run under an identity somebody can be asked about.'}</p>
+        ${loose.length ? `<table>${loose.slice(0, 5).map(a => `<tr>
+          <td>${esc(label(a.device, G.devices[a.device] || {}))}
+            <div style="color:var(--mut);font-size:12px">${esc(a.trigger || a.evidence || '')}</div></td>
+          <td style="color:var(--mut)">${a.process
+            ? '<span class="pill p-warn">no tool we know</span>'
+            : '<span class="pill p-warn">' + esc(a.identity || 'unattributed') + '</span>'}</td>
+          </tr>`).join('')}</table>` : ''}
+        <p class="src-note" style="margin-top:8px"><a href="#agentic">Open Agentic AI</a></p>`}
+    </div>`;
+  },
 
   stat_row: () => {
     const devs = ents(G.devices), pa = G.personal_accounts || [];
@@ -5137,6 +5180,9 @@ function alertingSettings() {
     ${settingRow('budget_currency', 'Preferred currency',
       'GBP',
       'The Budget headline converts into it at the ECB daily reference rate, naming the rate date inline; newly linked tools default to it.', true)}
+    ${settingRow('working_hours', 'Working hours',
+      '09:00-18:00',
+      'Shades that stretch on the Agentic AI day, so a job firing when nobody is around reads as one. Nothing here can know your hours, so nothing is shaded until you set them. A shift crossing midnight works: 22:00-06:00.', true)}
     ${widgetPickerRow()}
   </dl></div>`;
 }
@@ -8834,21 +8880,24 @@ async function agentic() {
     return a.lane.marks.map(m =>
       `<span class="ag-run${cls}" style="left:${pct(m)}%;width:1.1%"></span>`).join('');
   };
+  const wh = AGENTIC.working_hours;
+  const band = wh ? wh.spans.map(sp =>
+    `<span class="ag-work" style="left:${sp.left}%;width:${sp.width}%"></span>`).join('') : '';
   const scheduled = A.filter(a => a.lane.kind !== 'none');
   const unscheduled = A.filter(a => a.lane.kind === 'none');
   const day = scheduled.length ? `<div class="ag-day"><div class="ag-grid">
     ${scheduled.map(a => `<div class="ag-lane">
-      <div class="ag-lname">${esc(label(a.device, G.devices[a.device] || {}))}
+      <div class="ag-lname"><b>${esc(label(a.device, G.devices[a.device] || {}))}</b>
         <s class="mono">${esc(a.trigger || a.schedule)}${
           a.lane.kind === 'unphased' ? ' · start unknown' : ''}</s></div>
-      <div class="ag-track"><span class="ag-work"></span>${laneOf(a)}</div>
+      <div class="ag-track">${band}${laneOf(a)}</div>
     </div>`).join('')}
     </div>
     <div class="ag-ticks mono"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div>
     <div class="ag-key">
       <span><span class="ag-sw" style="background:var(--dstr)"></span>nobody accountable</span>
       <span><span class="ag-sw" style="background:var(--acc)"></span>runs under a known identity</span>
-      <span><span class="ag-sw" style="background:color-mix(in srgb,var(--fg) 6%,transparent)"></span>working hours</span>
+      ${wh ? `<span><span class="ag-sw" style="background:color-mix(in srgb,var(--fg) 6%,transparent)"></span>working hours, ${esc(wh.label)}</span>` : ''}
     </div>
     ${unscheduled.length ? `<p class="ag-nolane" style="margin:9px 0 0">Not drawn:
       ${unscheduled.map(a => esc(label(a.device, G.devices[a.device] || {}))).join(', ')}
@@ -8885,9 +8934,14 @@ async function agentic() {
   pipeline step - or reached a model from a process that is neither a browser nor a tool
   the registry knows. The second box in each chain is the one to read: an empty box means
   there is nothing to revoke when somebody leaves.</p>
-  ${scheduled.length ? `<p class="label" style="margin:0 0 9px">The day, as configured</p>
-    <p class="lede" style="margin:0 0 10px">What each is set to do, not what it was seen
-    doing - nothing here watches a run happen. The shaded stretch is working hours.</p>` : ''}
+  ${scheduled.length ? `<p class="label" style="margin:0 0 9px">The day each is set to run</p>
+    <p class="lede" style="margin:0 0 10px">Read from the schedule each job declares -
+    a cron line, a systemd timer, a launchd interval. It is what each is <em>set</em> to
+    do, not what it was seen doing: nothing here watches a run happen.
+    ${wh ? `The shaded stretch is your working hours, ${esc(wh.label)}, from Settings.`
+         : `Set your working hours under <b>Settings &rsaquo; Display &amp; alerting</b>
+            to shade the stretch people are around - nothing here can know them, so
+            nothing is shaded until you say.`}</p>` : ''}
   ${day}
   ${A.length ? chains : `<div class="tcard"><p class="lede" style="margin:12px 0">
     Nothing on this estate reported running unattended. That is either true, or the

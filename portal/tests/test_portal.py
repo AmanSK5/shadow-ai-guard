@@ -1438,3 +1438,25 @@ def test_the_day_is_what_is_configured_not_what_was_seen():
     lane = derive.schedule_lane("interval:21600")
     assert lane["kind"] == "unphased"
     assert lane["kind"] != "marks", "must not claim to know the hour"
+
+
+@pytest.mark.parametrize("spec,spans,why", [
+    ("09:00-18:00", 1, "an ordinary day"),
+    ("8-16", 1, "hours without minutes"),
+    ("22:00-06:00", 2, "a night shift is two stretches of one day, not invalid"),
+    ("", 0, "unset draws nothing"),
+    ("nonsense", 0, "unreadable draws nothing"),
+    ("09:00-09:00", 0, "zero width is not a range"),
+    ("25:00-26:00", 0, "outside a day"),
+])
+def test_working_hours_are_read_or_not_drawn(spec, spans, why):
+    """The first version of the day shaded 09:00-18:00 as a constant, which
+    made it a claim the platform had no basis for: on a fleet that runs
+    nights every mark would have sat in the "nobody around" stretch and the
+    page would have said so with a straight face.
+
+    So it is a setting, and an unset or unreadable one draws no band at all.
+    Absent context beats invented context - the same rule this codebase
+    applies to silence everywhere else."""
+    band = derive.working_hours_band(spec)
+    assert (len(band["spans"]) if band else 0) == spans, why
