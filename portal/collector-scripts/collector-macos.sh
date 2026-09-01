@@ -204,7 +204,13 @@ report() {
   # persistent state rather than an event and the first report already told us.
   # Throttle by severity: info daily, warn hourly. A key with no previous
   # timestamp falls through regardless, so new findings are never delayed.
-  local key="${surface}|${tool}|${acct}|${trigger}"
+  # The trigger joins the key only when there is one, so two scheduled jobs
+  # on one machine are two findings rather than one throttled into the
+  # other - while every key that predates this stays byte-identical and a
+  # collector upgrading in the field does not re-report its whole inventory
+  # because its state file suddenly reads as empty.
+  local key="${surface}|${tool}|${acct}"
+  if [ -n "$trigger" ]; then key="${key}|${trigger}"; fi
   local interval="$INFO_REPORT_INTERVAL"
   [ "$severity" = "warn" ] && interval="$WARN_REPORT_INTERVAL"
 
