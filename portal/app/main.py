@@ -668,6 +668,19 @@ def _corp_domains(request) -> list:
     return []
 
 
+def _working_hours(request) -> str:
+    """When this organisation works, as an operator set it, or "".
+
+    Empty on anything unreadable, and empty is the honest default: nothing
+    here can know an organisation's hours, so an unset value draws no shaded
+    stretch rather than a guessed one.
+    """
+    entry = (_remote_settings(request) or {}).get("working_hours")
+    if isinstance(entry, dict):
+        return str(entry.get("value") or "")
+    return ""
+
+
 def _registry(request) -> dict:
     """The registry every portal view should reason over: the shipped file
     plus the portal-defined entries, merged exactly as the receiver serves
@@ -938,6 +951,7 @@ KNOWN_WIDGETS = {
     "review_queue": "Observed tools awaiting a governance decision",
     "budget_spend": "Tracked AI spend against observed use (managed mode)",
     "activity_trend": "Personal accounts and devices per day across the window",
+    "agentic": "What runs with no person behind it",
 }
 
 DEFAULT_WIDGETS = ["stat_row", "review_queue", "budget_spend", "top_tools",
@@ -1178,8 +1192,13 @@ def agentic(request: Request,
         _invalidate_all()
 
     def build():
-        return derive.agentic_from(_findings_cached(hours, request),
-                                   _registry(request))
+        out = derive.agentic_from(_findings_cached(hours, request),
+                                  _registry(request))
+        # Nothing here can know when an organisation works, so the shaded
+        # stretch is a setting and an unset one draws nothing at all.
+        out["working_hours"] = derive.working_hours_band(
+            _working_hours(request))
+        return out
 
     value, at = _cached("agentic", hours, build)
     return JSONResponse(dict(value, derived_at=at, hours=hours))
@@ -1832,6 +1851,7 @@ class SettingsWrite(BaseModel):
     invite_body: str | None = Field(default=None, max_length=4000)
     portal_public_url: str | None = Field(default=None, max_length=500)
     paste_guard_mode: str | None = Field(default=None, max_length=8)
+    working_hours: str | None = Field(default=None, max_length=11)
     firefox_extension_id: str | None = Field(default=None, max_length=128)
     classification_markings: list[str] | None = Field(default=None,
                                                       max_length=50)

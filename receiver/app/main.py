@@ -356,6 +356,11 @@ VALID_MODES = {"interactive", "autonomous"}
 # "none" both arrived as a blank account domain and were indistinguishable,
 # which is why the blank alone could never carry this meaning.
 VALID_IDENTITIES = {"person", "machine", "none"}
+# H:MM-H:MM, hours 0-23 and minutes optional. Only the shape: whether the
+# range makes sense is the reader's business, and a value that saves and
+# then shades nothing is worse than one refused at the point of typing.
+_WORKING_HOURS_RE = re.compile(
+    r"^([01]?\d|2[0-3])(:[0-5]\d)?-([01]?\d|2[0-3])(:[0-5]\d)?$")
 VALID_SEVERITIES = {"info", "warn"}
 # Bounded set: safe as a Loki stream label and a Prometheus metric label.
 # Sources that pre-date the field (older browser extensions) report "unknown".
@@ -1958,6 +1963,11 @@ class SettingsUpdate(BaseModel):
     portal_public_url: str | None = Field(default=None, max_length=500)
     budget_currency: str | None = Field(default=None, max_length=8)
     paste_guard_mode: str | None = Field(default=None, max_length=8)
+    # "09:00-18:00", or empty. Empty is the honest default: nothing here can
+    # know when an organisation works, and a shaded stretch nobody set is a
+    # claim the platform has no basis for. Unset, the day is drawn with no
+    # band at all rather than with an invented one.
+    working_hours: str | None = Field(default=None, max_length=11)
     firefox_extension_id: str | None = Field(default=None, max_length=128)
     classification_markings: list[str] | None = Field(default=None,
                                                       max_length=50)
@@ -2021,6 +2031,7 @@ def get_settings(authorization: str = Header(default="")):
         "extension_crx_url": plain("extension_crx_url"),
         "extension_xpi_url": plain("extension_xpi_url"),
         "paste_guard_mode": plain("paste_guard_mode"),
+        "working_hours": plain("working_hours"),
         "budget_currency": plain("budget_currency"),
         "firefox_extension_id": plain("firefox_extension_id"),
         # An incoming webhook URL is itself a bearer capability - whoever
@@ -2163,6 +2174,17 @@ def put_settings(req: SettingsUpdate, authorization: str = Header(default="")):
                                 % ", ".join(_PASTE_GUARD_MODES))
         else:
             STATE.set_setting("paste_guard_mode", mode, by)
+
+    if "working_hours" in req.model_fields_set:
+        wh = (req.working_hours or "").strip()
+        if not wh:
+            STATE.set_setting("working_hours", None, by)
+        elif not _WORKING_HOURS_RE.match(wh):
+            raise HTTPException(
+                422, "working_hours must look like 09:00-18:00. A shift "
+                     "crossing midnight is fine: 22:00-06:00.")
+        else:
+            STATE.set_setting("working_hours", wh, by)
 
     if "firefox_extension_id" in req.model_fields_set:
         fid = (req.firefox_extension_id or "").strip()

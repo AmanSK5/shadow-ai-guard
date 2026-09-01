@@ -1153,6 +1153,45 @@ def _cron_field(spec, lo, hi):
     return sorted(out) or None
 
 
+def working_hours_band(spec):
+    """(start %, width %) for the shaded stretch, or None.
+
+    Nothing here can know when an organisation works. The first version of
+    this panel shaded 09:00-18:00 because that is a reasonable guess, which
+    made it a claim the platform had no basis for - on a fleet that runs
+    nights, every mark would have sat in the "nobody around" stretch and the
+    page would have said so with a straight face.
+
+    So it is a setting, and an unset one draws no band. Absent context is
+    better than invented context, which is the same rule the rest of this
+    codebase follows about silence.
+    """
+    spec = (spec or "").strip()
+    if not spec:
+        return None
+    try:
+        a, _, b = spec.partition("-")
+        ah, _, am = a.strip().partition(":")
+        bh, _, bm = b.strip().partition(":")
+        start = int(ah) * 60 + int(am or 0)
+        end = int(bh) * 60 + int(bm or 0)
+    except (ValueError, TypeError):
+        return None
+    if not (0 <= start <= 24 * 60 and 0 <= end <= 24 * 60) or start == end:
+        return None
+    # A shift that crosses midnight is two stretches of one day, not an
+    # invalid range. Refusing it would have been particularly poor here,
+    # since a fleet that works nights is the case that makes this a setting
+    # rather than a constant in the first place.
+    if end > start:
+        spans = [(start, end)]
+    else:
+        spans = [(0, end), (start, 24 * 60)]
+    return {"spans": [{"left": a2 / 14.4, "width": (b2 - a2) / 14.4}
+                      for a2, b2 in spans if b2 > a2],
+            "label": "%s-%s" % (a.strip(), b.strip())}
+
+
 def schedule_lane(spec):
     """How to draw one thing's day, from the raw spec its scheduler holds.
 
