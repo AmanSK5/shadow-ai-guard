@@ -281,3 +281,48 @@ def test_a_scanner_that_classified_itself_is_not_second_guessed(managed):
                 device="MAC-2")
     # The ingest rule only fills a blank.
     assert f.signal == "active"
+
+
+def test_the_new_finding_fields_are_bounded_like_every_other_label(managed):
+    """mode and identity are label sets, so a sender cannot invent values.
+    An unrecognised one is dropped to empty rather than refused: a finding
+    with one odd field is still evidence, and losing the whole thing because
+    a collector sent a typo would be the worse trade."""
+    with _capture() as records:
+        assert client.post("/report", headers=AUTH, json={
+            "tool": "claude-code", "surface": "cli", "device": "MAC-9",
+            "mode": "autonomous", "identity": "machine",
+            "trigger": "systemd timer, every 15 min"}).status_code == 200
+        assert client.post("/report", headers=AUTH, json={
+            "tool": "claude-code", "surface": "cli", "device": "MAC-9",
+            "mode": "sentient", "identity": "moon"}).status_code == 200
+
+    good, bad = records[0], records[1]
+    assert good["mode"] == "autonomous"
+    assert good["identity"] == "machine"
+    assert good["trigger"] == "systemd timer, every 15 min"
+    assert bad["mode"] == "" and bad["identity"] == ""
+
+
+def test_an_over_long_label_is_refused_rather_than_truncated(managed):
+    """The two guards are different on purpose, and it is worth pinning
+    which is which. An unrecognised VALUE is dropped to empty, because a
+    finding with one odd field is still evidence. An over-LONG one is
+    refused outright, because these become log-store labels and a sender
+    that can grow one without bound can grow the label set with it."""
+    r = client.post("/report", headers=AUTH, json={
+        "tool": "claude-code", "surface": "cli", "device": "MAC-7",
+        "mode": "a" * 40})
+    assert r.status_code == 422
+
+
+def test_a_sender_that_knows_nothing_of_these_fields_still_reports(managed):
+    """Every collector in the field predates them. Their findings must land
+    unchanged, carrying empty values that downstream reads as unknown."""
+    with _capture() as records:
+        assert client.post("/report", headers=AUTH, json={
+            "tool": "claude-code", "surface": "cli", "device": "MAC-8",
+            "evidence": "~/.claude.json"}).status_code == 200
+
+    f = records[0]
+    assert f["mode"] == "" and f["identity"] == "" and f["trigger"] == ""

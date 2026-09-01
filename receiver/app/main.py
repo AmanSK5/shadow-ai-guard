@@ -338,6 +338,24 @@ VALID_SURFACES = {"browser", "network", "cli", "ide", "desktop", "mcp", "cloud"}
 # before 0.21 carry neither, and "" is read as active downstream - the
 # meaning they were reported with.
 VALID_SIGNALS = {"active", "ambient"}
+# Whether a person was at the keyboard. "autonomous" means something started
+# this without being asked - a timer, a scheduler, a pipeline step - and
+# nobody was present while it ran. Absent reads as "unknown", never as
+# autonomous: claiming a tool ran unattended when nothing established that is
+# the accusation this must not make by default.
+VALID_MODES = {"interactive", "autonomous"}
+# Who the credential belongs to, which is a different question from which
+# account domain was seen. Three states a collector can genuinely tell apart:
+#   person   an account with a human behind it
+#   machine  a credential that authenticates, with no human behind it - an
+#            API key in a unit file, a service token. This is the one that
+#            survives offboarding, because revoking somebody's sign-on does
+#            not touch it.
+#   none     nothing authenticated at all; installed and never signed in
+# Empty means the sender did not say. Before this existed, "machine" and
+# "none" both arrived as a blank account domain and were indistinguishable,
+# which is why the blank alone could never carry this meaning.
+VALID_IDENTITIES = {"person", "machine", "none"}
 VALID_SEVERITIES = {"info", "warn"}
 # Bounded set: safe as a Loki stream label and a Prometheus metric label.
 # Sources that pre-date the field (older browser extensions) report "unknown".
@@ -492,6 +510,16 @@ class Finding(BaseModel):
     # every other tool's presence is use. Empty from senders that pre-date
     # the field, which reads as active - what they always meant.
     signal: str = Field(default="", max_length=16)
+    # interactive | autonomous. See VALID_MODES.
+    mode: str = Field(default="", max_length=16)
+    # person | machine | none. See VALID_IDENTITIES.
+    identity: str = Field(default="", max_length=16)
+    # What starts it, in the words of whatever schedules it: "systemd timer",
+    # "launchd, at login", "Scheduled Task, hourly". Free text because every
+    # scheduler describes itself differently and flattening them into an
+    # enum would lose the part an operator needs to go and find the thing.
+    # Bounded like every other field that arrives from outside.
+    trigger: str = Field(default="", max_length=200)
     device_name: str = Field(default="", max_length=256)
     risk_tier: str = Field(default="", max_length=32)
     # How many, and of what. The unit differs per source (sign-ins for Entra,
@@ -3338,6 +3366,10 @@ async def report(f: Finding, request: Request, authorization: str = Header(defau
         f.os = "unknown"
     if f.signal and f.signal not in VALID_SIGNALS:
         f.signal = ""
+    if f.mode and f.mode not in VALID_MODES:
+        f.mode = ""
+    if f.identity and f.identity not in VALID_IDENTITIES:
+        f.identity = ""
     if not f.reported_at:
         f.reported_at = datetime.now(timezone.utc).isoformat()
 
