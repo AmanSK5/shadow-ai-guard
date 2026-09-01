@@ -233,6 +233,35 @@ whatever you already have - and run the portal with `PORTAL_AUTH=none`
 behind it. That opt-out logs a warning on every start, so an
 unauthenticated deployment is never something nobody noticed.
 
+Managed mode can also federate sign-in to **Microsoft Entra**, set up from
+the portal rather than from `.env` - there is nothing to add here. Once an
+owner has signed in that way you can require it, and the account the setup
+code created keeps its password as the way back in if the identity provider
+is unreachable.
+
+## Outbound mail
+
+Optional, and only used to tell somebody an account has been made for them.
+With none of it set, accounts are created exactly as before and the portal
+says plainly that nobody was emailed.
+
+The simplest route is the relay wizard under Settings > Account in the
+portal: it knows the common providers, fills in the host, port and
+encryption for the one you pick, and has a test send that reports what the
+relay actually said. Nothing needs to reach `.env` at all.
+
+If you would rather the relay came from the deployment - so nobody has to
+paste a credential into a web form - the receiver reads `SMTP_HOST`,
+`SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM` and
+`SMTP_SECURITY`, and a value saved in the portal wins over any of them. Add
+them to the receiver's `environment:` block, and give the password as a file
+the way the shared token is given, since an environment variable is visible
+in `docker inspect`:
+
+    SMTP_PASSWORD_FILE: /run/secrets/smtp_password
+
+with the matching read-only mount under `volumes:`.
+
 ## Notifications
 
 Two kinds, configured in two places on purpose. Discovery events come from

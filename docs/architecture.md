@@ -181,10 +181,17 @@ In managed mode - the default - the receiver also holds the platform's one
 piece of durable state: a single SQLite file with the device registry,
 accounts and sessions, central settings, governance decisions,
 portal-defined registry entries, the discovery queue and the audit trail.
-Everything in it is a decision or a credential hash, never a finding;
-findings always live in the log store. Classic mode never creates the file,
+Everything in it is a decision, a credential hash or an integration secret
+the receiver has to present outward - never a finding; findings always live
+in the log store. Classic mode never creates the file,
 so a classic deployment keeps the property that losing any component loses
 nothing.
+
+The receiver is also the only component that talks to an identity provider
+or a mail relay. Federated sign-in and the invite mail both run there
+rather than in the portal, for the same reason every other write does: the
+portal holds no database and no sessions of its own, so a credential it
+never has is a credential a compromised portal cannot leak.
 
 **registry**, the source of truth for what counts as an AI tool: domains,
 extension IDs, config file paths per OS, account file locations. The shipped

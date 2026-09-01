@@ -306,6 +306,77 @@ macOS says so when it happens:
 Old findings age out of the portal's lookback window on their own. There is
 nothing to repair, but the count is wrong until they do.
 
+## The invite email never arrived
+
+Three different failures wear the same symptom, and the portal tells them
+apart if you look in the right place.
+
+**The portal said nobody was emailed.** Then nothing was sent, and it is not
+a delivery problem. Either no relay is configured, or the account was made
+without an address. Settings > Account has the relay wizard; once it is
+configured, the button that resends to everybody who was missed closes the
+gap for accounts created before it.
+
+**The portal reported an error from the relay.** That string is what the
+relay said, passed through. `535` or `Authentication unsuccessful` is the
+credential. `550` or `Relay access denied` means the relay took the
+connection and refused to carry mail for that sender - the usual cause is
+`From` not being an address that relay is willing to send as. A timeout
+usually means egress: cluster network policy, or a provider that blocks
+outbound 25.
+
+**The relay accepted it and it still is not there.** Then it left this
+platform and the trail continues in your mail infrastructure. `250 Queued
+mail for delivery` is an acceptance, not a delivery. Two things account for
+most of it: the message went to junk, and the recipient's tenant filtered it
+as a spoof because it claims to come from a domain that tenant owns while
+arriving from a relay it does not recognise. Send the test to an address on
+a different domain to tell those apart quickly - if that one arrives, the
+problem is your own tenant's anti-spoof handling, not this platform.
+
+Use the test send in the relay wizard rather than creating accounts to
+experiment. It reports exactly what the relay said, and it makes no account.
+
+## `Sign in with Microsoft` is not on the login screen
+
+It appears once federated sign-in is switched on, and not before, because a
+button that looks live and is not makes people doubt their own password. If
+you have configured it and the button is missing, the last wizard step - a
+real sign-in - has not been completed: nothing takes effect until it has.
+
+## A federated sign-in is refused
+
+The refusal page says which check failed. The common ones:
+
+- **No account carries that address.** Expected: it authenticates, it does
+  not provision. Create the account first, with that address on it.
+- **That sign-in is too old.** The provider answered with the time the
+  person last actually authenticated, and it is outside the window this
+  deployment asks for. Signing in again fixes it. Widen the window under
+  Settings > Account if twelve hours is wrong for you.
+- **The provider did not say when this person last signed in.** The token
+  came back with no `auth_time` claim, so freshness cannot be established
+  and is not assumed. Setting the window to "every time" is not a
+  workaround; the claim is what the check reads.
+- **This account is bound to a different identity.** Binding is permanent
+  by design, because an address can be reassigned and rebinding would hand
+  somebody else's account away. Unbind it deliberately from Settings >
+  Account.
+
+## Locked out after requiring single sign-on
+
+Sign in as the account the setup code created. It keeps its password
+precisely for this, it cannot be deleted or demoted while enforcement is on,
+and once you are in you can turn enforcement off from Settings > Account.
+
+If that password is lost too, the receiver's `ADMIN_TOKEN` credential resets
+it: `POST /admin/password` with that token and a `new` password targets the
+oldest admin account, no `current` required. See the endpoint table in
+[receiver/README.md](receiver/README.md). It needs access to the receiver's
+environment, which is the point - recovery belongs to whoever owns the box
+and to nobody else. `ADMIN_TOKEN` is optional and unset by default, so this
+path exists only if you set one up in advance.
+
 ---
 
 ## Something else

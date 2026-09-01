@@ -289,6 +289,38 @@ Either way, if your ingress can do OIDC or mTLS, do it there and set
 `portal.auth.mode=none` behind it - one shared credential with no per-user
 trail is a floor, not a ceiling.
 
+Managed mode can also federate sign-in to **Microsoft Entra**, configured
+from the portal rather than from values: there is nothing to set here, and
+the wizard checks each step against the tenant as you go. Once an owner has
+signed in that way you can require it, which puts your conditional access
+in front of the portal. The account the setup code created keeps its
+password as the break-glass path, so make sure that password is stored
+somewhere reachable without this portal before you turn enforcement on.
+
+### Outbound mail
+
+Optional, and worth setting here rather than in the portal when the relay
+credential is already a Secret in this cluster - which it usually is,
+because whatever else you run that sends mail is reading one already:
+
+    --set managed.smtp.host=postfix.mail.svc.cluster.local \
+      --set managed.smtp.port=25 \
+      --set managed.smtp.security=none \
+      --set managed.smtp.from=ai-guard@example.com
+
+An in-cluster relay normally wants exactly that shape: no username, no
+password, security `none`, because it decides what to accept by the sending
+pod rather than by a credential. For a relay that does want one, point at
+the Secret you already have rather than pasting the password anywhere:
+
+    --set managed.smtp.password.existingSecret=mail-credentials \
+      --set managed.smtp.password.key=password
+
+Every field is also settable from the portal, and a value saved there wins -
+the same precedence every other setting in this chart follows. It is used to
+tell somebody an account has been made for them, and nothing else; with none
+of it set, accounts are created exactly as before.
+
 ### Governance and identity
 
 Both optional, both ConfigMaps:

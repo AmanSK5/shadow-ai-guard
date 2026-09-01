@@ -232,14 +232,19 @@ def test_the_wizard_is_owner_only():
 
 def test_the_sso_card_says_it_is_beta():
     """Beta is stated where somebody is about to act on it, not only in the
-    docs. Single sign-on has not been run against a real Entra app
-    registration, and this card is the last screen before a team is moved
-    onto it - so it belongs beside the On/Off pill rather than in a README
-    the person configuring it may never open."""
+    docs. This card is the last screen before a team is moved onto it, so
+    the caveat belongs beside the On/Off pill rather than in a README the
+    person configuring it may never open.
+
+    The wording is load-bearing and it changed: it used to say federated
+    sign-in had never met a real app registration, which stopped being true
+    the day one deployment ran it end to end. One tenant is not proof, so
+    the pill stays and the claim behind it is now countable."""
     card = INDEX.split("<h3>Single sign-on</h3>", 1)[1][:900]
     assert 'class="pill p-amb"' in card
     assert ">beta</span>" in card
-    assert "real Entra app registration" in card
+    assert "one real Entra tenant" in card
+    assert "not yet run against" not in card
 
 
 def test_the_redirect_uri_is_offered_not_asked_for():

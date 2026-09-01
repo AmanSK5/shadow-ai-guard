@@ -158,8 +158,28 @@ is operated:
   them, or grant a role above their own, which is what stops an admin
   reaching an owner by resetting a password or changing a role. Sign-in is
   a username and password, or Microsoft Entra where you would rather not
-  keep a second set of credentials. Every change lands in an audit trail
-  with who did it.
+  keep a second set of credentials - a six-step wizard sets that up, each
+  step checked against the provider rather than accepted as typed. It
+  authenticates and never provisions: no sign-in creates an account. You
+  can require it, in which case one account keeps its password as the way
+  back in, and set how recently somebody must have signed in at the
+  provider before the portal will take it - twelve hours by default, and
+  verified rather than merely requested. Every change lands in an audit
+  trail with who did it.
+- **Telling people they have an account.** Point it at a mail relay and
+  creating an account emails the person to say so. The wizard knows the
+  common providers and fills in the host, port and encryption for the one
+  you pick; a Kubernetes deployment can mount the credential from the
+  Secret it already has instead. It never blocks: the account is created
+  whether or not the relay answers, the portal says plainly when nobody was
+  emailed, and one button later sends the invites that were missed. The
+  invite carries no token, no password and no link that grants anything,
+  and the wording is yours to rewrite.
+- **What is still not set up.** Finishing the wizard means "stop showing me
+  the wizard", not "everything is configured". A bell in the header lists
+  what is outstanding and what each gap makes the platform get wrong rather
+  than refuse to do. It pulses once, until it has been opened, and then
+  never again.
 - **Notifications.** A webhook fires the moment discovery finds something
   new, and a weekly digest summarises the estate to Slack or anything
   webhook-compatible.
@@ -372,12 +392,21 @@ inventory have all been fixed and tested since the first release.
 
 Current known limitations:
 
-- **Single sign-on is beta.** Microsoft Entra sign-in works against the
-  protocol but has not yet been run against a real app registration, so
-  pilot it on one account before moving anybody across. It authenticates
-  rather than provisions: the account must already exist with a matching
-  email address, and the first successful sign-in binds it to that Entra
-  identity permanently. Passwords keep working alongside it.
+- **Single sign-on is beta.** Microsoft Entra sign-in has now been run end
+  to end against a real app registration - one, which is not the same as
+  proven - so pilot it on one account before moving anybody across. It
+  authenticates rather than provisions: the account must already exist with
+  a matching email address, and the first successful sign-in binds it to
+  that Entra identity permanently. Passwords keep working alongside it
+  unless you require single sign-on, and the account the setup code created
+  keeps its password either way as the way back in.
+- **Outbound mail is one hop.** Invites are sent through a relay you
+  configure, synchronously, with no queue and no retry. A relay that is down
+  when an account is created means that person was not emailed; the portal
+  says so rather than implying otherwise, and a button resends to everybody
+  who was missed. Delivery beyond the relay is between you and it - a test
+  send reports what the relay said, which is not the same as landing in an
+  inbox.
 - **Snap Chromium profiles.** The collectors inventory installed browser
   extensions from Chrome, Chromium, Brave and Edge profiles, but snap Chromium
   on Linux keeps its profile under `~/snap` and is not read, so an AI extension

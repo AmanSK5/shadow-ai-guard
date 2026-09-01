@@ -175,6 +175,113 @@ Changing your OWN password is not on that tab, which is about other
 people's accounts: it lives in the menu under your name in the header, and
 it is the one thing a viewer can change about themselves.
 
+**Single sign-on.** An owner can federate sign-in to Microsoft Entra, from
+Settings > Account. It is a six-step wizard: addresses on accounts, register
+an application, your tenant, the application and its secret, where sign-ins
+return, and a real sign-in that proves the lot. Each step checks something
+against the provider rather than accepting what was typed, because a
+configuration that looks right and is wrong produces a deployment nobody can
+sign in to.
+
+Addresses come first for a reason. Entra proves an address and the receiver
+looks for an account here carrying it: **it authenticates, it does not
+provision**. No sign-in ever creates an account, so somebody who can set an
+address in your tenant cannot mint themselves a way in. The first successful
+sign-in binds that account to the tenant and subject permanently, and every
+sign-in after that matches on the immutable pair alone. Rebinding is refused.
+Microsoft's own guidance is the reason: an address "isn't guaranteed to be
+correct and is mutable over time", so a joiner inheriting a leaver's address
+would otherwise inherit their account and their role.
+
+The sign-in screen offers Microsoft only once it is configured. A
+permanently disabled button is a control that looks live, is not, and makes
+the person doubt themselves.
+
+**How recently they signed in.** The authorization request always asks the
+provider to show the account chooser, so signing in is something a person
+did rather than something that happened to them. It also asks how recently
+they authenticated, and the callback **checks the answer** rather than
+trusting it: a token's expiry says the token is fresh, and a separate claim
+says the person is. A token minted a second ago off a sign-in from last
+Tuesday satisfies the first and not the second, and a token that comes back
+without that claim is refused rather than trusted.
+
+Twelve hours by default, and the dropdown runs from every single time to
+every seven days (the receiver itself accepts anything up to 720). Twelve is
+a working day: nobody is asked twice before lunch, and a laptop left open
+overnight cannot be walked up to the next morning. If your conditional access already
+enforces a shorter sign-in frequency, that still wins - this is a floor, not
+a ceiling.
+
+**Requiring it, and the account that keeps its password.** An owner can
+require single sign-on, which is how a tenant's multi-factor policy ends up
+in front of this portal rather than beside it. A correct password then stops
+being enough for every account but one.
+
+The exception is the account the setup code created. It is marked at
+creation rather than nominated later, because an escape hatch somebody has
+to remember to set up is the one that is missing on the day it is needed,
+and while enforcement is on it can be neither deleted nor demoted. Its
+password is how you get back in to turn enforcement off if the identity
+provider is unreachable, so keep it somewhere you can reach without this
+portal.
+
+Two things have to be true before it can be switched on: single sign-on is
+already working, and an owner has **completed** a sign-in through it. An
+address on an account is an intention; a completed binding is the provider
+having answered for somebody who can still turn this back off.
+
+Enforcement is checked after the password verifies, not before. Refusing
+earlier would let somebody holding no credential at all walk a list of
+usernames and read off which one is the escape hatch, because only that one
+would answer differently. A wrong password answers exactly as it did before
+the feature existed, and break-glass sign-ins get their own line in the
+audit trail.
+
+**Telling people they have an account.** With a mail server configured,
+creating an account emails the person to say it exists. An email address is
+required when an account is made here - it is what a federated sign-in
+matches on and where the invite goes - and the setup-code account stays
+exempt, because it predates all of this and is the break-glass one.
+
+It never blocks. The account is created whether or not a relay answers, and
+the portal says plainly that nobody was emailed rather than implying a
+message nobody sent. Configure a relay later and one button sends the
+invites that were missed, so a deployment that onboarded people early does
+not carry a permanent gap.
+
+The invite ships carrying nothing worth intercepting: no token, no password,
+no link that grants anything. It is also yours to rewrite, subject and body,
+with the username and portal address filled in. A warning appears if the
+body links somewhere other than your portal, because mail from a security
+tool telling staff to go and sign in is already the shape of an attack and a
+link elsewhere is what makes a real invite indistinguishable from a fake
+one. Said, not prevented: it is your deployment.
+
+Configuring the relay is its own wizard, which asks what sends your mail -
+Microsoft 365, Google Workspace, a provider's API relay, your own server -
+and fills in the host, port and encryption for the one you pick, so the only
+thing left to supply is the credential. What it writes, and the environment
+variables that seed it, are in [the receiver's README](../receiver/README.md).
+
+**What is still not set up.** Finishing the first-run wizard writes one
+boolean, and it means "stop showing me the wizard" rather than "everything
+is configured". Skipping used to remove every ongoing signal, including for
+the two steps the wizard itself calls required, and a deployment could sit
+like that indefinitely and look fine.
+
+A bell in the top right lists what is outstanding and what each missing
+thing makes the platform get WRONG rather than refuse to do. It pulses until
+it has been opened once and then stops for good, because a thing that pulses
+forever becomes wallpaper and then it is worse than nothing. Reduced-motion
+turns the animation off. Owner-gated items are hidden from admins who cannot
+act on them, and a viewer never sees it at all. It never blocks anything.
+
+Settings also says when somebody else changed them, read from the audit
+trail. A notice rather than a lock, deliberately: the write is a partial
+upsert of only the keys you send, so two people editing different settings
+never collide.
+
 **The audit trail.** Every change made through the portal - settings,
 decisions, accounts, enrollments, revocations - is recorded by the receiver
 as it happens, with who did it. Settings, Diagnostics shows the recent

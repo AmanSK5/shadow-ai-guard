@@ -141,7 +141,20 @@ Then **Test sign-in**, pick an account, and the wizard's last step unlocks.
 Once it is on you can also try **Require single sign-on**, which stops
 passwords working for every account except the break-glass one - the
 account the setup code created. That is what puts a tenant's multi-factor
-policy in front of the portal in a real deployment.
+policy in front of the portal in a real deployment. It is safe to try here:
+that account still signs in with its password, which is the whole point of
+it.
+
+The **sign-in freshness** setting is on the wizard's last step, and the
+receiver's half of it runs here: the stand-in provider issues an `auth_time`
+claim like Entra does, and the receiver verifies it rather than assuming its
+`max_age` request was honoured.
+
+What the demo cannot show you is the refusal. The stand-in holds no session,
+so it always shows the account picker and always reports the sign-in as
+having happened just now - every window passes. Watching a stale sign-in get
+turned away needs a provider that keeps sessions, which means a real
+tenant.
 
 ### It is a demo provider, and only that
 

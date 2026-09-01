@@ -588,3 +588,27 @@ def test_the_window_is_bounded(managed):
         main.put_settings(main.SettingsUpdate(sso_max_age_hours="9999"),
                           authorization=owner)
     assert e.value.status_code == 422
+
+
+def test_the_relay_password_can_come_from_a_file(tmp_path, monkeypatch):
+    """The env table promises NAME_FILE for every secret in it, and Compose
+    has no other secret story - a file rather than an environment variable
+    is the whole reason that resolver exists. The relay password used to
+    read the environment directly, so the promise did not hold for the one
+    secret a Compose deployment is most likely to want it for.
+
+    Two halves, because the module reads its environment once at import and
+    reloading it re-registers the Prometheus collectors: that the resolver
+    handles this variable, and that the relay config goes through it.
+    """
+    f = tmp_path / "smtp_password"
+    # A trailing newline, because almost every way of writing a file leaves
+    # one and a password differing by one byte fails with no clue why.
+    f.write_text("s3cret\n")
+    monkeypatch.setenv("SMTP_PASSWORD_FILE", str(f))
+    monkeypatch.delenv("SMTP_PASSWORD", raising=False)
+    assert main._secret("SMTP_PASSWORD", "") == "s3cret"
+
+    import pathlib
+    src = pathlib.Path(main.__file__).read_text()
+    assert '"smtp_password": _secret("SMTP_PASSWORD", "")' in src
