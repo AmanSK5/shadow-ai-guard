@@ -268,6 +268,9 @@ json_escape() {
 # report <surface> <tool> <account> <evidence>
 report() {
   local surface="$1" tool="$2" acct="$3" evidence="$4"
+  # Optional, and only the scheduler scan sets them. Every other call site
+  # passes four arguments exactly as before.
+  local mode="${5:-}" identity="${6:-}" trigger="${7:-}" schedule="${8:-}"
   local severity="info" key prev interval
 
   if [ -n "$acct" ] && ! is_corp "$acct"; then
@@ -278,7 +281,7 @@ report() {
 
   # Throttle by severity: info daily, warn hourly. A key with no previous
   # timestamp falls through regardless, so new findings are never delayed.
-  key="$surface|$tool|$acct"
+  key="$surface|$tool|$acct|$trigger"
   interval="$INFO_INTERVAL"
   [ "$severity" = "warn" ] && interval="$WARN_INTERVAL"
 
@@ -292,11 +295,13 @@ report() {
   # severity and reported_at are generated here, so they need no escaping.
   # Everything else came from the registry, the machine or a config file.
   local payload
-  payload=$(printf '{"tool":"%s","surface":"%s","os":"linux","account_domain":"%s","device":"%s","device_name":"%s","user":"%s","evidence":"%s","severity":"%s","reported_at":"%s","source":"collector-linux"}' \
+  payload=$(printf '{"tool":"%s","surface":"%s","os":"linux","account_domain":"%s","device":"%s","device_name":"%s","user":"%s","evidence":"%s","severity":"%s","reported_at":"%s","source":"collector-linux","mode":"%s","identity":"%s","trigger":"%s","schedule":"%s"}' \
     "$(json_escape "$tool")" "$(json_escape "$surface")" "$(json_escape "$acct")" \
     "$(json_escape "$DEVICE")" "$(json_escape "$DEVICE_NAME")" \
     "$(json_escape "$CONSOLE_USER")" "$(json_escape "$evidence")" \
-    "$severity" "$NOW")
+    "$severity" "$NOW" \
+    "$(json_escape "$mode")" "$(json_escape "$identity")" \
+    "$(json_escape "$trigger")" "$(json_escape "$schedule")")
   if [ -z "$ENDPOINT" ]; then
     echo "[ai-guard] FLAG (no endpoint set): $payload"
     # Print-only: preserve old timestamp if one exists, but don't advance it.
@@ -327,7 +332,7 @@ report() {
 # report_once <surface> <tool> <account> <evidence> - one finding per
 # surface+tool per run (a tool can match several identifiers).
 report_once() {
-  local k="$1|$2"
+  local k="$1|$2|${7:-}"
   case "$SEEN" in *"[$k]"*) return 0 ;; esac
   SEEN="${SEEN}[$k]"
   report "$@"
@@ -616,14 +621,134 @@ while IFS="$SEP" read -r _kind tool acct_path keys jwt_path jwt_claim cfg_paths 
       idt=$(json_get_csv "$f" "$jwt_path")
       [ -n "$idt" ] && email=$(jwt_claim "$idt" "$jwt_claim")
     fi
-    report_once "cli" "$tool" "$(domain_of "$email")" "$HOME_LABEL/$acct_path"
+    # An account file with no account in it is a credential that
+    # authenticates with nobody behind it, and that is the one that
+    # survives somebody being offboarded.
+    if [ -n "$email" ]; then
+      report_once "cli" "$tool" "$(domain_of "$email")" "$HOME_LABEL/$acct_path" \
+        "" "person"
+    else
+      report_once "cli" "$tool" "" "$HOME_LABEL/$acct_path" "" "machine"
+    fi
   else
     hit=$(first_existing "$HOME_DIR" "$cfg_paths") \
-      && report_once "cli" "$tool" "" "$HOME_LABEL/$hit"
+      && report_once "cli" "$tool" "" "$HOME_LABEL/$hit" "" "none"
   fi
 done <<EOF
 $(printf '%s\n' "$REG_TSV" | grep "^cli${SEP}")
 EOF
+
+# --------------------------------------------------------- schedulers -------
+#
+# What starts an AI tool without anybody asking. Everything above answers
+# "is it installed and who is signed in"; this answers "does it run on its
+# own", which no other surface can see.
+#
+# Two schedulers, because Linux has two that matter: systemd timers and
+# cron. A job qualifies when its command names a binary the registry lists,
+# so a new tool needs a registry entry rather than a change to this script.
+#
+# The cadence is reported raw, prefixed with its dialect, and read once in
+# the portal rather than normalised three times across three collectors.
+
+# Does a command line run one of this tool's binaries? Word-ish, so "claude"
+# does not match "claudeless-backup".
+cmd_runs_binary() {
+  local cmd="$1" bins="$2" b old
+  old="$IFS"; IFS=','; set -- $bins; IFS="$old"
+  for b in "$@"; do
+    [ -n "$b" ] || continue
+    case " $(printf '%s' "$cmd" | tr '/=",[]' '      ') " in
+      *" $b "*) return 0 ;;
+    esac
+  done
+  return 1
+}
+
+scan_systemd_dir() {
+  local dir="$1" label="$2" unit base timer oncal exec tool bins
+  [ -d "$dir" ] || return 0
+  for unit in "$dir"/*.service; do
+    [ -f "$unit" ] || continue
+    exec=$(grep -h '^ExecStart' "$unit" 2>/dev/null | head -1)
+    [ -n "$exec" ] || continue
+    # A service with no timer beside it is started by something else, and
+    # this scan is about things that start themselves.
+    base="${unit%.service}"
+    timer="${base}.timer"
+    [ -f "$timer" ] || continue
+    oncal=$(grep -h '^OnCalendar=' "$timer" 2>/dev/null | head -1)
+    oncal="${oncal#OnCalendar=}"
+    [ -n "$oncal" ] || continue
+    while IFS="$SEP" read -r _kind tool _ap _keys _jp _jc _cfg bins; do
+      [ -n "$bins" ] || continue
+      if cmd_runs_binary "$exec" "$bins"; then
+        report_once "cli" "$tool" "" "$label/$(basename "$timer")" \
+          "autonomous" "" "systemd timer, $oncal" "oncalendar:$oncal"
+        break
+      fi
+    done <<EOF2
+$(printf '%s\n' "$REG_TSV" | grep "^cli${SEP}")
+EOF2
+  done
+}
+
+# One crontab, however it was reached. Comments and env lines are skipped;
+# what is left is five schedule fields and a command.
+scan_crontab_stream() {
+  local label="$1" line spec cmd trig tool bins
+  while IFS= read -r line; do
+    case "$line" in \#*|"") continue ;; esac
+    case "$line" in
+      @reboot*)
+        spec="atlogin"; trig="cron, at boot"; cmd="${line#@reboot}" ;;
+      @daily*|@midnight*)
+        spec="cron:0 0 * * *"; trig="cron, daily"; cmd="${line#@}"; cmd="${cmd#* }" ;;
+      @hourly*)
+        spec="cron:0 * * * *"; trig="cron, hourly"; cmd="${line#@hourly}" ;;
+      @*) continue ;;
+      *)
+        # Five schedule fields then the command. Globbing is off for the
+        # split: a crontab is full of asterisks, and with it on "*/15 * * *"
+        # expands against the working directory and the schedule becomes a
+        # list of file names.
+        set -f
+        # shellcheck disable=SC2086
+        set -- $line
+        set +f
+        [ "$#" -ge 6 ] || continue
+        spec="cron:$1 $2 $3 $4 $5"
+        trig="cron, $1 $2 $3 $4 $5"
+        shift 5
+        cmd="$*"
+        ;;
+    esac
+    [ -n "$cmd" ] || continue
+    while IFS="$SEP" read -r _kind tool _ap _keys _jp _jc _cfg bins; do
+      [ -n "$bins" ] || continue
+      if cmd_runs_binary "$cmd" "$bins"; then
+        report_once "cli" "$tool" "" "$label" \
+          "autonomous" "" "$trig" "$spec"
+        break
+      fi
+    done <<EOF2
+$(printf '%s\n' "$REG_TSV" | grep "^cli${SEP}")
+EOF2
+  done
+}
+
+scan_systemd_dir "/etc/systemd/system" "/etc/systemd/system"
+scan_systemd_dir "$HOME_DIR/.config/systemd/user" "$HOME_LABEL/.config/systemd/user"
+
+if command -v crontab >/dev/null 2>&1; then
+  crontab -l 2>/dev/null | scan_crontab_stream "crontab -l"
+fi
+for _cf in /etc/crontab /etc/cron.d/*; do
+  [ -f "$_cf" ] || continue
+  # /etc/cron.d carries a user field between the schedule and the command;
+  # cmd_runs_binary searches the whole rest of the line either way.
+  scan_crontab_stream "$_cf" < "$_cf"
+done
 
 # ---------------------------------------------------------------- ide -------
 # VS Code / Cursor extensions live in ~/.vscode/extensions and

@@ -188,6 +188,9 @@ json_escape() {
 # report <surface> <tool> <account_domain> <evidence>
 report() {
   local surface="$1" tool="$2" acct="$3" evidence="$4" severity="info"
+  # Optional, and only the scheduler scan sets them. Every other call site
+  # passes four arguments exactly as before.
+  local mode="${5:-}" identity="${6:-}" trigger="${7:-}" schedule="${8:-}"
   if [ -n "$acct" ]; then
     case ",${CORP_DOMAINS}," in
       *",${acct},"*) ;;          # corporate (any alias) -> info
@@ -201,7 +204,7 @@ report() {
   # persistent state rather than an event and the first report already told us.
   # Throttle by severity: info daily, warn hourly. A key with no previous
   # timestamp falls through regardless, so new findings are never delayed.
-  local key="${surface}|${tool}|${acct}"
+  local key="${surface}|${tool}|${acct}|${trigger}"
   local interval="$INFO_REPORT_INTERVAL"
   [ "$severity" = "warn" ] && interval="$WARN_REPORT_INTERVAL"
 
@@ -218,11 +221,13 @@ report() {
   # severity and reported_at are generated here, so they need no escaping.
   # Everything else came from the registry, the machine or a config file.
   local payload
-  payload=$(/usr/bin/printf '{"tool":"%s","surface":"%s","os":"macos","account_domain":"%s","device":"%s","device_name":"%s","user":"%s","evidence":"%s","severity":"%s","reported_at":"%s","source":"collector-macos"}' \
+  payload=$(/usr/bin/printf '{"tool":"%s","surface":"%s","os":"macos","account_domain":"%s","device":"%s","device_name":"%s","user":"%s","evidence":"%s","severity":"%s","reported_at":"%s","source":"collector-macos","mode":"%s","identity":"%s","trigger":"%s","schedule":"%s"}' \
     "$(json_escape "$tool")" "$(json_escape "$surface")" "$(json_escape "$acct")" \
     "$(json_escape "$SERIAL")" "$(json_escape "$DEVICE_NAME")" \
     "$(json_escape "$CONSOLE_USER")" "$(json_escape "$evidence")" \
-    "$severity" "$NOW")
+    "$severity" "$NOW" \
+    "$(json_escape "$mode")" "$(json_escape "$identity")" \
+    "$(json_escape "$trigger")" "$(json_escape "$schedule")")
 
   local delivered=false
   if [ -n "$ENDPOINT" ]; then
@@ -589,14 +594,111 @@ while IFS="$SEP" read -r _kind tool acct_path keys jwt_path jwt_claim cfg_paths 
           | /usr/bin/head -1 | /usr/bin/cut -d'"' -f4)
       fi
     fi
-    report_once "cli" "$tool" "$(domain_of "$email")" "$HOME_LABEL/$acct_path"
+    # Three states, and until now two of them were the same blank. An
+    # account file with no account in it is a credential that authenticates
+    # with nobody behind it - an API key - and that is the one that survives
+    # somebody being offboarded, because revoking their sign-on does not
+    # touch it. Saying which was seen costs nothing here and cannot be
+    # recovered later.
+    if [ -n "$email" ]; then
+      report_once "cli" "$tool" "$(domain_of "$email")" "$HOME_LABEL/$acct_path" \
+        "" "person"
+    else
+      report_once "cli" "$tool" "" "$HOME_LABEL/$acct_path" "" "machine"
+    fi
   else
     # Installed but never authenticated: still report presence so the tool
     # appears in the inventory, with no account.
     hit=$(first_existing "$HOME_DIR" "$cfg_paths") \
-      && report_once "cli" "$tool" "" "$HOME_LABEL/$hit"
+      && report_once "cli" "$tool" "" "$HOME_LABEL/$hit" "" "none"
   fi
 done < <(printf '%s\n' "$REG_TSV" | /usr/bin/grep "^cli${SEP}")
+
+# --------------------------------------------------------- schedulers -------
+#
+# What starts an AI tool without anybody asking. Everything above this point
+# answers "is it installed and who is signed in"; this answers "does it run
+# on its own", which no other surface can see.
+#
+# launchd, because that is what schedules things on a Mac: agents in a user's
+# own directory, agents and daemons installed for everyone. A job qualifies
+# when its ProgramArguments name a binary the registry lists for a tool - the
+# same registry-driven matching every other scan here uses, so a new tool
+# needs a registry entry rather than a change to this script.
+#
+# The cadence is reported raw, prefixed with its dialect, and read once in
+# the portal. Normalising it here would mean doing it again in the Linux
+# collector and a third time in PowerShell, which is three chances to
+# disagree about what a schedule means.
+
+# The cadence a launchd job declares, as a dialect-prefixed spec, read from
+# the plist already converted to JSON. StartCalendarInterval gives clock
+# times; StartInterval gives a gap with no start, which the portal draws as
+# evenly spaced while saying the phase is unknown; RunAtLoad is not a cadence
+# at all and says so.
+launchd_schedule() {
+  local j="$1" hour min secs
+  secs=$(json_get "$j" "StartInterval")
+  if [ -n "$secs" ]; then printf 'interval:%s' "$secs"; return 0; fi
+  hour=$(json_get "$j" "StartCalendarInterval" "Hour")
+  min=$(json_get "$j" "StartCalendarInterval" "Minute")
+  if [ -n "$hour" ] || [ -n "$min" ]; then
+    printf 'cron:%s %s * * *' "${min:-0}" "${hour:-*}"
+    return 0
+  fi
+  [ -n "$(json_get "$j" "RunAtLoad")" ] && { printf 'atlogin'; return 0; }
+  printf ''
+}
+
+scan_launchd_dir() {
+  local dir="$1" label="$2" f j args tool bins b sched trig old
+  [ -d "$dir" ] || return 0
+  j=$(/usr/bin/mktemp /tmp/ai-guard-plist.XXXXXX) || return 0
+  for f in "$dir"/*.plist; do
+    [ -f "$f" ] || continue
+    /usr/bin/plutil -convert json -o "$j" -- "$f" 2>/dev/null || continue
+    # Everything the job runs, flattened to one searchable string.
+    args=$(json_get "$j" "ProgramArguments")
+    [ -n "$args" ] || args=$(json_get "$j" "Program")
+    [ -n "$args" ] || continue
+    sched=$(launchd_schedule "$j")
+    [ -n "$sched" ] || continue          # not scheduled: nothing to say here
+    while IFS="$SEP" read -r _kind tool _ap _keys _jp _jc _cfg bins; do
+      [ -n "$bins" ] || continue
+      old="$IFS"; IFS=','; set -- $bins; IFS="$old"
+      for b in "$@"; do
+        [ -n "$b" ] || continue
+        # The binary as its own argument or path element, so "claude" does
+        # not match "claudeless-backup".
+        case " $(printf '%s' "$args" | /usr/bin/tr '/",[]' '     ') " in
+          *" $b "*) ;;
+          *) continue ;;
+        esac
+        case "${sched%%:*}" in
+          interval)
+            # "every 360 min" is arithmetic; "every 6 hours" is the thing
+            # somebody would say out loud, and this line is read by people.
+            if [ "$(( ${sched#interval:} % 3600 ))" -eq 0 ] \
+               && [ "$(( ${sched#interval:} ))" -ge 3600 ]; then
+              trig="launchd, every $(( ${sched#interval:} / 3600 )) hours"
+            else
+              trig="launchd, every $(( ${sched#interval:} / 60 )) min"
+            fi ;;
+          cron)     trig="launchd, at a set time" ;;
+          *)        trig="launchd, at login" ;;
+        esac
+        report_once "cli" "$tool" "" "$label/$(/usr/bin/basename "$f")" \
+          "autonomous" "" "$trig" "$sched"
+        break
+      done
+    done < <(printf '%s\n' "$REG_TSV" | /usr/bin/grep "^cli${SEP}")
+  done
+  /bin/rm -f "$j"
+}
+
+scan_launchd_dir "$HOME_DIR/Library/LaunchAgents" "$HOME_LABEL/Library/LaunchAgents"
+scan_launchd_dir "/Library/LaunchAgents" "/Library/LaunchAgents"
+scan_launchd_dir "/Library/LaunchDaemons" "/Library/LaunchDaemons"
 
 # ---------------------------------------------------------------- ide -------
 

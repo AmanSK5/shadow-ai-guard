@@ -206,7 +206,11 @@ function Get-McpServerNames {
 }
 
 function Send-Finding {
-    param([string]$Surface, [string]$Tool, [string]$Account, [string]$Evidence)
+    # Mode, Identity, Trigger and Schedule are optional and only the
+    # scheduler scan sets them. Every other call site is unchanged.
+    param([string]$Surface, [string]$Tool, [string]$Account, [string]$Evidence,
+          [string]$Mode = '', [string]$Identity = '', [string]$Trigger = '',
+          [string]$Schedule = '')
 
     $severity = 'info'
     if ($Account -and ($CorporateDomains -notcontains $Account.ToLower())) {
@@ -218,7 +222,7 @@ function Send-Finding {
 
     # Throttle by severity: info daily, warn hourly. A key with no previous
     # timestamp falls through regardless, so new findings are never delayed.
-    $key = "$Surface|$Tool|$Account"
+    $key = "$Surface|$Tool|$Account|$Trigger"
     $intervalHours = if ($severity -eq 'warn') { $WarnReportIntervalHours } else { $InfoReportIntervalHours }
     if ($StateOld.ContainsKey($key)) {
         if (($NowEpoch - $StateOld[$key]) -lt ($intervalHours * 3600)) {
@@ -234,6 +238,8 @@ function Send-Finding {
         user = $ConsoleUser
         evidence = $Evidence; severity = $severity; reported_at = $Now
         source = 'collector-windows'
+        mode = $Mode; identity = $Identity
+        trigger = $Trigger; schedule = $Schedule
     } | ConvertTo-Json -Compress
 
     if (-not $Endpoint) {
@@ -375,11 +381,14 @@ if (-not $FunctionsOnly) {
 # (both Copilot extension IDs, a config path AND an install directory).
 $script:Seen = @{}
 function Send-FindingOnce {
-    param([string]$Surface, [string]$Tool, [string]$Account, [string]$Evidence)
-    $key = "$Surface|$Tool"
+    param([string]$Surface, [string]$Tool, [string]$Account, [string]$Evidence,
+          [string]$Mode = '', [string]$Identity = '', [string]$Trigger = '',
+          [string]$Schedule = '')
+    $key = "$Surface|$Tool|$Trigger"
     if ($script:Seen.ContainsKey($key)) { return }
     $script:Seen[$key] = $true
-    Send-Finding -Surface $Surface -Tool $Tool -Account $Account -Evidence $Evidence
+    Send-Finding -Surface $Surface -Tool $Tool -Account $Account -Evidence $Evidence `
+        -Mode $Mode -Identity $Identity -Trigger $Trigger -Schedule $Schedule
 }
 
 # Registry-supplied paths are documented as relative to the user's profile,
@@ -574,8 +583,13 @@ foreach ($t in $Registry.cli) {
                 $jwt = Get-JsonStringField -Path $f -Field $t.account_jwt_path[-1]
                 if ($jwt) { $email = Get-JwtClaim -Jwt $jwt -Claim $t.account_jwt_claim }
             }
+            # An account file with no account in it is a credential that
+            # authenticates with nobody behind it - an API key - and that is
+            # the one that survives somebody being offboarded, because
+            # revoking their sign-on does not touch it.
+            $who = if ($email) { 'person' } else { 'machine' }
             Send-FindingOnce -Surface 'cli' -Tool $t.tool -Account (Get-Domain $email) `
-                -Evidence "~/$($t.account_json_path)"
+                -Evidence "~/$($t.account_json_path)" -Identity $who
         } catch {
             Write-Output "ai-guard PARSE-FAILED: $($t.tool) $f ($($_.Exception.Message))"
             $script:ParseFailures++
@@ -584,7 +598,8 @@ foreach ($t in $Registry.cli) {
         foreach ($c in $t.config_paths) {
             $cp = Join-UserPath $c
             if ($cp -and (Test-Path $cp)) {
-                Send-FindingOnce -Surface 'cli' -Tool $t.tool -Account '' -Evidence "~/$c"
+                Send-FindingOnce -Surface 'cli' -Tool $t.tool -Account '' `
+                    -Evidence "~/$c" -Identity 'none' 
                 break
             }
         }
@@ -687,6 +702,89 @@ foreach ($m in $Registry.mcp) {
     } catch {
         Write-Output "ai-guard PARSE-FAILED: mcp $f ($($_.Exception.Message))"
         $script:ParseFailures++
+    }
+}
+
+# ----------------------------------------------------- scheduled tasks --
+#
+# What starts an AI tool without anybody asking. Everything above answers
+# "is it installed and who is signed in"; this answers "does it run on its
+# own", which no other surface can see.
+#
+# A task qualifies when what it executes names a binary the registry lists,
+# so a new tool needs a registry entry rather than a change to this script.
+# The cadence is reported raw and read once in the portal, rather than
+# normalised here and again in two shell collectors.
+
+# Word-ish match, so "claude" does not match "claudeless-backup".
+function Test-RunsBinary {
+    param([string]$Command, [string[]]$Binaries)
+    if (-not $Command) { return $false }
+    $parts = $Command -split '[\\/\s",\[\]]+' | Where-Object { $_ }
+    foreach ($b in $Binaries) {
+        if (-not $b) { continue }
+        foreach ($p in $parts) {
+            if ($p -ieq $b -or $p -ieq "$b.exe") { return $true }
+        }
+    }
+    return $false
+}
+
+# The cadence a task declares, as a dialect-prefixed spec. Only the trigger
+# kinds that mean "starts itself" are read; a task somebody runs by hand has
+# nothing to say here.
+function Get-TaskSchedule {
+    param($Task)
+    foreach ($tr in @($Task.Triggers)) {
+        if (-not $tr) { continue }
+        $cim = ''
+        try { $cim = $tr.CimClass.CimClassName } catch { $cim = '' }
+        if ($cim -eq 'MSFT_TaskLogonTrigger' -or $cim -eq 'MSFT_TaskBootTrigger') {
+            return @{ spec = 'atlogin'; trigger = 'Scheduled Task, at logon' }
+        }
+        $rep = $null
+        try { $rep = $tr.Repetition.Interval } catch { $rep = $null }
+        if ($rep -and $rep -match 'PT(\d+)([HM])') {
+            $n = [int]$Matches[1]
+            $secs = if ($Matches[2] -eq 'H') { $n * 3600 } else { $n * 60 }
+            $unit = if ($Matches[2] -eq 'H') { 'hours' } else { 'min' }
+            return @{ spec = "interval:$secs"; trigger = "Scheduled Task, every $n $unit" }
+        }
+        if ($tr.StartBoundary) {
+            try {
+                $dt = [datetime]$tr.StartBoundary
+                return @{ spec = "cron:$($dt.Minute) $($dt.Hour) * * *";
+                          trigger = "Scheduled Task, at $($dt.ToString('HH:mm'))" }
+            } catch { continue }
+        }
+    }
+    return $null
+}
+
+$tasks = @()
+try {
+    $tasks = @(Get-ScheduledTask -ErrorAction Stop)
+} catch {
+    # Not every edition exposes the cmdlet, and a collector that cannot look
+    # must say so rather than report a quiet zero.
+    Write-Output "ai-guard: scheduled tasks unreadable ($($_.Exception.Message))"
+}
+foreach ($task in $tasks) {
+    $cmd = ''
+    foreach ($a in @($task.Actions)) {
+        if ($a.Execute) { $cmd += " $($a.Execute) $($a.Arguments)" }
+    }
+    if (-not $cmd.Trim()) { continue }
+    $sched = Get-TaskSchedule -Task $task
+    if (-not $sched) { continue }     # not self-starting: nothing to say
+    foreach ($t in $Registry.cli) {
+        if (-not $t.binaries) { continue }
+        if (Test-RunsBinary -Command $cmd -Binaries $t.binaries) {
+            Send-FindingOnce -Surface 'cli' -Tool $t.tool -Account '' `
+                -Evidence "Scheduled Task $($task.TaskPath)$($task.TaskName)" `
+                -Mode 'autonomous' -Trigger $sched.trigger -Schedule $sched.spec
+            break
+        }
     }
 }
 
