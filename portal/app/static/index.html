@@ -55,11 +55,22 @@ body.auth aside{display:none}
 body.auth .shell{grid-template-columns:1fr}
 aside{background:var(--side);color:var(--side-ink);padding:16px 0 14px;
   position:sticky;top:0;height:100vh;overflow-y:auto;display:flex;flex-direction:column}
-.brand{display:flex;align-items:center;padding:2px 14px 14px;min-height:46px}
+/* The glyph carries a 1.6% inset of its own inside the image, so 14px of
+   padding put it at ~16.9px while every nav icon below sits at 20px - the
+   nav's 10px plus a button's 10px. Three pixels is not much and it is
+   exactly the kind of thing that reads as "slightly wrong" without anyone
+   being able to say why. */
+.brand{display:flex;align-items:center;padding:2px 17px 14px;min-height:46px}
+/* The foot has a rule above it; without one here the mark and the nav read
+   as a single block, and the mark is a header rather than a first item. */
+.brandline{border-bottom:1px solid var(--side-line);margin:0 10px 8px}
 .brand img{display:block;width:100%;max-width:180px;height:auto}
 /* Collapsed, the wordmark crops down to the hooded-figure mark. */
 .collapsed .brand{padding:2px 0 12px;justify-content:center}
-.collapsed .brand img{width:28px;height:44px;max-width:none;object-fit:cover;object-position:left center}
+.collapsed .brand{padding:2px 0 12px}
+.collapsed .brandline{margin:0 12px 8px}
+.collapsed .brand img{width:26px;height:44px;max-width:none;object-fit:cover;
+  object-position:1% center}
 aside nav{flex:1;padding:4px 10px}
 nav button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;
   border:0;border-radius:8px;color:var(--side-mut);font:inherit;font-weight:500;cursor:pointer;
@@ -75,6 +86,15 @@ nav .count{margin-left:auto;font-size:12px;font-variant-numeric:tabular-nums;opa
   font:inherit;font-size:13px;cursor:pointer;padding:5px 0;width:calc(100% - 20px);margin:8px 10px 6px}
 .fold:hover{color:var(--side-ink);border-color:var(--side-mut)}
 .foot{padding:12px 16px 0;border-top:1px solid var(--side-line);font-size:12px;color:var(--side-mut);line-height:1.8}
+/* A label for a collapsed rail. On the body rather than inside the sidebar
+   because the sidebar scrolls, and anything positioned beyond its edge is
+   clipped by that - which is why this is not a pseudo-element. */
+#navtip{position:fixed;z-index:60;background:var(--pop);color:var(--fg);
+  border:1px solid var(--pop-bd);border-radius:7px;padding:4px 10px;
+  font-size:12.5px;font-weight:500;white-space:nowrap;box-shadow:var(--pop-shadow);
+  pointer-events:none;opacity:0;transition:opacity .1s ease}
+#navtip.on{opacity:1}
+@media (prefers-reduced-motion:reduce){#navtip{transition:none}}
 .foot a{color:var(--side-mut);text-decoration:none;border-bottom:1px solid transparent}
 .foot a:hover{color:var(--side-on-ink);border-bottom-color:rgba(124,212,230,.4)}
 .topbar{display:flex;gap:14px;align-items:center;padding:10px 24px;border-bottom:1px solid var(--bd);
@@ -929,6 +949,7 @@ a.libtn:hover{border-color:var(--pri)}
 <div class="shell" id="shell">
   <aside>
     <div class="brand"><img src="/logo.png" alt="Shadow AI Guard"></div>
+    <div class="brandline"></div>
     <nav id="nav"></nav>
     <button class="fold" id="fold" title="collapse sidebar">«</button>
     <div class="foot"><span class="txt">
@@ -8738,6 +8759,29 @@ async function managedAction(act, el) {
 const SECTAB = {};
 const sectionOf = v => NAV.find(s => s.items.some(([id]) => id === v));
 
+// One reusable label, on the body: the sidebar scrolls, so anything drawn
+// past its edge would be clipped by it.
+let NAVTIP = null;
+function navTip(btn) {
+  // The class lives on the shell, not the body. Checking the wrong element
+  // here means a tooltip that never appears and no error to say why.
+  const shell = document.getElementById('shell');
+  if (!shell || !shell.classList.contains('collapsed')) return;
+  if (!NAVTIP) {
+    NAVTIP = document.createElement('div');
+    NAVTIP.id = 'navtip';
+    document.body.appendChild(NAVTIP);
+  }
+  NAVTIP.textContent = btn.dataset.lbl || '';
+  const r = btn.getBoundingClientRect();
+  NAVTIP.style.left = (r.right + 8) + 'px';
+  NAVTIP.style.top = r.top + 'px';
+  // Measured after it has text, then centred on the button.
+  NAVTIP.style.top = (r.top + r.height / 2 - NAVTIP.offsetHeight / 2) + 'px';
+  NAVTIP.classList.add('on');
+}
+function hideNavTip() { if (NAVTIP) NAVTIP.classList.remove('on'); }
+
 function drawNav() {
   const n = document.getElementById('nav');
   const cur = sectionOf(view);
@@ -8745,12 +8789,22 @@ function drawNav() {
     // Personal accounts outstanding. An unexplained number on a nav
     // item reads as a notification of something unspecified.
     const c = sec.id === 'inventory' ? (G.personal_accounts||[]).length : null;
-    return `<button data-s="${sec.id}" class="${cur && cur.id===sec.id ? 'on':''}" title="${sec.lbl}">
+    return `<button data-s="${sec.id}" class="${cur && cur.id===sec.id ? 'on':''}"
+      aria-label="${sec.lbl}" data-lbl="${sec.lbl}">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
         stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${NAVICONS[sec.id]}</svg>
       <span class="lbl">${sec.lbl}</span>` +
       (c ? `<span class="count" title="${c} personal account${c === 1 ? '' : 's'} seen in this window">${c}</span>` : '') + `</button>`;
   }).join('');
+  // Collapsed, the rail is icons alone. A native title works but arrives a
+  // second late and in the operating system's styling, which on a rail
+  // somebody is scanning is close enough to nothing.
+  n.querySelectorAll('button').forEach(b => {
+    b.onmouseenter = () => navTip(b);
+    b.onmouseleave = hideNavTip;
+    b.onfocus = () => navTip(b);
+    b.onblur = hideNavTip;
+  });
   n.querySelectorAll('button').forEach(b => b.onclick = () => {
     const sec = NAV.find(s => s.id === b.dataset.s);
     view = SECTAB[sec.id] || sec.items[0][0]; detail = null; EXTFROM = '';
@@ -9305,6 +9359,7 @@ try { if (localStorage.getItem('aiguard-theme') === 'dark') setTheme('dark'); } 
 const fold = document.getElementById('fold');
 fold.onclick = () => {
   const on = document.getElementById('shell').classList.toggle('collapsed');
+  hideNavTip();   // expanding under a shown label would strand it
   fold.textContent = on ? '»' : '«';
   fold.title = on ? 'expand sidebar' : 'collapse sidebar';
   try { localStorage.setItem('aiguard-side', on ? '1' : ''); } catch (e) {}
