@@ -209,6 +209,16 @@ report which account each tool is signed into. This is the data no
 API-level product has, because the account identity lives in a local file,
 not in any cloud log.
 
+They also read what schedules things on that platform - launchd, systemd
+timers and cron, Scheduled Tasks - to find AI tools that start with nobody
+asking. A job qualifies when the command it runs names a binary the registry
+already lists, so covering a new tool is a registry entry rather than a
+change to three scripts. Those findings carry the cadence untranslated, in
+the scheduler's own dialect, and one parser in the portal reads all of them:
+normalising in the collectors would mean doing it three times, in two shell
+scripts and a PowerShell one, which is three chances to disagree about what
+a schedule means. See [Agentic AI](agentic.md).
+
 **scanners**, cloud and network detection: Entra sign-ins, Exchange signup
 evidence, Intune and Jamf software inventory, SentinelOne DNS telemetry.
 Each is an independent module; a deployer runs the ones their estate

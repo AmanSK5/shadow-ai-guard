@@ -450,7 +450,7 @@ effect within `CACHE_TTL_SECONDS` (default 30) without a restart.
 
 ## Sections
 
-The sidebar is seven sections; each holds its pages as tabs. Details open in
+The sidebar is eight sections; each holds its pages as tabs. Details open in
 an inspector beside the list rather than a separate page, and the theme
 toggle (light or dark) is remembered per browser.
 
@@ -460,6 +460,7 @@ toggle (light or dark) is remembered per browser.
 | Inventory | Tools, People, Devices, Personal accounts, MCP servers | what is in use, by whom, on what, signed into which account |
 | Governance | AI register, Tool registry, Paste guard, ISO 42001 evidence | what each tool is, what was decided, what the guard stopped |
 | Budget | Budget | what each AI tool costs, and whether the seats paid for match the people observed using them |
+| Agentic AI | What runs on its own | what starts without being asked, under whose credential, and how far it can reach |
 | Health | Sources, Uncovered devices | which detection sources are reporting, which are silent, and which machines nothing covers |
 | Fleet | Devices, Enrollment tokens | who is enrolled with their own credential, and the invitations that enroll them |
 | Settings | Settings tabs, Diagnostics | central settings, accounts, the audit trail, and what the portal verified about itself |
@@ -582,6 +583,34 @@ Admins link, edit and import; viewers read - including the report, which is
 what an auditor or a finance owner usually needs. Vendor API keys are held
 by the receiver, spent server-side and never returned to any page.
 [Budget](../docs/budget.md) covers the whole feature.
+
+## Agentic AI
+
+What runs with no person behind it. Every other page here starts from
+something somebody did; this one starts from the absence of that.
+
+Each thing is drawn as a chain - what starts it, who authorised it, what it
+runs, what it can reach - because the interesting part is a missing link
+rather than a value in a column. Where nothing accountable sits behind the
+credential, that second box is drawn as a hole. A scheduled job under a real
+account gets a filled one: running unattended is not the problem, running
+unattended under nobody's name is.
+
+Where a scheduler gives a cadence, a day is drawn across the top. It is
+titled "as configured" because a spec is what something is set to do, not
+what it was seen doing - a cadence the parser cannot read draws nothing and
+the row is listed as not drawn, since a timeline with an invented time on it
+is worse than a row left out.
+
+Two things it will not infer, each for the same reason: a finding that says
+nothing about mode is not autonomous, and a blank account domain is not a
+machine identity. Both would manufacture findings on estates whose
+collectors have not been upgraded.
+
+The page is empty until collectors report the fields, and says which of the
+three reasons that might be. Full reasoning, including what it deliberately
+does not answer and the conditions under which that would change, is in
+[Agentic AI](../docs/agentic.md).
 
 ## Personal accounts
 

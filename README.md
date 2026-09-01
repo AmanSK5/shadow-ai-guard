@@ -55,6 +55,7 @@ leaves your infrastructure.
   <a href="#install-it">Install it</a> ·
   <a href="#what-it-sees">What it sees</a> ·
   <a href="#everything-runs-from-the-portal">The portal</a> ·
+  <a href="#what-runs-without-a-person">Agentic AI</a> ·
   <a href="#try-it-in-five-minutes">Try it</a> ·
   <a href="#how-it-works">How it works</a>
   <br>
@@ -190,6 +191,14 @@ is operated:
   and that arrangement is yours, not the deployment's. Both are available
   again at any time under Settings > Getting started.
 
+- **What runs without a person.** <a id="what-runs-without-a-person"></a>Every
+  page above assumes somebody did something. This one is the exception: tools
+  that start on a timer or a trigger, the credential each holds, and what it
+  can reach once running. A key in a unit file belongs to no leaver, so
+  revoking somebody's sign-on does not stop it. It will not call something
+  autonomous on silence, and it says what it deliberately does not answer -
+  see [Agentic AI](docs/agentic.md).
+
 Grafana is optional and complementary: better at graphs and history, and the
 portal can embed its panels. The portal is better at relationships, current
 state, and doing something about what it shows.
@@ -306,6 +315,7 @@ not a fork; if you are not sure which you want, start with managed. The
 | Configure the receiver | [Receiver](receiver/README.md) |
 | Record approvals, owners and review dates | [Governance decisions](docs/governance.md) |
 | Track paid seats against observed use | [Budget](docs/budget.md) |
+| See what runs with no person behind it | [Agentic AI](docs/agentic.md) |
 | Produce evidence for an AI management system | [Evidence](docs/evidence.md) |
 | Deploy macOS collection | [macOS collector](endpoint/macos/README.md) |
 | Deploy Windows collection | [Windows collector](endpoint/windows/README.md) |
@@ -351,6 +361,22 @@ with everything downstream.
   "source": "collector-macos"
 }
 ```
+
+Five optional fields carry what a source knows beyond presence. A sender that
+omits them is unaffected, and every one of them reads as unknown when absent
+rather than as its more interesting value.
+
+| Field | Values | Means |
+|---|---|---|
+| `signal` | `active`, `ambient` | whether a model ran, or the product is merely installed. Only ever `ambient` for an editor that bundles AI, where finding it installed proves an editor is installed |
+| `mode` | `interactive`, `autonomous` | whether a person was at the keyboard |
+| `identity` | `person`, `machine`, `none` | who the credential belongs to. `machine` is a key that authenticates with nobody behind it, which is the one that survives offboarding |
+| `trigger` | free text | what starts it, in the scheduler's own words |
+| `schedule` | dialect-prefixed spec | the raw cadence: `cron:0 2 * * *`, `interval:21600`, `atlogin` |
+
+`mode` and `identity` are the two that must never be inferred: absence is not
+autonomy, and a blank account domain is not a machine identity. See
+[Agentic AI](docs/agentic.md).
 
 `severity` is `warn` when the account domain is not one of your corporate
 domains, and `info` otherwise.
