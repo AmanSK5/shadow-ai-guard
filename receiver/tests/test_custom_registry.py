@@ -6,7 +6,9 @@ appears in /registry, in every /registry/collector surface list, and in the
 receiver's domain normalization - so the fleet detects it with no rebuild.
 """
 
+import contextlib
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -78,6 +80,37 @@ def managed(tmp_path, monkeypatch):
     main._refresh_domain_map()
     yield st
     main._refresh_domain_map()
+
+
+
+@contextlib.contextmanager
+def _capture():
+    """The findings the receiver emitted, parsed. They go out as JSON log
+    lines - that IS the delivery mechanism to Loki, so reading them is
+    reading what a log store would receive."""
+    out = []
+
+    class H(logging.Handler):
+        def emit(self, record):
+            try:
+                line = json.loads(record.getMessage())
+            except (ValueError, TypeError):
+                return
+            if line.get("kind") == "finding":
+                out.append(line)
+
+    h = H()
+    log = logging.getLogger("ai-guard")
+    log.addHandler(h)
+    # A handler alone is not enough: if the logger sits above INFO the record
+    # is dropped before any handler sees it.
+    prev = log.level
+    log.setLevel(logging.INFO)
+    try:
+        yield out
+    finally:
+        log.removeHandler(h)
+        log.setLevel(prev)
 
 
 def _put(**body):
@@ -215,3 +248,36 @@ def test_classic_mode_serves_the_file_untouched():
     assert client.get("/admin/registry-entries", headers=ADMIN).status_code == 404
     assert client.put("/admin/registry-entries", headers=ADMIN,
                       json={}).status_code == 404
+def test_a_collector_reporting_an_editor_gets_the_ambient_signal(managed):
+    """The three endpoint collectors report a plain `surface: desktop` and
+    know nothing about which tools are editors. Without this the whole
+    installed-vs-used split would be defeated on the surface that matters
+    most - a Windsurf.app the macOS collector found would arrive unlabelled
+    and read as someone using AI. Filled in here so the rule lands without
+    upgrading a bash script, a PowerShell script and a Linux script first."""
+    with _capture() as records:
+        assert client.post("/report", headers=AUTH, json={
+            "tool": "codeium", "surface": "desktop", "os": "macos",
+            "device": "MAC-1", "evidence": "Windsurf.app"}).status_code == 200
+        # A tool whose presence IS use must be left alone: Claude.app has no
+        # purpose except the model.
+        assert client.post("/report", headers=AUTH, json={
+            "tool": "claude", "surface": "desktop", "os": "macos",
+            "device": "MAC-1", "evidence": "Claude.app"}).status_code == 200
+
+    by_tool = {r["tool"]: r for r in records}
+    assert by_tool["codeium"]["signal"] == "ambient"
+    assert by_tool["claude"]["signal"] == ""
+
+
+def test_a_scanner_that_classified_itself_is_not_second_guessed(managed):
+    """The scanner saw the DNS hostname; the receiver did not. An explicit
+    active on an editor - traffic to the completion backend - must survive,
+    or the receiver would quietly overwrite the only evidence of real use."""
+    from app.main import Finding, _PRESENCE_SURFACES
+
+    assert "desktop" in _PRESENCE_SURFACES
+    f = Finding(tool="codeium", surface="desktop", signal="active",
+                device="MAC-2")
+    # The ingest rule only fills a blank.
+    assert f.signal == "active"

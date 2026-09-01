@@ -22,6 +22,11 @@ Providers are deliberately few and honest about what each can do:
   fireflies   Fireflies.ai. One GraphQL query for the team's users, which
               also reports per-user usage (transcripts, minutes) - the
               rare vendor that hands over the usage half too.
+  devin       Cognition, covering Devin and Devin Desktop (the IDE that
+              was Codeium, then Windsurf). GET the org's members with a
+              service-user key. Teams reaches this too, not just
+              Enterprise - one of the few vendors here where that is
+              true - so the wizard does not send a Teams admin to Import.
 
 ChatGPT Business is the named absence: OpenAI exposes no admin API on
 that plan (SCIM and the Compliance API are Enterprise-only), so it is a
@@ -30,6 +35,7 @@ pretending a connector could exist.
 """
 
 import json
+import re
 import time
 
 import httpx
@@ -47,6 +53,11 @@ CURSOR_URL = "https://api.cursor.com/teams/members"
 CHATGPT_SCIM_URL = "https://api.openai.com/scim/v2"
 NOTION_SCIM_URL = "https://api.notion.com/scim/v2"
 GRAMMARLY_SCIM_URL = "https://app.grammarly.com/scim/v2"
+# The only vendor here needing an id in the path. %s is filled from the
+# operator's stored key, never from a request, and only after _DEVIN_ORG
+# has passed it - so the host and path are as fixed as every other URL.
+DEVIN_URL = "https://api.devin.ai/v3beta1/organizations/%s/members/users"
+_DEVIN_ORG = re.compile(r"^org-[A-Za-z0-9_-]{1,64}$")
 
 # What the portal needs to offer the wizard: which providers exist, what
 # each one's key looks like and where an admin creates it. Data, not
@@ -148,6 +159,27 @@ PROVIDERS = {
         "syncs": "members, admin flag, and per-user usage (transcripts, "
                  "minutes).",
     },
+    "devin": {
+        "label": "Devin / Devin Desktop (Cognition)",
+        # Teams genuinely reaches this - the docs give Teams its own API
+        # quick start, and a Teams org admin can mint a service user. That
+        # is worth stating plainly, because the assumption in this file
+        # everywhere else is that a member list means Enterprise.
+        "plan": "Teams or Enterprise. Both can create a service user and "
+                "read their own org's members; Enterprise additionally "
+                "reaches the cross-org endpoints this sync does not use.",
+        "key_hint": "Service user API key (starts with cog_), plus the "
+                    "organisation id, entered as one value: "
+                    "org-xxxx:cog_xxxx. An org admin creates both in the "
+                    "same place - Settings > Service Users - where the "
+                    "org id is shown and Create service user issues the "
+                    "key. The key is shown once. Member role is enough: "
+                    "this sync only reads. Windsurf licences live here "
+                    "too, since Cognition folded Windsurf into Devin.",
+        "syncs": "members and their role names. Seat tiers and usage are "
+                 "not on this endpoint - record tiers on the "
+                 "subscription.",
+    },
 }
 
 
@@ -220,10 +252,17 @@ MEMBER_APIS = {
         "how": "Admin API, GET /teams/members with a Team API key.",
     },
     "codeium": {
-        "api": "rest",
-        "plan": "Enterprise. Teams sees admin analytics in-app; the API and "
-                "SCIM are Enterprise.",
-        "how": "Windsurf enterprise API for team management and analytics.",
+        "api": "rest", "connector": "devin",
+        # This entry used to say Enterprise-only, which was true of the old
+        # Windsurf analytics API and stopped being true when Cognition moved
+        # the product onto Devin's platform: Teams has its own API quick
+        # start and can mint a service user. An operator on Teams was being
+        # told to go and do a CSV import they did not need.
+        "plan": "Teams or Enterprise, via Cognition's Devin API - the "
+                "licence is one and the same since the Windsurf "
+                "acquisition.",
+        "how": "GET /v3beta1/organizations/{org}/members/users with a "
+               "service-user key.",
     },
     "tabnine": {
         "api": "rest",
@@ -695,10 +734,112 @@ async def sync_grammarly(api_key: str) -> list[dict]:
     return await _scim_users(GRAMMARLY_SCIM_URL, api_key,
                              "the Grammarly SCIM API")
 
+
+async def sync_devin(api_key: str) -> list[dict]:
+    """The organisation's members via Cognition's Devin API, all pages.
+
+    Covers Devin and Devin Desktop - the IDE that shipped as Codeium, then
+    as Windsurf - because Cognition folded them onto one platform and one
+    licence. That is why the registry keeps them as one tool, and why this
+    is the connector the `codeium` id links to.
+
+    Teams reaches this, not only Enterprise: an org admin creates a service
+    user under Settings > Service Users and generates a `cog_` key. Member
+    role is enough, since this only reads.
+
+    The stored key is "org-xxxx:cog_xxxx" - the org id and the key, both
+    shown on that same settings page. Devin has no endpoint that resolves a
+    key to its own organisation, so the id has to be carried; it is checked
+    against _DEVIN_ORG before it goes anywhere near a URL.
+
+    Pagination is cursor-based: page with `after` until has_next_page is
+    false. Seat tiers and usage are not on this endpoint, so both stay
+    blank and tiers are recorded on the subscription.
+    """
+    org, _, key = api_key.partition(":")
+    org, key = org.strip(), key.strip()
+    if not key:
+        raise SyncError("the Devin key needs the organisation id with it, as "
+                        "org-xxxx:cog_xxxx - both are on Settings > Service "
+                        "Users")
+    if not _DEVIN_ORG.match(org):
+        raise SyncError("%r is not a Devin organisation id: it should look "
+                        "like org-xxxx, from Settings > Service Users"
+                        % org[:40])
+
+    members: list[dict] = []
+    after = ""
+    url = DEVIN_URL % org
+    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+        for _ in range(MAX_MEMBERS // 100 + 1):
+            params = {"first": "100"}
+            if after:
+                params["after"] = after
+            try:
+                r = await client.get(
+                    url, params=params,
+                    headers={"Authorization": "Bearer " + key})
+            except httpx.HTTPError as e:
+                raise SyncError("could not reach the Devin API (%s)"
+                                % type(e).__name__)
+            if r.status_code == 403:
+                # The generic 403 names an Anthropic scope, which would send
+                # a Devin operator looking in the wrong console.
+                raise SyncError("the Devin API answered 403: the service "
+                                "user needs the ViewOrgMembership permission "
+                                "on this organisation")
+            if r.status_code == 404:
+                raise SyncError("the Devin API answered 404: no organisation "
+                                "%s - check the id on Settings > Service "
+                                "Users" % org)
+            if r.status_code != 200:
+                raise _refusal(r.status_code, "the Devin API")
+            try:
+                body = r.json()
+            except json.JSONDecodeError:
+                raise SyncError("the Devin API answered 200, but not with "
+                                "JSON")
+            page = body.get("items") or []
+            for u in page:
+                email = str(u.get("email") or "").strip().lower()
+                if not email:
+                    # Service users are members of the org and have no
+                    # address. They hold no paid seat, so skipping them
+                    # keeps the count to people.
+                    continue
+                # Roles are assignments, not a field: a member can hold more
+                # than one. Join them so the portal shows what the vendor
+                # actually says rather than an arbitrary first pick.
+                roles = []
+                for a in u.get("role_assignments") or []:
+                    nm = str(((a or {}).get("role") or {}).get("role_name")
+                             or "").strip()
+                    if nm and nm not in roles:
+                        roles.append(nm)
+                members.append({
+                    "email": email,
+                    "name": str(u.get("name") or "")[:200],
+                    "role": ", ".join(roles)[:64],
+                    "seat_tier": "",
+                    "usage": {},
+                })
+                if len(members) > MAX_MEMBERS:
+                    raise SyncError("more than %d members: refusing rather "
+                                    "than store a partial member list as if "
+                                    "it were complete" % MAX_MEMBERS)
+            if not page or not body.get("has_next_page"):
+                return members
+            after = str(body.get("end_cursor") or "")
+            if not after:
+                # has_next_page with no cursor would loop on page one.
+                return members
+    raise SyncError("the Devin API kept paginating past %d members"
+                    % MAX_MEMBERS)
+
 SYNCERS = {"anthropic": sync_anthropic, "fireflies": sync_fireflies,
            "openai": sync_openai, "cursor": sync_cursor,
            "chatgpt": sync_chatgpt, "notion": sync_notion,
-           "grammarly": sync_grammarly}
+           "grammarly": sync_grammarly, "devin": sync_devin}
 
 
 # ----------------------------------------------------------------- fx --

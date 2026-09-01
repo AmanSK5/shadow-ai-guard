@@ -140,6 +140,9 @@ tools:
     approved: false
     added_by: manual
     domains: [cursor.com, cursor.sh, api2.cursor.sh]
+    # A VS Code fork: having it installed says an editor is installed.
+    form: ide
+    inference_domains: [api2.cursor.sh]
     app_names: ["Cursor.app", "Cursor"]
     bundle_ids: [com.todesktop.230313mzl4w4u92]
     cli:
@@ -182,18 +185,34 @@ tools:
       vscode: [continue.continue]
     risk_tier: medium
 
+  # One entry, three names. Codeium renamed itself Windsurf in 2025;
+  # Cognition then bought it and folded it into Devin, and windsurf.com
+  # now redirects to devin.ai/desktop. They are one product on one
+  # licence, so they stay one id - splitting them would split the counts
+  # the receiver's domain map exists to merge. The id stays `codeium`
+  # because it is the label on every finding already stored.
   - id: codeium
-    name: Codeium / Windsurf
-    vendor: Codeium
+    name: Windsurf / Devin (Cognition)
+    vendor: Cognition
     category: coding
     approved: false
     added_by: manual
-    domains: [codeium.com, windsurf.com, server.codeium.com, codeiumdata.com]
+    domains: [codeium.com, windsurf.com, server.codeium.com, codeiumdata.com,
+              devin.ai, app.devin.ai, api.devin.ai, cognition.ai]
+    # Also a VS Code fork. server.codeium.com is the completion backend the
+    # editor calls per keystroke and api.devin.ai is the agent API; the rest
+    # are the site, the account portal and the update/licence hosts, which
+    # the editor reaches on launch with the AI untouched. codeiumdata.com is
+    # deliberately NOT here: it looks like telemetry and we have not
+    # confirmed it carries completions, and over-claiming one of these turns
+    # "the app opened" into "someone used AI".
+    form: ide
+    inference_domains: [server.codeium.com, api.devin.ai]
     app_names: ["Windsurf.app", "Windsurf"]
     extension_ids:
       vscode: [codeium.codeium]
     risk_tier: high
-    email_senders: [codeium.com, windsurf.com]
+    email_senders: [codeium.com, windsurf.com, devin.ai, cognition.ai]
     bundle_ids: [com.codeium.windsurf]
     exe_names: [Windsurf.exe]
 

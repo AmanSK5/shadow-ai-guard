@@ -902,3 +902,52 @@ class TestLokiUrlScheme:
 
         with pytest.raises(SystemExit, match="LOKI_URL"):
             require_http_url("LOKI_URL", "file:///x")
+def test_an_editor_that_bundles_ai_is_installed_not_in_use():
+    """Windsurf/Devin Desktop and Cursor are VS Code forks: someone can run
+    one all day without ever invoking a model. Counting an inventory hit as
+    AI usage is how "23 tools in use" comes to mean "23 editors installed" -
+    the same mistake as identifying Notion AI by notion.so. The scanner marks
+    those findings ambient; nothing here should read them as use."""
+    g = derive.graph_from([
+        # Found by Intune, and reaching the update/telemetry host on launch.
+        finding(tool="codeium", surface="desktop", device="A",
+                source="intune_app", signal="ambient"),
+        finding(tool="codeium", surface="network", device="B",
+                source="sentinelone_dns", signal="ambient"),
+    ], {})
+
+    t = g["tools"]["codeium"]
+    assert t["usage"] == "installed"
+    assert len(t["devices"]) == 2      # the editor is on two machines
+    assert t["devices_active"] == []   # nobody has been shown using the AI
+
+
+def test_one_hit_on_the_completion_backend_makes_it_in_use():
+    """The whole point of splitting the domains: traffic to the host that
+    only answers when a model runs is the thing that turns "installed" into
+    "used", and it counts the machine it came from - not every machine the
+    editor happens to sit on."""
+    g = derive.graph_from([
+        finding(tool="codeium", surface="desktop", device="A",
+                source="intune_app", signal="ambient"),
+        finding(tool="codeium", surface="network", device="B",
+                source="sentinelone_dns", signal="active"),
+    ], {})
+
+    t = g["tools"]["codeium"]
+    assert t["usage"] == "in-use"
+    assert len(t["devices"]) == 2
+    assert t["devices_active"] == ["B"]
+
+
+def test_a_finding_with_no_signal_still_counts_as_use():
+    """Every finding written before the field existed, and every scanner not
+    yet upgraded, sends no signal at all. Reading that as ambient would empty
+    the in-use column across an entire estate on upgrade day, which looks
+    exactly like everyone stopping work."""
+    g = derive.graph_from([
+        finding(tool="claude", surface="desktop", device="A", source="jamf_app"),
+    ], {})
+
+    assert g["tools"]["claude"]["usage"] == "in-use"
+    assert g["tools"]["claude"]["devices_active"] == ["A"]

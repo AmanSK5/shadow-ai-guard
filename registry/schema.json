@@ -231,6 +231,21 @@
               "$ref": "#/$defs/relativePath"
             },
             "description": "MCP config paths that exist only on Windows, relative to the user profile."
+          },
+          "form": {
+            "type": "string",
+            "enum": [
+              "ide"
+            ],
+            "description": "The product is a general-purpose tool that BUNDLES AI rather than being one: an editor people use all day whether or not they ever invoke a model (Cursor, Windsurf/Devin Desktop - both VS Code forks). For these, an inventory finding proves the editor is installed, NOT that anyone sent code to a model, so presence alone is reported as installed rather than in use. Absent means presence does imply use, which is true of every other shape here - a Claude desktop app or an AI browser extension has no non-AI purpose. Only `ide` is defined because it is the only shape whose handling is built; do not invent values."
+          },
+          "inference_domains": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9.-]+$"
+            },
+            "description": "The subset of `domains` a host only reaches when a model is actually invoked - the completion/chat backend. Everything else in `domains` is reached on launch anyway for telemetry, updates and licence checks, so a hit there proves the product exists, not that the AI ran. Only meaningful with `form: ide`, where that difference decides installed vs in use; build.py requires every entry to also appear in `domains`. Leave empty when you cannot tell the two apart - an over-claimed inference domain silently turns telemetry into evidence of use."
           }
         }
       }

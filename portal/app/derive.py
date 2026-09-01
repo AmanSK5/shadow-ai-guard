@@ -516,6 +516,15 @@ def build(findings, domain_map=None, identity_map=None):
         "devices": set(), "identities": set(), "surfaces": set(),
         "accounts": set(), "findings": 0,
         "devices_by_surface": defaultdict(set),
+        # Devices where something proved the MODEL ran, as opposed to
+        # devices where the product was merely found installed. The two are
+        # the same set for every tool except a VS Code fork, where an
+        # inventory hit means an editor exists and nothing more. Kept as
+        # devices rather than a finding count because the question people
+        # ask of a licence is "how many of these seats are anyone using",
+        # which is a count of machines, not of DNS lookups.
+        "devices_active": set(),
+        "active_findings": 0,
     })
     # Where an AI tool reached, per the bridge detector. Not a tool inventory.
     bridges = defaultdict(lambda: {"devices": set(), "findings": 0})
@@ -575,6 +584,11 @@ def build(findings, domain_map=None, identity_map=None):
         t = tools[tool]
         t["surfaces"].add(surface)
         t["findings"] += 1
+        active = (f.get("signal") or "active") != "ambient"
+        if active:
+            t["active_findings"] += 1
+            if device:
+                t["devices_active"].add(device)
         if acct:
             t["accounts"].add(acct)
 
@@ -803,6 +817,20 @@ def _device_aliases(devices):
     # B -> C would drop A's findings onto a key that is itself merging
     # away. Rare, but cheap to refuse.
     return {b: c for b, c in out.items() if c not in out}
+
+
+# in-use  something proved a model ran: an account, a sign-in, an MCP config,
+#         or DNS to the completion backend.
+# installed  the product was only ever found sitting on disk. Reachable only
+#         for a registry entry marked `form: ide` - a VS Code fork, useful
+#         all day without calling a model - so every other tool is in-use the
+#         moment it is seen at all, exactly as before.
+#
+# The distinction is what stops "23 tools in use" quietly meaning "23 editors
+# installed", and it is the third column the Budget view needs: seats paid
+# for, seats installed, seats anyone actually used.
+def tool_usage(t) -> str:
+    return "in-use" if t.get("active_findings") else "installed"
 
 
 def jsonable(d):
@@ -1126,6 +1154,7 @@ def graph_from(findings, domain_map=None, identity_map=None, hours=168,
         "identities": {k: jsonable(v) for k, v in identities.items()},
         "tools": {
             k: dict(jsonable(v),
+                    usage=tool_usage(v),
                     devices_by_surface={s2: sorted(d2) for s2, d2
                                         in v["devices_by_surface"].items()})
             for k, v in tools.items()

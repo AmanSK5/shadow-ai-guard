@@ -333,6 +333,11 @@ if REQUIRE_DEVICE_CREDENTIALS and not MANAGED_MODE:
 # a system daemon. It is deliberately distinct from "browser", which means the
 # extension saw an actual page load.
 VALID_SURFACES = {"browser", "network", "cli", "ide", "desktop", "mcp", "cloud"}
+# Whether a finding shows a model ran ("active") or only that the product
+# is installed ("ambient"). Bounded like every other label. Findings from
+# before 0.21 carry neither, and "" is read as active downstream - the
+# meaning they were reported with.
+VALID_SIGNALS = {"active", "ambient"}
 VALID_SEVERITIES = {"info", "warn"}
 # Bounded set: safe as a Loki stream label and a Prometheus metric label.
 # Sources that pre-date the field (older browser extensions) report "unknown".
@@ -482,6 +487,11 @@ class Finding(BaseModel):
     # cannot exclude bridge targets. Empty for pre-0.1.4 lines and for
     # extension flags via /flag.
     source: str = Field(default="", max_length=64)
+    # active | ambient. Only an `ide` registry entry (a VS Code fork, where
+    # the editor is useful without ever calling a model) can report ambient;
+    # every other tool's presence is use. Empty from senders that pre-date
+    # the field, which reads as active - what they always meant.
+    signal: str = Field(default="", max_length=16)
     device_name: str = Field(default="", max_length=256)
     risk_tier: str = Field(default="", max_length=32)
     # How many, and of what. The unit differs per source (sign-ins for Entra,
@@ -702,6 +712,28 @@ def _collector_rows(tools: list[dict]) -> dict:
 # Unknown names pass through untouched. A tool the registry has never heard of
 # is a registry gap worth seeing, not something to quietly fold into a
 # neighbour.
+# Tool ids the registry marks `form: ide` - an editor that bundles AI, where
+# finding the app installed proves an editor is installed and nothing more.
+# The scanner classifies its own findings (it sees the DNS hostname next to
+# the registry entry), but the three endpoint collectors report a plain
+# `surface: desktop` and know nothing about forms. Rather than teach a bash
+# script, a PowerShell script and a Linux script the same rule - and then
+# need all three upgraded before it takes effect - the receiver fills it in
+# on the way past, the same place and for the same reason it already
+# rewrites a hostname to a tool id.
+def _build_ide_tools(reg: dict | None) -> set[str]:
+    if not reg:
+        return set()
+    return {t.get("id") for t in reg.get("tools", [])
+            if t.get("id") and t.get("form") == "ide"}
+
+
+# Surfaces that only ever prove the product is on the machine. `ide` is not
+# here: that surface is an AI EXTENSION someone installed into an editor,
+# which is a deliberate choice to add AI rather than an editor existing.
+_PRESENCE_SURFACES = {"desktop"}
+
+
 def _build_domain_map(reg: dict | None) -> dict[str, str]:
     if not reg:
         return {}
@@ -721,15 +753,17 @@ def _refresh_domain_map():
     domain defined in the portal normalizes findings from that moment and
     an id defined in the portal stops its MCP namesake becoming a
     candidate."""
-    global _DOMAIN_TO_TOOL, _REGISTRY_IDS
+    global _DOMAIN_TO_TOOL, _REGISTRY_IDS, _IDE_TOOLS
     reg = _merged_registry()
     _DOMAIN_TO_TOOL = _build_domain_map(reg)
+    _IDE_TOOLS = _build_ide_tools(reg)
     _REGISTRY_IDS = {t.get("id") for t in (reg or {}).get("tools", [])
                      if t.get("id")}
 
 
 _DOMAIN_TO_TOOL: dict[str, str] = {}
 _REGISTRY_IDS: set[str] = set()
+_IDE_TOOLS: set[str] = set()
 _refresh_domain_map()  # also primes the tools gauge at boot
 
 
@@ -3301,6 +3335,8 @@ async def report(f: Finding, request: Request, authorization: str = Header(defau
         f.severity = "warn"
     if f.os not in VALID_OS:
         f.os = "unknown"
+    if f.signal and f.signal not in VALID_SIGNALS:
+        f.signal = ""
     if not f.reported_at:
         f.reported_at = datetime.now(timezone.utc).isoformat()
 
@@ -3314,6 +3350,13 @@ async def report(f: Finding, request: Request, authorization: str = Header(defau
             f.evidence = "site: %s" % f.tool
         TOOL_NORMALISED.labels(surface=f.surface).inc()
         f.tool = canonical
+
+    # Filled in only where the sender said nothing. A scanner that classified
+    # the finding itself is never second-guessed here: it saw the hostname,
+    # which is the one thing this cannot. Applied AFTER the rewrite above, so
+    # it is matching a registry id rather than whatever name arrived.
+    if not f.signal and f.surface in _PRESENCE_SURFACES and f.tool in _IDE_TOOLS:
+        f.signal = "ambient"
 
     # MCP server names ride in as evidence; unknown ones join the
     # candidates queue (managed mode only - the function gates itself).

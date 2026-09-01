@@ -75,6 +75,26 @@ def validate(registry, schema):
                 print(f"domain {d} claimed by both {seen[d]} and {t['id']}", file=sys.stderr)
                 ok = False
             seen[d] = t["id"]
+    # inference_domains names the hosts that are only reached when a model
+    # actually runs, so it has to be a subset of the domains the tool is
+    # detected on. One that is not in `domains` is either a typo or a host
+    # nothing matches, and both fail silently: the tool would simply never
+    # be credited with being used. JSON Schema cannot express a subset, so
+    # it is checked here.
+    for t in registry.get("tools", []):
+        domains = set(t.get("domains", []))
+        for d in t.get("inference_domains", []):
+            if d not in domains:
+                print(f"{t['id']}: inference_domains entry {d} is not in "
+                      f"domains", file=sys.stderr)
+                ok = False
+        # The reverse pairing: inference_domains only changes how a finding
+        # reads for a tool whose presence does not imply use. On anything
+        # else it is inert, and inert configuration reads as working.
+        if t.get("inference_domains") and t.get("form") != "ide":
+            print(f"{t['id']}: inference_domains needs form: ide - it has no "
+                  f"effect on any other shape", file=sys.stderr)
+            ok = False
     return ok
 
 
@@ -111,6 +131,10 @@ def _scanner_shape(registry) -> dict:
                 if b in ("chrome", "edge")
             },
             "mcp_identifiers": t.get("mcp_identifiers", []),
+            # The scanner resolves a DNS hit to a domain, so it is the only
+            # place that can say whether the hit means the model ran.
+            "form": t.get("form", ""),
+            "inference_domains": t.get("inference_domains", []),
             "notes": t.get("notes", ""),
         }
         for t in tools

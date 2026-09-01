@@ -64,7 +64,37 @@ class AIService:
     desktop_apps: dict = field(default_factory=dict)
     browser_extensions: dict = field(default_factory=dict)
     mcp_identifiers: list[str] = field(default_factory=list)
+
+    # "ide" marks a product that is an editor first and bundles AI second -
+    # a VS Code fork. Finding it installed proves an editor is installed,
+    # which is not the same claim as someone having used a model. Empty for
+    # every other shape, where presence does imply use.
+    form: str = ""
+    # The subset of `domains` reached only when a model actually runs. The
+    # rest of `domains` is reached on launch anyway (telemetry, updates,
+    # licence), so for an `ide` the two mean different things.
+    inference_domains: list[str] = field(default_factory=list)
     notes: str = ""
+
+    def domain_signal(self, host: str) -> str:
+        """What a DNS or network hit on `host` proves about this tool.
+
+        "active" - a model ran. "ambient" - the product is present, and
+        nothing more. Only an `ide` can produce "ambient" from a domain: for
+        everything else the domain IS the product, so any hit is use.
+
+        An `ide` with no inference_domains recorded returns "ambient" for
+        every host, which is the honest answer - we cannot tell its
+        telemetry from its completions, so we do not claim it is use.
+        """
+        if self.form != "ide":
+            return "active"
+        h = (host or "").lower().strip(".")
+        for d in self.inference_domains:
+            d = d.lower()
+            if h == d or h.endswith("." + d):
+                return "active"
+        return "ambient"
 
     @property
     def label(self) -> str:
@@ -202,6 +232,8 @@ class Registry:
                         if browser in ("chrome", "edge")
                     },
                     "mcp_identifiers": tool.get("mcp_identifiers", []),
+                    "form": tool.get("form", ""),
+                    "inference_domains": tool.get("inference_domains", []),
                     "notes": tool.get("notes", ""),
                 }
             )
@@ -228,6 +260,8 @@ class Registry:
                 desktop_apps=entry.get("desktop_apps", {}),
                 browser_extensions=entry.get("browser_extensions", {}),
                 mcp_identifiers=entry.get("mcp_identifiers", []),
+                form=entry.get("form", ""),
+                inference_domains=entry.get("inference_domains", []),
                 notes=entry.get("notes", ""),
             )
             self.services.append(svc)
