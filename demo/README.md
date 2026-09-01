@@ -13,7 +13,13 @@ before they reach an AI tool.
 ## Run it
 
 Requires Docker with Compose v2 (`docker compose`, not the legacy
-`docker-compose`), and ports 3000, 8080, 3100 and 8090 free.
+`docker-compose`), and these ports free: **8091** (the portal), 8080 (the
+receiver), 3000 (Grafana), 3100 (the log store), 8090 (the paste guard
+page), 8025 (the mailbox) and 8092 (the stand-in identity provider).
+
+The portal was missing from that list for a while, which is the worst one to
+leave out: the address the instructions send you to is the address that
+quietly fails.
 
 From the repository root:
 

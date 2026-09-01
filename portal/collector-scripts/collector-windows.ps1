@@ -6,7 +6,8 @@
   reports which account domain each tool is signed into, plus installed IDE
   extensions and MCP server configurations. Which identifiers to look for
   come from the receiver's /registry/collector at runtime, so a new AI tool
-  is a registry merge request rather than a script edit plus an Intune
+  is a registry entry - defined in the portal, or by merge request - rather
+  than a script edit plus an Intune
   re-paste. The Windows sibling of
   endpoint/macos/ai-guard-collector.sh - same finding schema, same receiver,
   same design rules learned there:

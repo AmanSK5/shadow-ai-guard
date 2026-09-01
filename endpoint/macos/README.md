@@ -6,8 +6,9 @@ extensions, AI desktop apps, local runtimes and MCP server configurations.
 Runs as root via your MDM; resolves the logged-in console user itself.
 
 Which tools to look for is fetched from the receiver's `/registry/collector`
-endpoint at runtime. Adding a new AI tool is a registry merge request, not a
-change to this script.
+endpoint at runtime. Adding a new AI tool is a registry entry - defined in the
+portal, or by merge request against registry.yaml - not a change to this
+script.
 
 **EDR note:** the collector runs as root, reads files in user home directories,
 and POSTs data to an external URL. EDR tools may flag this as suspicious; add

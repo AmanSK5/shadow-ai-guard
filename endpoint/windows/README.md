@@ -10,7 +10,8 @@ scanning.
 
 Which tools to look for is fetched from the receiver's
 `/registry/collector` endpoint at runtime. Adding a new AI tool is a
-registry merge request, not a script edit plus an Intune re-paste.
+registry entry - defined in the portal, or by merge request against
+registry.yaml - not a script edit plus an Intune re-paste.
 
 **EDR note:** the collector runs as SYSTEM, reads files in user home
 directories, and POSTs data to an external URL. EDR tools may flag this as

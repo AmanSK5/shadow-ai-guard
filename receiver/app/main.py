@@ -791,7 +791,8 @@ def registry(request: Request, authorization: str = Header(default="")):
 def registry_collector(request: Request, authorization: str = Header(default="")):
     """cli/ide/desktop/mcp identifiers for the endpoint collectors.
 
-    Served so a new AI tool is a registry merge request rather than an edit
+    Served so a new AI tool is a registry entry - defined in the portal, or
+    by merge request - rather than an edit
     to every collector script plus an MDM re-paste on each platform.
 
     Deployment config rides in the same response under "config" when the
