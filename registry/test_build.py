@@ -80,10 +80,12 @@ def test_the_vs_code_forks_are_marked_and_their_backends_named():
                          ("codeium", "server.codeium.com")):
         t = _tool(registry, tid)
         assert t.get("form") == "ide", tid
-        assert backend in t.get("inference_domains", []), tid
+        # Set algebra rather than `x in y`: these are host lists, and the
+        # membership form reads to CodeQL as a URL substring check.
+        inference = set(t.get("inference_domains", []))
+        assert {backend} <= inference, tid
         # And the hosts an editor reaches on launch anyway must NOT be there.
-        assert "cursor.com" not in t.get("inference_domains", [])
-        assert "windsurf.com" not in t.get("inference_domains", [])
+        assert inference.isdisjoint({"cursor.com", "windsurf.com"}), tid
 
 
 def test_the_scanner_view_carries_the_distinction():
@@ -105,5 +107,5 @@ def test_the_scanner_view_carries_the_distinction():
         (tmp / "scanner.json").read_text())["services"]}
     ws = services["Windsurf / Devin (Cognition)"]
     assert ws["form"] == "ide"
-    assert "server.codeium.com" in ws["inference_domains"]
+    assert {"server.codeium.com"} <= set(ws["inference_domains"])
     assert services["Claude"]["form"] == ""
