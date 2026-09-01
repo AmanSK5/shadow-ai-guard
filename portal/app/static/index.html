@@ -1383,6 +1383,11 @@ async function load(force) {
   // seconds on a large estate.
   drawNav();
   app.innerHTML = '<p class="lede">Reading findings…</p>';
+  // Only the FIRST read carries it. The server drops every derived view
+  // and the findings behind them on one refresh, so the calls after this
+  // rebuild from that same fresh read rather than each throwing it away
+  // and fetching again - which is what four ?refresh=true in a row used
+  // to do, at one full read of the log store apiece.
   const q = force ? '?refresh=true' : '';
   // Refresh must clear the views that read a second endpoint too, or the
   // button refreshes some of the page and silently not the rest.
@@ -1406,11 +1411,11 @@ async function load(force) {
     const gr = await fetch('/api/graph' + q);
     if (!gr.ok) throw new Error((await gr.json()).detail || gr.statusText);
     G = await gr.json();
-    const sr = await fetch('/api/status' + q);
+    const sr = await fetch('/api/status');
     if (sr.ok) S = await sr.json();
     // Fetched here rather than lazily, because the overview may draw a paste
     // guard widget and a widget that fetches on render would flash empty.
-    const pr = await fetch('/api/paste-guard' + q);
+    const pr = await fetch('/api/paste-guard');
     if (pr.ok) PG = await pr.json();
     // The recorded answers to findings (acknowledged / accepted), managed
     // mode only. Failure leaves PSTAT null and every row simply reads open.
@@ -1442,7 +1447,7 @@ async function load(force) {
     // Same again for the review queue: it draws from the register, and in
     // managed mode from the discovery candidates queue too.
     if ((CFG.overview_widgets || []).some(w => w.kind === 'review_queue')) {
-      const rr = await fetch('/api/register' + q);
+      const rr = await fetch('/api/register');
       if (rr.ok) REG = await rr.json();
       if (CFG.managed && CFG.managed.enabled && AUTH && AUTH.mode === 'login') {
         const cq = await mfetch('/api/candidates');

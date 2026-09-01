@@ -732,16 +732,31 @@ def _cached(key, hours, builder):
         return value, at
 
 
-def _invalidate_derived(key):
-    """Drop a derived view AND the findings behind it.
+# Every view derived from one findings read. A refresh drops all of them,
+# not just the one being asked for - see _invalidate_all.
+_DERIVED_KEYS = ("graph", "status", "paste_guard", "register")
 
-    Refresh means "go and look again". Dropping only the derived value
-    would rebuild it from a findings list that is still cached, so the
-    button would redraw the same numbers and look like it had worked -
+
+def _invalidate_all():
+    """Everything a refresh must drop: the shared findings, and every view
+    derived from them.
+
+    All of them, on any one of them, because a refresh is one action on one
+    page rather than four independent requests. Dropping only the view being
+    asked for would rebuild it from a findings list that is still cached, so
+    the button would redraw the same numbers and look like it had worked -
     the one outcome a refresh must never produce.
+
+    And all of them AT ONCE, so the front end only has to say `refresh=true`
+    once. Saying it on each of the four - which is what it used to do -
+    meant each request threw away the findings the previous one had just
+    fetched, so one click cost four full reads of identical data. On an
+    estate where a read takes seconds, that is the whole of the delay this
+    was supposed to remove.
     """
-    _cache.pop(key, None)
     _cache.pop("findings", None)
+    for key in _DERIVED_KEYS:
+        _cache.pop(key, None)
 
 
 def _findings_cached(hours, request=None):
@@ -1064,7 +1079,7 @@ def graph(request: Request,
     indistinguishable from a portal that is not working."""
     hours = hours or LOOKBACK_HOURS
     if refresh:
-        _invalidate_derived("graph")
+        _invalidate_all()
     def build():
         findings = _findings_cached(hours, request)
         reg = _registry(request)
@@ -1085,7 +1100,7 @@ def status(request: Request,
            _=Depends(require_auth)):
     hours = hours or LOOKBACK_HOURS
     if refresh:
-        _invalidate_derived("status")
+        _invalidate_all()
     def build():
         return derive.status_from(_findings_cached(hours, request))
 
@@ -1161,7 +1176,7 @@ def paste_guard_events(request: Request,
     """
     hours = hours or LOOKBACK_HOURS
     if refresh:
-        _invalidate_derived("paste_guard")
+        _invalidate_all()
 
     def build():
         findings = _findings_cached(hours, request)
@@ -1201,7 +1216,7 @@ def register(request: Request,
     """
     hours = hours or LOOKBACK_HOURS
     if refresh:
-        _invalidate_derived("register")
+        _invalidate_all()
 
     # Fetched outside the cached build: the unmatched section below needs it
     # on every request, and in managed mode it carries the portal-recorded

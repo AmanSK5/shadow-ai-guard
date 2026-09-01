@@ -1137,14 +1137,57 @@ def test_two_readers_at_once_produce_one_build():
     assert results == [{"v": "shared"}] * 4
 
 
-def test_refresh_drops_the_findings_behind_the_view():
-    """Refresh means go and look again. Dropping only the derived value
-    would rebuild it from a findings list that is still cached, so the
-    button would redraw identical numbers and look like it had worked."""
+def test_one_refresh_drops_every_view_and_the_findings_behind_them():
+    """Refresh means go and look again, for the whole page.
+
+    Dropping only the view being asked for would rebuild it from a findings
+    list that is still cached, so the button would redraw identical numbers
+    and look like it had worked. Dropping ALL of them means the front end
+    only has to say refresh once - and it has to, because saying it on each
+    of the four made every request throw away the findings the previous one
+    had just fetched, which cost four reads of identical data for one click.
+    """
     from app import main
 
-    main._cache["graph"] = {"value": 1, "at": time.time(), "hours": 168}
-    main._cache["findings"] = {"value": [], "at": time.time(), "hours": 168}
-    main._invalidate_derived("graph")
-    assert "graph" not in main._cache
+    now = time.time()
+    for key in main._DERIVED_KEYS + ("findings",):
+        main._cache[key] = {"value": 1, "at": now, "hours": 168}
+
+    main._invalidate_all()
+
+    assert not [k for k in main._DERIVED_KEYS if k in main._cache]
     assert "findings" not in main._cache
+
+
+def test_a_refresh_burst_reads_the_log_store_once():
+    """The regression this exists to stop.
+
+    One click fetches graph, status, paste-guard and register. Only the
+    first carries refresh; the rest must rebuild from the findings it
+    fetched, not go back to the log store. Once a read costs seconds, the
+    difference between one and four is the difference between a portal
+    people use and one they wait for.
+    """
+    from app import main
+
+    reads = {"n": 0}
+
+    def fake_findings(hours, request=None):
+        reads["n"] += 1
+        return []
+
+    real = main._findings
+    main._findings = fake_findings
+    try:
+        main._invalidate_all()
+        # graph arrives with refresh=true and clears everything.
+        main._invalidate_all()
+        main._findings_cached(168)          # graph
+        main._findings_cached(168)          # status
+        main._findings_cached(168)          # paste-guard
+        main._findings_cached(168)          # register
+    finally:
+        main._findings = real
+        main._invalidate_all()
+
+    assert reads["n"] == 1, "%d reads for one refresh" % reads["n"]
