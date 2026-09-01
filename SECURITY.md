@@ -100,15 +100,61 @@ cannot make an owner, so losing the last one could not be undone from
 inside at all. Password resets revoke the sessions the old password minted,
 and every account action lands in the receiver's event log with who did it.
 
-Sign-in can also be federated to **Microsoft Entra**, which is beta: it has
-not yet been run against a real app registration. It authenticates, it does
-not provision. An account must already exist with the matching email
-address; the first successful sign-in binds that account to the tenant and
-subject GUID permanently, and a later attempt to bind it to a different
-federated identity is refused - rebinding is how an address change would
-otherwise hand somebody else's account away. Unbinding is deliberate,
-separate, and subject to the same rank rule. The account's password keeps
-working unless you remove it.
+Sign-in can also be federated to **Microsoft Entra**. Still beta - it has
+been run end to end against one real tenant, which is not the same as
+proven. It authenticates, it does not provision. An account must already
+exist with the matching email address; the first successful sign-in binds
+that account to the tenant and subject GUID permanently, and a later attempt
+to bind it to a different federated identity is refused - rebinding is how
+an address change would otherwise hand somebody else's account away.
+Unbinding is deliberate, separate, and subject to the same rank rule. The
+account's password keeps working unless enforcement is on.
+
+**Freshness, not just validity.** The authorization request carries
+`prompt=select_account` so the provider always shows the chooser, and
+`max_age` so it is asked how recently the person authenticated. The callback
+then **verifies `auth_time`** rather than trusting that the request was
+honoured, within 120 seconds of skew, and refuses a token that arrives
+without the claim at all. This is the difference between a fresh token and a
+fresh person: a provider may mint a new ID token off a months-old browser
+session, and the token's expiry attests to the token. Without the check, a
+link into the portal opened on a machine already signed into the tenant
+would admit whoever is sitting at it, silently. Twelve hours by default,
+`0` for every time, and up to 720 (the portal's dropdown stops at seven
+days). A shorter sign-in frequency in your
+conditional access still wins; this is a floor.
+
+**Enforcement and the break-glass account.** `sso_enforce` makes a correct
+password insufficient for every account but one, which is how a tenant's
+MFA and conditional access end up in front of this portal rather than beside
+it. The exception is the account the setup code created, marked at creation
+rather than nominated later, and neither deletable nor demotable while
+enforcement is on: its password is the way back in when the identity
+provider is unreachable, so it belongs in a password manager and nowhere
+else. Turning enforcement on requires that an owner has **completed** a
+federated sign-in first, so the switch cannot be thrown from a configuration
+that has never actually worked.
+
+The enforcement check runs **after** the password verifies. The other order
+is the tempting one and it leaks: an unauthenticated caller could walk a
+list of usernames and read off which one is exempt, because only that one
+would answer differently. A wrong password answers exactly as it did before
+the feature existed, and break-glass sign-ins get their own line in the
+audit trail.
+
+**Invite mail.** With a relay configured, creating an account emails the
+person to say it exists. The message deliberately carries nothing worth
+intercepting: no token, no password, no link that grants anything - so
+intercepting one gains the reader the knowledge that an account exists and
+nothing else. The relay credential is stored like the other integration
+secrets described below: recoverable, because the receiver must present it
+outward, masked in the UI and in the settings API. Prefer setting it from a
+Kubernetes Secret (`managed.smtp.password.existingSecret`) so it never
+enters the database at all. The invite body is editable, and the portal
+warns when it links somewhere other than your own portal - mail from a
+security tool telling staff to go and sign in is already the shape of a
+phishing message, and a link elsewhere is what would make a real invite
+indistinguishable from a forged one.
 
 A word on what the state DB holds, because it changed in 0.9.8. **Fleet
 credentials** - enrollment tokens, device credentials, sessions, the admin

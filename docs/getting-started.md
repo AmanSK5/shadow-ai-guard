@@ -71,6 +71,12 @@ deployment's **owner** - the role that cannot be locked out, because an admin
 cannot create another one. Every account after it is added from inside the
 portal.
 
+This account is also the deployment's break-glass one. If you later require
+single sign-on, every other account has to come through the identity
+provider and this one keeps its password, so it is what gets you back in
+when Entra is unreachable. Store that password where you can reach it
+without this portal.
+
 ## 3. Follow the wizard
 
 The portal opens on a first-run wizard: seven steps, one screen at a time,
@@ -79,6 +85,11 @@ optional. Only two are required - the receiver URL and corporate domains -
 because a deployment missing either runs wrong rather than not running. Once
 both are in it will tell you the deployment can go out. You can leave at any
 point and pick it up again under Settings > Getting started.
+
+Finishing or skipping only stops the wizard opening; it does not mean the
+deployment is configured. The bell in the header keeps a live list of what
+is still outstanding and what each gap makes the platform get wrong, so
+skipping the required steps is visible rather than silent.
 
 1. **Public receiver URL** - the URL your laptops and servers can reach the
    receiver on from outside the cluster. This gets baked into every download,
@@ -163,11 +174,30 @@ Everything below is optional and independent. Add them in any order.
   an auditor or an exec. Nobody can act on an account that outranks them or
   grant a role above their own, and the last owner cannot be removed. Every
   change anyone makes lands in the audit trail under Diagnostics.
+- **Telling people about it**: with a mail relay configured, creating an
+  account emails the person to say it exists. Settings > Account has a
+  wizard for the relay that knows the common providers and fills in the
+  host, port and encryption for the one you pick, plus a test send that
+  reports what the relay actually said. Configure it whenever - one button
+  sends the invites that were missed before you got round to it. Nothing
+  about account creation depends on it working.
 - **Single sign-on** (beta): the same tab federates sign-in to Microsoft
-  Entra. It authenticates rather than provisions - create the account first
-  with the person's work address, and their first Entra sign-in binds it to
-  that identity for good. It has not yet been run against a real app
-  registration, so pilot it on one account before moving anybody across.
+  Entra, in six steps that each check something against the provider rather
+  than trusting what was typed. It authenticates rather than provisions -
+  create the account first with the person's work address, and their first
+  Entra sign-in binds it to that identity for good. It has been run end to
+  end against one real app registration, which is not the same as proven,
+  so pilot it on one account before moving anybody across.
+
+  Once an owner has signed in that way, you can **require** it, which puts
+  your tenant's MFA and conditional access in front of the portal. One
+  account stays exempt: the one the setup code created, which keeps its
+  password as the way back in if the identity provider is unreachable. Put
+  that password somewhere you can reach without this portal. You can also
+  set how recently somebody must have signed in at Entra before the portal
+  accepts it - twelve hours by default, and checked rather than merely
+  asked for, so a browser already signed into the tenant does not let
+  whoever is sitting at it straight in.
 - **Notifications**: set a webhook URL in Settings and the receiver posts to
   Slack (or anything webhook-compatible) the moment discovery finds a new
   tool. The portal can also send a weekly digest of the estate; see the

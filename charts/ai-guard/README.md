@@ -151,6 +151,13 @@ the portal.
 | `managed.enabled` | `true` | the default since 0.9.9: device enrollment, accounts, central settings and a fleet inventory, backed by SQLite on a PVC. Requires `replicaCount: 1` (the chart refuses otherwise) and switches the Deployment to `Recreate`. Set `false` for classic mode |
 | `managed.adminToken.value` | `""` | the optional API credential for `/admin/*`: automation, break-glass recovery, and the portal's own service reads (viewer accounts reading a wizard-saved log store, and the digest task). Set it if you use viewer accounts or the digest; leaving both unset means no admin secret exists at all |
 | `managed.adminToken.existingSecret` | `""` | a Secret you created yourself, key `adminToken` |
+| `managed.smtp.host` | `""` | outbound relay, for telling somebody an account has been made for them. An in-cluster relay is normally its service DNS name (`postfix.mail.svc.cluster.local`), port 25, security `none` - it decides what to accept by the sending pod rather than by a credential |
+| `managed.smtp.port` | `""` | blank means 587, or 465 when security is `tls` |
+| `managed.smtp.security` | `""` | `starttls` (the default), `tls` or `none` |
+| `managed.smtp.username` | `""` | blank for a relay that authenticates by source rather than by credential |
+| `managed.smtp.from` | `""` | what the mail says it is from |
+| `managed.smtp.password.value` | `""` | the relay password, if it wants one |
+| `managed.smtp.password.existingSecret` | `""` | read it from a Secret instead, key `managed.smtp.password.key` (default `password`). Usually the right answer: whatever else in this cluster sends mail is already reading one, and pointing at it beats asking somebody to read it back out and paste it into a web form. Mounted into the receiver as `SMTP_PASSWORD`, so the value itself never enters the state DB |
 | `managed.persistence.size` | `1Gi` | the state PVC. Annotated `helm.sh/resource-policy: keep`: uninstalling the chart does not unenroll the fleet |
 | `managed.persistence.existingClaim` | `""` | use a PVC you created yourself |
 | `managed.requireDeviceCredentials` | `false` | the shared token's off-switch, once every surface has enrolled: ingest accepts device credentials only and refuses the shared token with a 401 that says "enroll". Flip it back and unenrolled machines report again |
