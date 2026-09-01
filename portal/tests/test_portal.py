@@ -11,10 +11,13 @@ during the build, or to a property the design depends on.
 """
 
 import os
+import time
 
 # PORTAL_AUTH must be set before the app module is imported: main.py refuses to
 # start without authentication, and that refusal happens at module level.
 os.environ.setdefault("PORTAL_AUTH", "none")
+
+import pytest
 
 from app import derive
 
@@ -951,3 +954,197 @@ def test_a_finding_with_no_signal_still_counts_as_use():
 
     assert g["tools"]["claude"]["usage"] == "in-use"
     assert g["tools"]["claude"]["devices_active"] == ["A"]
+
+
+# ------------------------------------------------- device alias matching --
+#
+# `_device_aliases` used to compare every device key against every other,
+# which was 99% of a graph build and quadratic in device count: 1.2s at four
+# thousand devices, 33s at twenty thousand, 113s at forty. It is now an
+# indexed lookup. These tests exist so that stays true AND stays identical -
+# a faster function that merges a different set of machines would be worse
+# than the slow one.
+
+
+def _aliases_by_definition(devices):
+    """The relation `_device_aliases` computes, written the obvious way.
+
+    This IS the specification: a bare key merges into another key that is
+    the same string with a prefix and a separator in front. Deliberately
+    the slow pairwise form, so it can be read and believed. The shipped
+    implementation has to agree with it on every input.
+    """
+    keys = [k for k in devices if k]
+    lowered = {k: k.lower() for k in keys}
+    out, ambiguous = {}, set()
+    for bare in keys:
+        low = lowered[bare]
+        if len(low) < derive._MIN_ALIAS_KEY:
+            continue
+        for other in keys:
+            if other == bare:
+                continue
+            o = lowered[other]
+            if len(o) <= len(low):
+                continue
+            if any(o.endswith(sep + low) for sep in derive._ALIAS_SEPARATORS):
+                if bare in out:
+                    ambiguous.add(bare)
+                out[bare] = other
+    for k in ambiguous:
+        out.pop(k, None)
+    return {b: c for b, c in out.items() if c not in out}
+
+
+@pytest.mark.parametrize("keys,why", [
+    (["SERIAL1234", "LAP-SERIAL1234", "MAC-SERIAL1234"],
+     "ambiguous: the tail of two prefixed keys, so neither merge is safe"),
+    (["ABCDEF", "LAP-ABCDEF", "SITE-LAP-ABCDEF"],
+     "a chain: merging A into B while B merges into C would strand A"),
+    (["abcdef", "LAP-ABCDEF"], "case differs between sources"),
+    (["SHORT", "LAP-SHORT"], "under the minimum: too short to be an identifier"),
+    (["-ABCDEF", "ABCDEF"], "a separator with nothing in front of it"),
+    (["", "LAP-ABCDEF", "ABCDEF"], "an empty key among real ones"),
+    (["ASSET.ABC123", "ABC123", "WS_ABC123X"], "mixed separators"),
+])
+def test_the_alias_matcher_agrees_with_its_definition_on_hard_cases(keys, why):
+    devices = {k: {} for k in keys}
+    assert derive._device_aliases(devices) == _aliases_by_definition(devices), why
+
+
+def test_the_alias_matcher_agrees_with_its_definition_on_random_estates():
+    """Property test rather than examples. The rewrite is only worth having
+    if it is indistinguishable from the definition, and the way to believe
+    that is to try inputs nobody thought about."""
+    import random
+    import string
+
+    rng = random.Random(20260901)
+    seps = derive._ALIAS_SEPARATORS
+    for _ in range(300):
+        keys = set()
+        for _ in range(rng.randint(4, 90)):
+            core = "".join(rng.choice(string.ascii_uppercase + string.digits)
+                           for _ in range(rng.randint(3, 9)))
+            roll = rng.random()
+            if roll < 0.45:
+                keys.add(rng.choice(["LAP", "MAC", "WS", "ASSET", "IT"])
+                         + rng.choice(seps) + core)
+            elif roll < 0.6:
+                keys.add(core.lower())
+            else:
+                keys.add(core)
+        devices = {k: {} for k in keys}
+        assert derive._device_aliases(devices) == _aliases_by_definition(devices), (
+            "diverged on %r" % sorted(keys))
+
+
+def test_a_large_estate_does_not_take_quadratic_time():
+    """The guard against the regression that caused this.
+
+    Twenty thousand device keys took the pairwise form roughly thirty
+    seconds; indexed it is milliseconds. The bound is deliberately loose -
+    this is here to catch a return to quadratic, which would miss it by two
+    orders of magnitude, not to police a percentage drift on a shared CI
+    runner.
+    """
+    import time
+
+    devices = {}
+    for i in range(20_000):
+        devices["SERIAL%06d" % i] = {}
+        if i % 3 == 0:
+            devices["LAP-SERIAL%06d" % i] = {}
+
+    started = time.perf_counter()
+    out = derive._device_aliases(devices)
+    elapsed = time.perf_counter() - started
+
+    # Every third key is a bare form with exactly one prefixed partner.
+    assert len(out) == len(range(0, 20_000, 3))
+    assert elapsed < 5.0, "took %.1fs: the pairwise scan is back" % elapsed
+
+
+# --------------------------------------------------------- the graph cache --
+
+
+def test_a_slow_build_is_still_cached_afterwards():
+    """The cache used to stamp an entry with the time the build STARTED, so
+    an entry was born as old as the build that made it. On any deployment
+    where a build took longer than CACHE_TTL that made it expired on
+    arrival: the cache returned nothing, ever, and every page load paid full
+    cost. The symptom is a portal that is uniformly slow rather than slow
+    once, which reads like a sizing problem and is not one."""
+    from app import main
+
+    clock = {"t": 1000.0}
+    real_time = main.time.time
+    main.time.time = lambda: clock["t"]
+    builds = {"n": 0}
+
+    def slow_build():
+        builds["n"] += 1
+        clock["t"] += 40.0          # a build longer than the 30s TTL
+        return {"v": builds["n"]}
+
+    try:
+        main._cache.pop("graph", None)
+        main._cached("graph", 168, slow_build)
+        clock["t"] += 1             # a second later, somebody loads the page
+        value, _ = main._cached("graph", 168, slow_build)
+    finally:
+        main.time.time = real_time
+        main._cache.pop("graph", None)
+
+    assert builds["n"] == 1, "rebuilt a value it had just finished building"
+    assert value == {"v": 1}
+
+
+def test_two_readers_at_once_produce_one_build():
+    """These endpoints are sync defs, so FastAPI runs them in a threadpool
+    and two people refreshing genuinely overlap. Without single-flight that
+    is two full reads of the same window for one answer - which is the shape
+    that turns a busy morning into a slow portal."""
+    import threading
+
+    from app import main
+
+    builds = {"n": 0}
+    started = threading.Event()
+
+    def slow_build():
+        builds["n"] += 1
+        started.set()
+        time.sleep(0.3)             # long enough for the others to arrive
+        return {"v": "shared"}
+
+    main._cache.pop("graph", None)
+    results = []
+    threads = [threading.Thread(
+        target=lambda: results.append(main._cached("graph", 168, slow_build)[0]))
+        for _ in range(4)]
+    try:
+        threads[0].start()
+        started.wait(timeout=5)     # make sure the first is inside the builder
+        for t in threads[1:]:
+            t.start()
+        for t in threads:
+            t.join(timeout=10)
+    finally:
+        main._cache.pop("graph", None)
+
+    assert builds["n"] == 1, "%d builds for four concurrent readers" % builds["n"]
+    assert results == [{"v": "shared"}] * 4
+
+
+def test_refresh_drops_the_findings_behind_the_view():
+    """Refresh means go and look again. Dropping only the derived value
+    would rebuild it from a findings list that is still cached, so the
+    button would redraw identical numbers and look like it had worked."""
+    from app import main
+
+    main._cache["graph"] = {"value": 1, "at": time.time(), "hours": 168}
+    main._cache["findings"] = {"value": [], "at": time.time(), "hours": 168}
+    main._invalidate_derived("graph")
+    assert "graph" not in main._cache
+    assert "findings" not in main._cache
