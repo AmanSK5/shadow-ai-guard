@@ -656,3 +656,78 @@ def test_codex_rides_the_chatgpt_workspace():
     the two."""
     assert budget_mod.MEMBER_APIS["codex-cli"]["connector"] == "chatgpt"
     assert budget_mod.MEMBER_APIS["chatgpt"]["connector"] == "chatgpt"
+def test_sync_devin_splits_org_from_key_and_joins_roles(managed, monkeypatch):
+    """Devin is the only vendor here that needs an organisation id in the
+    path, and it publishes no endpoint that resolves a key to its own org -
+    so the id travels with the key as "org-xxxx:cog_xxxx" and gets split
+    here. Two things are easy to get wrong: sending the whole stored string
+    as the bearer token, and picking one role when the API returns role
+    ASSIGNMENTS, a list. Service users come back on this endpoint with no
+    email and hold no paid seat, so they are not counted as people."""
+    pages = {
+        "": {"items": [
+            {"user_id": "u1", "email": "Ash@Corp.example", "name": "Ash",
+             "role_assignments": [
+                 {"role": {"role_id": "r1", "role_name": "Admin"}},
+                 {"role": {"role_id": "r2", "role_name": "Member"}}]},
+            {"user_id": "svc", "email": None, "name": "ci-bot",
+             "role_assignments": []},
+        ], "has_next_page": True, "end_cursor": "c1"},
+        "c1": {"items": [
+            {"user_id": "u2", "email": "bo@corp.example", "name": "Bo",
+             "role_assignments": [
+                 {"role": {"role_id": "r2", "role_name": "Member"}}]},
+        ], "has_next_page": False, "end_cursor": None},
+    }
+
+    def handler(request):
+        assert request.url.host == "api.devin.ai"
+        assert request.url.path == (
+            "/v3beta1/organizations/org-abc123/members/users")
+        # The org id must not have ridden along into the token.
+        assert request.headers["Authorization"] == "Bearer cog_secret"
+        return httpx.Response(
+            200, json=pages[request.url.params.get("after", "")])
+
+    monkeypatch.setattr(budget_mod.httpx, "AsyncClient",
+                        _mock_async_client(handler))
+    client.put("/admin/budget/connection", headers=ADMIN, json={
+        "tool_id": "codeium", "provider": "devin",
+        "api_key": "org-abc123:cog_secret"})
+    r = client.post("/admin/budget/sync", headers=ADMIN,
+                    json={"tool_id": "codeium"})
+    assert r.json() == {"ok": True, "count": 2}
+
+    # Members hang off the subscription, so read them back through one.
+    client.put("/admin/budget/subscription", headers=ADMIN,
+               json=dict(SUB, tool_id="codeium", vendor="Cognition"))
+    sub, = [s for s in client.get("/admin/budget", headers=ADMIN)
+            .json()["subscriptions"] if s["tool_id"] == "codeium"]
+    members = {m["email"]: m for m in sub["members"]}
+    assert set(members) == {"ash@corp.example", "bo@corp.example"}
+    assert members["ash@corp.example"]["role"] == "Admin, Member"
+    assert members["ash@corp.example"]["source"] == "api"
+
+
+@pytest.mark.parametrize("key", ["cog_nokeyatall", "notanorg:cog_key",
+                                 "org-abc/../evil:cog_key", ":cog_keyaa"])
+def test_sync_devin_refuses_a_key_without_a_usable_org_id(managed, monkeypatch,
+                                                          key):
+    """The org id is the one path segment in this module that does not come
+    from a constant, so it is checked before it reaches a URL: a malformed
+    id is refused with an answer, not sent to api.devin.ai to find out."""
+    def handler(request):  # pragma: no cover - must never be reached
+        raise AssertionError("a malformed org id reached the network")
+
+    monkeypatch.setattr(budget_mod.httpx, "AsyncClient",
+                        _mock_async_client(handler))
+    client.put("/admin/budget/connection", headers=ADMIN, json={
+        "tool_id": "codeium", "provider": "devin", "api_key": key})
+    r = client.post("/admin/budget/sync", headers=ADMIN,
+                    json={"tool_id": "codeium"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is False
+    # The failure is the operator's answer, so it has to name the shape the
+    # key should have taken rather than just refusing.
+    assert "org-xxxx" in body["detail"]
