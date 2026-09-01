@@ -854,9 +854,32 @@ a.libtn:hover{border-color:var(--pri)}
    Prefixed, because this view draws a shape nothing else here draws and
    unprefixed names like .node or .chain would collide with the cascade
    the rest of the page already depends on. */
-.ag-verdict{margin:0 0 6px;font-size:26px;line-height:1.22;letter-spacing:-.02em;
-  font-weight:600;text-wrap:balance;max-width:26ch}
-.ag-verdict em{font-style:normal;color:var(--dstr)}
+.ag-verdict{margin:0 0 6px;font-size:26px;line-height:1.25;letter-spacing:-.02em;
+  font-weight:600;max-width:34ch}
+/* Its own line. Two sentences sharing one wrap put "asked." and "3 answer
+   to nobody." on the same line, which reads as one clause and buries the
+   number that matters. */
+.ag-verdict em{font-style:normal;color:var(--dstr);display:block}
+.ag-day{background:var(--sf);border:1px solid var(--bd);border-radius:12px;
+  box-shadow:var(--shadow);padding:15px 17px 12px;margin-bottom:26px;overflow-x:auto}
+.ag-grid{min-width:600px}
+.ag-lane{display:grid;grid-template-columns:174px 1fr;align-items:center;gap:13px;padding:4px 0}
+.ag-lname{font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ag-lname s{display:block;text-decoration:none;font-size:11px;color:var(--mut)}
+.ag-track{position:relative;height:18px;border-radius:5px;background:var(--sf2);overflow:hidden}
+/* 09:00-18:00, the stretch somebody is likely to be at a desk. */
+.ag-work{position:absolute;top:0;bottom:0;left:37.5%;width:37.5%;
+  background:color-mix(in srgb, var(--fg) 6%, transparent)}
+.ag-run{position:absolute;top:4px;height:10px;border-radius:3px;background:var(--dstr)}
+.ag-run.ok{background:var(--acc)}
+.ag-cont{position:absolute;top:4px;left:0;right:0;height:10px;border-radius:3px;
+  background:repeating-linear-gradient(90deg,var(--dstr) 0 7px,transparent 7px 14px);opacity:.55}
+.ag-cont.ok{background:repeating-linear-gradient(90deg,var(--acc) 0 7px,transparent 7px 14px)}
+.ag-nolane{font-size:11.5px;color:var(--mut);padding-left:2px}
+.ag-ticks{display:flex;justify-content:space-between;font-size:10.5px;color:var(--mut);
+  margin-top:5px;padding-left:187px}
+.ag-key{display:flex;gap:15px;flex-wrap:wrap;margin-top:11px;font-size:12px;color:var(--mut)}
+.ag-sw{width:15px;height:9px;border-radius:3px;display:inline-block;vertical-align:-1px;margin-right:5px}
 .ag-chain{background:var(--sf);border:1px solid var(--bd);border-radius:12px;
   box-shadow:var(--shadow);padding:14px 16px 16px;margin-bottom:11px}
 .ag-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;
@@ -877,6 +900,14 @@ a.libtn:hover{border-color:var(--pri)}
 .ag-gap i{color:var(--dstr);font-weight:600}
 .ag-held{border-color:var(--acc);background:var(--acc-soft)}
 .ag-note{margin:10px 0 0;font-size:12.5px;color:var(--mut)}
+.ag-two{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:14px;margin-top:18px}
+.ag-cov{background:var(--sf);border:1px solid var(--bd);border-radius:12px;
+  box-shadow:var(--shadow);padding:15px 17px}
+.ag-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:11px}
+.ag-chip{display:flex;align-items:center;gap:6px;font-size:12px;border:1px solid var(--bd);
+  border-radius:7px;padding:4px 9px;background:var(--sf2)}
+.ag-dot{width:6px;height:6px;border-radius:50%;flex:0 0 6px;background:var(--mut);opacity:.5}
+.ag-dot.on{background:var(--pri);opacity:1}
 .ag-limit{background:var(--sf);border:1px solid var(--bd);border-left:3px solid var(--warn);
   border-radius:12px;padding:15px 17px;margin-top:18px}
 .ag-limit ul{margin:9px 0 0;padding-left:18px;color:var(--mut);font-size:13px}
@@ -8752,7 +8783,7 @@ async function agentic() {
     AGENTIC = await r.json();
   }
   const A = AGENTIC.agents || [], c = AGENTIC.counts || {};
-  const srv = AGENTIC.servers || [];
+  const srv = AGENTIC.servers || [], cov = AGENTIC.coverage || {};
 
   const head = c.agents
     ? `<h1 class="ag-verdict">${c.agents} thing${c.agents === 1 ? '' : 's'} run${
@@ -8789,6 +8820,42 @@ async function agentic() {
       <div class="ag-node"><b>Can reach</b><i>${reach}</i></div></div>`;
   };
 
+  // The day. Configured cadence, not observed runs - a spec says what a
+  // thing is set to do, and nothing here watches it happen. Lanes whose
+  // spec is an event or unreadable are listed with no timeline rather than
+  // drawn with an invented one.
+  const pct = m => (m / 1440 * 100).toFixed(2);
+  const laneOf = a => {
+    const k = a.lane.kind, cls = a.accountable ? ' ok' : '';
+    if (k === 'continuous')
+      return `<span class="ag-cont${cls}" title="No cadence: runs while somebody is logged in"></span>`;
+    if (k === 'band')
+      return `<span class="ag-run${cls}" style="left:0;right:0" title="Often enough that individual runs stop meaning anything"></span>`;
+    return a.lane.marks.map(m =>
+      `<span class="ag-run${cls}" style="left:${pct(m)}%;width:1.1%"></span>`).join('');
+  };
+  const scheduled = A.filter(a => a.lane.kind !== 'none');
+  const unscheduled = A.filter(a => a.lane.kind === 'none');
+  const day = scheduled.length ? `<div class="ag-day"><div class="ag-grid">
+    ${scheduled.map(a => `<div class="ag-lane">
+      <div class="ag-lname">${esc(label(a.device, G.devices[a.device] || {}))}
+        <s class="mono">${esc(a.trigger || a.schedule)}${
+          a.lane.kind === 'unphased' ? ' · start unknown' : ''}</s></div>
+      <div class="ag-track"><span class="ag-work"></span>${laneOf(a)}</div>
+    </div>`).join('')}
+    </div>
+    <div class="ag-ticks mono"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div>
+    <div class="ag-key">
+      <span><span class="ag-sw" style="background:var(--dstr)"></span>nobody accountable</span>
+      <span><span class="ag-sw" style="background:var(--acc)"></span>runs under a known identity</span>
+      <span><span class="ag-sw" style="background:color-mix(in srgb,var(--fg) 6%,transparent)"></span>working hours</span>
+    </div>
+    ${unscheduled.length ? `<p class="ag-nolane" style="margin:9px 0 0">Not drawn:
+      ${unscheduled.map(a => esc(label(a.device, G.devices[a.device] || {}))).join(', ')}
+      - triggered by an event, or a spec this cannot read. Guessing at a time would be
+      worse than leaving the row out.</p>` : ''}
+  </div>` : '';
+
   const chains = A.map(a => `<div class="ag-chain">
     <div class="ag-head">
       <span class="ag-who">${esc(label(a.device, G.devices[a.device] || {}))}
@@ -8818,11 +8885,30 @@ async function agentic() {
   pipeline step - or reached a model from a process that is neither a browser nor a tool
   the registry knows. The second box in each chain is the one to read: an empty box means
   there is nothing to revoke when somebody leaves.</p>
+  ${scheduled.length ? `<p class="label" style="margin:0 0 9px">The day, as configured</p>
+    <p class="lede" style="margin:0 0 10px">What each is set to do, not what it was seen
+    doing - nothing here watches a run happen. The shaded stretch is working hours.</p>` : ''}
+  ${day}
   ${A.length ? chains : `<div class="tcard"><p class="lede" style="margin:12px 0">
     Nothing on this estate reported running unattended. That is either true, or the
     collectors have not been updated to look - Health says which sources are reporting.
     </p></div>`}
   ${servers}
+  <div class="ag-two">
+  <div class="ag-cov">
+    <p class="label" style="margin:0">Where we would see an MCP server</p>
+    <p class="lede" style="margin:8px 0 0">Silence is only as good as this list. A client
+    nobody watches looks exactly like a client nobody uses, which is the one thing no page
+    here is allowed to imply.</p>
+    <div class="ag-chips">
+      ${(cov.watched || []).map(x =>
+        `<span class="ag-chip"><span class="ag-dot on"></span>${esc(x)}</span>`).join('')}
+      ${(cov.unwatched || []).map(x =>
+        `<span class="ag-chip"><span class="ag-dot"></span>${esc(x)}</span>`).join('')}
+    </div>
+    <p class="src-note" style="margin:11px 0 0">A name turns green by gaining an MCP config
+    path in the registry - an entry, not a release.</p>
+  </div>
   <div class="ag-limit">
     <p class="label" style="margin:0">What this does not answer, and why not yet</p>
     <ul>
@@ -8836,7 +8922,7 @@ async function agentic() {
         it, the same shape the paste guard already reports. Whether it is reachable depends
         on what each client logs locally.</li>
     </ul>
-  </div>`;
+  </div></div>`;
 }
 
 async function renderView() {

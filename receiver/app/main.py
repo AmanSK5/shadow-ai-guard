@@ -520,6 +520,17 @@ class Finding(BaseModel):
     # enum would lose the part an operator needs to go and find the thing.
     # Bounded like every other field that arrives from outside.
     trigger: str = Field(default="", max_length=200)
+    # The cadence, in the words of whatever schedules it, prefixed with the
+    # dialect so one field carries all of them and the reader knows how to
+    # read it: "cron:0 2 * * *", "oncalendar:*:0/15", "interval:21600",
+    # "atlogin", "event".
+    #
+    # Raw rather than normalised, because normalising means three
+    # implementations - a bash collector, another bash collector and a
+    # PowerShell one - and three chances to disagree. One parser in the
+    # portal is one place to be wrong, and the untranslated spec stays
+    # readable by whoever has to go and find the thing.
+    schedule: str = Field(default="", max_length=120)
     device_name: str = Field(default="", max_length=256)
     risk_tier: str = Field(default="", max_length=32)
     # How many, and of what. The unit differs per source (sign-ins for Entra,

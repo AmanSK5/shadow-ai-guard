@@ -1355,3 +1355,86 @@ def test_reach_is_joined_from_the_mcp_servers_on_the_same_machine():
     ], REG_BIN)
 
     assert out["agents"][0]["reach"] == ["github", "postgres-prod"]
+
+
+def test_mcp_coverage_is_derived_from_the_registry_not_written_down():
+    """Which clients get watched follows from a tool having an MCP config
+    path, so adding one is a registry entry rather than a code change. The
+    unwatched list is maintained by hand because absence cannot be derived
+    from a registry that does not mention the thing - and it exists so an
+    empty page is never mistaken for an empty estate."""
+    reg = {"tools": [
+        {"id": "claude", "name": "Claude",
+         "mcp_config_paths_macos": ["Library/Application Support/Claude/x.json"]},
+        {"id": "cursor", "name": "Cursor", "mcp_config_paths": [".cursor/mcp.json"]},
+        {"id": "otter", "name": "Otter"},          # no MCP path: not watched
+    ]}
+    cov = derive.mcp_coverage(reg)
+
+    assert cov["watched"] == ["Claude", "Cursor"]
+    assert "Otter" not in cov["watched"]
+    assert "VS Code" in cov["unwatched"]
+
+
+def test_a_client_that_gains_a_config_path_stops_being_listed_as_unwatched():
+    """The two lists must never contradict each other. Watching Windsurf is
+    a registry edit, and the page has to stop saying it is a blind spot the
+    moment that lands - without anybody remembering to edit the other list."""
+    reg = {"tools": [{"id": "codeium", "name": "Windsurf / Devin Desktop",
+                      "mcp_config_paths": [".windsurf/mcp.json"]}]}
+    cov = derive.mcp_coverage(reg)
+
+    assert "Windsurf / Devin Desktop" in cov["watched"]
+    assert "Windsurf / Devin Desktop" not in cov["unwatched"]
+
+
+# ------------------------------------------------------- schedules --------
+
+
+@pytest.mark.parametrize("spec,kind,marks", [
+    # A time somebody set. The whole point of the panel.
+    ("cron:0 2 * * *", "marks", [120]),
+    ("cron:15 2 * * *", "marks", [135]),
+    ("cron:0 */6 * * *", "marks", [0, 360, 720, 1080]),
+    ("cron:30 9,17 * * 1-5", "marks", [570, 1050]),
+    # Often enough that individual ticks stop meaning anything.
+    ("cron:*/15 * * * *", "band", []),
+    ("oncalendar:*:0/15", "band", []),
+    ("interval:900", "band", []),
+    # systemd shorthands.
+    ("oncalendar:hourly", "marks", [h * 60 for h in range(24)]),
+    ("oncalendar:daily", "marks", [0]),
+    ("oncalendar:Mon *-*-* 03:00:00", "marks", [180]),
+    # An interval with no anchor: the gaps are true, the clock times are not.
+    ("interval:21600", "unphased", [0, 360, 720, 1080]),
+    # Not cadences at all.
+    ("atlogin", "continuous", []),
+    ("event", "none", []),
+])
+def test_a_schedule_is_read_into_a_day(spec, kind, marks):
+    lane = derive.schedule_lane(spec)
+    assert lane["kind"] == kind, spec
+    assert lane["marks"] == marks, spec
+
+
+@pytest.mark.parametrize("spec", [
+    "", "cron:", "cron:nonsense here", "cron:99 99 * * *", "cron:0",
+    "interval:0", "interval:abc", "oncalendar:every other tuesday",
+    "wat:0 2 * * *", "cron:*/0 * * * *",
+])
+def test_a_schedule_it_cannot_read_draws_nothing(spec):
+    """The rule that keeps the panel honest. A spec this does not understand
+    produces no marks at all rather than a plausible-looking guess - a
+    timeline with an invented time on it is worse than a row left out, and
+    the mockup this came from made exactly that mistake."""
+    assert derive.schedule_lane(spec) == {"kind": "none", "marks": []}
+
+
+def test_the_day_is_what_is_configured_not_what_was_seen():
+    """An interval says how long between runs, not when they land. launchd's
+    StartInterval counts from whenever the job was loaded, so four evenly
+    spaced marks are honest about the gap and dishonest about the clock -
+    which is why that case is its own kind and the view labels it."""
+    lane = derive.schedule_lane("interval:21600")
+    assert lane["kind"] == "unphased"
+    assert lane["kind"] != "marks", "must not claim to know the hour"
