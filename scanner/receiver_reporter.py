@@ -38,7 +38,8 @@ from typing import Optional
 import httpx
 
 from ai_guard import __version__ as AGENT_VERSION
-from ai_guard.scanners.base import DetectionSource, Finding, occurrence_unit
+from ai_guard.scanners.base import (DetectionSource, Finding,
+                                    classify_signal, occurrence_unit)
 
 logger = logging.getLogger(__name__)
 
@@ -290,6 +291,14 @@ class ReceiverReporter:
         # several dashboard rows: "Otter" and "otter" are not the same key.
         tool = getattr(f.service, "label", None) or slugify(f.service.name)
 
+        # Classified here rather than in each scanner: this is the one place
+        # that already holds the service, the source and the structured
+        # evidence together. The host comes from raw_evidence, not from the
+        # detail string - the same value, but a field rather than a sentence
+        # someone may reword.
+        signal = classify_signal(
+            f.service, f.source, f.raw_evidence.get("dns_request", ""))
+
         return {
             "tool": tool,
             "surface": surface,
@@ -301,6 +310,10 @@ class ReceiverReporter:
             "evidence": f.detail[:500],
             "severity": "warn" if (personal or bridge) else "info",
             "source": f.source.value,
+            # active = a model ran; ambient = the product is merely installed.
+            # Only ever ambient for an `ide` registry entry, so every other
+            # tool's payload is unchanged.
+            "signal": signal,
             "risk_tier": f.risk_tier,
             # Volume, with its unit: the number means sign-ins for Entra,
             # devices for Intune, signup emails for Exchange. Goes in the log

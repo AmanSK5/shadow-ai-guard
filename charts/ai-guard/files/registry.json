@@ -231,6 +231,10 @@
         "cursor.sh",
         "api2.cursor.sh"
       ],
+      "form": "ide",
+      "inference_domains": [
+        "api2.cursor.sh"
+      ],
       "app_names": [
         "Cursor.app",
         "Cursor"
@@ -306,8 +310,8 @@
     },
     {
       "id": "codeium",
-      "name": "Codeium / Windsurf",
-      "vendor": "Codeium",
+      "name": "Windsurf / Devin (Cognition)",
+      "vendor": "Cognition",
       "category": "coding",
       "approved": false,
       "added_by": "manual",
@@ -315,7 +319,16 @@
         "codeium.com",
         "windsurf.com",
         "server.codeium.com",
-        "codeiumdata.com"
+        "codeiumdata.com",
+        "devin.ai",
+        "app.devin.ai",
+        "api.devin.ai",
+        "cognition.ai"
+      ],
+      "form": "ide",
+      "inference_domains": [
+        "server.codeium.com",
+        "api.devin.ai"
       ],
       "app_names": [
         "Windsurf.app",
@@ -329,7 +342,9 @@
       "risk_tier": "high",
       "email_senders": [
         "codeium.com",
-        "windsurf.com"
+        "windsurf.com",
+        "devin.ai",
+        "cognition.ai"
       ],
       "bundle_ids": [
         "com.codeium.windsurf"

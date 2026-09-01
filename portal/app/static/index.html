@@ -2572,9 +2572,15 @@ async function people() {
 function attention(k, t) {
   const personal = (G.personal_accounts || []).filter(r => r.tool === k).length;
   const devs = (t.devices || []).length;
+  // Machines where something proved a model ran. Same as `devs` for every
+  // tool whose presence IS use; smaller only for an editor that bundles AI,
+  // where counting installs as exposure is how a VS Code fork rollout came
+  // to look like an AI rollout.
+  const used = (t.devices_active || []).length;
   const f = [];
   if (personal) f.push(`${personal} personal account${personal === 1 ? '' : 's'}`);
-  if (devs >= 5) f.push(`wide spread (${devs} devices)`);
+  if (used >= 5) f.push(`wide spread (${used} devices)`);
+  if (t.usage === 'installed' && devs) f.push('installed, never used');
   if ((t.surfaces || []).filter(Boolean).length >= 2) f.push('multiple surfaces');
   const fs = ((G.trends || {}).tool_first_seen || {})[k];
   if (fs && Date.parse(fs) > Date.now() - 2 * 86400000) f.push('new this week');
@@ -2602,13 +2608,20 @@ function tools() {
   one - open a tool to see exactly which. "Identities from sources" counts
   people a source named directly; the AI register counts those plus the people
   the identity map attaches through a device, so the two differ for tools found
-  on endpoints.</p>
+  on endpoints. Editors that bundle AI - Cursor, Windsurf/Devin Desktop - are
+  marked <span class="pill p-mut">installed only</span> until something shows a
+  model actually ran, because finding one on a laptop proves an editor is
+  installed and not that anyone sent code to it.</p>
   <div class="tcard"><table><tr><th>tool</th><th></th><th>devices</th>
     <th title="People a SOURCE named on this tool. A cloud sign-in carries a person; an endpoint finding carries a machine, and the person behind it comes from the identity map - so this is lower than the register's user count for tools found on endpoints.">identities from sources</th>
     <th>by surface</th></tr>
   ${rows.map(([k,t,a]) => `<tr data-open="tool" data-key="${esc(k)}" style="cursor:pointer">
-    <td>${esc(k)}</td><td>${attnPill(a)}</td>
-    <td>${(t.devices||[]).length}</td><td>${(t.identities||[]).length}</td>
+    <td>${esc(k)}</td><td>${attnPill(a)}${t.usage === 'installed'
+      ? `<span class="pill p-mut" title="Found installed, but nothing has shown a model actually running - no account, no sign-in, and no traffic to the completion backend. Editors that bundle AI (Cursor, Windsurf/Devin Desktop) are useful all day without it.">installed only</span>`
+      : ''}</td>
+    <td>${(t.devices||[]).length}${(t.devices_active||[]).length < (t.devices||[]).length
+      ? ` <span class="src-note" style="font-style:normal" title="Of the devices this tool was found on, how many show the AI actually being used.">${(t.devices_active||[]).length} using</span>`
+      : ''}</td><td>${(t.identities||[]).length}</td>
     <td>${ents(t.devices_by_surface||{}).sort((a2,b2)=>b2[1].length-a2[1].length)
       .map(([s,v])=>`<span class="pill p-acc">${esc(s||'none')} ${v.length}</span>`).join('')
       || (t.surfaces||[]).filter(Boolean).map(s2 =>
@@ -2679,6 +2692,10 @@ function toolDetail(k) {
   <table><tr><th>by surface</th><td>${ents(t.devices_by_surface||{})
     .sort((a,b)=>b[1].length-a[1].length)
     .map(([s,v])=>`<span class="pill p-acc">${esc(s||'none')} ${v.length}</span>`).join('')}</td></tr>
+  <tr><th title="Installed says the product is on the machine. Used says something proved a model ran: an account, a sign-in, an MCP config, or traffic to the completion backend rather than to the update and telemetry hosts the editor reaches on launch anyway.">installed vs used</th>
+    <td>${(t.devices||[]).length} installed · ${(t.devices_active||[]).length} where the AI ran${
+      t.usage === 'installed' && (t.devices||[]).length
+        ? ' <span class="src-note" style="font-style:normal">nothing has shown this one being used as an AI tool</span>' : ''}</td></tr>
   <tr><th>accounts</th><td>${esc((t.accounts||[]).join(', ')) || '—'}</td></tr></table>
   <h2 style="margin-top:22px;font-size:16px">Devices</h2>
   ${(t.devices||[]).map(dk => G.devices[dk] ? card(dk, G.devices[dk]) : '').join('')}`;
