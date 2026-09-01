@@ -2431,7 +2431,10 @@ _SMTP_ENV = {
     "smtp_host": os.environ.get("SMTP_HOST", ""),
     "smtp_port": os.environ.get("SMTP_PORT", ""),
     "smtp_username": os.environ.get("SMTP_USERNAME", ""),
-    "smtp_password": os.environ.get("SMTP_PASSWORD", ""),
+    # Through _secret, unlike its neighbours: this one is a credential, the
+    # env table promises NAME_FILE for every secret in it, and Compose's
+    # whole secret story is a file rather than an environment variable.
+    "smtp_password": _secret("SMTP_PASSWORD", ""),
     "smtp_from": os.environ.get("SMTP_FROM", ""),
     "smtp_security": os.environ.get("SMTP_SECURITY", ""),
 }
