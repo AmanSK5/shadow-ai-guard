@@ -830,6 +830,16 @@ _UNATTRIBUTABLE = {
     "backgroundtaskhost", "taskhostw", "taskhost", "taskeng", "rundll32",
     "dllhost", "wermgr",
     "update", "updater", "squirrel",
+    # VPN and zero-trust clients. A tunnel daemon resolves DNS for
+    # everything behind the tunnel, so naming one says "something on this
+    # device, through the VPN" - the same non-answer as a stub resolver.
+    # The queue found firezone-client-tunnel; these are the rest of the
+    # category rather than waiting to be asked about one at a time.
+    "firezone-client-tunnel", "firezone-gui-client", "tailscaled",
+    "openvpn", "wireguard", "wg-quick", "nordvpn", "expressvpn",
+    "warp-svc", "cloudflared", "vpnagentd", "acwebsecagent", "pangps",
+    "pangpa", "zsatunnel", "zscaler", "stagent", "netskope", "nsdiag",
+    "globalprotect", "ivanti", "pulsesecure", "forticlient", "sonicwall",
 }
 _VIA_RE = re.compile(r"\(via ([^)]{1,80})\)")
 def _strip_helper_suffix(n):
@@ -2856,6 +2866,10 @@ def _note_process_candidates(f: Finding):
         return
     if name.lower() in _BROWSERS or any(x in _BROWSERS for x in stems):
         return
+    # Already answered. Asking again is how a review queue becomes something
+    # nobody reads.
+    if name.strip().lower() in set(STATE.dispositioned_names("not_attributable")):
+        return
     if not _CANDIDATE_TEXT.match(name):
         return
     if STATE.observe_candidate(
@@ -2901,6 +2915,37 @@ def dismiss_candidate(key: str, authorization: str = Header(default="")):
     if not STATE.dismiss_candidate(key, _admin_actor(authorization)):
         raise HTTPException(404, "no undismissed candidate with that key")
     return {"dismissed": key}
+
+
+@app.post("/admin/candidates/{key}/not-attributable")
+def mark_candidate_not_attributable(key: str,
+                                    authorization: str = Header(default="")):
+    """This name identifies no program: a resolver, a service host, a VPN
+    tunnel that resolves for everything behind it.
+
+    Distinct from a dismissal, which says "not a tool" and stops there. A
+    dismissed curl is still a real process worth showing on the agentic view;
+    a dismissed VPN tunnel is not, and saying so has to reach the views that
+    read process names rather than just closing a card. Only processes: the
+    claim is about a name, and a domain or an MCP server is not one.
+    """
+    _admin_auth(authorization, write=True)
+    if not re.fullmatch(r"[a-z0-9_:-]{1,100}", key):
+        raise HTTPException(422, "malformed candidate key")
+    if not key.startswith("process:"):
+        raise HTTPException(
+            422, "only a process candidate can be marked not attributable")
+    if not STATE.set_candidate_disposition(
+            key, "not_attributable", _admin_actor(authorization)):
+        raise HTTPException(404, "no candidate with that key")
+    return {"not_attributable": key}
+
+
+@app.get("/admin/candidates/not-attributable")
+def get_not_attributable(authorization: str = Header(default="")):
+    """The names a human has ruled out, for the views that read them."""
+    _admin_auth(authorization)
+    return {"names": STATE.dispositioned_names("not_attributable")}
 
 
 class FindingStatusWrite(BaseModel):
@@ -3084,9 +3129,42 @@ class SeatTierWrite(BaseModel):
     covers: list[str] = Field(default_factory=list, max_length=10)
 
 
+def _resolve_plan_key(tool_id: str, given: str) -> str:
+    """Which subscription on this tool a write means.
+
+    Given explicitly, that. Otherwise the tool's only subscription, because
+    a request that predates plans - or a UI that has not asked yet - means
+    the one that exists. Ambiguous only when there really are several, and
+    then it refuses rather than guessing: writing a member list into the
+    wrong plan silently moves seats between contracts, and the money answer
+    would still look plausible.
+
+    Defaulting to "default" instead would be worse than either: it writes
+    into a subscription nobody has, and the rows simply stop appearing.
+    """
+    keys = [x.get("plan_key") or "default"
+            for x in STATE.list_budget()["subscriptions"]
+            if x["tool_id"] == tool_id]
+    if given:
+        return given
+    if len(keys) == 1:
+        return keys[0]
+    if not keys:
+        return "default"
+    raise HTTPException(
+        422, "%s has %d subscriptions (%s) - say which plan this is for"
+             % (tool_id, len(keys), ", ".join(sorted(keys))))
+
+
 class BudgetSubscriptionWrite(BaseModel):
     model_config = {"extra": "forbid"}
     tool_id: str = Field(min_length=1, max_length=100)
+    # Which subscription on that tool. Empty means "the one this plan names",
+    # so creating the second plan on a tool is an ordinary save. Sent
+    # explicitly when editing, which is what lets a plan be RENAMED - without
+    # it, changing "Team" to "Teams" would quietly create a second
+    # subscription beside the first rather than updating it.
+    plan_key: str = Field(default="", max_length=64, pattern=r"^[a-z0-9-]*$")
     vendor: str = Field(default="", max_length=200)
     plan: str = Field(default="", max_length=100)
     currency: str = Field(default="", max_length=8)
@@ -3112,6 +3190,11 @@ class BudgetMemberWrite(BaseModel):
 class BudgetMembersWrite(BaseModel):
     model_config = {"extra": "forbid"}
     tool_id: str = Field(min_length=1, max_length=100)
+    # Which subscription on that tool. Empty means the one whose plan
+    # this write names, which is what makes creating the second plan
+    # on a tool an ordinary save rather than a special case.
+    plan_key: str = Field(default="", max_length=64,
+                          pattern=r"^[a-z0-9-]*$")
     # csv and manual only: "api" rows are written by sync alone, and a
     # request that could claim to be a sync would let a CSV wear an
     # API-synced provenance label in the portal.
@@ -3123,6 +3206,11 @@ class BudgetMembersWrite(BaseModel):
 class BudgetConnectionWrite(BaseModel):
     model_config = {"extra": "forbid"}
     tool_id: str = Field(min_length=1, max_length=100)
+    # Which subscription on that tool. Empty means the one whose plan
+    # this write names, which is what makes creating the second plan
+    # on a tool an ordinary save rather than a special case.
+    plan_key: str = Field(default="", max_length=64,
+                          pattern=r"^[a-z0-9-]*$")
     provider: str = Field(min_length=1, max_length=32)
     api_key: str = Field(min_length=8, max_length=512)
 
@@ -3130,6 +3218,11 @@ class BudgetConnectionWrite(BaseModel):
 class BudgetToolRef(BaseModel):
     model_config = {"extra": "forbid"}
     tool_id: str = Field(min_length=1, max_length=100)
+    # Which subscription on that tool. Empty means the one whose plan
+    # this write names, which is what makes creating the second plan
+    # on a tool an ordinary save rather than a special case.
+    plan_key: str = Field(default="", max_length=64,
+                          pattern=r"^[a-z0-9-]*$")
 
 
 @app.get("/admin/budget")
@@ -3176,16 +3269,27 @@ def put_budget_subscription(req: BudgetSubscriptionWrite,
                                 % c[:60])
         if c not in covers:
             covers.append(c)
+    pk = req.plan_key or _state.plan_key(req.plan)
     for other in STATE.list_budget()["subscriptions"]:
-        if other["tool_id"] == req.tool_id:
-            continue
+        same_tool = other["tool_id"] == req.tool_id
+        if same_tool and other.get("plan_key") == pk:
+            continue                      # this subscription, being edited
+        mine = set(covers)
         theirs = set(other.get("covers") or []) | {other["tool_id"]}
-        clash = sorted(set(covers) & theirs)
+        if same_tool:
+            # Two plans on one tool BOTH cover that tool, and that is the
+            # whole point: a Teams contract and a handful of Max seats are
+            # two subscriptions for the same product. The double-billing
+            # rule still holds for everything else they claim to cover.
+            mine.discard(req.tool_id)
+            theirs.discard(req.tool_id)
+        clash = sorted(mine & theirs)
         if clash:
             raise HTTPException(
-                422, "%s is already covered by the %s subscription - one "
+                422, "%s is already covered by the %s %s subscription - one "
                      "licence, one subscription; fold them together "
-                     "instead" % (", ".join(clash), other["tool_id"]))
+                     "instead" % (", ".join(clash), other["tool_id"],
+                                  other.get("plan") or other.get("plan_key")))
     for t in req.seat_tiers:
         for c in t.covers:
             if c.strip() not in covers:
@@ -3205,7 +3309,7 @@ def put_budget_subscription(req: BudgetSubscriptionWrite,
                          "unit_price_monthly": t.unit_price_monthly,
                          "covers": [c.strip() for c in t.covers]}
                         for n, t in zip(names, req.seat_tiers)]},
-        _admin_actor(authorization))
+        _admin_actor(authorization), key=req.plan_key)
     return get_budget(authorization)
 
 
@@ -3213,9 +3317,10 @@ def put_budget_subscription(req: BudgetSubscriptionWrite,
 def delete_budget_subscription(req: BudgetToolRef,
                                authorization: str = Header(default="")):
     _admin_auth(authorization, write=True)
-    if not STATE.delete_budget_subscription(req.tool_id,
-                                            _admin_actor(authorization)):
-        raise HTTPException(404, "no subscription for that tool")
+    if not STATE.delete_budget_subscription(
+            req.tool_id, _admin_actor(authorization),
+            key=_resolve_plan_key(req.tool_id, req.plan_key)):
+        raise HTTPException(404, "no subscription for that tool and plan")
     return get_budget(authorization)
 
 
@@ -3241,8 +3346,9 @@ def put_budget_members(req: BudgetMembersWrite,
         members.append({"email": email, "name": m.name.strip(),
                         "role": m.role.strip(),
                         "seat_tier": m.seat_tier.strip()})
-    count = STATE.replace_budget_members(req.tool_id, members, req.source,
-                                         _admin_actor(authorization))
+    count = STATE.replace_budget_members(
+        req.tool_id, members, req.source, _admin_actor(authorization),
+        key=_resolve_plan_key(req.tool_id, req.plan_key))
     return {"ok": True, "count": count}
 
 
@@ -3260,7 +3366,9 @@ def put_budget_connection(req: BudgetConnectionWrite,
         raise HTTPException(422, "the API key contains whitespace or "
                                  "control characters - check the paste")
     STATE.set_budget_connection(req.tool_id, req.provider, key,
-                                _admin_actor(authorization))
+                                _admin_actor(authorization),
+                                key=_resolve_plan_key(req.tool_id,
+                                                      req.plan_key))
     return {"ok": True}
 
 
@@ -3268,9 +3376,10 @@ def put_budget_connection(req: BudgetConnectionWrite,
 def delete_budget_connection(req: BudgetToolRef,
                              authorization: str = Header(default="")):
     _admin_auth(authorization, write=True)
-    if not STATE.delete_budget_connection(req.tool_id,
-                                          _admin_actor(authorization)):
-        raise HTTPException(404, "no connection for that tool")
+    if not STATE.delete_budget_connection(
+            req.tool_id, _admin_actor(authorization),
+            key=_resolve_plan_key(req.tool_id, req.plan_key)):
+        raise HTTPException(404, "no connection for that tool and plan")
     return {"ok": True}
 
 
@@ -3302,7 +3411,8 @@ async def budget_sync(req: BudgetToolRef,
     the result is recorded either way so the card can show it later."""
     _admin_auth(authorization, write=True)
     by = _admin_actor(authorization)
-    conn = STATE.sync_connection_key(req.tool_id)
+    pk = _resolve_plan_key(req.tool_id, req.plan_key)
+    conn = STATE.sync_connection_key(req.tool_id, pk)
     if conn is None:
         raise HTTPException(404, "no connection for that tool: save one "
                                  "first")
@@ -3313,10 +3423,10 @@ async def budget_sync(req: BudgetToolRef,
         # e.detail, not str(e): the field is assigned only from budget.py's
         # own message templates, so the response provably cannot carry a
         # stack trace however the sync failed.
-        STATE.record_budget_sync(req.tool_id, False, e.detail, 0, by)
+        STATE.record_budget_sync(req.tool_id, False, e.detail, 0, by, key=pk)
         return {"ok": False, "detail": e.detail}
-    STATE.replace_budget_members(req.tool_id, members, "api", by)
-    STATE.record_budget_sync(req.tool_id, True, "", len(members), by)
+    STATE.replace_budget_members(req.tool_id, members, "api", by, key=pk)
+    STATE.record_budget_sync(req.tool_id, True, "", len(members), by, key=pk)
     return {"ok": True, "count": len(members)}
 
 

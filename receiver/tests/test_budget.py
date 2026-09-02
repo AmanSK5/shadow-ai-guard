@@ -731,3 +731,98 @@ def test_sync_devin_refuses_a_key_without_a_usable_org_id(managed, monkeypatch,
     # The failure is the operator's answer, so it has to name the shape the
     # key should have taken rather than just refusing.
     assert "org-xxxx" in body["detail"]
+
+
+# ------------------------------------------- two plans on the same tool --
+#
+# An organisation does not have "a Claude subscription": it has a Teams
+# contract and a handful of individual Max seats, on different plans with
+# different renewal dates. Keying on tool_id alone meant tracking one and
+# being blind to the other, and the spend total was wrong either way without
+# saying so.
+
+def _sub(tool, plan, seats, price, **kw):
+    return dict({"tool_id": tool, "plan": plan, "vendor": "Anthropic",
+                 "currency": "GBP",
+                 "seat_tiers": [{"name": "seat", "seats": seats,
+                                 "unit_price_monthly": price}]}, **kw)
+
+
+def test_one_tool_can_carry_several_plans(managed):
+    for s in (_sub("claude", "Team", 40, 25),
+              _sub("claude", "Max 20", 3, 90),
+              _sub("claude", "Max 5", 6, 18)):
+        r = client.put("/admin/budget/subscription", headers=ADMIN, json=s)
+        assert r.status_code == 200, r.text
+    subs = client.get("/admin/budget", headers=ADMIN).json()["subscriptions"]
+    claude = [x for x in subs if x["tool_id"] == "claude"]
+    assert sorted(x["plan_key"] for x in claude) == ["max-20", "max-5", "team"]
+    assert sorted(x["plan"] for x in claude) == ["Max 20", "Max 5", "Team"]
+
+
+def test_renaming_a_plan_updates_rather_than_duplicates(managed):
+    client.put("/admin/budget/subscription", headers=ADMIN,
+               json=_sub("claude", "Team", 40, 25))
+    client.put("/admin/budget/subscription", headers=ADMIN,
+               json=_sub("claude", "Teams", 40, 25, plan_key="team"))
+    subs = client.get("/admin/budget", headers=ADMIN).json()["subscriptions"]
+    claude = [x for x in subs if x["tool_id"] == "claude"]
+    assert len(claude) == 1 and claude[0]["plan"] == "Teams"
+
+
+def test_deleting_one_plan_leaves_the_others(managed):
+    client.put("/admin/budget/subscription", headers=ADMIN,
+               json=_sub("claude", "Team", 40, 25))
+    client.put("/admin/budget/subscription", headers=ADMIN,
+               json=_sub("claude", "Max 20", 3, 90))
+    client.post("/admin/budget/subscription/delete", headers=ADMIN,
+                json={"tool_id": "claude", "plan_key": "team"})
+    subs = client.get("/admin/budget", headers=ADMIN).json()["subscriptions"]
+    assert [x["plan_key"] for x in subs if x["tool_id"] == "claude"] == ["max-20"]
+
+
+def test_members_belong_to_a_plan_not_a_tool(managed):
+    client.put("/admin/budget/subscription", headers=ADMIN,
+               json=_sub("claude", "Team", 40, 25))
+    client.put("/admin/budget/subscription", headers=ADMIN,
+               json=_sub("claude", "Max 20", 3, 90))
+    client.put("/admin/budget/members", headers=ADMIN, json={
+        "tool_id": "claude", "plan_key": "team", "source": "csv",
+        "members": [{"email": "a@corp.example"}, {"email": "b@corp.example"}]})
+    client.put("/admin/budget/members", headers=ADMIN, json={
+        "tool_id": "claude", "plan_key": "max-20", "source": "csv",
+        "members": [{"email": "c@corp.example"}]})
+    subs = {x["plan_key"]: x for x in
+            client.get("/admin/budget", headers=ADMIN).json()["subscriptions"]
+            if x["tool_id"] == "claude"}
+    assert [m["email"] for m in subs["team"]["members"]] == \
+        ["a@corp.example", "b@corp.example"]
+    assert [m["email"] for m in subs["max-20"]["members"]] == ["c@corp.example"]
+
+
+def test_a_write_that_does_not_say_which_plan_is_refused_when_ambiguous(managed):
+    """Guessing would silently move seats between contracts, and the money
+    answer would still look plausible."""
+    client.put("/admin/budget/subscription", headers=ADMIN,
+               json=_sub("claude", "Team", 40, 25))
+    client.put("/admin/budget/subscription", headers=ADMIN,
+               json=_sub("claude", "Max 20", 3, 90))
+    r = client.put("/admin/budget/members", headers=ADMIN, json={
+        "tool_id": "claude", "source": "csv",
+        "members": [{"email": "a@corp.example"}]})
+    assert r.status_code == 422
+    assert "say which plan" in r.json()["detail"]
+
+
+def test_two_plans_on_one_tool_are_not_a_double_billed_licence(managed):
+    """The covers rule still refuses one licence billed twice - but two
+    plans for the same product are two licences, not one billed twice."""
+    client.put("/admin/budget/subscription", headers=ADMIN,
+               json=_sub("claude", "Team", 40, 25, covers=["claude-code"]))
+    # Same tool, different plan: allowed.
+    assert client.put("/admin/budget/subscription", headers=ADMIN,
+                      json=_sub("claude", "Max 20", 3, 90)).status_code == 200
+    # A different tool claiming a tool the Team licence already covers: not.
+    r = client.put("/admin/budget/subscription", headers=ADMIN,
+                   json=_sub("cursor", "Pro", 5, 20, covers=["claude-code"]))
+    assert r.status_code == 422 and "already covered" in r.json()["detail"]

@@ -86,7 +86,11 @@ def test_the_body_reaches_the_receiver_intact(receiver_spy):
         tool_id="fireflies", provider="fireflies",
         api_key="ff-key-123"), token=token)
     body = receiver_spy[-1]["body"]
-    assert body == {"tool_id": "fireflies", "provider": "fireflies",
+    # plan_key rides along empty: the portal only carries it, and the
+    # receiver decides what an empty one means (the tool's only
+    # subscription, or a refusal when there are several).
+    assert body == {"tool_id": "fireflies", "plan_key": "",
+                    "provider": "fireflies",
                     "api_key": "ff-key-123"}
 
 

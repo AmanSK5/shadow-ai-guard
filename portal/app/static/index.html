@@ -2319,7 +2319,8 @@ const WIDGETS = {
         <td style="color:var(--mut)">${c.devices || 0} device${c.devices === 1 ? '' : 's'}
           ${c.confidence ? ' · ' + esc(c.confidence) : ''}</td>
         <td style="white-space:nowrap">
-          <button class="btn" data-act="cand-add" data-key="${esc(c.key)}">Add to registry</button>
+          ${c.kind === 'process' ? `<button class="mini" data-act="cand-noattr"
+            data-key="${esc(c.key)}" title="This name identifies no program - a resolver, a service host, a VPN tunnel that resolves for everything behind it. Recorded once and honoured everywhere a process name is read.">Names nothing</button> ` : ''}<button class="btn" data-act="cand-add" data-key="${esc(c.key)}">Add to registry</button>
           <button class="btn" data-act="cand-dismiss" data-key="${esc(c.key)}">Dismiss</button>
         </td></tr>`).join('')}</table>
       ${cands.length > 6 ? `<p class="src-note">And ${cands.length - 6} more in the queue.</p>` : ''}`;
@@ -6777,7 +6778,15 @@ function bwRail() {
 function bwBodyTool() {
   const w = BWIZ;
   const tools = (REGTOOLS || []).slice().sort((a, b) => a.name.localeCompare(b.name));
-  const linked = new Set((BUDGET.subscriptions || []).map(s => s.tool_id));
+  // Which PLANS are already recorded per tool, not which tools are taken.
+  // An organisation does not have "a Claude subscription" - it has a Teams
+  // contract and a handful of Max seats - so a tool is only exhausted when
+  // there is nothing left to add, which there never is: the plan is free
+  // text. What a second link must not do is repeat a plan already there.
+  const plansOn = {};
+  (BUDGET.subscriptions || []).forEach(s => {
+    (plansOn[s.tool_id] = plansOn[s.tool_id] || []).push(s.plan || s.plan_key);
+  });
   const picker = w.editing ? `<span class="mono">${esc(w.tool_id)}</span>` : (() => {
     // Observed tools first: the one being linked is almost always one the
     // estate already uses, and the whole registry in one flat list buries it.
@@ -6787,11 +6796,16 @@ function bwBodyTool() {
       bCovers(o).forEach(t => { coveredBy[t] = o.tool_id; });
     });
     const opt = t => {
-      const taken = t.id !== w.tool_id && (linked.has(t.id) || coveredBy[t.id]);
-      const label = !taken ? '' : linked.has(t.id) ? ' (linked)'
-        : ` (covered by ${coveredBy[t.id]})`;
+      // Only a licence billed twice is refused. A tool that already has a
+      // plan stays selectable and says which plans it has, so adding Max 20
+      // beside Team is an ordinary link rather than a wall.
+      const covered = t.id !== w.tool_id && coveredBy[t.id]
+        && coveredBy[t.id] !== t.id;
+      const have = plansOn[t.id] || [];
+      const label = covered ? ` (covered by ${coveredBy[t.id]})`
+        : have.length ? ` — ${have.join(', ')} linked` : '';
       return `<option value="${esc(t.id)}"${t.id === w.tool_id ? ' selected' : ''}
-        ${taken ? 'disabled' : ''}>${esc(t.name)}${esc(label)}</option>`;
+        ${covered ? 'disabled' : ''}>${esc(t.name)}${esc(label)}</option>`;
     };
     const obs = tools.filter(t => seen.has(t.id));
     const rest = tools.filter(t => !seen.has(t.id));
@@ -7141,9 +7155,30 @@ function bProvenance(sub, conn) {
   return bits.join(' · ');
 }
 
+// A subscription is a tool AND a plan. Every card button used to carry the
+// tool alone, and every handler looked it up with find(s => s.tool_id === k)
+// - which returns whichever plan happens to be first. Editing the Max seats
+// would have opened the Teams contract, and importing users into one would
+// have replaced the other's list.
+const bKey = s => s.tool_id + '|' + (s.plan_key || 'default');
+const bSplit = k => {
+  const i = String(k || '').indexOf('|');
+  return i < 0 ? {tool_id: k, plan_key: ''}
+               : {tool_id: k.slice(0, i), plan_key: k.slice(i + 1)};
+};
+const bFind = k => {
+  const {tool_id, plan_key} = bSplit(k);
+  return (BUDGET.subscriptions || []).find(
+    s => s.tool_id === tool_id
+      && (!plan_key || (s.plan_key || 'default') === plan_key)) || null;
+};
+const bConn = sub => ((BUDGET.connections || []).find(
+  c => c.tool_id === sub.tool_id
+    && (c.plan_key || 'default') === (sub.plan_key || 'default'))) || null;
+
 function budgetCard(sub) {
   const ro = AUTH && AUTH.role === 'viewer';
-  const conn = ((BUDGET.connections || []).find(c => c.tool_id === sub.tool_id)) || null;
+  const conn = bConn(sub);
   const tiers = sub.seat_tiers || [];
   const monthly = tiers.reduce((a, t) => a + (t.seats || 0) * (t.unit_price_monthly || 0), 0);
   const seats = tiers.reduce((a, t) => a + (t.seats || 0), 0);
@@ -7187,7 +7222,7 @@ function budgetCard(sub) {
     <td>${esc(m.role || '—')}</td><td>${esc(m.seat_tier || '—')}</td>
     <td>${esc(usageBits(m)) || '<span class="src-note">—</span>'}</td>
     <td>${m.source === 'manual' && !ro
-      ? `<button class="mini" data-act="b-mdel" data-tool="${esc(sub.tool_id)}" data-key="${esc(m.email)}">Remove</button>`
+      ? `<button class="mini" data-act="b-mdel" data-tool="${esc(bKey(sub))}" data-key="${esc(m.email)}">Remove</button>`
       : `<span class="pill p-mut">${esc(m.source)}</span>`}</td></tr>`;
   // The same licence linked twice, from before covers existed: name the
   // fold-together steps on the card rather than leave the double count
@@ -7290,15 +7325,15 @@ function budgetCard(sub) {
     with no person attached - not counted anywhere
     above. An identity map (Sources view) links them.</p>` : ''}
   ${ro ? '' : `<div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
-    ${conn ? `<button class="mini" data-act="b-sync" data-key="${esc(sub.tool_id)}">Sync users now</button>` : ''}
-    <button class="mini" data-act="b-edit" data-key="${esc(sub.tool_id)}">Edit</button>
-    <button class="mini" data-act="b-import" data-key="${esc(sub.tool_id)}">Import users</button>
-    <button class="mini" data-act="b-unlink" data-key="${esc(sub.tool_id)}">Unlink</button>
+    ${conn ? `<button class="mini" data-act="b-sync" data-key="${esc(bKey(sub))}">Sync users now</button>` : ''}
+    <button class="mini" data-act="b-edit" data-key="${esc(bKey(sub))}">Edit</button>
+    <button class="mini" data-act="b-import" data-key="${esc(bKey(sub))}">Import users</button>
+    <button class="mini" data-act="b-unlink" data-key="${esc(bKey(sub))}">Unlink</button>
   </div>
   <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-    <input id="bm-email-${esc(sub.tool_id)}" class="mfield" placeholder="add member: email" autocomplete="off">
-    <input id="bm-tier-${esc(sub.tool_id)}" class="mfield" style="min-width:110px" placeholder="seat tier">
-    <button class="mini" data-act="b-madd" data-key="${esc(sub.tool_id)}">Add</button>
+    <input id="bm-email-${esc(bKey(sub))}" class="mfield" placeholder="add member: email" autocomplete="off">
+    <input id="bm-tier-${esc(bKey(sub))}" class="mfield" style="min-width:110px" placeholder="seat tier">
+    <button class="mini" data-act="b-madd" data-key="${esc(bKey(sub))}">Add</button>
   </div>`}
   </div>`;
 }
@@ -7429,8 +7464,7 @@ function budgetReport() {
       ${bMoney(monthly, sub.currency)} per month
       ${sub.renewal_date ? ` · renews ${esc(sub.renewal_date)}` : ''}
       ${sub.owner ? ` · owner ${esc(sub.owner)}` : ''}
-      · ${bProvenance(sub, (BUDGET.connections || [])
-          .find(c => c.tool_id === sub.tool_id) || null) || 'manual entries'}</p>
+      · ${bProvenance(sub, bConn(sub)) || 'manual entries'}</p>
     <table class="plain"><tr><th>on the licence</th><th>observed using it</th>
       <th>never observed</th><th>using it without a seat</th><th>personal accounts</th></tr>
       <tr><td class="num">${(sub.members || []).length}</td>
@@ -7597,10 +7631,13 @@ async function budgetAction(act, el) {
     // one - and pressing through to the end overwrote the subscription that
     // existed, with nothing on screen saying so. The review step made it
     // visible; the fix belongs here.
+    // Only what a licence already COVERS is taken. A tool that has one plan
+    // recorded is not used up - a Teams contract and a handful of Max seats
+    // are two subscriptions for the same product - so it stays offerable and
+    // the picker says which plans it already has.
     const taken = new Set();
     (BUDGET.subscriptions || []).forEach(o => {
-      taken.add(o.tool_id);
-      bCovers(o).forEach(t => taken.add(t));
+      bCovers(o).filter(t => t !== o.tool_id).forEach(t => taken.add(t));
     });
     const free = (REGTOOLS || []).slice()
       .sort((a, b) => a.name.localeCompare(b.name))
@@ -7612,10 +7649,12 @@ async function budgetAction(act, el) {
     render(); return;
   }
   if (act === 'b-edit') {
-    const sub = (BUDGET.subscriptions || []).find(s => s.tool_id === key);
-    const conn = (BUDGET.connections || []).find(c => c.tool_id === key);
+    const sub = bFind(key);
+    if (!sub) return;
+    const conn = bConn(sub);
     BMSG = '';
-    BWIZ = {step: 1, editing: true, tool_id: key, vendor: sub.vendor,
+    BWIZ = {step: 1, editing: true, tool_id: sub.tool_id,
+            plan_key: sub.plan_key || 'default', vendor: sub.vendor,
             plan: sub.plan, source: conn ? 'api' : 'csv',
             provider: conn ? conn.provider : 'anthropic', api_key: '',
             key_set: !!conn, tiers: sub.seat_tiers || [],
@@ -7665,7 +7704,8 @@ async function budgetAction(act, el) {
     const w = BWIZ;
     if (!w.tool_id) { BMSG = 'Pick a tool first.'; render(); return; }
     let r = await post('/api/budget/subscription', {
-      tool_id: w.tool_id, vendor: w.vendor || '', plan: w.plan || '',
+      tool_id: w.tool_id, plan_key: w.plan_key || '',
+      vendor: w.vendor || '', plan: w.plan || '',
       currency: (w.currency || '').toUpperCase(), renewal_date: w.renewal || '',
       owner: w.owner || '', covers: w.covers || [],
       seat_tiers: w.tiers || []});
@@ -7673,25 +7713,28 @@ async function budgetAction(act, el) {
     if (!r.ok) { BMSG = 'Not saved: ' + await _refusal(r); render(); return; }
     if (w.source === 'api' && w.api_key) {
       r = await post('/api/budget/connection', {
-        tool_id: w.tool_id, provider: w.provider, api_key: w.api_key});
+        tool_id: w.tool_id, plan_key: w.plan_key || '',
+        provider: w.provider, api_key: w.api_key});
       if (!r) return;
       if (!r.ok) { BMSG = 'Subscription saved, but the connection was refused: '
         + await _refusal(r); BUDGET = null; BWIZ = null; render(); return; }
-      const s = await post('/api/budget/sync', {tool_id: w.tool_id});
+      const s = await post('/api/budget/sync',
+                           {tool_id: w.tool_id, plan_key: w.plan_key || ''});
       if (!s) return;
       const out = s.ok ? await s.json() : {ok: false, detail: await _refusal(s)};
       BMSG = out.ok ? `Linked. Synced ${out.count} members from the vendor.`
         : 'Linked, but the first sync failed: ' + out.detail;
     } else if (w.source === 'csv' && !w.editing) {
       BWIZ = null; BUDGET = null;
-      BCSV = {tool_id: w.tool_id, text: '', parsed: null};
+      BCSV = {tool_id: w.tool_id, plan_key: w.plan_key || '',
+              text: '', parsed: null};
       BMSG = '';
       render(); return;
     } else BMSG = w.editing ? 'Saved.' : 'Linked. Add users from the card.';
     BWIZ = null; BUDGET = null; render(); return;
   }
   if (act === 'b-sync') {
-    const r = await post('/api/budget/sync', {tool_id: key});
+    const r = await post('/api/budget/sync', bSplit(key));
     if (!r) return;
     const out = r.ok ? await r.json() : {ok: false, detail: await _refusal(r)};
     BMSG = out.ok ? `Synced ${out.count} members for ${key}.`
@@ -7699,14 +7742,14 @@ async function budgetAction(act, el) {
     BUDGET = null; render(); return;
   }
   if (act === 'b-unlink') {
-    const r = await post('/api/budget/subscription-delete', {tool_id: key});
+    const r = await post('/api/budget/subscription-delete', bSplit(key));
     if (!r) return;
     BMSG = r.ok ? `Unlinked ${key}. Its users and any stored key went with it.`
       : 'Not unlinked: ' + await _refusal(r);
     BUDGET = null; render(); return;
   }
   if (act === 'b-import') {
-    BMSG = ''; BCSV = {tool_id: key, text: '', parsed: null};
+    BMSG = ''; BCSV = Object.assign(bSplit(key), {text: '', parsed: null});
     render(); return;
   }
   if (act === 'b-csv-parse') {
@@ -7717,7 +7760,8 @@ async function budgetAction(act, el) {
   if (act === 'b-csv-cancel') { BCSV = null; BMSG = ''; render(); return; }
   if (act === 'b-csv-save') {
     const r = await post('/api/budget/members', {
-      tool_id: BCSV.tool_id, source: 'csv', members: BCSV.parsed.members});
+      tool_id: BCSV.tool_id, plan_key: BCSV.plan_key || '',
+      source: 'csv', members: BCSV.parsed.members});
     if (!r) return;
     BMSG = r.ok ? `Imported ${BCSV.parsed.members.length} members for ${BCSV.tool_id}.`
       : 'Not imported: ' + await _refusal(r);
@@ -7727,27 +7771,30 @@ async function budgetAction(act, el) {
   if (act === 'b-madd') {
     const email = _val('bm-email-' + key), tier = _val('bm-tier-' + key);
     if (!email) return;
-    const sub = (BUDGET.subscriptions || []).find(s => s.tool_id === key);
+    const sub = bFind(key);
+    if (!sub) return;
     const manual = (sub.members || []).filter(m => m.source === 'manual')
       .map(m => ({email: m.email, name: m.name, role: m.role,
                   seat_tier: m.seat_tier}));
     manual.push({email, seat_tier: tier});
     const r = await post('/api/budget/members',
-                         {tool_id: key, source: 'manual', members: manual});
+                         Object.assign(bSplit(key),
+                                       {source: 'manual', members: manual}));
     if (!r) return;
     BMSG = r.ok ? '' : 'Not added: ' + await _refusal(r);
     if (r.ok) BUDGET = null;
     render(); return;
   }
   if (act === 'b-mdel') {
-    const tool = el.getAttribute('data-tool');
-    const sub = (BUDGET.subscriptions || []).find(s => s.tool_id === tool);
+    const sub = bFind(el.getAttribute('data-tool'));
+    if (!sub) return;
     const manual = (sub.members || [])
       .filter(m => m.source === 'manual' && m.email !== key)
       .map(m => ({email: m.email, name: m.name, role: m.role,
                   seat_tier: m.seat_tier}));
     const r = await post('/api/budget/members',
-                         {tool_id: tool, source: 'manual', members: manual});
+                         Object.assign(bSplit(el.getAttribute('data-tool')),
+                                       {source: 'manual', members: manual}));
     if (!r) return;
     if (r.ok) BUDGET = null;
     render(); return;
@@ -8379,6 +8426,24 @@ async function managedAction(act, el) {
     view = 'registry'; detail = null;
     history.replaceState(null, '', '#registry');
     drawNav(); render(); return;
+  }
+  if (act === 'cand-noattr') {
+    // Not a dismissal. Dismissing says "not a tool" and closes the card;
+    // this says the name identifies no program, which the agentic view has
+    // to know too - otherwise the answer goes nowhere and the process stays
+    // on that page for ever.
+    const key = el.getAttribute('data-key');
+    const r = await mfetch('/api/candidates/not-attributable',
+      {method: 'POST', body: JSON.stringify({key})});
+    if (!r.ok) {
+      if (r.status === 401) { sessionLost(); return; }
+      let d = r.statusText; try { d = (await r.json()).detail || d; } catch (e) {}
+      alert('Could not record that: ' + d);
+    } else {
+      CAND = (CAND || []).filter(x => x.key !== key);
+      AGENTIC = null;   // that page shows this process today
+    }
+    render(); return;
   }
   if (act === 'cand-dismiss') {
     const key = el.getAttribute('data-key');

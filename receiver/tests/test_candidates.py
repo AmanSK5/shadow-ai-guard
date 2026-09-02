@@ -285,3 +285,45 @@ def test_a_process_candidate_survives_the_receivers_own_validation(managed, monk
     assert r.status_code == 200
     rows = client.get("/admin/candidates", headers=ADMIN).json()["candidates"]
     assert [c for c in rows if c["kind"] == "process"] == []
+
+
+def test_a_name_that_identifies_no_program_is_recorded_as_such(managed, monkeypatch):
+    """Distinct from a dismissal. Dismissing curl says "not a tool" and curl
+    is still a real process worth showing; saying firezone-client-tunnel
+    names nothing is a fact about the NAME, and every view that reads a
+    process name needs it."""
+    # A name NOT on the shipped floor - firezone-client-tunnel is on it now,
+    # so it never becomes a candidate and could not exercise this path. The
+    # long tail is what this disposition is for.
+    monkeypatch.setattr(main, "_KNOWN_PROCESSES", {"claude"})
+    client.post("/report", json=_dns("acme-zt-tunnel"), headers=AUTH)
+    key = "process:acme-zt-tunnel"
+    r = client.post("/admin/candidates/%s/not-attributable" % key, headers=ADMIN)
+    assert r.status_code == 200
+    got = client.get("/admin/candidates/not-attributable", headers=ADMIN).json()
+    assert got["names"] == ["acme-zt-tunnel"]
+
+
+def test_a_ruled_out_name_is_not_asked_about_again(managed, monkeypatch):
+    """A review queue that re-asks a settled question is one nobody reads."""
+    monkeypatch.setattr(main, "_KNOWN_PROCESSES", {"claude"})
+    client.post("/report", json=_dns("corp-tunnel"), headers=AUTH)
+    client.post("/admin/candidates/process:corp-tunnel/not-attributable",
+                headers=ADMIN)
+    # Same process, seen again on another device.
+    client.post("/report", json=_dns("corp-tunnel", device="D2"), headers=AUTH)
+    rows = client.get("/admin/candidates", headers=ADMIN).json()["candidates"]
+    open_rows = [c for c in rows
+                 if c["kind"] == "process" and not c.get("dismissed_at")]
+    assert open_rows == []
+
+
+def test_only_a_process_can_be_called_unattributable(managed):
+    """The claim is about a name identifying no program. A domain is not a
+    name in that sense, and neither is an MCP server."""
+    client.post("/candidates", headers=AUTH,
+                json={"candidates": [dict(CANDIDATE)]})
+    rows = client.get("/admin/candidates", headers=ADMIN).json()["candidates"]
+    key = rows[0]["key"]
+    r = client.post("/admin/candidates/%s/not-attributable" % key, headers=ADMIN)
+    assert r.status_code == 422

@@ -152,7 +152,12 @@ CREATE TABLE IF NOT EXISTS candidates (
   first_seen   TEXT NOT NULL,
   last_seen    TEXT NOT NULL,
   dismissed_at TEXT,
-  dismissed_by TEXT NOT NULL DEFAULT ''
+  dismissed_by TEXT NOT NULL DEFAULT '',
+  -- "" | "not_attributable". Dismissing says "not a tool"; this says the
+  -- name identifies no program at all - a resolver, a service host, a VPN
+  -- tunnel that resolves for everything behind it. Different claim, and
+  -- unlike a dismissal it has to reach the views that read process names.
+  disposition  TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS finding_status (
   key    TEXT PRIMARY KEY,
@@ -167,8 +172,18 @@ CREATE TABLE IF NOT EXISTS identity_map (
   updated_at TEXT NOT NULL,
   updated_by TEXT NOT NULL DEFAULT ''
 );
+-- One row per SUBSCRIPTION, not per tool. An organisation does not have "a
+-- Claude subscription": it has a Teams contract and a handful of Max seats,
+-- on different plans, different renewal dates, often different owners. Keying
+-- on tool_id alone meant tracking one and being blind to the other, and the
+-- spend total was wrong either way without saying so.
+--
+-- plan_key is the normalised plan - lowercased, punctuation folded to
+-- hyphens, empty becoming "default" so a subscription recorded before plans
+-- mattered keeps working untouched.
 CREATE TABLE IF NOT EXISTS budget_subscriptions (
-  tool_id      TEXT PRIMARY KEY,
+  tool_id      TEXT NOT NULL,
+  plan_key     TEXT NOT NULL DEFAULT 'default',
   vendor       TEXT NOT NULL DEFAULT '',
   plan         TEXT NOT NULL DEFAULT '',
   currency     TEXT NOT NULL DEFAULT '',
@@ -179,10 +194,12 @@ CREATE TABLE IF NOT EXISTS budget_subscriptions (
   covers       TEXT NOT NULL DEFAULT '[]',
   created_at   TEXT NOT NULL,
   updated_at   TEXT NOT NULL,
-  updated_by   TEXT NOT NULL DEFAULT ''
+  updated_by   TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (tool_id, plan_key)
 );
 CREATE TABLE IF NOT EXISTS budget_members (
   tool_id    TEXT NOT NULL,
+  plan_key   TEXT NOT NULL DEFAULT 'default',
   email      TEXT NOT NULL,
   name       TEXT NOT NULL DEFAULT '',
   role       TEXT NOT NULL DEFAULT '',
@@ -190,10 +207,13 @@ CREATE TABLE IF NOT EXISTS budget_members (
   source     TEXT NOT NULL DEFAULT 'manual',
   usage      TEXT NOT NULL DEFAULT '{}',
   updated_at TEXT NOT NULL,
-  PRIMARY KEY (tool_id, email)
+  PRIMARY KEY (tool_id, plan_key, email)
 );
+-- Per subscription too: a Teams contract has an admin API, a handful of
+-- individual Max seats does not, and one key cannot stand for both.
 CREATE TABLE IF NOT EXISTS budget_connections (
-  tool_id          TEXT PRIMARY KEY,
+  tool_id          TEXT NOT NULL,
+  plan_key         TEXT NOT NULL DEFAULT 'default',
   provider         TEXT NOT NULL,
   api_key          TEXT NOT NULL,
   last_sync_at     TEXT,
@@ -201,7 +221,8 @@ CREATE TABLE IF NOT EXISTS budget_connections (
   last_sync_detail TEXT NOT NULL DEFAULT '',
   members_synced   INTEGER NOT NULL DEFAULT 0,
   created_at       TEXT NOT NULL,
-  updated_by       TEXT NOT NULL DEFAULT ''
+  updated_by       TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (tool_id, plan_key)
 );
 -- How one person wants the portal to look, and what it has already shown
 -- them. Display state, not governance: nothing here changes what a page
@@ -270,6 +291,25 @@ _ADMIN_COLUMNS_ADDED = (
 _BUDGET_SUB_COLUMNS_ADDED = (
     ("covers", "TEXT NOT NULL DEFAULT '[]'"),
 )
+
+_CANDIDATE_COLUMNS_ADDED = (
+    # A decision about the NAME rather than the thing: this identifies no
+    # program, so no view should present it as one.
+    ("disposition", "TEXT NOT NULL DEFAULT ''"),
+)
+
+
+def plan_key(plan: str) -> str:
+    """A plan name reduced to a key: lowercased, runs of anything that is
+    not a letter or digit folded to one hyphen.
+
+    Empty becomes "default" so a subscription recorded before plans were part
+    of the identity keeps its row and its members without anyone re-entering
+    it. "Max 20" and "max-20" are the same subscription; "Team" and
+    "Enterprise" are not.
+    """
+    out = re.sub(r"[^a-z0-9]+", "-", (plan or "").strip().lower()).strip("-")
+    return out or "default"
 
 
 def _now() -> str:
@@ -446,6 +486,13 @@ class State:
                 "CREATE UNIQUE INDEX IF NOT EXISTS admin_users_sso"
                 " ON admin_users (sso_tenant, sso_subject)"
                 " WHERE sso_subject IS NOT NULL")
+            self._migrate_budget_to_plan_keys()
+            have = {r["name"] for r in self._db.execute(
+                "PRAGMA table_info(candidates)")}
+            for name, decl in _CANDIDATE_COLUMNS_ADDED:
+                if name not in have:
+                    self._db.execute(
+                        f"ALTER TABLE candidates ADD COLUMN {name} {decl}")
             have = {r["name"] for r in self._db.execute(
                 "PRAGMA table_info(budget_subscriptions)")}
             for name, decl in _BUDGET_SUB_COLUMNS_ADDED:
@@ -1438,29 +1485,92 @@ class State:
     # fleet credentials, which are hashes. It is never echoed by any list
     # or GET; sync_connection_key below is its only reader.
 
+    def _migrate_budget_to_plan_keys(self):
+        """Rekey the budget tables from tool_id to (tool_id, plan_key).
+
+        SQLite cannot alter a primary key, so each table is rebuilt and its
+        rows copied with a plan_key derived from the plan already recorded.
+        Runs inside the caller's transaction and only when the old shape is
+        found, so a restart on a migrated database does nothing.
+
+        Nothing is dropped: every existing subscription keeps its row, its
+        members and its connection, and lands under the plan it already
+        named (or "default" if it named none). A deployment that never
+        touched the budget has three empty tables and notices nothing.
+        """
+        cols = {r["name"] for r in
+                self._db.execute("PRAGMA table_info(budget_subscriptions)")}
+        if not cols or "plan_key" in cols:
+            return
+        subs = self._db.execute("SELECT * FROM budget_subscriptions").fetchall()
+        members = self._db.execute("SELECT * FROM budget_members").fetchall()
+        conns = self._db.execute("SELECT * FROM budget_connections").fetchall()
+        keyed = {r["tool_id"]: plan_key(r["plan"]) for r in subs}
+
+        for t in ("budget_subscriptions", "budget_members",
+                  "budget_connections"):
+            self._db.execute(f"ALTER TABLE {t} RENAME TO {t}_old")
+        self._db.executescript(_SCHEMA)
+
+        for r in subs:
+            d = dict(r)
+            d["plan_key"] = keyed[d["tool_id"]]
+            names = ", ".join(d)
+            self._db.execute(
+                f"INSERT INTO budget_subscriptions ({names})"
+                f" VALUES ({', '.join('?' * len(d))})", tuple(d.values()))
+        for r in members:
+            d = dict(r)
+            # A member whose subscription has since gone keeps the default
+            # key rather than being dropped on the floor.
+            d["plan_key"] = keyed.get(d["tool_id"], "default")
+            names = ", ".join(d)
+            self._db.execute(
+                f"INSERT OR REPLACE INTO budget_members ({names})"
+                f" VALUES ({', '.join('?' * len(d))})", tuple(d.values()))
+        for r in conns:
+            d = dict(r)
+            d["plan_key"] = keyed.get(d["tool_id"], "default")
+            names = ", ".join(d)
+            self._db.execute(
+                f"INSERT OR REPLACE INTO budget_connections ({names})"
+                f" VALUES ({', '.join('?' * len(d))})", tuple(d.values()))
+
+        for t in ("budget_subscriptions", "budget_members",
+                  "budget_connections"):
+            self._db.execute(f"DROP TABLE {t}_old")
+        self._event("budget_rekeyed_by_plan",
+                    {"subscriptions": len(subs), "members": len(members),
+                     "connections": len(conns)})
+
     def list_budget(self) -> dict:
         """Everything the budget view shows: subscriptions with their
         members, and each connection's metadata - provider, sync history,
         whether a key is stored - never the key itself."""
         with self._lock:
             subs = self._db.execute(
-                "SELECT tool_id, vendor, plan, currency, renewal_date,"
-                " owner, notes, seat_tiers, covers, created_at, updated_at,"
-                " updated_by FROM budget_subscriptions ORDER BY tool_id"
+                "SELECT tool_id, plan_key, vendor, plan, currency,"
+                " renewal_date, owner, notes, seat_tiers, covers, created_at,"
+                " updated_at, updated_by FROM budget_subscriptions"
+                " ORDER BY tool_id, plan_key"
             ).fetchall()
             members = self._db.execute(
-                "SELECT tool_id, email, name, role, seat_tier, source,"
-                " usage, updated_at FROM budget_members"
-                " ORDER BY tool_id, email"
+                "SELECT tool_id, plan_key, email, name, role, seat_tier,"
+                " source, usage, updated_at FROM budget_members"
+                " ORDER BY tool_id, plan_key, email"
             ).fetchall()
             conns = self._db.execute(
-                "SELECT tool_id, provider, last_sync_at, last_sync_ok,"
-                " last_sync_detail, members_synced, created_at, updated_by"
-                " FROM budget_connections ORDER BY tool_id"
+                "SELECT tool_id, plan_key, provider, last_sync_at,"
+                " last_sync_ok, last_sync_detail, members_synced, created_at,"
+                " updated_by FROM budget_connections"
+                " ORDER BY tool_id, plan_key"
             ).fetchall()
-        by_tool: dict[str, list] = {}
+        # Keyed on the subscription, not the tool: two plans on one tool have
+        # different members, and folding them together is how a seat gets
+        # counted twice.
+        by_sub: dict[tuple, list] = {}
         for m in members:
-            by_tool.setdefault(m["tool_id"], []).append({
+            by_sub.setdefault((m["tool_id"], m["plan_key"]), []).append({
                 "email": m["email"], "name": m["name"], "role": m["role"],
                 "seat_tier": m["seat_tier"], "source": m["source"],
                 "usage": json.loads(m["usage"] or "{}"),
@@ -1470,9 +1580,11 @@ class State:
             "subscriptions": [dict(
                 r, seat_tiers=json.loads(r["seat_tiers"] or "[]"),
                 covers=json.loads(r["covers"] or "[]"),
-                members=by_tool.get(r["tool_id"], [])) for r in subs],
+                members=by_sub.get((r["tool_id"], r["plan_key"]), []))
+                for r in subs],
             "connections": [{
-                "tool_id": c["tool_id"], "provider": c["provider"],
+                "tool_id": c["tool_id"], "plan_key": c["plan_key"],
+                "provider": c["provider"],
                 "key_set": True, "last_sync_at": c["last_sync_at"],
                 "last_sync_ok": bool(c["last_sync_ok"]),
                 "last_sync_detail": c["last_sync_detail"],
@@ -1482,15 +1594,23 @@ class State:
         }
 
     def upsert_budget_subscription(self, tool_id: str, fields: dict,
-                                   by: str = ""):
+                                   by: str = "", key: str = ""):
+        """One subscription, identified by tool AND plan.
+
+        `key` names an existing subscription to edit; without it the plan in
+        `fields` decides. That distinction is what lets a plan be renamed -
+        editing "Team" to "Teams" updates the row rather than silently
+        creating a second subscription beside it.
+        """
         now = _now()
+        pk = key or plan_key(fields.get("plan", ""))
         with self._lock:
             self._db.execute(
-                "INSERT INTO budget_subscriptions (tool_id, vendor, plan,"
-                " currency, renewal_date, owner, notes, seat_tiers, covers,"
-                " created_at, updated_at, updated_by)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-                " ON CONFLICT(tool_id) DO UPDATE SET"
+                "INSERT INTO budget_subscriptions (tool_id, plan_key, vendor,"
+                " plan, currency, renewal_date, owner, notes, seat_tiers,"
+                " covers, created_at, updated_at, updated_by)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                " ON CONFLICT(tool_id, plan_key) DO UPDATE SET"
                 " vendor = excluded.vendor, plan = excluded.plan,"
                 " currency = excluded.currency,"
                 " renewal_date = excluded.renewal_date,"
@@ -1499,36 +1619,63 @@ class State:
                 " covers = excluded.covers,"
                 " updated_at = excluded.updated_at,"
                 " updated_by = excluded.updated_by",
-                (tool_id, fields.get("vendor", ""), fields.get("plan", ""),
+                (tool_id, pk, fields.get("vendor", ""),
+                 fields.get("plan", ""),
                  fields.get("currency", ""), fields.get("renewal_date", ""),
                  fields.get("owner", ""), fields.get("notes", ""),
                  json.dumps(fields.get("seat_tiers") or []),
                  json.dumps(fields.get("covers") or []), now, now, by),
             )
+            # Members and a connection can exist before the subscription
+            # does: you can store a vendor key and sync a member list, then
+            # write down what the licence is. Those rows landed under
+            # "default" because no plan had been named yet. If this is the
+            # tool's only subscription, they belong to it - adopt them
+            # rather than stranding them under a key nothing references.
+            if pk != "default":
+                others = self._db.execute(
+                    "SELECT COUNT(*) c FROM budget_subscriptions"
+                    " WHERE tool_id = ? AND plan_key != ?",
+                    (tool_id, pk)).fetchone()["c"]
+                if not others:
+                    for t in ("budget_members", "budget_connections"):
+                        self._db.execute(
+                            f"UPDATE OR REPLACE {t} SET plan_key = ?"
+                            " WHERE tool_id = ? AND plan_key = 'default'",
+                            (pk, tool_id))
             self._event("budget_subscription_saved",
-                        {"tool": tool_id, "by": by})
+                        {"tool": tool_id, "plan": pk, "by": by})
             self._db.commit()
 
-    def delete_budget_subscription(self, tool_id: str, by: str = "") -> bool:
-        """The subscription and everything hanging off it: a member list or a
+    def delete_budget_subscription(self, tool_id: str, by: str = "",
+                                   key: str = "default") -> bool:
+        """One subscription and everything hanging off it: a member list or a
         stored vendor key with no subscription is orphaned data nobody can
-        see or manage, which is the worst kind to keep."""
+        see or manage, which is the worst kind to keep.
+
+        Scoped to the plan. Deleting the Teams contract must not take the
+        individual Max seats with it - they are a different subscription that
+        happens to be for the same tool.
+        """
         with self._lock:
             cur = self._db.execute(
-                "DELETE FROM budget_subscriptions WHERE tool_id = ?",
-                (tool_id,))
+                "DELETE FROM budget_subscriptions"
+                " WHERE tool_id = ? AND plan_key = ?", (tool_id, key))
             self._db.execute(
-                "DELETE FROM budget_members WHERE tool_id = ?", (tool_id,))
+                "DELETE FROM budget_members WHERE tool_id = ? AND plan_key = ?",
+                (tool_id, key))
             self._db.execute(
-                "DELETE FROM budget_connections WHERE tool_id = ?", (tool_id,))
+                "DELETE FROM budget_connections"
+                " WHERE tool_id = ? AND plan_key = ?", (tool_id, key))
             if cur.rowcount:
                 self._event("budget_subscription_deleted",
-                            {"tool": tool_id, "by": by})
+                            {"tool": tool_id, "plan": key, "by": by})
             self._db.commit()
         return bool(cur.rowcount)
 
     def replace_budget_members(self, tool_id: str, members: list[dict],
-                               source: str, by: str = "") -> int:
+                               source: str, by: str = "",
+                               key: str = "default") -> int:
         """Replace the member rows this source owns; other sources' rows
         stay. A CSV re-import replaces the previous import, an API sync
         replaces the previous sync, and neither clobbers a manual entry.
@@ -1547,80 +1694,88 @@ class State:
                 " budget_members.{c} ELSE excluded.{c} END")
         with self._lock:
             self._db.execute(
-                "DELETE FROM budget_members WHERE tool_id = ? AND source = ?",
-                (tool_id, source))
+                "DELETE FROM budget_members"
+                " WHERE tool_id = ? AND plan_key = ? AND source = ?",
+                (tool_id, key, source))
             for m in members:
                 self._db.execute(
-                    "INSERT INTO budget_members (tool_id, email, name, role,"
-                    " seat_tier, source, usage, updated_at)"
-                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-                    " ON CONFLICT(tool_id, email) DO UPDATE SET"
+                    "INSERT INTO budget_members (tool_id, plan_key, email,"
+                    " name, role, seat_tier, source, usage, updated_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                    " ON CONFLICT(tool_id, plan_key, email) DO UPDATE SET"
                     " name = " + keep.format(c="name", empty="") + ","
                     " role = " + keep.format(c="role", empty="") + ","
                     " seat_tier = " + keep.format(c="seat_tier", empty="") + ","
                     " usage = " + keep.format(c="usage", empty="{}") + ","
                     " source = excluded.source,"
                     " updated_at = excluded.updated_at",
-                    (tool_id, m["email"], m.get("name", ""),
+                    (tool_id, key, m["email"], m.get("name", ""),
                      m.get("role", ""), m.get("seat_tier", ""), source,
                      json.dumps(m.get("usage") or {}), now),
                 )
             self._event("budget_members_replaced",
-                        {"tool": tool_id, "source": source,
+                        {"tool": tool_id, "plan": key, "source": source,
                          "count": len(members), "by": by})
             self._db.commit()
         return len(members)
 
     def set_budget_connection(self, tool_id: str, provider: str,
-                              api_key: str, by: str = ""):
+                              api_key: str, by: str = "",
+                              key: str = "default"):
         """Store or replace the vendor connection. A replaced key resets
         the sync history: what the old key last did says nothing about
         what the new one can do."""
         with self._lock:
             self._db.execute(
-                "INSERT INTO budget_connections (tool_id, provider, api_key,"
-                " last_sync_at, last_sync_ok, last_sync_detail,"
-                " members_synced, created_at, updated_by)"
-                " VALUES (?, ?, ?, NULL, 0, '', 0, ?, ?)"
-                " ON CONFLICT(tool_id) DO UPDATE SET"
+                "INSERT INTO budget_connections (tool_id, plan_key,"
+                " provider, api_key, last_sync_at, last_sync_ok,"
+                " last_sync_detail, members_synced, created_at, updated_by)"
+                " VALUES (?, ?, ?, ?, NULL, 0, '', 0, ?, ?)"
+                " ON CONFLICT(tool_id, plan_key) DO UPDATE SET"
                 " provider = excluded.provider, api_key = excluded.api_key,"
                 " last_sync_at = NULL, last_sync_ok = 0,"
                 " last_sync_detail = '', members_synced = 0,"
                 " updated_by = excluded.updated_by",
-                (tool_id, provider, api_key, _now(), by),
+                (tool_id, key, provider, api_key, _now(), by),
             )
             self._event("budget_connection_saved",
-                        {"tool": tool_id, "provider": provider, "by": by})
+                        {"tool": tool_id, "plan": key,
+                         "provider": provider, "by": by})
             self._db.commit()
 
-    def delete_budget_connection(self, tool_id: str, by: str = "") -> bool:
+    def delete_budget_connection(self, tool_id: str, by: str = "",
+                                 key: str = "default") -> bool:
         with self._lock:
             cur = self._db.execute(
-                "DELETE FROM budget_connections WHERE tool_id = ?", (tool_id,))
+                "DELETE FROM budget_connections"
+                " WHERE tool_id = ? AND plan_key = ?", (tool_id, key))
             if cur.rowcount:
                 self._event("budget_connection_deleted",
-                            {"tool": tool_id, "by": by})
+                            {"tool": tool_id, "plan": key, "by": by})
             self._db.commit()
         return bool(cur.rowcount)
 
-    def sync_connection_key(self, tool_id: str) -> tuple[str, str] | None:
+    def sync_connection_key(self, tool_id: str,
+                            key: str = "default") -> tuple[str, str] | None:
         """(provider, api_key) for the sync call, or None. The only reader
         of the key's plaintext; every other query masks it."""
         with self._lock:
             row = self._db.execute(
                 "SELECT provider, api_key FROM budget_connections"
-                " WHERE tool_id = ?", (tool_id,)).fetchone()
+                " WHERE tool_id = ? AND plan_key = ?",
+                (tool_id, key)).fetchone()
         return (row["provider"], row["api_key"]) if row else None
 
     def record_budget_sync(self, tool_id: str, ok: bool, detail: str,
-                           count: int, by: str = ""):
+                           count: int, by: str = "", key: str = "default"):
         with self._lock:
             self._db.execute(
                 "UPDATE budget_connections SET last_sync_at = ?,"
                 " last_sync_ok = ?, last_sync_detail = ?, members_synced = ?"
-                " WHERE tool_id = ?",
-                (_now(), int(ok), detail, count, tool_id))
-            self._event("budget_sync", {"tool": tool_id, "ok": ok,
+                " WHERE tool_id = ? AND plan_key = ?",
+                (_now(), int(ok), detail, count, tool_id, key))
+            self._event("budget_sync", {"tool": tool_id, "plan": key,
+                                        "ok": ok,
                                         "count": count, "by": by})
             self._db.commit()
 
@@ -1689,7 +1844,7 @@ class State:
             rows = self._db.execute(
                 "SELECT key, kind, name, vendor, category, confidence,"
                 " domains, devices, evidence, source, first_seen, last_seen,"
-                " dismissed_at, dismissed_by FROM candidates"
+                " dismissed_at, dismissed_by, disposition FROM candidates"
                 " ORDER BY last_seen DESC"
             ).fetchall()
         out = []
@@ -1835,6 +1990,31 @@ class State:
                 d["detail"] = {}
             out.append(d)
         return out
+
+    def set_candidate_disposition(self, key: str, disposition: str,
+                                  by: str = "") -> bool:
+        """Record what a name IS, as distinct from dismissing the row.
+
+        Dismissing says "not a tool" and stops the queue asking. This says
+        the name identifies no program, which every view reading a process
+        name needs to know - so it is stored where they can all read it
+        rather than being spent closing one card.
+        """
+        with self._lock:
+            cur = self._db.execute(
+                "UPDATE candidates SET disposition = ?, dismissed_at = ?,"
+                " dismissed_by = ? WHERE key = ?",
+                (disposition, _now(), by, key))
+            self._db.commit()
+            return cur.rowcount > 0
+
+    def dispositioned_names(self, disposition: str) -> list:
+        """Every candidate name carrying this disposition, lowercased."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT name FROM candidates WHERE disposition = ?",
+                (disposition,)).fetchall()
+        return sorted({(r["name"] or "").strip().lower() for r in rows} - {""})
 
     def dismiss_candidate(self, key: str, by: str = "") -> bool:
         with self._lock:

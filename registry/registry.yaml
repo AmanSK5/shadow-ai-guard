@@ -298,7 +298,11 @@ tools:
     # Warp's binary is named after its release channel, not the product:
     # Warp.app/Contents/MacOS/stable. Nothing derives "Warp" from that, which
     # is why it arrived as an unaccountable process reaching a model.
-    exe_names: ["warp.exe", "stable"]
+    # Warp's macOS binary is literally the release channel name. It is far
+    # too generic to match on: any process called "stable" would be read as
+    # Warp and quietly excused. Left out on purpose - the review queue asks
+    # about it instead, which is the right place for a name this ambiguous.
+    exe_names: ["warp.exe"]
     risk_tier: medium
     bundle_ids: [dev.warp.Warp-Stable]
   - id: perplexity

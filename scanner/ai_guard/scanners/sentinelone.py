@@ -115,6 +115,16 @@ _UNATTRIBUTABLE_PROCESSES = {
     # Generic by construction, the same as the hosts above - and an allowlist
     # entry would wrongly read as "this particular program is fine".
     "update", "updater", "squirrel",
+    # VPN and zero-trust clients. A tunnel daemon resolves DNS for
+    # everything behind the tunnel, so naming one says "something on this
+    # device, through the VPN" - the same non-answer as a stub resolver.
+    # The queue found firezone-client-tunnel; these are the rest of the
+    # category rather than waiting to be asked about one at a time.
+    "firezone-client-tunnel", "firezone-gui-client", "tailscaled",
+    "openvpn", "wireguard", "wg-quick", "nordvpn", "expressvpn",
+    "warp-svc", "cloudflared", "vpnagentd", "acwebsecagent", "pangps",
+    "pangpa", "zsatunnel", "zscaler", "stagent", "netskope", "nsdiag",
+    "globalprotect", "ivanti", "pulsesecure", "forticlient", "sonicwall",
 }
 
 

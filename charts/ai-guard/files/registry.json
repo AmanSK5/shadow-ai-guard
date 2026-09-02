@@ -520,8 +520,7 @@
         "Warp"
       ],
       "exe_names": [
-        "warp.exe",
-        "stable"
+        "warp.exe"
       ],
       "risk_tier": "medium",
       "bundle_ids": [
