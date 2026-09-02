@@ -1171,6 +1171,30 @@ def evidence_snapshot(request: Request,
     return JSONResponse(doc)
 
 
+def _fleet_devices(request):
+    """The receiver's enrolled-device rows, or None when there is no receiver
+    to ask.
+
+    Never [] on failure: an empty list reads as "no devices reported", and
+    the difference between that and "could not look" is the whole point of
+    the field this feeds. Classic mode has no receiver; an operator without
+    a session has no token to forward; either way the answer is unknown.
+    """
+    if not RECEIVER_URL:
+        return None
+    token = request.cookies.get(SESSION_COOKIE, "")
+    if not token:
+        return None
+    try:
+        out = managed.receiver_request(RECEIVER_URL, "GET", "/admin/devices",
+                                       token)
+    except Exception:
+        return None
+    if isinstance(out, dict):
+        return out.get("devices") or []
+    return out if isinstance(out, list) else None
+
+
 @app.get("/api/agentic")
 def agentic(request: Request,
             hours: float = Query(default=None, gt=0, le=24 * 90),
@@ -1194,6 +1218,12 @@ def agentic(request: Request,
     def build():
         out = derive.agentic_from(_findings_cached(hours, request),
                                   _registry(request))
+        # Whether an empty page is an answer or an absence. The collector
+        # version lives on the receiver's device rows, not in any finding -
+        # the same field Fleet shows. None means the question could not be
+        # asked at all (classic mode has no receiver), and the page then
+        # says nothing rather than claiming an absence it cannot see.
+        out["scan_coverage"] = derive.scheduler_coverage(_fleet_devices(request))
         # Nothing here can know when an organisation works, so the shaded
         # stretch is a setting and an unset one draws nothing at all.
         out["working_hours"] = derive.working_hours_band(

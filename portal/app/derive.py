@@ -1451,23 +1451,29 @@ def _version_tuple(v):
     return tuple(int(p) for p in parts[:3]) + (0,) * (3 - len(parts[:3]))
 
 
-def scheduler_coverage(findings):
+def scheduler_coverage(devices):
     """How many devices report a collector that can be trusted to have looked.
 
-    Absence of a scheduled job is only meaningful from a device that reads
-    schedulers. Without this the page could not tell "nothing here runs on a
-    timer" from "nothing here has been asked" - the same failure the Sources
-    view exists to prevent for detection sources, one level down.
+    Reads the collector version the receiver stores when a device enrols or
+    reports - the same field the Fleet view shows. The first version of this
+    read `heartbeat version=` out of finding evidence instead, which is the
+    BROWSER EXTENSION's paste-guard heartbeat: no collector emits one. So it
+    compared a paste-guard version against a collector threshold, found
+    nothing at or above it, and told an operator nothing had looked on an
+    estate whose Fleet view was showing 2.1.0 at the time.
+
+    `devices` is None when the source is unavailable at all - classic mode
+    has no receiver to ask. That is unknown, and unknown is not zero: the
+    caller renders nothing rather than claiming an absence it cannot see.
     """
+    if devices is None:
+        return None
     seen = {}
-    for f in findings:
-        dev = (f.get("device") or "").strip()
-        ev = f.get("evidence") or ""
-        if not dev or not ev.startswith("heartbeat version="):
-            continue
-        v = _version_tuple(ev.split("version=", 1)[1].split()[0])
-        if v and v > seen.get(dev, (0, 0, 0)):
-            seen[dev] = v
+    for d in devices or []:
+        did = (d.get("id") or d.get("device") or "").strip()
+        v = _version_tuple((d.get("agent_version") or "").strip())
+        if did and v and v > seen.get(did, (0, 0, 0)):
+            seen[did] = v
     capable = sum(1 for v in seen.values() if v >= SCHEDULER_SCAN_VERSION)
     return {
         "devices_reporting": len(seen),
@@ -1609,8 +1615,9 @@ def agentic_from(findings, reg=None):
         },
         "servers": mcp_from(findings),
         "coverage": mcp_coverage(reg),
-        # Whether an empty page is an answer or an absence.
-        "scan_coverage": scheduler_coverage(findings),
+        # Whether an empty page is an answer or an absence. Filled by the
+        # caller, which is the layer that can ask the receiver for it.
+        "scan_coverage": None,
     }
 
 

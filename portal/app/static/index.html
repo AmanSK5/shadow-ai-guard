@@ -8912,8 +8912,12 @@ async function agentic() {
   // "Nothing reported it" is only an answer from devices that looked. A
   // collector too old to read a scheduler produces the same silence as an
   // estate that schedules nothing, and the difference is the whole question.
-  const sc = AGENTIC.scan_coverage || {};
-  const scanNote = !nAuto && sc.devices_reporting ? `<p class="lede" style="margin:-2px 0 14px;max-width:56ch">${
+  // null when the question could not be asked - classic mode has no receiver
+  // to ask. Unknown renders nothing: an empty page with no way to check the
+  // collectors is still an empty page, and saying "nothing has looked" from
+  // no data is the same overclaim this view keeps being fixed for.
+  const sc = AGENTIC.scan_coverage;
+  const scanNote = (!nAuto && sc && sc.devices_reporting) ? `<p class="lede" style="margin:-2px 0 14px">${
       sc.capable
         ? `<b>${sc.capable}</b> of ${sc.devices_reporting} device${
             sc.devices_reporting === 1 ? '' : 's'} run a collector that reads schedulers,
@@ -8924,7 +8928,7 @@ async function agentic() {
            <b>nothing here has looked yet</b>. This is an absence, not a finding -
            update the collectors before reading the zero.`}</p>` : '';
   const weak = nUnrec
-    ? `<p class="lede" style="margin:-2px 0 14px;max-width:52ch">${nUnrec === 1
+    ? `<p class="lede" style="margin:-2px 0 14px">${nUnrec === 1
         ? 'One more process' : nUnrec + ' more processes'} reached a model
        without being a browser or a tool the registry knows. Whether a person
        was driving ${nUnrec === 1 ? 'it' : 'them'} is not established${
