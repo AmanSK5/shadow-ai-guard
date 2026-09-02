@@ -38,6 +38,32 @@ REGISTRY_PATH = Path(__file__).parent / "ai_services.yaml"
 # Strict pattern for domain entries: alphanumeric, dots, hyphens, optional wildcard prefix.
 _DOMAIN_RE = re.compile(r"^(\*\.)?[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?$")
 
+# A macOS helper subprocess carries its parent's name plus a role:
+# "Google Chrome Helper", "Google Chrome Helper (Renderer)", "Claude Helper".
+# The parent is the process worth naming, so the suffix is dropped. The
+# closing bracket is optional: a role can reach us already truncated.
+_HELPER_SUFFIX_RE = re.compile(r"\s+helper(\s*\(.*)?$")
+
+
+def normalise_process(process_name: str) -> str:
+    """A process name reduced to the form the allowlist is written in.
+
+    SentinelOne reports processName in whatever shape the platform uses:
+    a bare name on macOS, an .exe on Windows, occasionally a full path,
+    and on macOS a helper subprocess carrying its parent's name and role.
+    The allowlist is written in one shape and was matched by exact string,
+    so "OneDrive" never matched "onedrive.exe" and no Windows browser
+    matched anything at all - which let every Office app through the
+    Microsoft-noise filter and raised a bridge finding on chrome.exe.
+    """
+    n = (process_name or "").strip().lower()
+    if not n:
+        return ""
+    n = n.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    if n.endswith(".exe"):
+        n = n[:-4]
+    return _HELPER_SUFFIX_RE.sub("", n).strip()
+
 
 @dataclass
 class AIService:
@@ -286,8 +312,8 @@ class Registry:
 
         # Load allowed process names (browsers, native apps, system processes)
         self.allowed_processes = set(
-            p.lower() for p in data.get("allowed_processes", [])
-        )
+            normalise_process(p) for p in data.get("allowed_processes", [])
+        ) - {""}
 
         # Load discover exclusion domains
         self.discover_exclude_domains = set(
@@ -375,8 +401,13 @@ class Registry:
         return None
 
     def is_allowed_process(self, process_name: str) -> bool:
-        """Check if a process is a known browser, native app, or system process."""
-        return process_name.lower() in self.allowed_processes
+        """Check if a process is a known browser, native app, or system process.
+
+        Both sides are normalised, so one entry covers a name in every
+        shape the platforms report it in.
+        """
+        n = normalise_process(process_name)
+        return bool(n) and n in self.allowed_processes
 
     @property
     def all_domains(self) -> set[str]:

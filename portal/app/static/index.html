@@ -2066,10 +2066,13 @@ const WIDGETS = {
     if (!AGENTIC) return `<div class="wcard w6"><h3>Running on its own</h3>
       <p class="lede">Not read yet - open Agentic AI.</p></div>`;
     const c = AGENTIC.counts || {};
-    const loose = (AGENTIC.agents || []).filter(a => !a.accountable);
+    const loose = (AGENTIC.agents || []).filter(
+      a => a.autonomous && !a.accountable);
     return `<div class="wcard w6"><h3>Running on its own
-      <span class="count">${c.agents || 0}</span></h3>
-      ${!c.agents ? `<p class="lede">Nothing reported starting itself. That is either
+      <span class="count">${c.autonomous || 0}</span></h3>
+      ${!c.autonomous ? `<p class="lede">Nothing reported starting itself.${
+        c.unrecognised ? ` ${c.unrecognised} process${c.unrecognised === 1 ? '' : 'es'}
+        reached a model unrecognised, which is a different question.` : ''} That is either
         true or the collectors have not been updated to look - Health says which.</p>`
       : `<p class="lede">${c.unaccountable
           ? `<b>${c.unaccountable}</b> of them answer to nobody: a credential with no
@@ -8885,12 +8888,28 @@ async function agentic() {
   const A = AGENTIC.agents || [], c = AGENTIC.counts || {};
   const srv = AGENTIC.servers || [], cov = AGENTIC.coverage || {};
 
-  const head = c.agents
-    ? `<h1 class="ag-verdict">${c.agents} thing${c.agents === 1 ? '' : 's'} run${
-        c.agents === 1 ? 's' : ''} without being asked.${
+  // Two claims of different strength, and the headline may only make the
+  // strong one. `autonomous` is a thing that reported running unattended;
+  // `unrecognised` is a process we could not name reaching a model, which
+  // says nothing about who started it. They used to share one sentence, so
+  // an estate whose collectors predate `mode` read every DNS finding it had
+  // as an unsupervised agent.
+  const nAuto = c.autonomous || 0, nUnrec = c.unrecognised || 0;
+  const strong = nAuto
+    ? `<h1 class="ag-verdict">${nAuto} thing${nAuto === 1 ? '' : 's'} run${
+        nAuto === 1 ? 's' : ''} without being asked.${
         c.unaccountable ? ` <em>${c.unaccountable} answer${
           c.unaccountable === 1 ? 's' : ''} to nobody.</em>` : ''}</h1>`
-    : `<h1 class="ag-verdict">Nothing here is running on its own.</h1>`;
+    : `<h1 class="ag-verdict">Nothing here reports running on its own.</h1>`;
+  const weak = nUnrec
+    ? `<p class="lede" style="margin:-2px 0 14px;max-width:52ch">${nUnrec === 1
+        ? 'One more process' : nUnrec + ' more processes'} reached a model
+       without being a browser or a tool the registry knows. Whether a person
+       was driving ${nUnrec === 1 ? 'it' : 'them'} is not established${
+       c.unattributed ? `, and ${c.unattributed} of the rows below name no
+       identity at all` : ''}.</p>`
+    : '';
+  const head = strong + weak;
 
   const nodes = a => {
     // Starts / who authorised it / runs / can reach. The second is the
@@ -8984,9 +9003,7 @@ async function agentic() {
       <td>${(m.devices || []).length}</td></tr>`).join('')}</table></div>` : '';
 
   return `${head}
-  <p class="lede">Something started these without being asked - a timer, a scheduler, a
-  pipeline step - or reached a model from a process that is neither a browser nor a tool
-  the registry knows. The second box in each chain is the one to read: an empty box means
+  <p class="lede">The second box in each chain is the one to read: an empty box means
   there is nothing to revoke when somebody leaves.</p>
   ${scheduled.length ? `<p class="label" style="margin:0 0 9px">The day each is set to run</p>
     <p class="lede" style="margin:0 0 10px">Read from the schedule each job declares -

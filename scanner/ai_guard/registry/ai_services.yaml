@@ -650,16 +650,29 @@ bridge_targets:
 allowed_processes:
 - chrome
 - Google Chrome
+- chromium
 - firefox
 - safari
 - msedge
 - Microsoft Edge
 - brave
 - arc
+- opera
+- vivaldi
 - Slack
 - Teams
+- Microsoft Teams
+- ms-teams
 - OneDrive
 - Outlook
+- Excel
+- PowerPnt
+- PowerPoint
+- WinWord
+- OneNote
+- MsAccess
+- MSPub
+- lync
 - Figma
 - Notion
 - svchost.exe

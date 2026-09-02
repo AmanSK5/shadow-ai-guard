@@ -39,7 +39,7 @@ from typing import Optional
 import httpx
 
 from ai_guard.config import ScannerConfig
-from ai_guard.registry import AIService, Registry
+from ai_guard.registry import AIService, Registry, normalise_process
 from ai_guard.scanners.base import (
     BaseScanner,
     DetectionSource,
@@ -66,6 +66,7 @@ MAX_THROTTLE_RETRIES = 3
 _MICROSOFT_SYSTEM_DOMAINS = {
     "copilot.cloud.microsoft",
     "copilot.microsoft.com",
+    "sydney.bing.com",
     "substrate.office.com",
 }
 
@@ -78,17 +79,35 @@ DV_QUERY_TIMEOUT_SECONDS = 60
 # entire basis of bridge detection.
 _AGENT_VERSION_RE = re.compile(r"^\d+\.\d+(\.\d+)*$")
 
+# Processes that resolve on behalf of everything else on the box. A stub
+# resolver is the querying process for every lookup the machine makes, and
+# a service host or an exec helper is whatever it was asked to run, so
+# naming one of these says only "this device resolved it" - the same
+# non-answer as an agent version string, and it must be treated the same.
+#
+# This is deliberately absolute rather than domain-scoped: allowed_processes
+# only suppresses noise on the Microsoft domains, which left systemd-resolved
+# attributed as the client on every other AI domain there is.
+_UNATTRIBUTABLE_PROCESSES = {
+    "systemd-resolved", "systemd-executor", "systemd", "resolvconf",
+    "mdnsresponder", "discoveryd", "dnsmasq", "unbound", "nscd",
+    "svchost", "dnscache", "networkservice",
+}
+
 
 def is_unattributable(process_name: str) -> bool:
-    """True when processName does not name a process.
+    """True when processName does not name the process that wanted the name.
 
-    Empty, or an agent version string. Bridge findings must not be raised
-    from these: "something on this device reached api.github.com" is not
+    Empty, an agent version string, or a resolver or host that queries on
+    behalf of everything else. Bridge findings must not be raised from
+    these: "something on this device reached api.github.com" is not
     actionable, and firing a warn on it trains people to ignore warns.
     """
     if not process_name:
         return True
-    return bool(_AGENT_VERSION_RE.match(process_name.strip()))
+    if _AGENT_VERSION_RE.match(process_name.strip()):
+        return True
+    return normalise_process(process_name) in _UNATTRIBUTABLE_PROCESSES
 
 
 class SentinelOneScanner(BaseScanner):

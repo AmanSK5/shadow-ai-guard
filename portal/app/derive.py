@@ -1018,10 +1018,45 @@ BROWSER_PROCESSES = {
 # The DNS scan writes the process into its evidence as "(via python3)".
 _VIA = re.compile(r"\(via ([^)]{1,80})\)")
 
+# A macOS helper subprocess carries its parent's name and a role. The parent
+# is the process worth naming. The closing bracket is optional because _VIA
+# is bounded by ")" and truncates "(via Google Chrome Helper (Renderer))" at
+# the inner one, delivering a role that never closes.
+_HELPER_SUFFIX_RE = re.compile(r"\s+helper(\s*\(.*)?$")
 
-def bespoke_client(f, known_binaries=()):
+# Resolvers and service hosts that query on behalf of everything else on the
+# box. Naming one says "this device resolved it" and nothing about what
+# wanted the name, so it cannot support a claim that something bespoke ran.
+# The scanner drops these before writing "(via ...)"; this is the same list
+# on the reading side, because evidence already in the log store was written
+# before it learned to.
+UNATTRIBUTABLE_PROCESSES = {
+    "systemd-resolved", "systemd-executor", "systemd", "resolvconf",
+    "mdnsresponder", "discoveryd", "dnsmasq", "unbound", "nscd",
+    "svchost", "dnscache", "networkservice",
+}
+
+
+def normalise_process(name):
+    """A process name reduced to one comparable form.
+
+    Lowercased, path and .exe stripped, a macOS "X Helper (Role)" reduced
+    to X. Matching was exact before, so "Google Chrome Helper" was not a
+    browser and "Claude Helper" was not the `claude` binary, and both were
+    reported as something nobody could account for.
+    """
+    n = (name or "").strip().lower()
+    if not n:
+        return ""
+    n = n.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    if n.endswith(".exe"):
+        n = n[:-4]
+    return _HELPER_SUFFIX_RE.sub("", n).strip()
+
+
+def bespoke_client(f, known_processes=()):
     """The process name when a finding shows something OTHER than a browser
-    or a known AI tool reaching a model, else "".
+    or an application the registry knows reaching a model, else "".
 
     This is the case with nothing to inventory. No config file, no registry
     binary, no MCP server - a script with a key in it, which is what an agent
@@ -1033,6 +1068,13 @@ def bespoke_client(f, known_binaries=()):
     ordinary case and every other page here already covers it. A known
     binary is excluded because the tool is then the finding - `claude`
     reaching Anthropic is claude-code, not a mystery.
+
+    So is anything on the registry's allowed_processes: Office resolving a
+    Copilot endpoint is background M365 activity, and Slack or Notion
+    reaching a model is a shipped feature of an application somebody chose.
+    "A tool the registry knows" has to mean the whole registry, not just the
+    binaries of AI CLIs - reading only those made every desktop application
+    in the estate a mystery process with nobody behind it.
     """
     if (f.get("surface") or "") not in ("network", "cloud"):
         return ""
@@ -1040,26 +1082,35 @@ def bespoke_client(f, known_binaries=()):
     if not m:
         return ""
     proc = m.group(1).strip()
-    low = proc.lower()
-    if low in BROWSER_PROCESSES:
+    stem = normalise_process(proc)
+    if not stem:
         return ""
-    stem = low.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
-    if stem in BROWSER_PROCESSES:
+    # Says a device resolved it, not what wanted the name.
+    if stem in UNATTRIBUTABLE_PROCESSES:
         return ""
-    for b in known_binaries:
-        b = (b or "").lower()
-        if b and (stem == b or stem == b + ".exe"):
-            return ""
+    if proc.lower() in BROWSER_PROCESSES or stem in BROWSER_PROCESSES:
+        return ""
+    if stem in known_processes:
+        return ""
     return proc[:80]
 
 
-def registry_binaries(reg):
-    """Every binary the registry knows an AI tool runs as."""
+def registry_processes(reg):
+    """Every process name the registry can account for, normalised.
+
+    Two sources, because "a tool the registry knows" is both: the binaries
+    its AI CLIs run as, and allowed_processes - the browsers, desktop apps
+    and system daemons the scanner already refuses to raise findings about.
+    Only the first was read here, so an estate's whole Office install
+    arrived on the agentic page as processes nobody could account for.
+    """
     out = set()
     for t in (reg or {}).get("tools", []) or []:
         for b in ((t.get("cli") or {}).get("binaries") or []):
-            out.add(str(b).lower())
-    return out
+            out.add(normalise_process(b))
+    for p in (reg or {}).get("allowed_processes", []) or []:
+        out.add(normalise_process(p))
+    return out - {""}
 
 
 # MCP clients that exist and that nothing here reads yet. A maintained list,
@@ -1306,7 +1357,7 @@ def agentic_from(findings, reg=None):
     machine identity would manufacture the finding this page exists to
     report, on every estate that has not upgraded its collectors.
     """
-    binaries = registry_binaries(reg)
+    known = registry_processes(reg)
 
     # Which MCP servers sit on each machine, so a chain can say what the
     # thing running there could reach.
@@ -1326,7 +1377,7 @@ def agentic_from(findings, reg=None):
         dev = (f.get("device") or "").strip()
         tool = _base_tool(f.get("tool") or "")
         mode = (f.get("mode") or "").strip()
-        proc = bespoke_client(f, binaries)
+        proc = bespoke_client(f, known)
 
         if mode != "autonomous" and not proc:
             continue
@@ -1364,14 +1415,40 @@ def agentic_from(findings, reg=None):
             # The two states worth counting separately. Accountable means
             # there is something to revoke; the rest is the point of the page.
             "accountable": identity == "person",
+            # Whether this row is the page's own claim - something that said
+            # it ran unattended - or the weaker one: a process we could not
+            # name reaching a model, with nothing said about who started it.
+            "autonomous": mode == "autonomous",
+            # Three states, not two. A blank identity is not a machine
+            # identity, and the counters below must not read it as one.
+            "authority": (identity if identity in ("person", "machine", "none")
+                          else "unknown"),
         })
 
     agents.sort(key=lambda a: (a["accountable"], a["device"], a["tool"]))
+
+    # Only a row that SAID it ran unattended supports "runs without being
+    # asked". A bespoke client is a real finding and keeps its own count:
+    # it means a process we cannot name reached a model, which says nothing
+    # about whether a person was sitting there. Folding the two together
+    # made the headline assert autonomy from evidence that never mentioned
+    # it - and on an estate whose collectors predate `mode`, that is every
+    # row on the page.
+    auto = [a for a in agents if a["autonomous"]]
     return {
         "agents": agents,
         "counts": {
             "agents": len(agents),
-            "unaccountable": sum(1 for a in agents if not a["accountable"]),
+            "autonomous": len(auto),
+            # Bespoke clients that never claimed to be unattended.
+            "unrecognised": sum(1 for a in agents if not a["autonomous"]),
+            # Established to have no person behind it, among the things that
+            # actually run themselves. Silence is not counted here - see the
+            # docstring; "we did not establish who" is `unattributed`.
+            "unaccountable": sum(1 for a in auto
+                                 if a["authority"] in ("machine", "none")),
+            "unattributed": sum(1 for a in agents
+                                if a["authority"] == "unknown"),
             "machine_identities": sum(1 for a in agents
                                       if a["identity"] == "machine"),
             "bespoke": sum(1 for a in agents if a["process"]),
