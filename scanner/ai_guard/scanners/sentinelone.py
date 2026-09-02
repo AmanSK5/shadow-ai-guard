@@ -70,6 +70,18 @@ _MICROSOFT_SYSTEM_DOMAINS = {
     "substrate.office.com",
 }
 
+# A pure M365 backend: no human reaches it as an AI tool, so ANY non-browser
+# hitting it is background activity regardless of which process it was.
+#
+# Narrower than the set above on purpose. The copilot hosts are user-facing -
+# a script reaching copilot.microsoft.com is worth a second look - and only
+# substrate is a backend nobody visits. Keying on the domain instead of the
+# process is what lets the shell-process names stop being maintained by hand:
+# Microsoft can ship a new one and it stays quiet without an entry.
+_MICROSOFT_BACKEND_DOMAINS = {
+    "substrate.office.com",
+}
+
 # Maximum time to spend polling a single DV query before giving up.
 DV_QUERY_TIMEOUT_SECONDS = 60
 
@@ -292,6 +304,17 @@ class SentinelOneScanner(BaseScanner):
                     process_name
                     and self.registry.is_allowed_process(process_name)
                     and any(dns_request.endswith(d) for d in _MICROSOFT_SYSTEM_DOMAINS)
+                ):
+                    continue
+
+                # A backend nobody visits: the process does not matter, only
+                # that it is not somebody in a browser. This is the rule that
+                # replaces maintaining a list of Windows shell process names.
+                if (
+                    process_name
+                    and not self.registry.is_browser_process(process_name)
+                    and any(dns_request.endswith(d)
+                            for d in _MICROSOFT_BACKEND_DOMAINS)
                 ):
                     continue
 

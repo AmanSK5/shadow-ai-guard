@@ -222,3 +222,66 @@ def test_a_dismissed_server_keeps_its_record_and_its_decision(managed):
     c = _queue()["mcp_server:figma"]
     assert c["dismissed_at"] is not None
     assert c["devices"] == 2
+
+
+# ---------------------------------------------------------------- processes --
+#
+# The surface that never got a queue. An unrecognised process reaching a model
+# was drawn on the Agentic AI view as "no tool we know" and then discarded, so
+# the only way it ever became known was somebody spotting it on a page and
+# editing the registry by hand. The estate observed it; the estate should ask.
+
+def _dns(process, host="api.anthropic.com", device="D1"):
+    return {"tool": "claude", "surface": "network", "os": "macos",
+            "account_domain": "", "device": device, "user": "",
+            "evidence": "DNS lookup for %s (via %s)" % (host, process),
+            "severity": "info", "reported_at": "2026-09-02T10:00:00Z"}
+
+
+def test_a_process_the_registry_cannot_name_becomes_a_candidate(managed, monkeypatch):
+    monkeypatch.setattr(main, "_KNOWN_PROCESSES", {"claude", "google chrome"})
+    r = client.post("/report", json=_dns("nightly-digest"), headers=AUTH)
+    assert r.status_code == 200
+    rows = client.get("/admin/candidates", headers=ADMIN).json()["candidates"]
+    got = [c for c in rows if c["kind"] == "process"]
+    assert [c["name"] for c in got] == ["nightly-digest"]
+    # The evidence travels with it: a human decides what it is, and cannot
+    # do that from a bare name. Compared whole rather than by substring -
+    # a substring test on something URL-shaped passes on a value that merely
+    # contains it somewhere.
+    assert got[0]["evidence"] == ("DNS lookup for api.anthropic.com"
+                                  " (via nightly-digest)")
+
+
+@pytest.mark.parametrize("proc,why", [
+    ("claude", "a binary the registry names is the tool, not a question"),
+    ("Google Chrome Helper", "a browser is the ordinary case"),
+    ("systemd-resolved", "a resolver names nothing to ask about"),
+    ("Update.exe", "Squirrel's updater names the framework, not the app"),
+])
+def test_the_things_that_are_not_questions_are_not_queued(managed, monkeypatch, proc, why):
+    monkeypatch.setattr(main, "_KNOWN_PROCESSES", {"claude", "google chrome"})
+    client.post("/report", json=_dns(proc), headers=AUTH)
+    rows = client.get("/admin/candidates", headers=ADMIN).json()["candidates"]
+    assert [c for c in rows if c["kind"] == "process"] == [], why
+
+
+def test_the_same_process_on_many_devices_is_one_question(managed, monkeypatch):
+    """A review queue that asks the same question once per machine is a
+    queue nobody reads."""
+    monkeypatch.setattr(main, "_KNOWN_PROCESSES", {"claude"})
+    for d in ("D1", "D2", "D3"):
+        client.post("/report", json=_dns("nightly-digest", device=d), headers=AUTH)
+    rows = client.get("/admin/candidates", headers=ADMIN).json()["candidates"]
+    assert len([c for c in rows if c["kind"] == "process"]) == 1
+
+
+def test_a_process_candidate_survives_the_receivers_own_validation(managed, monkeypatch):
+    """Names that fail the candidate text rule are skipped rather than
+    refused: they are evidence on a valid finding, and a finding must never
+    bounce because a process has an odd name."""
+    monkeypatch.setattr(main, "_KNOWN_PROCESSES", {"claude"})
+    r = client.post("/report", json=_dns("weird\x01name"), headers=AUTH)
+    assert r.status_code == 200
+    rows = client.get("/admin/candidates", headers=ADMIN).json()["candidates"]
+    assert [c for c in rows if c["kind"] == "process"] == []

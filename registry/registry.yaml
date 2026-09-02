@@ -23,12 +23,14 @@ version: 1
 tools:
   - id: claude
     name: Claude
+    env_vars: [ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN]
     vendor: Anthropic
     category: assistant
     license_group: anthropic-claude
     approved: false
     added_by: manual
     domains: [claude.ai, anthropic.com, api.anthropic.com, claude.com, claudeusercontent.com, console.anthropic.com]
+    inference_domains: [api.anthropic.com]
     app_names: ["Claude.app", "Claude"]
     bundle_ids: [com.anthropic.claudefordesktop]
     mcp_config_paths_macos:
@@ -45,6 +47,7 @@ tools:
 
   - id: claude-code
     name: Claude Code
+    env_vars: [ANTHROPIC_API_KEY, CLAUDE_CODE_OAUTH_TOKEN]
     vendor: Anthropic
     category: coding
     license_group: anthropic-claude
@@ -65,12 +68,14 @@ tools:
 
   - id: chatgpt
     name: ChatGPT
+    env_vars: [OPENAI_API_KEY]
     vendor: OpenAI
     category: assistant
     license_group: openai-chatgpt
     approved: false
     added_by: manual
     domains: [chat.openai.com, chatgpt.com, openai.com, api.openai.com, cdn.oaistatic.com, auth0.openai.com]
+    inference_domains: [api.openai.com, chat.openai.com]
     app_names: ["ChatGPT.app", "ChatGPT"]
     bundle_ids: [com.openai.chat]
     extension_ids:
@@ -82,6 +87,7 @@ tools:
 
   - id: codex-cli
     name: Codex CLI
+    env_vars: [OPENAI_API_KEY, CODEX_API_KEY]
     vendor: OpenAI
     category: coding
     license_group: openai-chatgpt
@@ -110,6 +116,7 @@ tools:
 
   - id: gemini-cli
     name: Gemini CLI
+    env_vars: [GEMINI_API_KEY, GOOGLE_API_KEY]
     vendor: Google
     category: coding
     license_group: google-gemini
@@ -132,6 +139,7 @@ tools:
     approved: false
     added_by: manual
     domains: [copilot-proxy.githubusercontent.com, api.githubcopilot.com, copilot.github.com]
+    inference_domains: [api.githubcopilot.com, copilot-proxy.githubusercontent.com]
     extension_ids:
       vscode: [github.copilot, github.copilot-chat]
       jetbrains: [github-copilot]
@@ -140,6 +148,7 @@ tools:
 
   - id: cursor
     name: Cursor
+    env_vars: [CURSOR_API_KEY]
     vendor: Anysphere
     category: coding
     approved: false
@@ -228,6 +237,7 @@ tools:
     approved: false
     added_by: manual
     domains: [tabnine.com, api.tabnine.com]
+    inference_domains: [api.tabnine.com]
     extension_ids:
       vscode: [tabnine.tabnine-vscode]
     risk_tier: medium
@@ -239,6 +249,7 @@ tools:
     approved: false
     added_by: manual
     domains: [otter.ai, api.otter.ai]
+    inference_domains: [api.otter.ai]
     app_names: ["Otter.app", "Otter"]
     email_senders: [otter.ai]
     risk_tier: high
@@ -270,6 +281,7 @@ tools:
     approved: false
     added_by: manual
     domains: [wisprflow.ai, wisprflow.com, api.wisprflow.ai]
+    inference_domains: [api.wisprflow.ai]
     app_names: ["Wispr Flow.app", "Wispr Flow"]
     risk_tier: high
     email_senders: [wisprflow.ai]
@@ -281,6 +293,7 @@ tools:
     approved: false
     added_by: manual
     domains: [warp.dev, app.warp.dev]
+    inference_domains: [app.warp.dev]
     app_names: ["Warp.app", "Warp"]
     # Warp's binary is named after its release channel, not the product:
     # Warp.app/Contents/MacOS/stable. Nothing derives "Warp" from that, which
@@ -290,11 +303,13 @@ tools:
     bundle_ids: [dev.warp.Warp-Stable]
   - id: perplexity
     name: Perplexity
+    env_vars: [PERPLEXITY_API_KEY]
     vendor: Perplexity AI
     category: search
     approved: false
     added_by: manual
     domains: [perplexity.ai, api.perplexity.ai, www.perplexity.ai]
+    inference_domains: [api.perplexity.ai]
     app_names: ["Perplexity.app", "Perplexity"]
     email_senders: [perplexity.ai]
     risk_tier: medium
@@ -310,6 +325,7 @@ tools:
     added_by: manual
     notes: Local models; data stays on device but model provenance unknown. Separate risk class.
     domains: [ollama.com, registry.ollama.ai, ollama.ai, api.ollama.com]
+    inference_domains: [api.ollama.com]
     app_names: ["Ollama.app", "Ollama", ollama]
     cli:
       config_paths: [".ollama/models"]
@@ -331,21 +347,25 @@ tools:
 
   - id: deepseek
     name: DeepSeek
+    env_vars: [DEEPSEEK_API_KEY]
     vendor: DeepSeek
     category: assistant
     approved: false
     added_by: manual
     domains: [chat.deepseek.com, deepseek.com, api.deepseek.com]
+    inference_domains: [api.deepseek.com, chat.deepseek.com]
     email_senders: [deepseek.com]
     risk_tier: high
 
   - id: mistral
     name: Mistral Le Chat
+    env_vars: [MISTRAL_API_KEY]
     vendor: Mistral AI
     category: assistant
     approved: false
     added_by: manual
     domains: [chat.mistral.ai, mistral.ai, api.mistral.ai]
+    inference_domains: [api.mistral.ai, chat.mistral.ai]
     email_senders: [mistral.ai]
     risk_tier: medium
   - id: grok
@@ -405,6 +425,7 @@ tools:
     approved: false
     added_by: manual
     domains: [fireflies.ai, app.fireflies.ai]
+    inference_domains: [app.fireflies.ai]
     risk_tier: high
     email_senders: [fireflies.ai]
     app_names: ["Fireflies.app", "Fireflies"]
@@ -430,11 +451,13 @@ tools:
     email_senders: [openai.com]
   - id: hugging-face
     name: Hugging Face
+    env_vars: [HUGGINGFACE_API_KEY, HF_TOKEN]
     vendor: Hugging Face
     category: platform
     approved: false
     added_by: manual
     domains: [huggingface.co, api-inference.huggingface.co]
+    inference_domains: [api-inference.huggingface.co]
     risk_tier: medium
     email_senders: [huggingface.co]
 bridge_targets:

@@ -2312,6 +2312,7 @@ const WIDGETS = {
       <table>${cands.slice(0, 6).map(c => `<tr>
         <td>${esc(c.name)}
           ${c.kind === 'mcp_server' ? ' <span class="pill p-acc">MCP server</span>' : ''}
+          ${c.kind === 'process' ? ' <span class="pill p-warn">process</span>' : ''}
           <div style="color:var(--mut);font-size:12px">
           ${esc(c.kind === 'mcp_server' ? (c.evidence || '')
                                         : (c.domains || []).join(', '))}</div></td>
@@ -8349,7 +8350,7 @@ async function managedAction(act, el) {
       domains: c.domains || [],
       // What discovery actually saw, shown as its own card. It is the only
       // thing on the next step that is evidence rather than a guess.
-      evidence: {kind: c.kind, what: c.kind === 'mcp_server'
+      evidence: {kind: c.kind, what: (c.kind === 'mcp_server' || c.kind === 'process')
                    ? (c.evidence || c.name) : (c.domains || []).join(', ') || c.name,
                  devices: c.devices || 0, confidence: c.confidence || '',
                  category: c.category || ''},
@@ -9081,12 +9082,15 @@ async function agentic() {
       <li><b>What it was asked to do.</b> The prompt is on the machine and could be read.
         Reading what somebody typed is a heavier intrusion than knowing which tool ran,
         and it is not needed to answer anything on this page.</li>
-      <li><b>A scheduled job that runs a script.</b> The scan reads what a scheduler
-        declares, so it sees a job that names an AI tool. A job that runs
-        <span class="mono">nightly-report.sh</span>, which calls a model from inside,
-        names nothing the registry can match - and reading the contents of somebody's
-        scripts is the same intrusion as reading their prompts. This is a real gap
-        rather than a quiet one: silence here is not evidence of nothing scheduled.</li>
+      <li><b>A scheduled job that runs a script, on Windows.</b> Elsewhere this is
+        now covered: a job that runs <span class="mono">nightly-report.sh</span> names
+        nothing the registry can match, but if its own definition hands that script a
+        model credential the job says what it reaches. macOS and Linux both declare a
+        job's environment and both are read. A Windows scheduled task does not - an
+        action carries a command and inherits the user's environment - so there is
+        nothing to read, and a wrapper script there stays invisible. Reading the
+        contents of the script itself would be the same intrusion as reading a prompt,
+        so it is not done. Silence on Windows is not evidence of nothing scheduled.</li>
             <li><b>Whether it stayed within its brief.</b> Same material, same trade. Worth
         revisiting once the signals above have been run on a real estate and shown to be
         insufficient - which is also when there is a case to put to whoever approves it.</li>

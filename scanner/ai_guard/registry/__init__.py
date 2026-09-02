@@ -42,7 +42,21 @@ _DOMAIN_RE = re.compile(r"^(\*\.)?[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?$")
 # "Google Chrome Helper", "Google Chrome Helper (Renderer)", "Claude Helper".
 # The parent is the process worth naming, so the suffix is dropped. The
 # closing bracket is optional: a role can reach us already truncated.
-_HELPER_SUFFIX_RE = re.compile(r"\s+helper(\s*\(.*)?$")
+def _strip_helper_suffix(n):
+    """"google chrome helper (renderer)" -> "google chrome".
+
+    String work rather than a pattern. The regex this replaces was
+    `\\s+helper(\\s*\\(.*)?$`, whose two adjacent whitespace quantifiers
+    backtrack polynomially on a name of many spaces - and the name comes off
+    a posted finding, so it is not input this gets to assume anything about.
+    """
+    i = n.rfind(" helper")
+    if i == -1:
+        return n
+    tail = n[i + len(" helper"):].lstrip(" \t")
+    if tail and not tail.startswith("("):
+        return n
+    return n[:i].rstrip(" \t")
 
 
 def normalise_process(process_name: str) -> str:
@@ -62,7 +76,7 @@ def normalise_process(process_name: str) -> str:
     n = n.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
     if n.endswith(".exe"):
         n = n[:-4]
-    return _HELPER_SUFFIX_RE.sub("", n).strip()
+    return _strip_helper_suffix(n).strip()
 
 
 def process_stems(process_name):
@@ -420,6 +434,21 @@ class Registry:
             if pattern.startswith("*.") and domain.endswith(pattern[1:]):
                 return target
         return None
+
+    # The browsers among allowed_processes. A person using a model in a
+    # browser is the ordinary case every other view already covers, and it is
+    # the one thing that must stay visible on a backend domain where every
+    # other process is background noise.
+    BROWSER_NAMES = frozenset({
+        "chrome", "google chrome", "chromium", "firefox", "safari",
+        "com.apple.safari", "msedge", "microsoft edge", "brave",
+        "brave browser", "opera", "vivaldi", "arc",
+    })
+
+    def is_browser_process(self, process_name: str) -> bool:
+        """True when this name is a browser, in any shape a platform reports."""
+        return any(stem in self.BROWSER_NAMES
+                   for stem in process_stems(process_name))
 
     def is_allowed_process(self, process_name: str) -> bool:
         """Check if a process is a known browser, native app, or system process.

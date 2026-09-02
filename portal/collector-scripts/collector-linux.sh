@@ -396,6 +396,10 @@ for t in r.get("cli", []):
                         t.get("account_jwt_claim",""),
                         ",".join(t.get("config_paths") or []),
                         ",".join(t.get("binaries") or [])]))
+for t in r.get("inference", []):
+    out.append(U.join(["inf", t["tool"], ",".join(t.get("domains") or [])]))
+for t in r.get("env", []):
+    out.append(U.join(["env", t["tool"], ",".join(t.get("env_vars") or [])]))
 for m in r.get("mcp", []):
     out.append(U.join(["mcp", m["tool"], m["path"], m.get("os","any")]))
 print("\n".join(out))
@@ -673,6 +677,7 @@ cmd_runs_binary() {
 
 scan_systemd_dir() {
   local dir="$1" label="$2" unit base timer oncal exec tool bins
+  local matched envs etool evars v old_ifs itool idoms d
   [ -d "$dir" ] || return 0
   for unit in "$dir"/*.service; do
     [ -f "$unit" ] || continue
@@ -686,16 +691,70 @@ scan_systemd_dir() {
     oncal=$(grep -h '^OnCalendar=' "$timer" 2>/dev/null | head -1)
     oncal="${oncal#OnCalendar=}"
     [ -n "$oncal" ] || continue
+    matched=0
     while IFS="$SEP" read -r _kind tool _ap _keys _jp _jc _cfg bins; do
       [ -n "$bins" ] || continue
       if cmd_runs_binary "$exec" "$bins"; then
         report_once "cli" "$tool" "" "$label/$(basename "$timer")" \
           "autonomous" "" "systemd timer, $oncal" "oncalendar:$oncal"
+        matched=1
         break
       fi
     done <<EOF2
 $(printf '%s\n' "$REG_TSV" | grep "^cli${SEP}")
 EOF2
+
+    # No binary matched - but the command may name the host instead. A unit
+    # that curls a model API on a timer is reaching a model whatever it runs.
+    # Inference hosts only: a scheduled download from a vendor's website is
+    # an acquisition, not a run.
+    [ "$matched" = 1 ] || while IFS="$SEP" read -r _kind itool idoms; do
+      [ "$matched" = 1 ] && continue
+      [ -n "$idoms" ] || continue
+      old_ifs="$IFS"; IFS=','; set -- $idoms; IFS="$old_ifs"
+      for d in "$@"; do
+        [ -n "$d" ] || continue
+        case "$exec" in
+          *"$d"*)
+            report_once "cli" "$itool" "" \
+              "$label/$(basename "$timer") reaches $d" \
+              "autonomous" "" "systemd timer, $oncal" "oncalendar:$oncal"
+            matched=1
+            break ;;
+        esac
+      done
+    done <<EOF4
+$(printf '%s\n' "$REG_TSV" | grep "^inf${SEP}")
+EOF4
+
+    # No binary matched. A unit that runs a wrapper script names nothing the
+    # registry can match - but a unit that hands that script a model
+    # credential says what it reaches, whatever it runs. Environment= only:
+    # EnvironmentFile= points at a file of secrets, and opening it to read
+    # the names would mean reading the values too.
+    [ "$matched" = 1 ] && continue
+    envs=$(grep -h '^Environment=' "$unit" 2>/dev/null | sed 's/^Environment=//')
+    [ -n "$envs" ] || continue
+    while IFS="$SEP" read -r _kind etool evars; do
+      # One unit is one finding: several tools name the same variable, and a
+      # credential cannot say which of them the script calls.
+      [ "$matched" = 1 ] && continue
+      [ -n "$evars" ] || continue
+      old_ifs="$IFS"; IFS=','; set -- $evars; IFS="$old_ifs"
+      for v in "$@"; do
+        [ -n "$v" ] || continue
+        case "$envs" in
+          *"$v="*)
+            report_once "cli" "$etool" "" \
+              "$label/$(basename "$timer") sets $v" \
+              "autonomous" "" "systemd timer, $oncal" "oncalendar:$oncal"
+            matched=1
+            break ;;
+        esac
+      done
+    done <<EOF3
+$(printf '%s\n' "$REG_TSV" | grep "^env${SEP}")
+EOF3
   done
 }
 

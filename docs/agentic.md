@@ -24,18 +24,44 @@ the credential.
 
 None of them require a new source. Three are read by the endpoint collectors
 you already deploy, and one has been arriving for as long as the network
-scanner has been configured.
+scanner has been configured. The first has three ways of matching; the rest
+have one each.
 
 ### A scheduler starts it
 
 The collectors read what schedules things on each platform: launchd on macOS,
 systemd timers and cron on Linux, Scheduled Tasks on Windows. A job qualifies
-when the command it runs names a binary the registry already lists for a
-tool, so covering a new tool is a registry entry rather than a change to
-three scripts.
+three ways, tried in order, and every one of them is registry-driven - so
+covering a new tool is an entry rather than a change to three scripts.
 
-Matching is deliberately word-ish: `claude` must not match
-`claudeless-backup`, and each platform has a fixture asserting it does not.
+**It names a binary the registry lists.** The original signal. Matching is
+deliberately word-ish: `claude` must not match `claudeless-backup`, and each
+platform has a fixture asserting it does not.
+
+**Its command names an inference host.** A job that curls `api.anthropic.com`
+on a timer is reaching a model whatever binary it runs. Only
+`inference_domains` count, never `domains`: a scheduled download from a
+vendor's website is an acquisition and belongs on the register, not on a page
+about what runs unattended.
+
+**Its definition hands a script a model credential.** The case nothing else
+can see - a job that runs `nightly-report.sh` names nothing matchable, but a
+launchd `EnvironmentVariables` or a systemd `Environment=` setting
+`ANTHROPIC_API_KEY` says what the script reaches. Only variables the registry
+names for a tool: a generic `API_KEY` or `TOKEN` would fire on every
+scheduled backup in the estate.
+
+Two limits worth stating rather than discovering. A Windows scheduled task
+declares no environment - an action carries a command and inherits the
+user's - so the credential path does not exist there, and a wrapper script on
+Windows stays invisible. And `EnvironmentFile=` on Linux is not opened:
+it points at a file of secrets, and reading the names would mean reading the
+values.
+
+One job produces one finding. Several tools can name the same variable -
+`ANTHROPIC_API_KEY` belongs to both Claude and Claude Code - and a credential
+cannot say which the script calls, so the first match wins and the evidence
+names the variable so a reader can judge.
 
 ### The credential has nobody behind it
 
@@ -148,6 +174,38 @@ client logs locally.
 
 **Observed runs.** Process telemetry would turn the day from configured into
 observed, and would cover the two lane kinds a spec can never reach.
+
+**The cross-signal join.** Two halves are already collected and never joined.
+The scheduler scan knows what is scheduled on a device. The DNS scan knows
+which process resolved a model host on that device. A process appearing in
+both sets is autonomous AI use established by observation, with no list of
+binaries, domains or variables involved - which is what makes it worth
+building, because every other signal above degrades to "the registry did not
+know this one".
+
+It is written down rather than built because the join is not sound yet, and
+saying why is the useful part:
+
+- *The key is weak.* Both sides identify a process by name. A unit running
+  `/usr/bin/python3` joins against every other `python3` on the machine, and
+  a wrapper script joins against nothing at all. The join would need the
+  resolved executable on both sides, and the DNS side gets whatever the EDR
+  reports, which is frequently a service host.
+- *It needs a new shape of report.* The scheduler scan currently emits a
+  finding per matched job. Emitting every scheduled executable so the portal
+  has something to join against means emitting inventory, not findings - and
+  emitting them as findings would recreate exactly the flood the process
+  matching was tightened to remove.
+- *An ambiguous join has no honest rendering yet.* "Something scheduled on
+  this device reached a model, and it may have been this job" is a sentence
+  this page has no room for. Everything here is a chain with four filled
+  boxes; a maybe belongs somewhere else or nowhere.
+
+The order matters: the three signals above it are registry-driven and cheap,
+and the process candidates queue turns what they miss into a question for a
+human rather than a silent gap. Run those on a real estate first. What they
+fail to catch is the specification for this, and guessing at it beforehand
+would be building for an imagined miss.
 
 ## What it does not answer, and why not yet
 
