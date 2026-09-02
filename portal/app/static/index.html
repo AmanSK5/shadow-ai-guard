@@ -880,6 +880,13 @@ a.libtn:hover{border-color:var(--pri)}
    to nobody." on the same line, which reads as one clause and buries the
    number that matters. */
 .ag-verdict em{font-style:normal;color:var(--dstr);display:block}
+/* A cadence with no claim of autonomy behind it: drawn, but hollow, so a
+   scheduled-and-unattended job never reads the same as a process we merely
+   could not name. */
+.ag-run.weak,.ag-cont.weak{background:transparent;
+  box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--dstr) 70%,transparent)}
+.ag-run.weak.ok,.ag-cont.weak.ok{
+  box-shadow:inset 0 0 0 1.5px color-mix(in srgb,var(--acc) 70%,transparent)}
 .ag-day{background:var(--sf);border:1px solid var(--bd);border-radius:12px;
   box-shadow:var(--shadow);padding:15px 17px 12px;margin-bottom:26px;overflow-x:auto}
 .ag-grid{min-width:600px}
@@ -8901,6 +8908,20 @@ async function agentic() {
         c.unaccountable ? ` <em>${c.unaccountable} answer${
           c.unaccountable === 1 ? 's' : ''} to nobody.</em>` : ''}</h1>`
     : `<h1 class="ag-verdict">Nothing here reports running on its own.</h1>`;
+  // "Nothing reported it" is only an answer from devices that looked. A
+  // collector too old to read a scheduler produces the same silence as an
+  // estate that schedules nothing, and the difference is the whole question.
+  const sc = AGENTIC.scan_coverage || {};
+  const scanNote = !nAuto && sc.devices_reporting ? `<p class="lede" style="margin:-2px 0 14px;max-width:56ch">${
+      sc.capable
+        ? `<b>${sc.capable}</b> of ${sc.devices_reporting} device${
+            sc.devices_reporting === 1 ? '' : 's'} run a collector that reads schedulers,
+           so for ${sc.capable === 1 ? 'that one' : 'those'} this is an answer rather than
+           a gap.${sc.unknown ? ` The other ${sc.unknown} report a version older than
+           ${esc(sc.min_version)}, which may never have looked.` : ''}`
+        : `No device reports a collector at ${esc(sc.min_version)} or newer, so
+           <b>nothing here has looked yet</b>. This is an absence, not a finding -
+           update the collectors before reading the zero.`}</p>` : '';
   const weak = nUnrec
     ? `<p class="lede" style="margin:-2px 0 14px;max-width:52ch">${nUnrec === 1
         ? 'One more process' : nUnrec + ' more processes'} reached a model
@@ -8909,7 +8930,7 @@ async function agentic() {
        c.unattributed ? `, and ${c.unattributed} of the rows below name no
        identity at all` : ''}.</p>`
     : '';
-  const head = strong + weak;
+  const head = strong + scanNote + weak;
 
   const nodes = a => {
     // Starts / who authorised it / runs / can reach. The second is the
@@ -8927,8 +8948,13 @@ async function agentic() {
          <s>${esc(a.process)}</s></div>`
       : `<div class="ag-node"><b>Runs</b><i>${esc(a.tool)}</i>${
           a.mode === 'autonomous' ? '<s>unattended</s>' : ''}</div>`;
+    // What the MACHINE has configured, which is not the same as what this
+    // process can drive - and the box has to say which it means. A curl
+    // downloading an installer was being shown its machine's MCP servers as
+    // though they were its own capability.
     const reach = a.reach.length
       ? a.reach.map(x => `<span class="pill p-amb">${esc(x)}</span>`).join('')
+        + `<s>configured on this machine</s>`
       : (a.process ? `<span class="pill p-mut">a model API direct</span>`
                    : `<span class="pill p-mut">nothing configured</span>`);
     return `<div class="ag-link">
@@ -8936,7 +8962,7 @@ async function agentic() {
         <s>${esc(a.os || '')}</s></div>
       <div class="ag-rail"></div>${who}<div class="ag-rail"></div>${runs}
       <div class="ag-rail"></div>
-      <div class="ag-node"><b>Can reach</b><i>${reach}</i></div></div>`;
+      <div class="ag-node"><b>The machine can reach</b><i>${reach}</i></div></div>`;
   };
 
   // The day. Configured cadence, not observed runs - a spec says what a
@@ -8945,7 +8971,11 @@ async function agentic() {
   // drawn with an invented one.
   const pct = m => (m / 1440 * 100).toFixed(2);
   const laneOf = a => {
-    const k = a.lane.kind, cls = a.accountable ? ' ok' : '';
+    // Unrecognised rows are drawn hollow: they have a cadence, but nothing
+    // said they ran unattended, and a solid mark beside a genuinely
+    // autonomous job re-merges the two claims the headline separates.
+    const k = a.lane.kind;
+    const cls = (a.accountable ? ' ok' : '') + (a.autonomous ? '' : ' weak');
     if (k === 'continuous')
       return `<span class="ag-cont${cls}" title="No cadence: runs while somebody is logged in"></span>`;
     if (k === 'band')
@@ -8958,7 +8988,20 @@ async function agentic() {
     `<span class="ag-work" style="left:${sp.left}%;width:${sp.width}%"></span>`).join('') : '';
   const scheduled = A.filter(a => a.lane.kind !== 'none');
   const unscheduled = A.filter(a => a.lane.kind === 'none');
-  const day = scheduled.length ? `<div class="ag-day"><div class="ag-grid">
+  const nolane = unscheduled.length ? `<p class="ag-nolane" style="margin:9px 0 0">Not drawn:
+      ${unscheduled.map(a => esc(label(a.device, G.devices[a.device] || {}))).join(', ')}
+      - triggered by an event, or a spec this cannot read. Guessing at a time would be
+      worse than leaving the row out.</p>` : '';
+  // A panel that vanishes says the same thing as a panel that was never
+  // built. With rows on the page and none of them drawable, the reason has
+  // to be on screen - the estate cannot otherwise tell "nothing declares a
+  // cadence" from "this was never deployed".
+  const day = !A.length ? '' : !scheduled.length ? `<div class="ag-day">
+    <p class="lede" style="margin:0">Nothing here declares a cadence this can read.
+    Every row came from the network rather than a scheduler, so there is no day to
+    draw - which is not the same as nothing running on a timer. A device only reports
+    a schedule once its collector is new enough to read one; Health says which are.</p>
+    ${nolane}</div>` : `<div class="ag-day"><div class="ag-grid">
     ${scheduled.map(a => `<div class="ag-lane">
       <div class="ag-lname"><b>${esc(label(a.device, G.devices[a.device] || {}))}</b>
         <s class="mono">${esc(a.trigger || a.schedule)}${
@@ -8970,13 +9013,11 @@ async function agentic() {
     <div class="ag-key">
       <span><span class="ag-sw" style="background:var(--dstr)"></span>nobody accountable</span>
       <span><span class="ag-sw" style="background:var(--acc)"></span>runs under a known identity</span>
+      <span><span class="ag-sw" style="background:transparent;box-shadow:inset 0 0 0 1.5px var(--dstr)"></span>has a cadence, but nothing said it runs unattended</span>
       ${wh ? `<span><span class="ag-sw" style="background:color-mix(in srgb,var(--fg) 6%,transparent)"></span>working hours, ${esc(wh.label)}</span>` : ''}
     </div>
-    ${unscheduled.length ? `<p class="ag-nolane" style="margin:9px 0 0">Not drawn:
-      ${unscheduled.map(a => esc(label(a.device, G.devices[a.device] || {}))).join(', ')}
-      - triggered by an event, or a spec this cannot read. Guessing at a time would be
-      worse than leaving the row out.</p>` : ''}
-  </div>` : '';
+    ${nolane}
+  </div>`;
 
   const chains = A.map(a => `<div class="ag-chain">
     <div class="ag-head">
@@ -9040,7 +9081,13 @@ async function agentic() {
       <li><b>What it was asked to do.</b> The prompt is on the machine and could be read.
         Reading what somebody typed is a heavier intrusion than knowing which tool ran,
         and it is not needed to answer anything on this page.</li>
-      <li><b>Whether it stayed within its brief.</b> Same material, same trade. Worth
+      <li><b>A scheduled job that runs a script.</b> The scan reads what a scheduler
+        declares, so it sees a job that names an AI tool. A job that runs
+        <span class="mono">nightly-report.sh</span>, which calls a model from inside,
+        names nothing the registry can match - and reading the contents of somebody's
+        scripts is the same intrusion as reading their prompts. This is a real gap
+        rather than a quiet one: silence here is not evidence of nothing scheduled.</li>
+            <li><b>Whether it stayed within its brief.</b> Same material, same trade. Worth
         revisiting once the signals above have been run on a real estate and shown to be
         insufficient - which is also when there is a case to put to whoever approves it.</li>
       <li><b>What it actually did.</b> Counting tool calls is an outcome with no prompt in

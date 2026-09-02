@@ -274,6 +274,20 @@ tools:
     risk_tier: high
     email_senders: [wisprflow.ai]
 
+  - id: warp
+    name: Warp
+    vendor: Warp
+    category: coding
+    approved: false
+    added_by: manual
+    domains: [warp.dev, app.warp.dev]
+    app_names: ["Warp.app", "Warp"]
+    # Warp's binary is named after its release channel, not the product:
+    # Warp.app/Contents/MacOS/stable. Nothing derives "Warp" from that, which
+    # is why it arrived as an unaccountable process reaching a model.
+    exe_names: ["warp.exe", "stable"]
+    risk_tier: medium
+    bundle_ids: [dev.warp.Warp-Stable]
   - id: perplexity
     name: Perplexity
     vendor: Perplexity AI
@@ -393,6 +407,9 @@ tools:
     domains: [fireflies.ai, app.fireflies.ai]
     risk_tier: high
     email_senders: [fireflies.ai]
+    app_names: ["Fireflies.app", "Fireflies"]
+    exe_names: ["Fireflies.exe"]
+
   - id: midjourney
     name: Midjourney
     vendor: Midjourney
@@ -448,5 +465,14 @@ allowed_processes: [chrome, "Google Chrome", chromium, firefox, safari, msedge, 
   # Office resolves the Copilot endpoints as background M365 activity.
   Excel, PowerPnt, PowerPoint, WinWord, OneNote, MsAccess, MSPub, lync,
   Figma, Notion, svchost.exe, explorer.exe, git, gh, systemd-resolved, mDNSResponder,
-  trustd, nsurlsessiond]
+  trustd, nsurlsessiond,
+  # Windows shell and search. These reach substrate.office.com as background
+  # M365 activity - the Start menu and Search box have model-backed features
+  # nobody opened on purpose.
+  SearchHost, StartMenuExperienceHost, ShellExperienceHost, SearchApp,
+  Microsoft.Notes, OneDriveStandaloneUpdater, msedgewebview2,
+  # Editors. An IDE reaching a model is a person using an AI extension in
+  # their editor - the ordinary case the register and the IDE surface both
+  # already cover, and the same reason browsers are here.
+  Code, "Code - Insiders", idea, pycharm, webstorm, goland, rider, clion]
 discover_exclude_domains: [jetbrains.com, fastly.net, ably.net, ably-realtime.com, shopifysvc.com, shopifycloud.com, vsassets.io, vscode-cdn.net, vercel.app, thehubevents.com, ai.engineer, www.ai.engineer]

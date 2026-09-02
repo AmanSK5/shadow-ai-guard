@@ -64,7 +64,7 @@ SUMMARY_FILE="$SUMMARY_DIR/last_scan.txt"
 CRED_FILE="$SUMMARY_DIR/device.cred"
 # Reported at enrollment and on every report, so the receiver's inventory can
 # answer "which script version does the fleet actually run".
-COLLECTOR_VERSION="2.0.0"
+COLLECTOR_VERSION="2.1.0"
 
 # Report throttling. The policy runs at every recurring check-in (~20 min).
 # Unchanged inventory (info) findings only need reporting once a day; warn
@@ -468,7 +468,14 @@ HOME_LABEL='~'
 
 SEEN=""
 report_once() {
-  local key="$1|$2"
+  # The trigger joins the key for the same reason it joins the throttle key
+  # in report(): two scheduled jobs on one machine are two findings, and a
+  # scheduled job is a different finding from the same tool being installed.
+  # Without it the scheduler scan was discarded on every machine where the
+  # tool was also signed in - which is every machine anybody would schedule
+  # it on. Linux and Windows have keyed on the trigger since the scan
+  # shipped; this is macOS catching up.
+  local key="$1|$2|${7:-}"
   case "$SEEN" in *"[$key]"*) return 0 ;; esac
   SEEN="${SEEN}[$key]"
   report "$@"

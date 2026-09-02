@@ -136,6 +136,16 @@
       "bundle_ids": []
     },
     {
+      "tool": "warp",
+      "app_names": [
+        "Warp.app",
+        "Warp"
+      ],
+      "bundle_ids": [
+        "dev.warp.Warp-Stable"
+      ]
+    },
+    {
       "tool": "perplexity",
       "app_names": [
         "Perplexity.app",
@@ -159,6 +169,14 @@
       "app_names": [
         "LM Studio.app",
         "LM Studio"
+      ],
+      "bundle_ids": []
+    },
+    {
+      "tool": "fireflies",
+      "app_names": [
+        "Fireflies.app",
+        "Fireflies"
       ],
       "bundle_ids": []
     }

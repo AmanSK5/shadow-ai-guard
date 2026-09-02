@@ -343,6 +343,28 @@ services:
   form: ''
   inference_domains: []
   notes: ''
+- name: Warp
+  vendor: Warp
+  category: coding
+  risk_tier: medium
+  domains:
+  - warp.dev
+  - app.warp.dev
+  entra_app_ids: []
+  email_domains: []
+  desktop_apps:
+    macos:
+    - dev.warp.Warp-Stable
+    - Warp.app
+    - Warp
+    windows:
+    - warp.exe
+    - stable
+  browser_extensions: {}
+  mcp_identifiers: []
+  form: ''
+  inference_domains: []
+  notes: ''
 - name: Perplexity
   vendor: Perplexity AI
   category: search
@@ -554,8 +576,11 @@ services:
   email_domains:
   - fireflies.ai
   desktop_apps:
-    macos: []
-    windows: []
+    macos:
+    - Fireflies.app
+    - Fireflies
+    windows:
+    - Fireflies.exe
   browser_extensions: {}
   mcp_identifiers: []
   form: ''
@@ -683,6 +708,21 @@ allowed_processes:
 - mDNSResponder
 - trustd
 - nsurlsessiond
+- SearchHost
+- StartMenuExperienceHost
+- ShellExperienceHost
+- SearchApp
+- Microsoft.Notes
+- OneDriveStandaloneUpdater
+- msedgewebview2
+- Code
+- Code - Insiders
+- idea
+- pycharm
+- webstorm
+- goland
+- rider
+- clion
 discover_exclude_domains:
 - jetbrains.com
 - fastly.net

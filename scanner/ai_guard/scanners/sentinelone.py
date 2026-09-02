@@ -92,6 +92,17 @@ _UNATTRIBUTABLE_PROCESSES = {
     "systemd-resolved", "systemd-executor", "systemd", "resolvconf",
     "mdnsresponder", "discoveryd", "dnsmasq", "unbound", "nscd",
     "svchost", "dnscache", "networkservice",
+    # Generic task hosts. Windows runs scheduled and background work inside
+    # these, so the name is whatever they were told to run - the same
+    # non-answer as svchost, and an allowlist entry would be the wrong shape:
+    # "this is fine" rather than "this names nothing".
+    "backgroundtaskhost", "taskhostw", "taskhost", "taskeng", "rundll32",
+    "dllhost", "wermgr",
+    # Squirrel ships its updater as "Update.exe" inside every app that uses
+    # it, so the name says an application updated itself and not which one.
+    # Generic by construction, the same as the hosts above - and an allowlist
+    # entry would wrongly read as "this particular program is fine".
+    "update", "updater", "squirrel",
 }
 
 

@@ -73,7 +73,7 @@ STATE_FILE="$STATE_DIR/reported.state"
 CRED_FILE="$STATE_DIR/device.cred"
 # Reported at enrollment and on every report, so the receiver's inventory can
 # answer "which script version does the fleet actually run".
-COLLECTOR_VERSION="2.0.0"
+COLLECTOR_VERSION="2.1.0"
 SUMMARY_DIR="$STATE_DIR"
 SUMMARY_FILE="$SUMMARY_DIR/last_scan.txt"
 INFO_INTERVAL=$((24 * 3600))

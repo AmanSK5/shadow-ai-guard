@@ -269,6 +269,12 @@ MEMBER_APIS = {
         "plan": "Enterprise, SaaS console or self-hosted.",
         "how": "Admin APIs for teams and users, plus SCIM IdP sync.",
     },
+    "warp": {
+        "api": "unknown", "plan": "",
+        "how": "Warp Teams and Enterprise manage members in the Warp "
+               "dashboard; no public members endpoint is documented. "
+               "Unknown rather than none - nobody has looked properly.",
+    },
     "cline": {
         "api": "unknown",
         "plan": "Enterprise.",

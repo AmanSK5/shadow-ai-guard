@@ -460,6 +460,30 @@
       ]
     },
     {
+      "id": "warp",
+      "name": "Warp",
+      "vendor": "Warp",
+      "category": "coding",
+      "approved": false,
+      "added_by": "manual",
+      "domains": [
+        "warp.dev",
+        "app.warp.dev"
+      ],
+      "app_names": [
+        "Warp.app",
+        "Warp"
+      ],
+      "exe_names": [
+        "warp.exe",
+        "stable"
+      ],
+      "risk_tier": "medium",
+      "bundle_ids": [
+        "dev.warp.Warp-Stable"
+      ]
+    },
+    {
       "id": "perplexity",
       "name": "Perplexity",
       "vendor": "Perplexity AI",
@@ -685,6 +709,13 @@
       "risk_tier": "high",
       "email_senders": [
         "fireflies.ai"
+      ],
+      "app_names": [
+        "Fireflies.app",
+        "Fireflies"
+      ],
+      "exe_names": [
+        "Fireflies.exe"
       ]
     },
     {
@@ -822,7 +853,22 @@
     "systemd-resolved",
     "mDNSResponder",
     "trustd",
-    "nsurlsessiond"
+    "nsurlsessiond",
+    "SearchHost",
+    "StartMenuExperienceHost",
+    "ShellExperienceHost",
+    "SearchApp",
+    "Microsoft.Notes",
+    "OneDriveStandaloneUpdater",
+    "msedgewebview2",
+    "Code",
+    "Code - Insiders",
+    "idea",
+    "pycharm",
+    "webstorm",
+    "goland",
+    "rider",
+    "clion"
   ],
   "discover_exclude_domains": [
     "jetbrains.com",

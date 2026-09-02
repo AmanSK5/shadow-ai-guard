@@ -99,6 +99,12 @@ jobs:
             "apt-get update -qq && apt-get install -yqq curl >/dev/null && \
              endpoint/tests/test_linux_collector.sh"
 
+      # Static, because Linux is the only collector CI can run - and it was the
+      # only one of the three that had the dedupe key right. A property that
+      # must hold for all three is checked against all three.
+      - name: collector parity
+        run: endpoint/tests/test_collector_parity.sh
+
   psscriptanalyzer:
     runs-on: ubuntu-latest
     steps:

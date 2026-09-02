@@ -60,7 +60,7 @@ $Breadcrumb = Join-Path $StateDir 'last_scan.txt'
 $CredFile = Join-Path $StateDir 'device.cred'
 # Reported at enrollment and on every report, so the receiver's inventory can
 # answer "which script version does the fleet actually run".
-$CollectorVersion = '2.0.0'
+$CollectorVersion = '2.1.0'
 $InfoReportIntervalHours = 24
 $WarnReportIntervalHours = 1
 

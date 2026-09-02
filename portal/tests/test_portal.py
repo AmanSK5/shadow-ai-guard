@@ -1569,3 +1569,85 @@ def test_a_script_is_still_a_mystery_when_the_registry_is_widened():
     ], reg)
     assert out["agents"][0]["process"] == "curl"
     assert out["counts"]["unrecognised"] == 1
+
+
+@pytest.mark.parametrize("proc,why", [
+    ("Fireflies.exe", "a desktop app reaching its own vendor's gateway is that tool"),
+    ("Fireflies", "same app, macOS spelling"),
+    ("stable", "Warp's binary is named for its release channel, not the product"),
+    ("Warp", "and its app name"),
+    ("Claude.exe", "exe_names has carried this for nine tools, unread until now"),
+])
+def test_a_desktop_app_is_named_by_the_registry_not_called_a_mystery(proc, why):
+    """The page said "no tool we know" about tools it did know. Matching read
+    cli.binaries only - four tools have any - while app_names and exe_names sat
+    in the same registry, populated and unread. The finding's own tool had
+    already been resolved from the domain."""
+    reg = {"tools": [
+        {"id": "fireflies", "app_names": ["Fireflies.app", "Fireflies"],
+         "exe_names": ["Fireflies.exe"]},
+        {"id": "warp", "app_names": ["Warp.app", "Warp"],
+         "exe_names": ["warp.exe", "stable"]},
+        {"id": "claude", "exe_names": ["claude.exe"]},
+    ]}
+    out = derive.agentic_from([
+        finding(tool="fireflies", surface="network", device="D9",
+                evidence="DNS lookup for gateway.fireflies.ai (via %s)" % proc),
+    ], reg)
+    assert out["agents"] == [], why
+
+
+def test_a_dotted_service_name_matches_the_product_on_the_allowlist():
+    """OneDrive.Sync.Service.exe reduced to onedrive.sync.service and never
+    matched the OneDrive already listed - a gap in the normaliser that
+    shipped with the first pass at this."""
+    reg = {"tools": [], "allowed_processes": ["OneDrive", "Microsoft.Notes"]}
+    findings = [
+        finding(tool="microsoft-365-copilot", surface="network", device="D%d" % i,
+                evidence="DNS lookup for substrate.office.com (via %s)" % p)
+        for i, p in enumerate(["OneDrive.Sync.Service.exe", "Microsoft.Notes.exe"])
+    ]
+    assert derive.agentic_from(findings, reg)["agents"] == []
+
+
+def test_reach_says_it_belongs_to_the_machine():
+    """An MCP server is configured in a client on a machine; nothing here
+    establishes that a given process can drive it. Rendering the machine's
+    servers as the row's own capability told an operator that a curl
+    downloading an installer could reach their issue tracker."""
+    out = derive.agentic_from([
+        finding(tool="claude", surface="network", device="D1",
+                evidence="DNS lookup for api.anthropic.com (via curl)"),
+        finding(tool="claude-code-mcp", surface="mcp", device="D1",
+                evidence=".claude.json mcpServers: atlassian"),
+    ], REG_BIN)
+    a = out["agents"][0]
+    assert a["reach"] == ["atlassian"]
+    assert a["reach_is_device"] is True
+
+
+def test_an_empty_page_says_whether_anything_looked():
+    """Absence of a scheduled job means nothing from a collector that cannot
+    read a scheduler. The scan shipped without the version moving, so 2.0.0
+    is genuinely ambiguous and is counted as unknown rather than clean."""
+    def beat(dev, v):
+        return finding(device=dev, surface="endpoint", tool="ai-guard-collector",
+                       evidence="heartbeat version=%s" % v)
+    out = derive.agentic_from([beat("D1", "2.1.0"), beat("D2", "2.0.0"),
+                               beat("D3", "2.1.3")], REG_BIN)
+    c = out["scan_coverage"]
+    assert c["devices_reporting"] == 3
+    assert c["capable"] == 2          # 2.1.0 and 2.1.3
+    assert c["unknown"] == 1          # 2.0.0 may never have looked
+    assert c["min_version"] == "2.1.0"
+
+
+def test_no_heartbeat_at_all_is_not_reported_as_capable():
+    """The estate that has never run a collector must not read as one that
+    looked and found nothing."""
+    out = derive.agentic_from([
+        finding(tool="claude", surface="network", device="D9",
+                evidence="DNS lookup for api.anthropic.com (via curl)"),
+    ], REG_BIN)
+    c = out["scan_coverage"]
+    assert c["devices_reporting"] == 0 and c["capable"] == 0

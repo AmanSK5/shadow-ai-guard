@@ -65,6 +65,27 @@ def normalise_process(process_name: str) -> str:
     return _HELPER_SUFFIX_RE.sub("", n).strip()
 
 
+def process_stems(process_name):
+    """Every form of a name worth matching, longest first.
+
+    A Windows service often names itself in dotted components -
+    "OneDrive.Sync.Service.exe" - and only the leading one is the product.
+    Yielding the progressively shorter prefixes lets an allowlist hold
+    "OneDrive" and still match, without the entry itself having to guess
+    which suffixes Microsoft will ship.
+
+    Longest first so a specific entry always beats a shorter prefix, and
+    the bare first component is yielded last: "Microsoft.Notes" is matched
+    as itself before anything gets the chance to match "Microsoft" and
+    allowlist every product they make.
+    """
+    n = normalise_process(process_name)
+    if not n:
+        return []
+    parts = n.split(".")
+    return [".".join(parts[:i]) for i in range(len(parts), 0, -1)]
+
+
 @dataclass
 class AIService:
     """A single AI service from the registry."""
@@ -406,8 +427,8 @@ class Registry:
         Both sides are normalised, so one entry covers a name in every
         shape the platforms report it in.
         """
-        n = normalise_process(process_name)
-        return bool(n) and n in self.allowed_processes
+        return any(stem in self.allowed_processes
+                   for stem in process_stems(process_name))
 
     @property
     def all_domains(self) -> set[str]:
