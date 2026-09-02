@@ -245,7 +245,15 @@
               "type": "string",
               "pattern": "^[a-z0-9.-]+$"
             },
-            "description": "The subset of `domains` a host only reaches when a model is actually invoked - the completion/chat backend. Everything else in `domains` is reached on launch anyway for telemetry, updates and licence checks, so a hit there proves the product exists, not that the AI ran. Only meaningful with `form: ide`, where that difference decides installed vs in use; build.py requires every entry to also appear in `domains`. Leave empty when you cannot tell the two apart - an over-claimed inference domain silently turns telemetry into evidence of use."
+            "description": "The subset of `domains` a host only reaches when a model is actually invoked - the completion/chat backend. Everything else in `domains` is reached on launch anyway for telemetry, updates and licence checks, so a hit there proves the product exists, not that the AI ran. Two readers: the IDE installed-vs-used signal, and the agentic view, which uses it to tell a tool being fetched from one being used so a scheduled installer download stops reading as something running unattended. build.py requires every entry to also appear in `domains`. Leave empty when you cannot tell the two apart - an over-claimed inference domain silently turns telemetry into evidence of use, and an over-claimed set silently hides the hosts it leaves out."
+          },
+          "env_vars": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]{2,63}$"
+            },
+            "description": "Environment variables that hold this tool's API credential. Read by the collectors' scheduler scan: a scheduled job whose definition sets one of these is reaching a model on a timer, whatever binary it runs - which is the only way to see a job that runs a wrapper script. Name only the vendor-specific ones. A generic name like API_KEY or TOKEN would fire on every scheduled backup in the estate."
           }
         }
       }

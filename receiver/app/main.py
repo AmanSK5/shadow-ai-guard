@@ -803,11 +803,72 @@ def _refresh_domain_map():
     _IDE_TOOLS = _build_ide_tools(reg)
     _REGISTRY_IDS = {t.get("id") for t in (reg or {}).get("tools", [])
                      if t.get("id")}
+    _REBUILD_KNOWN_PROCESSES(reg)
 
 
 _DOMAIN_TO_TOOL: dict[str, str] = {}
 _REGISTRY_IDS: set[str] = set()
 _IDE_TOOLS: set[str] = set()
+# Every process name the registry can account for: the binaries its CLIs run
+# as, the apps and Windows executables its desktop tools ship under, and the
+# browsers, apps and daemons on allowed_processes. Anything else that reaches
+# a model is a question for a human, which is what the candidates queue is.
+_KNOWN_PROCESSES: set[str] = set()
+
+# The same three sets the portal reads findings through. They live here too
+# because the receiver decides what becomes a candidate at ingest, and the
+# two services share no library - a parity test asserts they do not drift.
+_BROWSERS = {
+    "chrome", "google chrome", "chromium", "firefox", "safari",
+    "com.apple.safari", "msedge", "microsoft edge", "brave", "brave browser",
+    "opera", "vivaldi", "arc",
+}
+_UNATTRIBUTABLE = {
+    "systemd-resolved", "systemd-executor", "systemd", "resolvconf",
+    "mdnsresponder", "discoveryd", "dnsmasq", "unbound", "nscd",
+    "svchost", "dnscache", "networkservice",
+    "backgroundtaskhost", "taskhostw", "taskhost", "taskeng", "rundll32",
+    "dllhost", "wermgr",
+    "update", "updater", "squirrel",
+}
+_VIA_RE = re.compile(r"\(via ([^)]{1,80})\)")
+_HELPER_RE = re.compile(r"\s+helper(\s*\(.*)?$")
+
+
+def _norm_process(name: str) -> str:
+    """Lowercased, path and .exe stripped, a macOS "X Helper (Role)" cut to X."""
+    n = (name or "").strip().lower()
+    if not n:
+        return ""
+    n = n.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    if n.endswith(".exe"):
+        n = n[:-4]
+    return _HELPER_RE.sub("", n).strip()
+
+
+def _process_stems(name: str) -> list[str]:
+    """The name and its shorter dotted prefixes, longest first."""
+    n = _norm_process(name)
+    if not n:
+        return []
+    parts = n.split(".")
+    return [".".join(parts[:i]) for i in range(len(parts), 0, -1)]
+
+
+def _REBUILD_KNOWN_PROCESSES(reg):
+    global _KNOWN_PROCESSES
+    out = set()
+    for t in (reg or {}).get("tools", []) or []:
+        for b in ((t.get("cli") or {}).get("binaries") or []):
+            out.add(_norm_process(str(b)))
+        for a in (t.get("app_names") or []):
+            a = str(a)
+            out.add(_norm_process(a[:-4] if a.lower().endswith(".app") else a))
+        for e in (t.get("exe_names") or []):
+            out.add(_norm_process(str(e)))
+    for pn in (reg or {}).get("allowed_processes", []) or []:
+        out.add(_norm_process(str(pn)))
+    _KNOWN_PROCESSES = out - {""}
 _refresh_domain_map()  # also primes the tools gauge at boot
 
 
@@ -2460,7 +2521,7 @@ def put_registry_entries(req: RegistryEntriesUpdate,
 # a scanner credential must not become a way to put arbitrary text in
 # front of an admin who is one click from adding it to the registry.
 
-_CANDIDATE_KINDS = ("domain", "mcp_server")
+_CANDIDATE_KINDS = ("domain", "mcp_server", "process")
 # The same shape discovery enforces on classifier output, enforced again
 # here because the receiver cannot know its caller ran that code.
 _CANDIDATE_TEXT = re.compile(r"^[\w .,'&()/+-]{1,80}$")
@@ -2747,6 +2808,50 @@ def _note_mcp_candidates(f: Finding):
             _notify_webhook(
                 "ai-guard: unknown MCP server %r seen in a %s config - now"
                 " in the review queue" % (name, f.tool))
+
+
+def _note_process_candidates(f: Finding):
+    """A process reached a model and the registry cannot name it. Ask.
+
+    This is the same move the MCP path above makes, on the surface that
+    never got it. An unrecognised process was shown on the Agentic AI view
+    as "no tool we know" and then discarded - so the only way it ever became
+    known was somebody editing the registry by hand, having spotted it on a
+    page. The estate observed it; the estate should be the one asking.
+
+    Deliberately quiet about what it is. The receiver knows a name reached a
+    model host and nothing more, so the candidate carries the evidence and a
+    human decides whether it is a tool to define, a system process to allow,
+    or a script somebody wrote. That is the same contract as a domain
+    candidate: the classifier proposes, the human disposes.
+    """
+    if STATE is None or f.surface not in ("network", "cloud"):
+        return
+    m = _VIA_RE.search(f.evidence or "")
+    if not m:
+        return
+    name = m.group(1).strip()
+    stems = _process_stems(name)
+    if not stems:
+        return
+    # Names the registry already accounts for, resolvers and hosts that
+    # name nothing, and browsers: none of these is a question.
+    if any(x in _KNOWN_PROCESSES for x in stems):
+        return
+    if any(x in _UNATTRIBUTABLE for x in stems):
+        return
+    if name.lower() in _BROWSERS or any(x in _BROWSERS for x in stems):
+        return
+    if not _CANDIDATE_TEXT.match(name):
+        return
+    if STATE.observe_candidate(
+            _candidate_key("process", name), "process", name,
+            (f.evidence or "")[:500], "network",
+            f.device if f.device != "unknown" else ""):
+        _notify_webhook(
+            "ai-guard: %r reached a model host and is not a tool, a browser"
+            " or a system process this knows - now in the review queue"
+            % (name,))
 
 
 @app.get("/admin/candidates")
@@ -3427,6 +3532,8 @@ async def report(f: Finding, request: Request, authorization: str = Header(defau
     # MCP server names ride in as evidence; unknown ones join the
     # candidates queue (managed mode only - the function gates itself).
     _note_mcp_candidates(f)
+    # ...and the same question for a process the registry cannot name.
+    _note_process_candidates(f)
 
     # Loki: every finding, warn and info alike. Stdout always; direct push
     # when a push target is configured - the portal-saved log store when

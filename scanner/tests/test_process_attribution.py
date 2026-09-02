@@ -42,6 +42,8 @@ class _Reg:
 
     def __init__(self, entries):
         self.allowed_processes = {normalise_process(p) for p in entries} - {""}
+        from ai_guard.registry import Registry
+        self.BROWSER_NAMES = Registry.BROWSER_NAMES
 
     is_allowed_process = None
 
@@ -128,3 +130,18 @@ def test_a_squirrel_updater_names_the_framework_not_the_app(proc):
     it, so the name says an application updated itself and not which one.
     An allowlist entry would wrongly read as "this program is fine"."""
     assert is_unattributable(proc) is True
+
+
+# ---- the rule that replaces a maintained list of shell process names -------
+
+def test_a_browser_is_recognised_in_every_shape():
+    """The one process that must stay visible on a backend domain: somebody
+    using a model in a browser is the ordinary case, and it is the only
+    non-background thing that reaches these hosts."""
+    from ai_guard.registry import Registry
+    r = _Reg([])
+    for n in ["chrome.exe", "Google Chrome Helper (Renderer)", "msedge.exe",
+              "firefox", r"C:\Program Files\Google\Chrome\chrome.exe"]:
+        assert Registry.is_browser_process(r, n) is True, n
+    for n in ["SearchHost.exe", "curl", "OneDrive.Sync.Service.exe", ""]:
+        assert Registry.is_browser_process(r, n) is False, n

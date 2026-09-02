@@ -88,13 +88,16 @@ def validate(registry, schema):
                 print(f"{t['id']}: inference_domains entry {d} is not in "
                       f"domains", file=sys.stderr)
                 ok = False
-        # The reverse pairing: inference_domains only changes how a finding
-        # reads for a tool whose presence does not imply use. On anything
-        # else it is inert, and inert configuration reads as working.
-        if t.get("inference_domains") and t.get("form") != "ide":
-            print(f"{t['id']}: inference_domains needs form: ide - it has no "
-                  f"effect on any other shape", file=sys.stderr)
-            ok = False
+        # This used to require form: ide, because the installed-vs-used signal
+        # was the only thing reading inference_domains and the field was inert
+        # anywhere else - and inert configuration reads as working.
+        #
+        # It has a second reader now, on every shape: the agentic view uses it
+        # to tell a tool being FETCHED from a tool being USED, so that a
+        # scheduled curl pulling an installer off a vendor's download host
+        # stops being reported as something running unattended. That applies
+        # to any tool with a download host and an API host, which is most of
+        # them, so the pairing no longer holds and the rule is gone.
     return ok
 
 
@@ -187,6 +190,28 @@ def emit(registry, write_fallback=True):
         # finding "<tool>-mcp:<servers>" and cannot do that from a bare path.
         # os says which collector should look for it; Claude Desktop's config
         # lives under Library on macOS and AppData on Windows.
+        # The hosts a tool only reaches when a model actually answers. Its
+        # own row kind so the scheduler scan can read a command line: a job
+        # that curls api.anthropic.com on a timer is reaching a model
+        # whatever binary it names. Deliberately inference_domains rather
+        # than domains - matching any domain would make a scheduled
+        # installer download read as something running unattended, which is
+        # the noise this same field exists to remove elsewhere.
+        "inference": [
+            {"tool": t["id"], "domains": t["inference_domains"]}
+            for t in tools
+            if t.get("inference_domains")
+        ],
+        # Environment variables that hold a tool's credential. Its own row
+        # kind because a tool can have one without having a cli block:
+        # a scheduled job that sets ANTHROPIC_API_KEY is reaching a model on
+        # a timer whatever binary it runs, which is the only way to see a job
+        # that runs a wrapper script.
+        "env": [
+            {"tool": t["id"], "env_vars": t["env_vars"]}
+            for t in tools
+            if t.get("env_vars")
+        ],
         "mcp": [
             {"tool": t["id"], "path": p, "os": os_}
             for t in tools

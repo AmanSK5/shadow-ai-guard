@@ -766,6 +766,15 @@ function Get-TaskSchedule {
     return $null
 }
 
+# No credential pass here, unlike the macOS and Linux collectors.
+#
+# Those read a job's own environment block - launchd EnvironmentVariables,
+# systemd Environment= - so a scheduled job that runs an opaque wrapper
+# script still says what it reaches by the key it hands over. A Windows
+# scheduled task has no equivalent: an action carries Execute, Arguments and
+# WorkingDirectory, and inherits the user's environment rather than declaring
+# one. There is nothing to read, so a wrapper script on Windows stays
+# invisible to this scan and the portal says so rather than implying parity.
 $tasks = @()
 try {
     $tasks = @(Get-ScheduledTask -ErrorAction Stop)
@@ -782,13 +791,37 @@ foreach ($task in $tasks) {
     if (-not $cmd.Trim()) { continue }
     $sched = Get-TaskSchedule -Task $task
     if (-not $sched) { continue }     # not self-starting: nothing to say
+    $matched = $false
     foreach ($t in $Registry.cli) {
         if (-not $t.binaries) { continue }
         if (Test-RunsBinary -Command $cmd -Binaries $t.binaries) {
             Send-FindingOnce -Surface 'cli' -Tool $t.tool -Account '' `
                 -Evidence "Scheduled Task $($task.TaskPath)$($task.TaskName)" `
                 -Mode 'autonomous' -Trigger $sched.trigger -Schedule $sched.spec
+            $matched = $true
             break
+        }
+    }
+
+    # No binary matched, but the command may name the host instead: a task
+    # that curls a model API on a timer is reaching a model whatever it runs.
+    # Inference hosts only - a scheduled download from a vendor's website is
+    # an acquisition, not a run, and matching any domain would put every
+    # installer fetch on a page about what runs unattended.
+    if (-not $matched) {
+        foreach ($t in $Registry.inference) {
+            if ($matched) { break }
+            foreach ($d in @($t.domains)) {
+                if (-not $d) { continue }
+                if ($cmd.ToLower().Contains($d.ToLower())) {
+                    Send-FindingOnce -Surface 'cli' -Tool $t.tool -Account '' `
+                        -Evidence ("Scheduled Task $($task.TaskPath)$($task.TaskName)" +
+                                   " reaches $d") `
+                        -Mode 'autonomous' -Trigger $sched.trigger -Schedule $sched.spec
+                    $matched = $true
+                    break
+                }
+            }
         }
     }
 }

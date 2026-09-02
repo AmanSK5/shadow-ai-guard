@@ -343,6 +343,12 @@ registry_tsv() {
                     (t.config_paths || []).join(","),
                     (t.binaries || []).join(",")].join(U));
         });
+        (r.inference || []).forEach(function (t) {
+          out.push(["inf", t.tool, (t.domains || []).join(",")].join(U));
+        });
+        (r.env || []).forEach(function (t) {
+          out.push(["env", t.tool, (t.env_vars || []).join(",")].join(U));
+        });
         (r.mcp || []).forEach(function (m) { out.push(["mcp", m.tool, m.path, m.os || "any"].join(U)); });
         return out.join("\n");
       } catch (e) { return ""; }
@@ -665,6 +671,7 @@ launchd_schedule() {
 
 scan_launchd_dir() {
   local dir="$1" label="$2" f j args tool bins b sched trig old
+  local matched envs etool evars v _k itool idoms d
   [ -d "$dir" ] || return 0
   j=$(/usr/bin/mktemp /tmp/ai-guard-plist.XXXXXX) || return 0
   for f in "$dir"/*.plist; do
@@ -676,6 +683,18 @@ scan_launchd_dir() {
     [ -n "$args" ] || continue
     sched=$(launchd_schedule "$j")
     [ -n "$sched" ] || continue          # not scheduled: nothing to say here
+    matched=0
+    case "${sched%%:*}" in
+      interval)
+        if [ "$(( ${sched#interval:} % 3600 ))" -eq 0 ] \
+           && [ "$(( ${sched#interval:} ))" -ge 3600 ]; then
+          trig="launchd, every $(( ${sched#interval:} / 3600 )) hours"
+        else
+          trig="launchd, every $(( ${sched#interval:} / 60 )) min"
+        fi ;;
+      cron)     trig="launchd, at a set time" ;;
+      *)        trig="launchd, at login" ;;
+    esac
     while IFS="$SEP" read -r _kind tool _ap _keys _jp _jc _cfg bins; do
       [ -n "$bins" ] || continue
       old="$IFS"; IFS=','; set -- $bins; IFS="$old"
@@ -687,24 +706,63 @@ scan_launchd_dir() {
           *" $b "*) ;;
           *) continue ;;
         esac
-        case "${sched%%:*}" in
-          interval)
-            # "every 360 min" is arithmetic; "every 6 hours" is the thing
-            # somebody would say out loud, and this line is read by people.
-            if [ "$(( ${sched#interval:} % 3600 ))" -eq 0 ] \
-               && [ "$(( ${sched#interval:} ))" -ge 3600 ]; then
-              trig="launchd, every $(( ${sched#interval:} / 3600 )) hours"
-            else
-              trig="launchd, every $(( ${sched#interval:} / 60 )) min"
-            fi ;;
-          cron)     trig="launchd, at a set time" ;;
-          *)        trig="launchd, at login" ;;
-        esac
         report_once "cli" "$tool" "" "$label/$(/usr/bin/basename "$f")" \
           "autonomous" "" "$trig" "$sched"
+        matched=1
         break
       done
     done < <(printf '%s\n' "$REG_TSV" | /usr/bin/grep "^cli${SEP}")
+
+    # Nothing in the registry named the binary - but the command line may
+    # name the host instead. A job that curls a model API on a timer is
+    # reaching a model whatever binary it runs. Inference hosts only: a
+    # scheduled download from a vendor's website is an acquisition, not a run.
+    [ "$matched" = 1 ] || while IFS="$SEP" read -r _k itool idoms; do
+      [ "$matched" = 1 ] && continue
+      [ -n "$idoms" ] || continue
+      old="$IFS"; IFS=','; set -- $idoms; IFS="$old"
+      for d in "$@"; do
+        [ -n "$d" ] || continue
+        case "$args" in
+          *"$d"*)
+            report_once "cli" "$itool" "" \
+              "$label/$(/usr/bin/basename "$f") reaches $d" \
+              "autonomous" "" "$trig" "$sched"
+            matched=1
+            break ;;
+        esac
+      done
+    done < <(printf '%s\n' "$REG_TSV" | /usr/bin/grep "^inf${SEP}")
+
+    # Nothing in the registry named the binary. A job that runs a wrapper
+    # script names nothing matchable - but if its definition hands that
+    # script a model credential, the job is reaching a model on a timer and
+    # says so itself. This is the only view onto a scheduled job whose
+    # command is opaque, and it needs no list of binaries at all.
+    [ "$matched" = 1 ] && continue
+    envs=$(json_keys "$j" "EnvironmentVariables")
+    [ -n "$envs" ] || continue
+    while IFS="$SEP" read -r _k etool evars; do
+      # One job is one finding. Several tools can name the same variable -
+      # ANTHROPIC_API_KEY belongs to Claude and to Claude Code - and the
+      # credential cannot say which one the script calls. Reporting both
+      # would turn one scheduled job into two things running unattended.
+      [ "$matched" = 1 ] && continue
+      [ -n "$evars" ] || continue
+      old="$IFS"; IFS=','; set -- $evars; IFS="$old"
+      for v in "$@"; do
+        [ -n "$v" ] || continue
+        case ",$envs," in
+          *",$v,"*) ;;
+          *) continue ;;
+        esac
+        report_once "cli" "$etool" "" \
+          "$label/$(/usr/bin/basename "$f") sets $v" \
+          "autonomous" "" "$trig" "$sched"
+        matched=1
+        break
+      done
+    done < <(printf '%s\n' "$REG_TSV" | /usr/bin/grep "^env${SEP}")
   done
   /bin/rm -f "$j"
 }

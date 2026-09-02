@@ -294,6 +294,170 @@
       }
     }
   ],
+  "inference": [
+    {
+      "tool": "claude",
+      "domains": [
+        "api.anthropic.com"
+      ]
+    },
+    {
+      "tool": "chatgpt",
+      "domains": [
+        "api.openai.com",
+        "chat.openai.com"
+      ]
+    },
+    {
+      "tool": "github-copilot",
+      "domains": [
+        "api.githubcopilot.com",
+        "copilot-proxy.githubusercontent.com"
+      ]
+    },
+    {
+      "tool": "cursor",
+      "domains": [
+        "api2.cursor.sh"
+      ]
+    },
+    {
+      "tool": "codeium",
+      "domains": [
+        "server.codeium.com",
+        "api.devin.ai"
+      ]
+    },
+    {
+      "tool": "tabnine",
+      "domains": [
+        "api.tabnine.com"
+      ]
+    },
+    {
+      "tool": "otter",
+      "domains": [
+        "api.otter.ai"
+      ]
+    },
+    {
+      "tool": "wispr-flow",
+      "domains": [
+        "api.wisprflow.ai"
+      ]
+    },
+    {
+      "tool": "warp",
+      "domains": [
+        "app.warp.dev"
+      ]
+    },
+    {
+      "tool": "perplexity",
+      "domains": [
+        "api.perplexity.ai"
+      ]
+    },
+    {
+      "tool": "ollama",
+      "domains": [
+        "api.ollama.com"
+      ]
+    },
+    {
+      "tool": "deepseek",
+      "domains": [
+        "api.deepseek.com",
+        "chat.deepseek.com"
+      ]
+    },
+    {
+      "tool": "mistral",
+      "domains": [
+        "api.mistral.ai",
+        "chat.mistral.ai"
+      ]
+    },
+    {
+      "tool": "fireflies",
+      "domains": [
+        "app.fireflies.ai"
+      ]
+    },
+    {
+      "tool": "hugging-face",
+      "domains": [
+        "api-inference.huggingface.co"
+      ]
+    }
+  ],
+  "env": [
+    {
+      "tool": "claude",
+      "env_vars": [
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN"
+      ]
+    },
+    {
+      "tool": "claude-code",
+      "env_vars": [
+        "ANTHROPIC_API_KEY",
+        "CLAUDE_CODE_OAUTH_TOKEN"
+      ]
+    },
+    {
+      "tool": "chatgpt",
+      "env_vars": [
+        "OPENAI_API_KEY"
+      ]
+    },
+    {
+      "tool": "codex-cli",
+      "env_vars": [
+        "OPENAI_API_KEY",
+        "CODEX_API_KEY"
+      ]
+    },
+    {
+      "tool": "gemini-cli",
+      "env_vars": [
+        "GEMINI_API_KEY",
+        "GOOGLE_API_KEY"
+      ]
+    },
+    {
+      "tool": "cursor",
+      "env_vars": [
+        "CURSOR_API_KEY"
+      ]
+    },
+    {
+      "tool": "perplexity",
+      "env_vars": [
+        "PERPLEXITY_API_KEY"
+      ]
+    },
+    {
+      "tool": "deepseek",
+      "env_vars": [
+        "DEEPSEEK_API_KEY"
+      ]
+    },
+    {
+      "tool": "mistral",
+      "env_vars": [
+        "MISTRAL_API_KEY"
+      ]
+    },
+    {
+      "tool": "hugging-face",
+      "env_vars": [
+        "HUGGINGFACE_API_KEY",
+        "HF_TOKEN"
+      ]
+    }
+  ],
   "mcp": [
     {
       "tool": "claude",

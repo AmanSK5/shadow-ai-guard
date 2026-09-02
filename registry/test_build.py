@@ -59,15 +59,33 @@ def test_inference_domains_must_be_real_domains_of_that_tool():
     assert not build.validate(bad, schema)
 
 
-def test_inference_domains_without_form_ide_is_refused():
-    """On any other shape the field is inert, and inert configuration reads
-    as working - someone would set it and believe presence had stopped
-    counting as use."""
+def test_inference_domains_is_accepted_on_any_shape():
+    """This once required form: ide, because the installed-vs-used signal was
+    the only reader and the field was inert anywhere else.
+
+    It has a second reader now, on every shape: the agentic view uses it to
+    tell a tool being fetched from a tool being used, so a scheduled curl
+    pulling an installer off a download host stops reading as something
+    running unattended. tabnine has no form at all and the field is no longer
+    inert on it."""
+    import copy
+
+    registry, schema = build.load()
+    fine = copy.deepcopy(registry)
+    assert _tool(fine, "tabnine").get("form") is None
+    _tool(fine, "tabnine")["inference_domains"] = ["api.tabnine.com"]
+    assert build.validate(fine, schema)
+
+
+def test_an_inference_domain_outside_domains_is_still_refused():
+    """Relaxing the shape rule does not relax the subset rule. A host the
+    tool is not detected on matches nothing, and would fail silently: the
+    tool would simply never be credited with being used."""
     import copy
 
     registry, schema = build.load()
     bad = copy.deepcopy(registry)
-    _tool(bad, "tabnine")["inference_domains"] = ["api.tabnine.com"]
+    _tool(bad, "tabnine")["inference_domains"] = ["typo.tabnine.example"]
     assert not build.validate(bad, schema)
 
 

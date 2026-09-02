@@ -421,6 +421,21 @@ class Registry:
                 return target
         return None
 
+    # The browsers among allowed_processes. A person using a model in a
+    # browser is the ordinary case every other view already covers, and it is
+    # the one thing that must stay visible on a backend domain where every
+    # other process is background noise.
+    BROWSER_NAMES = frozenset({
+        "chrome", "google chrome", "chromium", "firefox", "safari",
+        "com.apple.safari", "msedge", "microsoft edge", "brave",
+        "brave browser", "opera", "vivaldi", "arc",
+    })
+
+    def is_browser_process(self, process_name: str) -> bool:
+        """True when this name is a browser, in any shape a platform reports."""
+        return any(stem in self.BROWSER_NAMES
+                   for stem in process_stems(process_name))
+
     def is_allowed_process(self, process_name: str) -> bool:
         """Check if a process is a known browser, native app, or system process.
 

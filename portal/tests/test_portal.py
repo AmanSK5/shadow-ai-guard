@@ -1651,3 +1651,42 @@ def test_no_heartbeat_at_all_is_not_reported_as_capable():
     ], REG_BIN)
     c = out["scan_coverage"]
     assert c["devices_reporting"] == 0 and c["capable"] == 0
+
+
+def test_fetching_a_tool_is_not_the_same_as_running_one():
+    """A scheduled curl pulling an installer off a vendor's download host is
+    a real signal - somebody is acquiring an AI tool nobody approved - but it
+    is an acquisition, and this page is about what runs. Both were arriving
+    in the same row, so the page reported a download as something running
+    without being asked."""
+    reg = {"tools": [{"id": "cursor", "domains": ["cursor.com", "api2.cursor.sh"],
+                      "inference_domains": ["api2.cursor.sh"]}]}
+    fetched = finding(tool="cursor", surface="network", device="D1",
+                      evidence="DNS lookup for cursor.com (via curl)")
+    used = finding(tool="cursor", surface="network", device="D2",
+                   evidence="DNS lookup for api2.cursor.sh (via curl)")
+    out = derive.agentic_from([fetched, used], reg)
+    assert [a["device"] for a in out["agents"]] == ["D2"]
+
+
+def test_a_tool_that_draws_no_line_keeps_every_finding():
+    """Only a tool that declares inference_domains gets filtered. One that
+    declares none has drawn no line between fetched and used, and nothing
+    here invents one - absence reads as unknown, never as "only a download",
+    which would silently delete findings as the registry gained entries."""
+    reg = {"tools": [{"id": "claude", "domains": ["api.anthropic.com"]}]}
+    out = derive.agentic_from([
+        finding(tool="claude", surface="network", device="D9",
+                evidence="DNS lookup for api.anthropic.com (via curl)"),
+    ], reg)
+    assert out["agents"][0]["process"] == "curl"
+
+
+def test_a_subdomain_of_an_inference_host_still_counts_as_use():
+    reg = {"tools": [{"id": "codeium", "domains": ["server.codeium.com"],
+                      "inference_domains": ["server.codeium.com"]}]}
+    out = derive.agentic_from([
+        finding(tool="codeium", surface="network", device="D1",
+                evidence="DNS lookup for eu.server.codeium.com (via python3)"),
+    ], reg)
+    assert len(out["agents"]) == 1

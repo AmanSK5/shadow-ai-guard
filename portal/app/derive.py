@@ -1018,6 +1018,9 @@ BROWSER_PROCESSES = {
 # The DNS scan writes the process into its evidence as "(via python3)".
 _VIA = re.compile(r"\(via ([^)]{1,80})\)")
 
+# ...and the host it looked up, ahead of that.
+_DNS_HOST = re.compile(r"DNS lookup for ([A-Za-z0-9][A-Za-z0-9._-]{0,252})")
+
 # A macOS helper subprocess carries its parent's name and a role. The parent
 # is the process worth naming. The closing bracket is optional because _VIA
 # is bounded by ")" and truncates "(via Google Chrome Helper (Renderer))" at
@@ -1123,6 +1126,44 @@ def bespoke_client(f, known_processes=()):
     if any(s in known_processes for s in stems):
         return ""
     return proc[:80]
+
+
+def inference_domains_by_tool(reg):
+    """tool id -> the hosts that tool only reaches when a model actually runs.
+
+    A tool that declares these has drawn a line between being fetched and
+    being used: cursor.com is a website, api2.cursor.sh is a model answering.
+    A tool that declares none has drawn no line, and nothing here invents one.
+    """
+    out = {}
+    for t in (reg or {}).get("tools", []) or []:
+        inf = [str(d).lower() for d in (t.get("inference_domains") or [])]
+        if inf:
+            out[str(t.get("id") or "").lower()] = set(inf)
+    return out
+
+
+def reached_a_model(f, inference=None):
+    """False when this finding is a tool being FETCHED rather than used.
+
+    A scheduled curl pulling an installer from a vendor's download host is a
+    real signal - somebody is acquiring an AI tool nobody approved - but it is
+    an acquisition, and this page is about what runs. The two were arriving in
+    the same row.
+
+    Only a tool that declares inference_domains gets filtered, and only away
+    from the hosts it named. A tool that declares none is left alone: absence
+    of the distinction reads as unknown, never as "this was only a download",
+    which would silently delete findings as the registry gained entries.
+    """
+    inf = (inference or {}).get(_base_tool(f.get("tool") or "").lower())
+    if not inf:
+        return True
+    m = _DNS_HOST.search(f.get("evidence") or "")
+    if not m:
+        return True
+    host = m.group(1).rstrip(".").lower()
+    return any(host == d or host.endswith("." + d) for d in inf)
 
 
 def registry_processes(reg):
@@ -1444,6 +1485,7 @@ def agentic_from(findings, reg=None):
     report, on every estate that has not upgraded its collectors.
     """
     known = registry_processes(reg)
+    inference = inference_domains_by_tool(reg)
 
     # Which MCP servers sit on each machine, so a chain can say what the
     # thing running there could reach.
@@ -1463,7 +1505,7 @@ def agentic_from(findings, reg=None):
         dev = (f.get("device") or "").strip()
         tool = _base_tool(f.get("tool") or "")
         mode = (f.get("mode") or "").strip()
-        proc = bespoke_client(f, known)
+        proc = bespoke_client(f, known) if reached_a_model(f, inference) else ""
 
         if mode != "autonomous" and not proc:
             continue

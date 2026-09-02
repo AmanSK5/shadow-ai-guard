@@ -4,6 +4,10 @@
     {
       "id": "claude",
       "name": "Claude",
+      "env_vars": [
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN"
+      ],
       "vendor": "Anthropic",
       "category": "assistant",
       "license_group": "anthropic-claude",
@@ -16,6 +20,9 @@
         "claude.com",
         "claudeusercontent.com",
         "console.anthropic.com"
+      ],
+      "inference_domains": [
+        "api.anthropic.com"
       ],
       "app_names": [
         "Claude.app",
@@ -49,6 +56,10 @@
     {
       "id": "claude-code",
       "name": "Claude Code",
+      "env_vars": [
+        "ANTHROPIC_API_KEY",
+        "CLAUDE_CODE_OAUTH_TOKEN"
+      ],
       "vendor": "Anthropic",
       "category": "coding",
       "license_group": "anthropic-claude",
@@ -86,6 +97,9 @@
     {
       "id": "chatgpt",
       "name": "ChatGPT",
+      "env_vars": [
+        "OPENAI_API_KEY"
+      ],
       "vendor": "OpenAI",
       "category": "assistant",
       "license_group": "openai-chatgpt",
@@ -98,6 +112,10 @@
         "api.openai.com",
         "cdn.oaistatic.com",
         "auth0.openai.com"
+      ],
+      "inference_domains": [
+        "api.openai.com",
+        "chat.openai.com"
       ],
       "app_names": [
         "ChatGPT.app",
@@ -125,6 +143,10 @@
     {
       "id": "codex-cli",
       "name": "Codex CLI",
+      "env_vars": [
+        "OPENAI_API_KEY",
+        "CODEX_API_KEY"
+      ],
       "vendor": "OpenAI",
       "category": "coding",
       "license_group": "openai-chatgpt",
@@ -168,6 +190,10 @@
     {
       "id": "gemini-cli",
       "name": "Gemini CLI",
+      "env_vars": [
+        "GEMINI_API_KEY",
+        "GOOGLE_API_KEY"
+      ],
       "vendor": "Google",
       "category": "coding",
       "license_group": "google-gemini",
@@ -205,6 +231,10 @@
         "api.githubcopilot.com",
         "copilot.github.com"
       ],
+      "inference_domains": [
+        "api.githubcopilot.com",
+        "copilot-proxy.githubusercontent.com"
+      ],
       "extension_ids": {
         "vscode": [
           "github.copilot",
@@ -222,6 +252,9 @@
     {
       "id": "cursor",
       "name": "Cursor",
+      "env_vars": [
+        "CURSOR_API_KEY"
+      ],
       "vendor": "Anysphere",
       "category": "coding",
       "approved": false,
@@ -364,6 +397,9 @@
         "tabnine.com",
         "api.tabnine.com"
       ],
+      "inference_domains": [
+        "api.tabnine.com"
+      ],
       "extension_ids": {
         "vscode": [
           "tabnine.tabnine-vscode"
@@ -380,6 +416,9 @@
       "added_by": "manual",
       "domains": [
         "otter.ai",
+        "api.otter.ai"
+      ],
+      "inference_domains": [
         "api.otter.ai"
       ],
       "app_names": [
@@ -450,6 +489,9 @@
         "wisprflow.com",
         "api.wisprflow.ai"
       ],
+      "inference_domains": [
+        "api.wisprflow.ai"
+      ],
       "app_names": [
         "Wispr Flow.app",
         "Wispr Flow"
@@ -470,6 +512,9 @@
         "warp.dev",
         "app.warp.dev"
       ],
+      "inference_domains": [
+        "app.warp.dev"
+      ],
       "app_names": [
         "Warp.app",
         "Warp"
@@ -486,6 +531,9 @@
     {
       "id": "perplexity",
       "name": "Perplexity",
+      "env_vars": [
+        "PERPLEXITY_API_KEY"
+      ],
       "vendor": "Perplexity AI",
       "category": "search",
       "approved": false,
@@ -494,6 +542,9 @@
         "perplexity.ai",
         "api.perplexity.ai",
         "www.perplexity.ai"
+      ],
+      "inference_domains": [
+        "api.perplexity.ai"
       ],
       "app_names": [
         "Perplexity.app",
@@ -524,6 +575,9 @@
         "ollama.com",
         "registry.ollama.ai",
         "ollama.ai",
+        "api.ollama.com"
+      ],
+      "inference_domains": [
         "api.ollama.com"
       ],
       "app_names": [
@@ -569,6 +623,9 @@
     {
       "id": "deepseek",
       "name": "DeepSeek",
+      "env_vars": [
+        "DEEPSEEK_API_KEY"
+      ],
       "vendor": "DeepSeek",
       "category": "assistant",
       "approved": false,
@@ -578,6 +635,10 @@
         "deepseek.com",
         "api.deepseek.com"
       ],
+      "inference_domains": [
+        "api.deepseek.com",
+        "chat.deepseek.com"
+      ],
       "email_senders": [
         "deepseek.com"
       ],
@@ -586,6 +647,9 @@
     {
       "id": "mistral",
       "name": "Mistral Le Chat",
+      "env_vars": [
+        "MISTRAL_API_KEY"
+      ],
       "vendor": "Mistral AI",
       "category": "assistant",
       "approved": false,
@@ -594,6 +658,10 @@
         "chat.mistral.ai",
         "mistral.ai",
         "api.mistral.ai"
+      ],
+      "inference_domains": [
+        "api.mistral.ai",
+        "chat.mistral.ai"
       ],
       "email_senders": [
         "mistral.ai"
@@ -706,6 +774,9 @@
         "fireflies.ai",
         "app.fireflies.ai"
       ],
+      "inference_domains": [
+        "app.fireflies.ai"
+      ],
       "risk_tier": "high",
       "email_senders": [
         "fireflies.ai"
@@ -752,12 +823,19 @@
     {
       "id": "hugging-face",
       "name": "Hugging Face",
+      "env_vars": [
+        "HUGGINGFACE_API_KEY",
+        "HF_TOKEN"
+      ],
       "vendor": "Hugging Face",
       "category": "platform",
       "approved": false,
       "added_by": "manual",
       "domains": [
         "huggingface.co",
+        "api-inference.huggingface.co"
+      ],
+      "inference_domains": [
         "api-inference.huggingface.co"
       ],
       "risk_tier": "medium",
