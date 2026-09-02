@@ -1025,7 +1025,21 @@ _DNS_HOST = re.compile(r"DNS lookup for ([A-Za-z0-9][A-Za-z0-9._-]{0,252})")
 # is the process worth naming. The closing bracket is optional because _VIA
 # is bounded by ")" and truncates "(via Google Chrome Helper (Renderer))" at
 # the inner one, delivering a role that never closes.
-_HELPER_SUFFIX_RE = re.compile(r"\s+helper(\s*\(.*)?$")
+def _strip_helper_suffix(n):
+    """"google chrome helper (renderer)" -> "google chrome".
+
+    String work rather than a pattern. The regex this replaces was
+    `\\s+helper(\\s*\\(.*)?$`, whose two adjacent whitespace quantifiers
+    backtrack polynomially on a name of many spaces - and the name comes off
+    a posted finding, so it is not input this gets to assume anything about.
+    """
+    i = n.rfind(" helper")
+    if i == -1:
+        return n
+    tail = n[i + len(" helper"):].lstrip(" \t")
+    if tail and not tail.startswith("("):
+        return n
+    return n[:i].rstrip(" \t")
 
 # Resolvers and service hosts that query on behalf of everything else on the
 # box. Naming one says "this device resolved it" and nothing about what
@@ -1061,7 +1075,7 @@ def normalise_process(name):
     n = n.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
     if n.endswith(".exe"):
         n = n[:-4]
-    return _HELPER_SUFFIX_RE.sub("", n).strip()
+    return _strip_helper_suffix(n).strip()
 
 
 def process_stems(process_name):

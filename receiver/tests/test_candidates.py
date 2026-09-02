@@ -246,8 +246,11 @@ def test_a_process_the_registry_cannot_name_becomes_a_candidate(managed, monkeyp
     got = [c for c in rows if c["kind"] == "process"]
     assert [c["name"] for c in got] == ["nightly-digest"]
     # The evidence travels with it: a human decides what it is, and cannot
-    # do that from a bare name.
-    assert "api.anthropic.com" in got[0]["evidence"]
+    # do that from a bare name. Compared whole rather than by substring -
+    # a substring test on something URL-shaped passes on a value that merely
+    # contains it somewhere.
+    assert got[0]["evidence"] == ("DNS lookup for api.anthropic.com"
+                                  " (via nightly-digest)")
 
 
 @pytest.mark.parametrize("proc,why", [

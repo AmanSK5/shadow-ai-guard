@@ -42,7 +42,21 @@ _DOMAIN_RE = re.compile(r"^(\*\.)?[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?$")
 # "Google Chrome Helper", "Google Chrome Helper (Renderer)", "Claude Helper".
 # The parent is the process worth naming, so the suffix is dropped. The
 # closing bracket is optional: a role can reach us already truncated.
-_HELPER_SUFFIX_RE = re.compile(r"\s+helper(\s*\(.*)?$")
+def _strip_helper_suffix(n):
+    """"google chrome helper (renderer)" -> "google chrome".
+
+    String work rather than a pattern. The regex this replaces was
+    `\\s+helper(\\s*\\(.*)?$`, whose two adjacent whitespace quantifiers
+    backtrack polynomially on a name of many spaces - and the name comes off
+    a posted finding, so it is not input this gets to assume anything about.
+    """
+    i = n.rfind(" helper")
+    if i == -1:
+        return n
+    tail = n[i + len(" helper"):].lstrip(" \t")
+    if tail and not tail.startswith("("):
+        return n
+    return n[:i].rstrip(" \t")
 
 
 def normalise_process(process_name: str) -> str:
@@ -62,7 +76,7 @@ def normalise_process(process_name: str) -> str:
     n = n.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
     if n.endswith(".exe"):
         n = n[:-4]
-    return _HELPER_SUFFIX_RE.sub("", n).strip()
+    return _strip_helper_suffix(n).strip()
 
 
 def process_stems(process_name):

@@ -60,3 +60,38 @@ def test_a_helper_and_an_exe_normalise_the_same_way_everywhere():
              r"C:\Program Files\x\Code.exe"]
     for c in cases:
         assert main._norm_process(c) == scanner_norm(c), c
+
+
+def test_a_hostile_name_returns_promptly():
+    """The helper suffix used to be found with `\\s+helper(\\s*\\(.*)?$`, whose
+    adjacent whitespace quantifiers backtrack polynomially: many viable start
+    positions, each failing late. Measured on the old pattern it was cleanly
+    quadratic - n doubles, time quadruples - reaching a second per call at
+    16k characters:
+
+        n= 2000   near-miss    5ms   tail-fail    19ms
+        n= 4000   near-miss   18ms   tail-fail    65ms
+        n= 8000   near-miss   64ms   tail-fail   257ms
+        n=16000   near-miss  257ms   tail-fail  1029ms
+
+    In practice the caller capped the name at 80 characters, so the exposure
+    was small - but the cap lives in the regex that extracts the name, not in
+    this function, and this function is now called from three services. The
+    property is asserted here rather than left to a caller none of them share.
+    """
+    import time
+
+    hostile = []
+    for n in (8000, 16000):
+        hostile.append(" " * n + "helpe")               # fails at the last char
+        hostile.append(" " * n + "helper" + " " * n + "x")   # fails after the literal
+    start = time.monotonic()
+    for h in hostile:
+        main._norm_process(h)
+    assert time.monotonic() - start < 1.0
+
+    # And the shapes that have to keep working.
+    assert main._norm_process("Google Chrome Helper (Renderer)") == "google chrome"
+    assert main._norm_process("Claude Helper") == "claude"
+    assert main._norm_process("my helper app") == "my helper app"
+    assert main._norm_process(" " * 5000) == ""

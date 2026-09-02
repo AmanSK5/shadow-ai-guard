@@ -832,7 +832,21 @@ _UNATTRIBUTABLE = {
     "update", "updater", "squirrel",
 }
 _VIA_RE = re.compile(r"\(via ([^)]{1,80})\)")
-_HELPER_RE = re.compile(r"\s+helper(\s*\(.*)?$")
+def _strip_helper_suffix(n):
+    """"google chrome helper (renderer)" -> "google chrome".
+
+    String work rather than a pattern. The regex this replaces was
+    `\\s+helper(\\s*\\(.*)?$`, whose two adjacent whitespace quantifiers
+    backtrack polynomially on a name of many spaces - and the name comes off
+    a posted finding, so it is not input this gets to assume anything about.
+    """
+    i = n.rfind(" helper")
+    if i == -1:
+        return n
+    tail = n[i + len(" helper"):].lstrip(" \t")
+    if tail and not tail.startswith("("):
+        return n
+    return n[:i].rstrip(" \t")
 
 
 def _norm_process(name: str) -> str:
@@ -843,7 +857,7 @@ def _norm_process(name: str) -> str:
     n = n.rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
     if n.endswith(".exe"):
         n = n[:-4]
-    return _HELPER_RE.sub("", n).strip()
+    return _strip_helper_suffix(n).strip()
 
 
 def _process_stems(name: str) -> list[str]:
