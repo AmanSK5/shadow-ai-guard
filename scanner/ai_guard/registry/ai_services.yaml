@@ -367,7 +367,6 @@ services:
     - Warp
     windows:
     - warp.exe
-    - stable
   browser_extensions: {}
   mcp_identifiers: []
   form: ''

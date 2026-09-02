@@ -1058,6 +1058,16 @@ UNATTRIBUTABLE_PROCESSES = {
     # Squirrel ships its updater as "Update.exe" inside every app that uses
     # it, so the name says an application updated itself, not which one.
     "update", "updater", "squirrel",
+    # VPN and zero-trust clients. A tunnel daemon resolves DNS for
+    # everything behind the tunnel, so naming one says "something on this
+    # device, through the VPN" - the same non-answer as a stub resolver.
+    # The queue found firezone-client-tunnel; these are the rest of the
+    # category rather than waiting to be asked about one at a time.
+    "firezone-client-tunnel", "firezone-gui-client", "tailscaled",
+    "openvpn", "wireguard", "wg-quick", "nordvpn", "expressvpn",
+    "warp-svc", "cloudflared", "vpnagentd", "acwebsecagent", "pangps",
+    "pangpa", "zsatunnel", "zscaler", "stagent", "netskope", "nsdiag",
+    "globalprotect", "ivanti", "pulsesecure", "forticlient", "sonicwall",
 }
 
 
@@ -1099,7 +1109,7 @@ def process_stems(process_name):
     return [".".join(parts[:i]) for i in range(len(parts), 0, -1)]
 
 
-def bespoke_client(f, known_processes=()):
+def bespoke_client(f, known_processes=(), ruled_out=()):
     """The process name when a finding shows something OTHER than a browser
     or an application the registry knows reaching a model, else "".
 
@@ -1130,8 +1140,12 @@ def bespoke_client(f, known_processes=()):
     stems = process_stems(proc)
     if not stems:
         return ""
-    # Says a device resolved it, not what wanted the name.
+    # Says a device resolved it, not what wanted the name. The shipped set,
+    # and whatever a human has since told the review queue is the same shape
+    # of thing - a name is only ever asked about once.
     if any(s in UNATTRIBUTABLE_PROCESSES for s in stems):
+        return ""
+    if any(s in ruled_out for s in stems):
         return ""
     if proc.lower() in BROWSER_PROCESSES:
         return ""
@@ -1483,7 +1497,7 @@ def scheduler_coverage(devices):
     }
 
 
-def agentic_from(findings, reg=None):
+def agentic_from(findings, reg=None, not_attributable=()):
     """What runs without a person, and how far it can reach.
 
     Every other view here starts from something somebody did. This one
@@ -1506,6 +1520,11 @@ def agentic_from(findings, reg=None):
     """
     known = registry_processes(reg)
     inference = inference_domains_by_tool(reg)
+    # Names a human has ruled out from the review queue: a resolver, a
+    # service host, a VPN tunnel. Without this the queue asked a question
+    # whose answer went nowhere - dismissing the row cleared the card and
+    # left the process on this page for ever.
+    ruled_out = {normalise_process(n) for n in (not_attributable or ())} - {""}
 
     # Which MCP servers sit on each machine, so a chain can say what the
     # thing running there could reach.
@@ -1525,7 +1544,8 @@ def agentic_from(findings, reg=None):
         dev = (f.get("device") or "").strip()
         tool = _base_tool(f.get("tool") or "")
         mode = (f.get("mode") or "").strip()
-        proc = bespoke_client(f, known) if reached_a_model(f, inference) else ""
+        proc = bespoke_client(f, known, ruled_out) if reached_a_model(
+            f, inference) else ""
 
         if mode != "autonomous" and not proc:
             continue

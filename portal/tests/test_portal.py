@@ -1710,3 +1710,50 @@ def test_a_subdomain_of_an_inference_host_still_counts_as_use():
                 evidence="DNS lookup for eu.server.codeium.com (via python3)"),
     ], reg)
     assert len(out["agents"]) == 1
+
+
+@pytest.mark.parametrize("proc", [
+    "firezone-client-tunnel", "tailscaled", "openvpn", "warp-svc",
+    "vpnagentd", "PanGPS", "forticlient",
+])
+def test_a_vpn_tunnel_resolves_for_everything_behind_it(proc):
+    """The review queue found firezone-client-tunnel on a real estate. A
+    tunnel daemon resolves DNS for everything behind the tunnel, so naming
+    one says "something on this device, through the VPN" - the same
+    non-answer as a stub resolver, and a whole category rather than one
+    name."""
+    out = derive.agentic_from([
+        finding(tool="claude", surface="network", device="D1",
+                evidence="DNS lookup for api.anthropic.com (via %s)" % proc),
+    ], REG_BIN)
+    assert out["agents"] == []
+
+
+def test_a_name_a_human_ruled_out_stops_appearing():
+    """The queue asked, somebody answered, and the answer has to reach this
+    page. Before this, dismissing a process candidate cleared the card and
+    left the process here for ever - a question whose answer went nowhere."""
+    f = finding(tool="claude", surface="network", device="D1",
+                evidence="DNS lookup for api.anthropic.com (via corp-proxy-agent)")
+    assert derive.agentic_from([f], REG_BIN)["agents"][0]["process"] \
+        == "corp-proxy-agent"
+    out = derive.agentic_from([f], REG_BIN, not_attributable=["corp-proxy-agent"])
+    assert out["agents"] == []
+
+
+def test_ruling_out_a_name_matches_it_in_every_shape():
+    """The decision is about the name, so it has to survive the same
+    normalisation everything else does."""
+    f = finding(tool="claude", surface="network", device="D1",
+                evidence="DNS lookup for api.anthropic.com (via Corp Proxy Helper.exe)")
+    out = derive.agentic_from([f], REG_BIN, not_attributable=["corp proxy"])
+    assert out["agents"] == []
+
+
+def test_a_real_bespoke_client_is_untouched_by_other_rulings():
+    """Ruling out one name must not quietly excuse the rest."""
+    out = derive.agentic_from([
+        finding(tool="claude", surface="network", device="D1",
+                evidence="DNS lookup for api.anthropic.com (via curl)"),
+    ], REG_BIN, not_attributable=["firezone-client-tunnel"])
+    assert out["agents"][0]["process"] == "curl"

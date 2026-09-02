@@ -1171,6 +1171,26 @@ def evidence_snapshot(request: Request,
     return JSONResponse(doc)
 
 
+def _not_attributable(request):
+    """Process names an operator has ruled out from the review queue.
+
+    Empty when there is no receiver to ask, which is right: the shipped set
+    still applies, and a missing answer must not silently un-rule-out a name
+    somebody already decided about.
+    """
+    if not RECEIVER_URL:
+        return ()
+    token = request.cookies.get(SESSION_COOKIE, "")
+    if not token:
+        return ()
+    try:
+        out = managed.receiver_request(
+            RECEIVER_URL, "GET", "/admin/candidates/not-attributable", token)
+    except Exception:
+        return ()
+    return (out or {}).get("names") or ()
+
+
 def _fleet_devices(request):
     """The receiver's enrolled-device rows, or None when there is no receiver
     to ask.
@@ -1217,7 +1237,8 @@ def agentic(request: Request,
 
     def build():
         out = derive.agentic_from(_findings_cached(hours, request),
-                                  _registry(request))
+                                  _registry(request),
+                                  _not_attributable(request))
         # Whether an empty page is an answer or an absence. The collector
         # version lives on the receiver's device rows, not in any finding -
         # the same field Fleet shows. None means the question could not be
@@ -2678,6 +2699,14 @@ def api_candidates(_=Depends(require_auth), token: str = Depends(_admin_forward)
     return _receiver("GET", "/admin/candidates", token)
 
 
+@app.post("/api/candidates/not-attributable")
+def api_candidate_not_attributable(req: CandidateDismiss, _=Depends(require_auth),
+                                   token: str = Depends(_admin_forward)):
+    return _receiver(
+        "POST", "/admin/candidates/%s/not-attributable"
+        % urllib.parse.quote(req.key, safe=""), token)
+
+
 @app.post("/api/candidates/dismiss")
 def api_candidate_dismiss(req: CandidateDismiss, _=Depends(require_auth),
                           token: str = Depends(_admin_forward)):
@@ -2706,6 +2735,10 @@ class BudgetSeatTier(BaseModel):
 class BudgetSubscriptionWrite(BaseModel):
     model_config = {"extra": "forbid"}
     tool_id: str = Field(min_length=1, max_length=100)
+    # Names which subscription on the tool is being written. Sent when
+    # editing so a renamed plan updates its row instead of creating a
+    # second one beside it; empty when creating.
+    plan_key: str = Field(default="", max_length=64, pattern=r"^[a-z0-9-]*$")
     vendor: str = Field(default="", max_length=200)
     plan: str = Field(default="", max_length=100)
     currency: str = Field(default="", max_length=8)
@@ -2728,6 +2761,10 @@ class BudgetMemberWrite(BaseModel):
 class BudgetMembersWrite(BaseModel):
     model_config = {"extra": "forbid"}
     tool_id: str = Field(min_length=1, max_length=100)
+    # Which subscription on that tool. The portal only carries it; the
+    # receiver decides what an empty one means.
+    plan_key: str = Field(default="", max_length=64,
+                          pattern=r"^[a-z0-9-]*$")
     source: str = Field(min_length=1, max_length=16)
     members: list[BudgetMemberWrite] = Field(default_factory=list,
                                              max_length=5000)
@@ -2736,6 +2773,10 @@ class BudgetMembersWrite(BaseModel):
 class BudgetConnectionWrite(BaseModel):
     model_config = {"extra": "forbid"}
     tool_id: str = Field(min_length=1, max_length=100)
+    # Which subscription on that tool. The portal only carries it; the
+    # receiver decides what an empty one means.
+    plan_key: str = Field(default="", max_length=64,
+                          pattern=r"^[a-z0-9-]*$")
     provider: str = Field(min_length=1, max_length=32)
     api_key: str = Field(min_length=8, max_length=512)
 
@@ -2743,6 +2784,10 @@ class BudgetConnectionWrite(BaseModel):
 class BudgetToolRef(BaseModel):
     model_config = {"extra": "forbid"}
     tool_id: str = Field(min_length=1, max_length=100)
+    # Which subscription on that tool. The portal only carries it; the
+    # receiver decides what an empty one means.
+    plan_key: str = Field(default="", max_length=64,
+                          pattern=r"^[a-z0-9-]*$")
 
 
 @app.get("/api/budget")
