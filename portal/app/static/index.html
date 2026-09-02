@@ -7793,6 +7793,27 @@ async function _refusal(r) {
   return typeof d === 'string' ? d : 'check the values';
 }
 
+// Re-read what a write just invalidated.
+//
+// Nulling a cached view and calling render() works for everything render()
+// fetches on demand - the register re-reads itself when REG is null. It does
+// NOT work for the candidates queue, which is only ever fetched by load(),
+// behind a check for whether the review-queue widget is on the overview. So
+// "add to registry" cleared the queue, drew an empty one, and left the
+// remaining candidates invisible until the operator reloaded the page by
+// hand. Three handlers had the same shape; this is the one place that knows
+// the queue needs asking for again.
+async function reloadDerived() {
+  REG = null; REGTOOLS = null; EV = null; CAND = null;
+  if (CFG.managed && CFG.managed.enabled && AUTH && AUTH.mode === 'login'
+      && (CFG.overview_widgets || []).some(w => w.kind === 'review_queue')) {
+    try {
+      const cq = await mfetch('/api/candidates');
+      if (cq.ok) CAND = (await cq.json()).candidates || [];
+    } catch (e) { /* the queue simply stays unread until the next load */ }
+  }
+}
+
 async function managedAction(act, el) {
   if (act.startsWith('b-')) return budgetAction(act, el);
   if (act === 'id-download') {
@@ -8383,7 +8404,7 @@ async function managedAction(act, el) {
       REDIT = null; RPRE = null; RERR = ''; RADV = false;
       // The registry feeds everything derived; those views are stale now,
       // the candidates queue included - a saved entry may have resolved one.
-      REG = null; REGTOOLS = null; EV = null; CAND = null;
+      await reloadDerived();
     } else {
       if (r.status === 401) { sessionLost(); return; }
       let d = r.statusText; try { d = (await r.json()).detail || d; } catch (e) {}
@@ -8403,7 +8424,7 @@ async function managedAction(act, el) {
       let d = r.statusText; try { d = (await r.json()).detail || d; } catch (e) {}
       alert('Could not delete: ' + d);
     } else { RENTRIES = (await r.json()).entries || []; }
-    REG = null; REGTOOLS = null; EV = null; CAND = null;
+    await reloadDerived();
     render(); return;
   }
   if (act === 'gov-edit') {
