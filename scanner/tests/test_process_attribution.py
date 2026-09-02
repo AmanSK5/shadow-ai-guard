@@ -87,3 +87,44 @@ def test_the_cases_it_already_refused_are_still_refused(proc):
 def test_a_real_client_is_still_attributable(proc):
     """The signal this all exists to keep: a script with a key in it."""
     assert is_unattributable(proc) is False
+
+
+@pytest.mark.parametrize("reported,expected", [
+    ("OneDrive.Sync.Service.exe", ["onedrive.sync.service", "onedrive.sync", "onedrive"]),
+    ("Microsoft.Notes.exe", ["microsoft.notes", "microsoft"]),
+    ("SearchHost.exe", ["searchhost"]),
+])
+def test_a_dotted_name_offers_its_shorter_prefixes(reported, expected):
+    """A Windows service names itself in dotted components and only the
+    leading one is the product, so "OneDrive.Sync.Service.exe" never matched
+    the "OneDrive" already on the allowlist."""
+    from ai_guard.registry import process_stems
+    assert process_stems(reported) == expected
+
+
+def test_a_prefix_does_not_allowlist_everything_a_vendor_ships():
+    """The shorter prefixes are offered longest-first so a specific entry
+    always wins, and the bare vendor component only matches if somebody
+    actually put a bare vendor name on the list. Nobody should."""
+    entries = ["Microsoft.Notes", "OneDrive"]
+    assert _allowed(entries, "Microsoft.Notes.exe") is True
+    assert _allowed(entries, "OneDrive.Sync.Service.exe") is True
+    # Same vendor, different product, not listed: must not inherit.
+    assert _allowed(entries, "Microsoft.Telemetry.exe") is False
+
+
+@pytest.mark.parametrize("proc", [
+    "backgroundTaskHost.exe", "taskhostw.exe", "rundll32.exe", "dllhost.exe",
+])
+def test_a_generic_task_host_names_nothing(proc):
+    """Windows runs scheduled and background work inside these, so the name
+    is whatever they were told to run - the same non-answer as svchost."""
+    assert is_unattributable(proc) is True
+
+
+@pytest.mark.parametrize("proc", ["Update.exe", "Updater.exe", "Squirrel.exe"])
+def test_a_squirrel_updater_names_the_framework_not_the_app(proc):
+    """Squirrel ships its updater as Update.exe inside every app that uses
+    it, so the name says an application updated itself and not which one.
+    An allowlist entry would wrongly read as "this program is fine"."""
+    assert is_unattributable(proc) is True

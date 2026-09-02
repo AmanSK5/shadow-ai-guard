@@ -1034,6 +1034,13 @@ UNATTRIBUTABLE_PROCESSES = {
     "systemd-resolved", "systemd-executor", "systemd", "resolvconf",
     "mdnsresponder", "discoveryd", "dnsmasq", "unbound", "nscd",
     "svchost", "dnscache", "networkservice",
+    # Generic hosts: Windows runs scheduled and background work inside these,
+    # so the name is whatever they were told to run.
+    "backgroundtaskhost", "taskhostw", "taskhost", "taskeng", "rundll32",
+    "dllhost", "wermgr",
+    # Squirrel ships its updater as "Update.exe" inside every app that uses
+    # it, so the name says an application updated itself, not which one.
+    "update", "updater", "squirrel",
 }
 
 
@@ -1052,6 +1059,27 @@ def normalise_process(name):
     if n.endswith(".exe"):
         n = n[:-4]
     return _HELPER_SUFFIX_RE.sub("", n).strip()
+
+
+def process_stems(process_name):
+    """Every form of a name worth matching, longest first.
+
+    A Windows service often names itself in dotted components -
+    "OneDrive.Sync.Service.exe" - and only the leading one is the product.
+    Yielding the progressively shorter prefixes lets an allowlist hold
+    "OneDrive" and still match, without the entry itself having to guess
+    which suffixes Microsoft will ship.
+
+    Longest first so a specific entry always beats a shorter prefix, and
+    the bare first component is yielded last: "Microsoft.Notes" is matched
+    as itself before anything gets the chance to match "Microsoft" and
+    allowlist every product they make.
+    """
+    n = normalise_process(process_name)
+    if not n:
+        return []
+    parts = n.split(".")
+    return [".".join(parts[:i]) for i in range(len(parts), 0, -1)]
 
 
 def bespoke_client(f, known_processes=()):
@@ -1082,15 +1110,17 @@ def bespoke_client(f, known_processes=()):
     if not m:
         return ""
     proc = m.group(1).strip()
-    stem = normalise_process(proc)
-    if not stem:
+    stems = process_stems(proc)
+    if not stems:
         return ""
     # Says a device resolved it, not what wanted the name.
-    if stem in UNATTRIBUTABLE_PROCESSES:
+    if any(s in UNATTRIBUTABLE_PROCESSES for s in stems):
         return ""
-    if proc.lower() in BROWSER_PROCESSES or stem in BROWSER_PROCESSES:
+    if proc.lower() in BROWSER_PROCESSES:
         return ""
-    if stem in known_processes:
+    if any(s in BROWSER_PROCESSES for s in stems):
+        return ""
+    if any(s in known_processes for s in stems):
         return ""
     return proc[:80]
 
@@ -1098,18 +1128,32 @@ def bespoke_client(f, known_processes=()):
 def registry_processes(reg):
     """Every process name the registry can account for, normalised.
 
-    Two sources, because "a tool the registry knows" is both: the binaries
-    its AI CLIs run as, and allowed_processes - the browsers, desktop apps
-    and system daemons the scanner already refuses to raise findings about.
-    Only the first was read here, so an estate's whole Office install
-    arrived on the agentic page as processes nobody could account for.
+    Four sources, because "a tool the registry knows" is all of them: the
+    binaries its AI CLIs run as, the app names and Windows executables its
+    desktop tools ship under, and allowed_processes - the browsers, apps and system daemons the scanner
+    already refuses to raise findings about.
+
+    Only the binaries were read here, and only four tools have any, so an
+    estate's whole Office install arrived on the agentic page as processes
+    nobody could account for - and so did the desktop tools whose own vendor
+    domain the same finding had just resolved.
     """
     out = set()
     for t in (reg or {}).get("tools", []) or []:
         for b in ((t.get("cli") or {}).get("binaries") or []):
             out.add(normalise_process(b))
-    for p in (reg or {}).get("allowed_processes", []) or []:
-        out.add(normalise_process(p))
+        # A desktop app reaching its own vendor's API is that tool, not a
+        # mystery. ".app" is stripped so the macOS bundle name and the bare
+        # process name are one entry.
+        for a in (t.get("app_names") or []):
+            a = str(a)
+            out.add(normalise_process(a[:-4] if a.lower().endswith(".app") else a))
+        # Windows executable names, already in the registry for nine tools
+        # and read by nothing until now.
+        for e in (t.get("exe_names") or []):
+            out.add(normalise_process(e))
+    for pn in (reg or {}).get("allowed_processes", []) or []:
+        out.add(normalise_process(pn))
     return out - {""}
 
 
@@ -1336,6 +1380,48 @@ def _oncalendar(rest):
     return {"kind": "none", "marks": []}
 
 
+# The collector version from which a scheduled job is both read and
+# reported. The scheduler scan shipped before this without the version
+# moving, and on macOS its findings were then dropped by a dedupe key that
+# ignored the trigger - so a device on 2.0.0 may or may not have looked, and
+# saying which is not possible. It is counted as unknown, never as clean.
+SCHEDULER_SCAN_VERSION = (2, 1, 0)
+
+
+def _version_tuple(v):
+    """A dotted version as comparable integers, or None if it is not one."""
+    parts = (v or "").strip().split(".")
+    if not parts or not all(p.isdigit() for p in parts):
+        return None
+    return tuple(int(p) for p in parts[:3]) + (0,) * (3 - len(parts[:3]))
+
+
+def scheduler_coverage(findings):
+    """How many devices report a collector that can be trusted to have looked.
+
+    Absence of a scheduled job is only meaningful from a device that reads
+    schedulers. Without this the page could not tell "nothing here runs on a
+    timer" from "nothing here has been asked" - the same failure the Sources
+    view exists to prevent for detection sources, one level down.
+    """
+    seen = {}
+    for f in findings:
+        dev = (f.get("device") or "").strip()
+        ev = f.get("evidence") or ""
+        if not dev or not ev.startswith("heartbeat version="):
+            continue
+        v = _version_tuple(ev.split("version=", 1)[1].split()[0])
+        if v and v > seen.get(dev, (0, 0, 0)):
+            seen[dev] = v
+    capable = sum(1 for v in seen.values() if v >= SCHEDULER_SCAN_VERSION)
+    return {
+        "devices_reporting": len(seen),
+        "capable": capable,
+        "unknown": len(seen) - capable,
+        "min_version": ".".join(str(n) for n in SCHEDULER_SCAN_VERSION),
+    }
+
+
 def agentic_from(findings, reg=None):
     """What runs without a person, and how far it can reach.
 
@@ -1409,7 +1495,13 @@ def agentic_from(findings, reg=None):
             "account": acct,
             "mode": mode or "unknown",
             "process": proc,
+            # Device-level, and labelled as such. An MCP server is configured
+            # in a client on a machine; nothing here establishes that THIS
+            # process can drive it. Rendering the machine's servers as this
+            # row's capability told an operator a curl downloading an
+            # installer could reach their issue tracker.
             "reach": sorted(reach.get(dev, ())),
+            "reach_is_device": True,
             "evidence": (f.get("evidence") or "")[:300],
             "last_seen": f.get("reported_at") or "",
             # The two states worth counting separately. Accountable means
@@ -1461,6 +1553,8 @@ def agentic_from(findings, reg=None):
         },
         "servers": mcp_from(findings),
         "coverage": mcp_coverage(reg),
+        # Whether an empty page is an answer or an absence.
+        "scan_coverage": scheduler_coverage(findings),
     }
 
 
