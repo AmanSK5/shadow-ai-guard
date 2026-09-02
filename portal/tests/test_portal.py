@@ -1460,3 +1460,112 @@ def test_working_hours_are_read_or_not_drawn(spec, spans, why):
     applies to silence everywhere else."""
     band = derive.working_hours_band(spec)
     assert (len(band["spans"]) if band else 0) == spans, why
+
+
+@pytest.mark.parametrize("proc,why", [
+    ("systemd-resolved", "the Linux stub resolver queries for every process on the box"),
+    ("systemd-executor", "systemd's exec helper is whatever it was told to run"),
+    ("mDNSResponder", "the macOS resolver, same non-answer"),
+    ("svchost.exe", "a generic Windows service host names no program"),
+    ("dnsmasq", "a caching resolver on the box"),
+])
+def test_a_resolver_is_not_a_bespoke_client(proc, why):
+    """A resolver is the querying process for every lookup the machine makes,
+    so naming it says "this device resolved it" and nothing about what wanted
+    the name. The scanner already refused to write "(via ...)" for an agent
+    version string for this exact reason; a resolver is the same non-answer
+    and evidence already in the log store was written before it learned so."""
+    out = derive.agentic_from([
+        finding(tool="claude", surface="network", device="D9",
+                evidence="DNS lookup for api.anthropic.com (via %s)" % proc),
+    ], REG_BIN)
+    assert out["agents"] == [], why
+
+
+@pytest.mark.parametrize("proc,why", [
+    ("Google Chrome Helper", "a helper carries its parent's name plus a role"),
+    ("Google Chrome Helper (Renderer)", "the role can be parenthesised"),
+    ("chrome.exe", "Windows spells the same browser with an extension"),
+    (r"C:\Program Files\Google\Chrome\Application\chrome.exe", "and sometimes a path"),
+    ("Claude Helper", "Claude Desktop's helper IS the claude binary"),
+])
+def test_a_process_name_is_matched_in_every_shape_a_platform_reports_it(proc, why):
+    """Matching was exact, so one spelling of a name was recognised and the
+    rest were reported as something nobody could account for. Every browser
+    on Windows fell through, and so did every macOS helper subprocess."""
+    out = derive.agentic_from([
+        finding(tool="claude", surface="network", device="D9",
+                evidence="DNS lookup for api.anthropic.com (via %s)" % proc),
+    ], REG_BIN)
+    assert out["agents"] == [], why
+
+
+def test_an_unrecognised_process_does_not_count_as_running_without_being_asked():
+    """The split this page turns on.
+
+    A process we cannot name reaching a model is a real finding, and it says
+    nothing at all about whether a person was sitting there. Counting it as
+    autonomous asserted the one thing the evidence never mentioned - and on
+    an estate whose collectors predate `mode`, that is every row on the page,
+    so the headline read as an accusation about the whole fleet."""
+    out = derive.agentic_from([
+        finding(tool="claude", surface="network", device="D9",
+                evidence="DNS lookup for api.anthropic.com (via curl)"),
+        finding(tool="claude-code", surface="cli", device="D1",
+                mode="autonomous", identity="machine"),
+    ], REG_BIN)
+
+    c = out["counts"]
+    assert c["agents"] == 2           # both are still on the page
+    assert c["autonomous"] == 1       # but only one runs without being asked
+    assert c["unrecognised"] == 1
+    assert c["unaccountable"] == 1    # the machine identity, not the curl
+
+
+def test_silence_about_who_is_not_counted_as_answering_to_nobody():
+    """The docstring's rule, applied to the counter rather than the field.
+
+    `identity` already refuses to read a blank as a machine identity. The
+    count did not: `accountable` is "identity == person", so a blank fell
+    into `unaccountable` and the page reported "answers to nobody" about
+    every row where nobody had established anything either way."""
+    out = derive.agentic_from([
+        finding(tool="claude-code", surface="cli", device="D1",
+                account_domain="", mode="autonomous"),
+    ], REG_BIN)
+
+    a = out["agents"][0]
+    assert a["authority"] == "unknown"        # not "machine", not "person"
+    assert out["counts"]["unaccountable"] == 0
+    assert out["counts"]["unattributed"] == 1
+
+
+def test_an_application_the_registry_knows_is_not_a_mystery_process():
+    """"A tool the registry knows" is the whole registry, not just the
+    binaries of AI CLIs. Office resolving a Copilot endpoint is background
+    M365 activity and Slack reaching a model is a shipped feature; reading
+    only cli.binaries put every desktop application in the estate on this
+    page as a process with nobody behind it."""
+    reg = {"tools": [{"id": "claude-code", "cli": {"binaries": ["claude"]}}],
+           "allowed_processes": ["OneDrive", "Outlook", "Excel", "PowerPnt",
+                                 "Slack", "Google Chrome"]}
+    findings = [
+        finding(tool="claude", surface="network", device="D%d" % i,
+                evidence="DNS lookup for copilot.microsoft.com (via %s)" % p)
+        for i, p in enumerate(["onedrive.exe", "outlook.exe", "excel.exe",
+                               "powerpnt.exe", "Slack"])
+    ]
+    assert derive.agentic_from(findings, reg)["agents"] == []
+
+
+def test_a_script_is_still_a_mystery_when_the_registry_is_widened():
+    """The widening must not swallow the signal it exists to protect: a
+    process the registry cannot account for is still the finding."""
+    reg = {"tools": [{"id": "claude-code", "cli": {"binaries": ["claude"]}}],
+           "allowed_processes": ["OneDrive", "Google Chrome"]}
+    out = derive.agentic_from([
+        finding(tool="claude", surface="network", device="D9",
+                evidence="DNS lookup for api.anthropic.com (via curl)"),
+    ], reg)
+    assert out["agents"][0]["process"] == "curl"
+    assert out["counts"]["unrecognised"] == 1
