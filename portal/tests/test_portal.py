@@ -1628,29 +1628,49 @@ def test_reach_says_it_belongs_to_the_machine():
 
 def test_an_empty_page_says_whether_anything_looked():
     """Absence of a scheduled job means nothing from a collector that cannot
-    read a scheduler. The scan shipped without the version moving, so 2.0.0
-    is genuinely ambiguous and is counted as unknown rather than clean."""
-    def beat(dev, v):
-        return finding(device=dev, surface="endpoint", tool="ai-guard-collector",
-                       evidence="heartbeat version=%s" % v)
-    out = derive.agentic_from([beat("D1", "2.1.0"), beat("D2", "2.0.0"),
-                               beat("D3", "2.1.3")], REG_BIN)
-    c = out["scan_coverage"]
+    read a scheduler. The version comes off the receiver's device rows - the
+    field Fleet shows - because no collector emits it as a finding."""
+    devs = [{"id": "D1", "agent_version": "2.1.0"},
+            {"id": "D2", "agent_version": "2.0.0"},
+            {"id": "D3", "agent_version": "2.1.3"}]
+    c = derive.scheduler_coverage(devs)
     assert c["devices_reporting"] == 3
     assert c["capable"] == 2          # 2.1.0 and 2.1.3
     assert c["unknown"] == 1          # 2.0.0 may never have looked
     assert c["min_version"] == "2.1.0"
 
 
-def test_no_heartbeat_at_all_is_not_reported_as_capable():
-    """The estate that has never run a collector must not read as one that
-    looked and found nothing."""
-    out = derive.agentic_from([
-        finding(tool="claude", surface="network", device="D9",
-                evidence="DNS lookup for api.anthropic.com (via curl)"),
-    ], REG_BIN)
-    c = out["scan_coverage"]
-    assert c["devices_reporting"] == 0 and c["capable"] == 0
+def test_it_does_not_read_the_paste_guards_heartbeat():
+    """The first version of this parsed `heartbeat version=` out of finding
+    evidence. That is the BROWSER EXTENSION's paste-guard heartbeat - no
+    collector emits one - so it compared a paste-guard version against a
+    collector threshold and told an operator nothing had looked while the
+    Fleet view beside it was showing 2.1.0."""
+    findings = [finding(device="D1", surface="browser", tool="paste-guard",
+                        evidence="heartbeat version=1.3.0 mode=warn reason=installed")]
+    out = derive.agentic_from(findings, REG_BIN)
+    # The derivation no longer decides this at all: the caller supplies it,
+    # because only the caller can ask the receiver.
+    assert out["scan_coverage"] is None
+
+
+def test_no_source_at_all_is_unknown_not_zero():
+    """Classic mode has no receiver to ask. An empty list would read as "no
+    devices reported"; the difference between that and "could not look" is
+    the whole point of the field."""
+    assert derive.scheduler_coverage(None) is None
+    empty = derive.scheduler_coverage([])
+    assert empty["devices_reporting"] == 0 and empty["capable"] == 0
+
+
+def test_a_device_with_no_version_is_not_counted_as_reporting():
+    """A row that has never carried a version says nothing about whether its
+    collector can read a scheduler."""
+    c = derive.scheduler_coverage([{"id": "D1", "agent_version": ""},
+                                   {"id": "D2"},
+                                   {"id": "D3", "agent_version": "2.1.0"}])
+    assert c["devices_reporting"] == 1 and c["capable"] == 1
+
 
 
 def test_fetching_a_tool_is_not_the_same_as_running_one():
