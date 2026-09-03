@@ -103,26 +103,43 @@ dialog{border-radius:12px;border-color:var(--bd);box-shadow:var(--pop-shadow)}#s
    favour a more confident security-console hierarchy over generic cards.
    ----------------------------------------------------------------------- */
 :root{
-  --bg:#f5f7fa;--fg:#101828;--sf:#fff;--sf2:#f8fafc;--mut:#667085;--bd:#e3e8ef;
-  --pri:#0b756d;--pri-soft:#e7f6f3;--acc:#315bd6;--acc-soft:#edf1ff;
-  --warn:#a15c07;--warn-soft:#fff6e5;--dstr:#c4323c;--dstr-soft:#fff0f1;
-  --side:#0b1424;--side-on:#17263c;--side-mut:#91a0b6;
-  --shadow:0 1px 2px rgba(16,24,40,.025),0 5px 16px rgba(16,24,40,.035);
+  --bg:#f3f6fa;--fg:#17213a;--sf:#fff;--sf2:#f8fafc;--mut:#68738a;--bd:#dfe5ed;
+  --pri:#087b72;--pri-soft:#e5f6f2;--acc:#285ed8;--acc-soft:#eaf0ff;
+  --warn:#a66107;--warn-soft:#fff4dc;--dstr:#c23842;--dstr-soft:#feebed;
+  --side:#101a2e;--side-on:#20304a;--side-mut:#9ba8bd;
+  --shadow:0 1px 2px rgba(18,29,52,.04),0 8px 24px rgba(18,29,52,.05);
 }
-[data-theme=dark]{--bg:#0b111d;--fg:#f0f4fa;--sf:#121c2c;--sf2:#172235;--mut:#a2afc1;--bd:#26344a;--side:#070d18;--side-on:#15233a}
-.shell{grid-template-columns:272px minmax(0,1fr)}.shell.collapsed{grid-template-columns:72px minmax(0,1fr)}
-aside{background:radial-gradient(circle at 25% -5%,#172a43 0,var(--side) 32%,#091321 100%)}
+[data-theme=dark]{--bg:#0c1321;--fg:#edf2f8;--sf:#131d2e;--sf2:#182337;
+  --mut:#a0acc0;--bd:#27344a;--pri:#42d4bc;--pri-soft:#12342f;
+  --acc:#7da2ff;--acc-soft:#182c59;--warn:#f2bd5b;--warn-soft:#392c13;
+  --dstr:#ff8991;--dstr-soft:#422229;--side:#080e1a;--side-on:#20304a;
+  --side-mut:#98a6ba;--shadow:none}
+.shell{grid-template-columns:252px minmax(0,1fr)}.shell.collapsed{grid-template-columns:72px minmax(0,1fr)}
+aside{background:linear-gradient(180deg,var(--side),#0c1527)}
 .brand{height:70px;min-height:70px;padding:14px 20px 11px}.brand img{width:184px}.brandline{margin:0 14px}
 .tenant-switch{margin:13px 12px 8px;padding:10px 11px;background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.09);min-height:50px}
 .tenant-avatar{width:29px;height:29px;flex-basis:29px;background:linear-gradient(145deg,#24415d,#116c68);color:#c9fff0;font-size:11px}.tenant-copy b{font-size:12px}.tenant-copy span{font-size:9.5px}.estate-dot{display:inline-block;width:5px;height:5px;border-radius:50%;background:#46d59e;margin-right:4px;box-shadow:0 0 0 2px rgba(70,213,158,.12)}
-aside nav{padding:3px 10px 16px}.nav-zone{margin-top:17px}.nav-zone:first-child{margin-top:8px}.nav-zone-label{padding:0 11px 5px;color:#60728b;font-size:8.5px;font-weight:760;letter-spacing:.13em;text-transform:uppercase}
-nav button{min-height:34px;padding:7px 10px;margin:1px 0;font-size:11.5px}.nav-child{padding-left:37px;color:#8291a7}.nav-child .nav-dot{position:absolute;left:18px;width:4px;height:4px;border-radius:50%;background:#52627a}.nav-child.on .nav-dot{background:#55d9bd;box-shadow:0 0 0 3px rgba(85,217,189,.09)}
-nav button.on{background:linear-gradient(90deg,#1b2e48,var(--side-on));box-shadow:inset 0 0 0 1px rgba(255,255,255,.025)}nav button.on:before{top:7px;bottom:7px}.collapsed .nav-zone-label,.collapsed .nav-child{display:none}.collapsed nav button{min-height:39px}
+aside nav{padding:7px 10px 16px}.nav-area-block{padding:4px 0;border-top:1px solid var(--side-line)}
+.nav-area-block:first-child{border-top:0}.nav-area-trigger{min-height:39px;padding:8px 10px;
+  margin:0;font-size:12px;font-weight:630;color:var(--side-mut)}
+.nav-area-trigger.current{color:#eaf1fa}.nav-area-trigger svg{color:#8090a7}
+.nav-area-trigger.current svg,.nav-area-trigger.on svg{color:#72dfc8}
+.nav-chevron{margin-left:auto;color:#66768e;font-size:16px;line-height:1;transition:transform .16s}
+.nav-area-block.expanded .nav-chevron{transform:rotate(90deg)}
+.nav-area-items{padding:0 0 4px}.nav-area-items[hidden]{display:none}
+nav button.nav-child{min-height:31px;padding:6px 10px 6px 40px;margin:1px 0;
+  font-size:11.25px;color:#8291a7}.nav-child .nav-dot{position:absolute;left:20px;
+  width:4px;height:4px;border-radius:50%;background:#52627a}
+.nav-child.on .nav-dot{background:#55d9bd;box-shadow:0 0 0 3px rgba(85,217,189,.09)}
+nav button.on{background:linear-gradient(90deg,#1b2e48,var(--side-on));
+  box-shadow:inset 0 0 0 1px rgba(255,255,255,.025)}nav button.on:before{top:7px;bottom:7px}
+.nav-direct{margin-top:1px}.collapsed .nav-area-items,.collapsed .nav-chevron{display:none}
+.collapsed .nav-area-block{border-top:0;padding:1px 0}.collapsed nav button{min-height:39px}
 .fold{margin-top:auto}.foot{font-size:9.5px;color:#687991}
 .topbar{height:68px;min-height:68px;border-bottom-color:var(--bd);padding:0 30px;box-shadow:0 1px 0 rgba(16,24,40,.015)}
 .search{flex-basis:460px;background:var(--sf);border-color:#d9e0e9;box-shadow:0 1px 2px rgba(16,24,40,.025)}[data-theme=dark] .search{border-color:var(--bd)}
 .trust-state{display:flex;align-items:center;gap:6px;padding:5px 8px;border:1px solid color-mix(in srgb,var(--pri) 22%,var(--bd));border-radius:6px;background:var(--pri-soft);color:var(--pri);font-size:9.5px;font-weight:650;white-space:nowrap}
-.topbar #who{border:0;background:transparent!important;max-width:130px}.topbar #who:hover{background:var(--sf2)!important}.topbar #signout{border-color:transparent;background:transparent}
+.topbar #signout{border-color:transparent;background:transparent}
 main{max-width:1540px;padding:30px 34px 80px}.view-head{margin-bottom:24px}.view-kicker{font-size:9px;color:var(--acc);letter-spacing:.12em}.view-head h2{font-size:25px;font-weight:735}.view-head .lede{max-width:880px;font-size:12px}.meta-chip{border-color:var(--bd);box-shadow:0 1px 2px rgba(16,24,40,.02)}
 .tabrow{min-height:38px;margin-bottom:25px}.tabs button{padding-bottom:11px;font-size:11px}.tabaside{padding-bottom:8px}
 .overview-posture{min-height:112px;padding:20px 22px;gap:16px;border:0;border-left:0;background:linear-gradient(112deg,#13283f,#102034 60%,#12283e);box-shadow:0 12px 30px rgba(11,20,36,.12);color:#fff;border-radius:12px;position:relative;overflow:hidden}
@@ -176,6 +193,22 @@ input,select,.mfield{min-height:36px;background:var(--sf);font-size:11px;box-sha
    with one badge instead of three neighbouring visual signals. */
 .topbar #signout{display:none!important}
 .topbar #themebtn,.topbar #setupbell{width:34px;height:34px;display:grid;place-items:center}
+.topbar #themebtn{margin-left:auto!important}
+.account-wrap{position:relative;display:flex;align-items:center;margin-left:2px}
+.topbar #who.account-button{display:flex;align-items:center;gap:9px;width:auto;max-width:230px;
+  min-height:40px;margin:0;padding:4px 3px 4px 7px;border:0;border-radius:8px;
+  background:transparent!important;color:var(--fg);font:inherit!important;text-align:left;
+  cursor:pointer}.topbar #who.account-button:hover{background:var(--sf2)!important}
+.topbar #who.account-button:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.account-avatar{width:31px;height:31px;flex:0 0 31px;display:grid;place-items:center;
+  border-radius:8px;background:linear-gradient(145deg,#183e5e,#087b72);color:#fff;
+  font-size:11px;font-weight:760}.account-copy{display:block;min-width:0;line-height:1.15}
+.account-copy b,.account-copy span{display:block;max-width:145px;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap}.account-copy b{font-size:11.5px;font-weight:700}
+.account-copy span{margin-top:2px;color:var(--mut);font-size:9.5px;font-weight:500}
+.account-chevron{margin:0 4px;color:var(--mut);font-size:12px}
+#usermenu .umhead strong,#usermenu .umhead span{display:block}
+#usermenu .umhead span{margin-top:2px;color:var(--mut);font-size:10px;font-weight:500}
 #setupbell{position:relative;gap:0;font-size:0}
 #setupbell .bdot{display:none}
 #setupbell .bcount{position:absolute;top:-5px;right:-5px;min-width:17px;height:17px;
@@ -334,19 +367,16 @@ main{max-width:none;width:100%;margin:0}
   min-width:0;border:1px solid var(--bd);border-radius:12px;background:var(--sf);
   overflow:hidden;box-shadow:var(--shadow)}
 .executive-posture{padding:19px 21px;
-  background:linear-gradient(135deg,#edf9f6 0%,#f6fbfa 58%,var(--sf) 100%);
+  background:linear-gradient(120deg,color-mix(in srgb,var(--pri-soft) 70%,var(--sf)),var(--sf));
   color:var(--fg)}.executive-posture>span{display:block;color:var(--mut);font-size:8.5px;
   font-weight:760;letter-spacing:.1em;text-transform:uppercase}
 .executive-posture>strong{display:block;margin-top:9px;font-size:24px;line-height:1.05;
-  letter-spacing:-.045em}.needs-attention .executive-posture>strong{color:#ff8d95}
+  letter-spacing:-.045em}.needs-attention .executive-posture>strong{color:var(--dstr)}
 .healthy .executive-posture>strong{color:var(--pri)}.executive-posture>p{margin:9px 0 0;
   color:var(--mut);font-size:9.5px}.executive-actions{display:flex;gap:6px;margin-top:14px}
 .executive-actions button.mini{min-height:27px;background:color-mix(in srgb,var(--sf) 82%,transparent);
   border-color:var(--bd);color:var(--fg)}
 .executive-actions button.mini:hover{background:var(--sf)}
-[data-theme=dark] .executive-posture{background:linear-gradient(135deg,#123236 0%,#102a36 54%,#112138 100%);color:#fff}
-[data-theme=dark] .executive-posture>span{color:#9baabd}
-[data-theme=dark] .executive-posture>p{color:#aab8c8}
 [data-theme=dark] .executive-actions button.mini{background:rgba(255,255,255,.06);
   border-color:rgba(255,255,255,.14);color:#eaf0f7}
 [data-theme=dark] .executive-actions button.mini:hover{background:rgba(255,255,255,.11)}
@@ -525,6 +555,17 @@ main{max-width:none;width:100%;margin:0}
   border-radius:8px;color:var(--mut);font-size:9.5px}.evidence-footnote strong{flex:0 0 auto;
   color:var(--fg);font-size:9.5px}.evidence-footnote p{margin:0}
 
+.view-meta .meta-chip,.view-meta button.mini,.meta-export{min-height:36px;padding:7px 11px;
+  border-radius:7px;font-size:10.5px;font-weight:630}
+.meta-export{display:inline-flex!important;align-items:center;color:var(--fg)!important;
+  text-decoration:none;background:var(--sf);border:1px solid var(--bd)}
+.meta-export:hover{background:var(--sf2);border-color:color-mix(in srgb,var(--pri) 45%,var(--bd))}
+@media(min-width:901px){
+  /* The sidebar owns section navigation on desktop. These tabs survive as a
+     compact navigation fallback when the sidebar moves off canvas. */
+  .tabrow{display:none}
+}
+
 @media(max-width:900px){
   .widget-choice-grid{grid-template-columns:1fr}.widget-picker-foot{align-items:flex-start;flex-wrap:wrap}
   .evidence-summary{grid-template-columns:1fr}.evidence-summary-lead{border-right:0;border-bottom:1px solid var(--bd)}
@@ -537,3 +578,45 @@ main{max-width:none;width:100%;margin:0}
   .evidence-row{grid-template-columns:1fr;gap:5px;padding:12px 14px}.evidence-source{grid-column:1;margin-left:35px}
   .evidence-statement{margin-left:35px}.evidence-footnote{display:block}.evidence-footnote p{margin-top:4px}
 }
+
+/* --------------------------------------------------------------------------
+   Navigation and authentication finish — compact should still mean usable.
+   ----------------------------------------------------------------------- */
+.brand{border:0;background:transparent;cursor:pointer;width:100%;text-align:center}
+.brand:focus-visible{outline:2px solid #55d9bd;outline-offset:-4px;border-radius:7px}
+
+/* A diagnostic key/value pair is information, not code. Explicit serials,
+   paths and tokens still opt into .mono individually. This also prevents a
+   select inherited from a key/value row from unexpectedly becoming mono. */
+.kv dd,.kv dd input,.kv dd select,.kv dd textarea{font-family:inherit;font-variant-numeric:tabular-nums}
+
+.nav-pinned{padding:2px 0 7px;margin:0 0 4px;border-bottom:1px solid var(--side-line)}
+.nav-pinned>span{display:block;padding:4px 10px 3px;color:#718097;font-size:8px;
+  font-weight:750;letter-spacing:.11em;text-transform:uppercase}
+.nav-child-row{position:relative}.nav-child-row .nav-child{width:100%;padding-right:42px}
+.nav-pin{position:absolute!important;right:8px!important;top:50%;transform:translateY(-50%);
+  z-index:2;display:grid!important;place-items:center;min-height:22px!important;width:22px!important;
+  margin:0!important;padding:0!important;border:0!important;background:transparent!important;
+  color:#64748c!important;font-size:12px!important;opacity:0;cursor:pointer}
+.nav-child-row:hover .nav-pin,.nav-pin:focus-visible,.nav-pin.on{opacity:1}.nav-pin.on{color:#f2bd5b!important}
+.nav-pin:hover{color:#f2bd5b!important;background:rgba(242,189,91,.1)!important;border-radius:5px}
+.collapsed .nav-pinned,.collapsed .nav-pin{display:none!important}
+
+#navflyout{position:fixed;z-index:75;width:212px;padding:7px;background:var(--side);
+  border:1px solid rgba(255,255,255,.12);border-radius:9px;box-shadow:0 18px 45px rgba(2,8,20,.38)}
+#navflyout[hidden]{display:none}#navflyout .navfly-title{display:block;padding:5px 8px 6px;
+  color:#91a0b6;font-size:8px;font-weight:750;letter-spacing:.1em;text-transform:uppercase}
+#navflyout button{display:block;width:100%;min-height:33px;padding:7px 9px;border:0;border-radius:6px;
+  background:transparent;color:#b8c4d5;text-align:left;font:600 11px/1.35 Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;cursor:pointer}
+#navflyout button:hover,#navflyout button.on{background:var(--side-on);color:#fff}
+
+/* showLogin renders only the authentication card. The application shell is
+   normally a grid, so make the signed-out branch a real centring context
+   rather than depending on the content card's old margin. */
+body.auth .shell{display:block;min-height:100vh}
+body.auth .shell>div{min-height:100vh;display:grid;place-items:center}
+body.auth main{width:min(470px,calc(100vw - 32px));max-width:470px!important;margin:0!important;
+  padding:0!important}
+body.auth #app>div{width:100%;margin:0!important}
+body.auth .licard{width:100%}
+@media(max-width:560px){body.auth main{width:min(100% - 28px,470px);padding-top:20px!important}}

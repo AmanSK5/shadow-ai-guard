@@ -956,7 +956,8 @@ a.libtn:hover{border-color:var(--pri)}
 <div class="drawer" id="drawer"></div>
 <div class="shell" id="shell">
   <aside>
-    <div class="brand"><img src="/logo.png" alt="Shadow AI Guard"></div>
+    <button class="brand" id="brand-home" type="button"
+      aria-label="Go to Workspace overview"><img src="/logo.png" alt="Shadow AI Guard"></button>
     <div class="brandline"></div>
     <button class="tenant-switch" id="estate-status" type="button"
       aria-label="Open estate diagnostics">
@@ -990,16 +991,6 @@ a.libtn:hover{border-color:var(--pri)}
           d="M12 3l8 3v5.5c0 4.7-3.2 8.2-8 10-4.8-1.8-8-5.3-8-10V6l8-3z"/>
           <path d="m8.5 12 2.2 2.2 4.8-5"/></svg><span>Monitoring active</span>
       </span>
-      <span id="whowrap" style="margin-left:auto;position:relative">
-        <button id="who" class="back mono" style="margin:0;font-size:11px;
-          color:var(--mut);display:none" aria-haspopup="true"
-          aria-expanded="false"></button>
-        <div id="usermenu" hidden>
-          <div class="umhead" id="um-who"></div>
-          <button class="umitem" data-act="open-password">Change password</button>
-          <button class="umitem" id="signout-menu">Sign out</button>
-        </div>
-      </span>
       <button id="signout" class="back" style="margin:0;display:none">Sign out</button>
       <button id="themebtn" class="back" style="margin:0" title="light / dark">◐</button>
       <span id="setupwrap" style="position:relative">
@@ -1013,6 +1004,19 @@ a.libtn:hover{border-color:var(--pri)}
             0"/></svg><span class="bcount"></span><span class="bdot"></span>
         </button>
         <div id="setuppanel" hidden></div>
+      </span>
+      <span id="whowrap" class="account-wrap">
+        <button id="who" class="account-button" style="display:none"
+          aria-haspopup="true" aria-expanded="false">
+          <span class="account-avatar" id="who-avatar" aria-hidden="true"></span>
+          <span class="account-copy"><b id="who-name"></b><span id="who-role"></span></span>
+          <span class="account-chevron" aria-hidden="true">⌄</span>
+        </button>
+        <div id="usermenu" hidden>
+          <div class="umhead" id="um-who"></div>
+          <button class="umitem" data-act="open-password">Change password</button>
+          <button class="umitem" id="signout-menu">Sign out</button>
+        </div>
       </span>
     </div>
     <main id="app"></main>
@@ -1088,7 +1092,7 @@ let SETTAB = 'fleet';
 const STABS = [['fleet', 'Detection & paste guard'],
                ['connection', 'Receiver & log store'],
                ['alerting', 'Display & alerting'], ['account', 'Account'],
-               ['start', 'Getting started'], ['diagnostics', 'Diagnostics']];
+               ['start', 'Getting started']];
 const SETTABS = STABS.map(([id]) => id);
 let DIAG = null;
 let REG = null;
@@ -1246,9 +1250,19 @@ function chrome(on) {
   const so = document.getElementById('signout'), who = document.getElementById('who');
   const login = AUTH && AUTH.mode === 'login';
   so.style.display = on && login ? '' : 'none';
-  const label = on && login && AUTH.username
-    ? AUTH.username + (AUTH.role === 'viewer' ? ' · read-only' : '') : '';
-  who.textContent = label;
+  const label = on && login && AUTH.username ? AUTH.username : '';
+  const roleLabel = !label ? '' : AUTH.role === 'owner' ? 'Owner'
+    : AUTH.role === 'viewer' ? 'Read-only' : 'Administrator';
+  const displayName = label ? label.replace(/[._-]+/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase()) : '';
+  const initials = displayName ? displayName.split(/\s+/).filter(Boolean)
+    .slice(0, 2).map(p => p[0]).join('').toUpperCase() : '';
+  const whoName = document.getElementById('who-name');
+  const whoRole = document.getElementById('who-role');
+  const whoAvatar = document.getElementById('who-avatar');
+  if (whoName) whoName.textContent = displayName;
+  if (whoRole) whoRole.textContent = roleLabel;
+  if (whoAvatar) whoAvatar.textContent = initials;
   // A button only when there is a menu behind it. Signed out, or on a
   // no-login deployment, it would open an empty panel.
   who.style.display = label ? '' : 'none';
@@ -1256,7 +1270,8 @@ function chrome(on) {
   if (!label) { if (um) um.hidden = true; who.setAttribute('aria-expanded', 'false');
                 pwHide(); }
   const umw = document.getElementById('um-who');
-  if (umw) umw.textContent = label;
+  if (umw) umw.innerHTML = label
+    ? `<strong>${esc(displayName)}</strong><span>${esc(roleLabel)}</span>` : '';
 }
 
 // The account menu. It carries the one thing a person changes about
@@ -1820,6 +1835,13 @@ const NAVICONS = {
   managed:'<rect x="3" y="5" width="18" height="12" rx="1.5"/><path d="M8 21h8"/>',
   system:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M4.9 4.9l2.1 2.1m10 10l2.1 2.1M19.1 4.9l-2.1 2.1m-10 10l-2.1 2.1"/>',
 };
+const NAVAREAS = [
+  {id:'overview', lbl:'Overview', icon:'home', sections:['home']},
+  {id:'discovery', lbl:'Discovery', icon:'inventory', sections:['inventory']},
+  {id:'governance', lbl:'Governance', icon:'governance', sections:['governance','spend']},
+  {id:'operations', lbl:'Operations', icon:'health', sections:['agentic','health','managed']},
+  {id:'administration', lbl:'Settings', icon:'system', sections:['system'], direct:'settings'},
+];
 
 // Derived from NAV rather than written out beside it. Kept as a second list,
 // #register was missing from it: the nav entry worked, the view rendered, and
@@ -1828,7 +1850,7 @@ const NAVICONS = {
 // 'wizard' is reachable by fragment but absent from the nav: it is a door
 // you walk through once, not a place to live.
 const VIEWS = NAV.flatMap(sec => sec.items.map(([id]) => id))
-  .concat(['wizard', 'extsetup', 'budget-report']);
+  .concat(['wizard', 'extsetup', 'budget-report', 'diagnostics']);
 // Where a bare URL lands. Derived from the nav rather than spelled out, so
 // the front door is whatever the sidebar names first and there is no second
 // list to keep in step.
@@ -1848,6 +1870,9 @@ const fromHash = () => {
     // Checked against the known tabs exactly like the view below it. This
     // is the point the value stops being a fragment and starts being a tab.
     const tab = h.split('/')[1];
+    // Diagnostics used to be a Settings tab. Keep old bookmarks working,
+    // but let the estate-level health view have its own destination now.
+    if (tab === 'diagnostics') return {view: 'diagnostics', tab: null};
     return {view: 'settings', tab: SETTABS.includes(tab) ? tab : null};
   }
   // An unknown or empty fragment lands on the Overview. It used to land on
@@ -6035,6 +6060,29 @@ function diagnosticsCards() {
   from here.</p></div>`}`;
 }
 
+// System health belongs to the estate context, not inside the place an
+// operator edits policy. It still uses the original diagnostics endpoint and
+// cards, so this is a change of information architecture rather than a new
+// operational dependency.
+async function diagnostics() {
+  if (!DIAG) {
+    try { DIAG = await (await fetch('/api/diagnostics')).json(); }
+    catch (e) { return `<h2>System health</h2><div class="note">Could not read
+      system health: ${esc(String(e.message || e))}</div>`; }
+  }
+  const managed = CFG.managed && CFG.managed.enabled;
+  if (managed && AUDITLOG === null) {
+    try {
+      const ar = await mfetch('/api/audit?limit=50');
+      if (ar.ok) AUDITLOG = (await ar.json()).events || [];
+    } catch (e) { /* activity is useful context, never a prerequisite */ }
+  }
+  return `<h2>System health</h2><p class="lede">A read-only view of the
+    services and deployment this managed estate depends on. Settings change
+    policy; this page confirms what the portal can currently verify.</p>
+    ${diagnosticsCards()}`;
+}
+
 // ---- the Settings save bar -------------------------------------------
 // Every field on a Settings tab used to carry its own Save, which meant the
 // Fleet tab alone showed eight of them and the four extension-hosting URLs -
@@ -6083,12 +6131,6 @@ async function settings() {
     if (r.ok) SETTINGS = await r.json();
     else if (r.status === 401) { sessionLost(); return ''; }
   }
-  if (managed && SETTAB === 'diagnostics' && AUDITLOG === null) {
-    try {
-      const ar = await mfetch('/api/audit?limit=50');
-      if (ar.ok) AUDITLOG = (await ar.json()).events || [];
-    } catch (e) { /* the card simply stays absent */ }
-  }
   if (managed) await checkSettingsChanged();
   if (managed && (SETTAB === 'account' || SETTAB === 'alerting') && USERS === null
       && AUTH && AUTH.role !== 'viewer') {
@@ -6097,8 +6139,9 @@ async function settings() {
       if (ur.ok) USERS = (await ur.json()).users || [];
     } catch (e) { /* the accounts card simply stays absent */ }
   }
-  if (!managed || !SETTINGS) return `<h2>Settings and diagnostics</h2>
-    ${diagnosticsCards()}`;
+  if (!managed || !SETTINGS) return `<h2>Settings</h2><p class="lede">This
+    deployment does not expose centrally managed settings. System health is
+    available from the managed-estate switcher.</p>`;
 
   // Named outright rather than looked up by a key that came from the URL.
   // SETTAB is allow-listed where it enters, in fromHash(), so it can only
@@ -6109,13 +6152,11 @@ async function settings() {
   else if (SETTAB === 'alerting') body = mailSettings() + alertingSettings();
   else if (SETTAB === 'account') body = accountSettings();
   else if (SETTAB === 'start') body = gettingStarted();
-  else if (SETTAB === 'diagnostics') body = diagnosticsCards();
   else { SETTAB = 'fleet'; body = fleetSettings(); }
   return `<h2>Settings</h2>
   ${settingsChangedNote()}
   <p class="lede">Central settings are editable and reach the fleet at
-  runtime - a value saved here overrides the matching environment variable.
-  Diagnostics is the read-only view: what the portal verified about itself.</p>
+  runtime - a value saved here overrides the matching environment variable.</p>
   ${SETMSG ? `<div class="note">${esc(SETMSG)}</div>` : ''}
   <div class="tabs">${STABS.map(([id, lbl]) =>
     `<button data-settab="${id}" class="${SETTAB===id?'on':''}">${lbl}</button>`).join('')}</div>
@@ -9020,6 +9061,35 @@ async function managedAction(act, el) {
 // sections and back does not lose your place.
 const SECTAB = {};
 const sectionOf = v => NAV.find(s => s.items.some(([id]) => id === v));
+// Areas are independently expandable. This lets somebody compare a tool in
+// Discovery with its entry in Governance without bouncing the first group
+// closed every time they open the second one.
+let NAVOPEN = [];
+const NAV_PIN_KEY = 'navigation.pins';
+const NAVNAMES = {
+  overview:'Workspace overview', dashboard:'Grafana dashboard', personal:'Personal accounts',
+  register:'AI register', registry:'Tool registry', paste:'Paste guard',
+  iso:'Evidence centre', agentic:'Agentic AI', setup:'Detection sources',
+  coverage:'Coverage gaps', fleet:'Enrolled devices', tokens:'Enrollment tokens',
+};
+const navEntry = id => {
+  for (const sec of NAV) {
+    const found = sec.items.find(([item]) => item === id);
+    if (found) return {section: sec, id: found[0], label: NAVNAMES[found[0]] || found[1]};
+  }
+  return null;
+};
+const navPins = () => {
+  const raw = pref(NAV_PIN_KEY, []);
+  const ids = Array.isArray(raw) ? raw : [];
+  return [...new Set(ids)].filter(id => navEntry(id));
+};
+async function navTogglePin(id) {
+  const pins = navPins();
+  const next = pins.includes(id) ? pins.filter(item => item !== id) : [...pins, id];
+  await prefSet(NAV_PIN_KEY, next);
+  drawNav();
+}
 
 // One reusable label, on the body: the sidebar scrolls, so anything drawn
 // past its edge would be clipped by it.
@@ -9044,65 +9114,124 @@ function navTip(btn) {
 }
 function hideNavTip() { if (NAVTIP) NAVTIP.classList.remove('on'); }
 
+// A collapsed rail should still be a working navigation system. The fly-out
+// keeps its children beside the rail so its width remains a deliberate
+// compact mode, not a dead-end with decorative icons.
+let NAVFLY = null, NAVFLYHIDE = null;
+const navCollapsed = () => document.getElementById('shell')?.classList.contains('collapsed');
+function navFlyCancelHide() { if (NAVFLYHIDE) clearTimeout(NAVFLYHIDE); NAVFLYHIDE = null; }
+function navFlyHideSoon() {
+  navFlyCancelHide();
+  NAVFLYHIDE = setTimeout(() => { if (NAVFLY) NAVFLY.hidden = true; }, 120);
+}
+function navFlyClose() { navFlyCancelHide(); if (NAVFLY) NAVFLY.hidden = true; }
+function navGo(sectionId, id) {
+  const sec = NAV.find(s => s.id === sectionId);
+  if (!sec) return;
+  view = id || SECTAB[sec.id] || sec.items[0][0];
+  const area = NAVAREAS.find(a => a.sections.includes(sec.id));
+  if (area && !area.direct && !NAVOPEN.includes(area.id)) NAVOPEN.push(area.id);
+  detail = null; EXTFROM = '';
+  document.body.classList.remove('nav-open');
+  history.replaceState(null, '', frag(view));
+  navFlyClose(); drawNav(); render();
+}
+function navFlyShow(btn) {
+  if (!navCollapsed()) return;
+  const area = NAVAREAS.find(a => a.id === btn.dataset.area);
+  if (!area) return;
+  navFlyCancelHide(); hideNavTip();
+  if (!NAVFLY) {
+    NAVFLY = document.createElement('div');
+    NAVFLY.id = 'navflyout'; NAVFLY.setAttribute('role', 'menu');
+    NAVFLY.onmouseenter = navFlyCancelHide;
+    NAVFLY.onmouseleave = navFlyHideSoon;
+    document.body.appendChild(NAVFLY);
+  }
+  const entries = area.sections.flatMap(sectionId => {
+    const sec = NAV.find(s => s.id === sectionId);
+    return sec ? sec.items.map(([id, label]) => ({sectionId, id, label:NAVNAMES[id] || label})) : [];
+  });
+  NAVFLY.innerHTML = `<span class="navfly-title">${esc(area.lbl)}</span>${entries.map(entry =>
+    `<button type="button" role="menuitem" data-fly-s="${entry.sectionId}" data-fly-v="${entry.id}"
+      class="${view === entry.id ? 'on' : ''}">${esc(entry.label)}</button>`).join('')}`;
+  const r = btn.getBoundingClientRect();
+  NAVFLY.hidden = false;
+  NAVFLY.style.left = (r.right + 8) + 'px';
+  NAVFLY.style.top = Math.max(8, Math.min(r.top, window.innerHeight - NAVFLY.offsetHeight - 8)) + 'px';
+  NAVFLY.querySelectorAll('[data-fly-v]').forEach(item => item.onclick = () =>
+    navGo(item.dataset.flyS, item.dataset.flyV));
+}
+
+function navChild(section, id, label, pinnedList, {pinned = false} = {}) {
+  const shown = NAVNAMES[id] || label;
+  const c = id === 'personal' ? (G.personal_accounts || []).length : null;
+  const isPinned = pinnedList.includes(id);
+  return `<div class="nav-child-row ${pinned ? 'nav-child-pinned' : ''}">
+    <button data-s="${section.id}" data-v="${id}" class="nav-child ${view === id ? 'on' : ''}"
+      aria-label="${esc(shown)}" data-lbl="${esc(shown)}"><span class="nav-dot" aria-hidden="true"></span>
+      <span class="lbl">${esc(shown)}</span>${c ? `<span class="count"
+        title="${c} personal account${c === 1 ? '' : 's'} seen in this window">${c}</span>` : ''}</button>
+    <button type="button" class="nav-pin ${isPinned ? 'on' : ''}" data-pin="${id}"
+      aria-label="${isPinned ? 'Unpin' : 'Pin'} ${esc(shown)}" title="${isPinned ? 'Unpin' : 'Pin'}">
+      ${isPinned ? '★' : '☆'}</button></div>`;
+}
+
 function drawNav() {
   const n = document.getElementById('nav');
   const cur = sectionOf(view);
-  // Every destination is visible in the rail. The previous section-only
-  // navigation saved vertical space by putting the actual destinations in a
-  // second row of tabs after the click. That made a feature-rich product look
-  // smaller than it is and forced operators to remember which section hid a
-  // page. These groups are presentation only: their destinations still come
-  // from NAV, so a renamed or removed view has one source of truth.
-  const groups = [
-    ['Monitor', ['home', 'inventory', 'agentic']],
-    ['Govern', ['governance', 'spend']],
-    ['Operate', ['health', 'managed']],
-    ['Administration', ['system']],
-  ];
-  const names = {
-    dashboard:'Grafana dashboard', personal:'Personal accounts',
-    register:'AI register', registry:'Tool registry', paste:'Paste guard',
-    iso:'Evidence centre', agentic:'Agentic AI', setup:'Detection sources',
-    coverage:'Coverage gaps', fleet:'Enrolled devices', tokens:'Enrollment tokens',
-  };
-  n.innerHTML = groups.map(([group, ids]) => `<div class="nav-zone">
-    <div class="nav-zone-label">${group}</div>${ids.map(sid => {
+  // Product areas are the stable mental model; their destinations expand in
+  // place. Desktop no longer repeats the same destinations as tabs above the
+  // page. The compact tabs remain available when the sidebar is off-canvas.
+  const activeArea = NAVAREAS.find(a => cur && a.sections.includes(cur.id));
+  if (!NAVOPEN.length && activeArea) NAVOPEN = [activeArea.id];
+  const pins = navPins();
+  const pinned = pins.length ? `<div class="nav-pinned"><span>Pinned</span>${pins.map(id => {
+    const entry = navEntry(id); return navChild(entry.section, entry.id, entry.label, pins, {pinned:true});
+  }).join('')}</div>` : '';
+  n.innerHTML = pinned + NAVAREAS.map(area => {
+    const current = activeArea && activeArea.id === area.id;
+    if (area.direct) return `<div class="nav-area-block">
+      <button class="nav-area-trigger nav-direct ${current ? 'on' : ''}"
+        data-s="system" data-v="${area.direct}" data-lbl="${esc(area.lbl)}" aria-label="${esc(area.lbl)}">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="1.9" stroke-linecap="round"
+          stroke-linejoin="round">${NAVICONS[area.icon]}</svg>
+        <span class="lbl">${esc(area.lbl)}</span></button></div>`;
+    const open = NAVOPEN.includes(area.id);
+    const children = area.sections.map(sid => {
       const sec = NAV.find(s => s.id === sid);
-      if (!sec) return '';
-      return sec.items.map(([id, label], i) => {
-        const shown = names[id] || label;
-        const c = id === 'personal' ? (G.personal_accounts || []).length : null;
-        return `<button data-s="${sec.id}" data-v="${id}"
-          class="${view === id ? 'on' : ''}${i ? ' nav-child' : ''}"
-          aria-label="${esc(shown)}" data-lbl="${esc(shown)}">
-          ${i ? '<span class="nav-dot" aria-hidden="true"></span>'
-              : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" stroke-width="1.9" stroke-linecap="round"
-                  stroke-linejoin="round">${NAVICONS[sec.id]}</svg>`}
-          <span class="lbl">${esc(shown)}</span>${c ? `<span class="count"
-            title="${c} personal account${c === 1 ? '' : 's'} seen in this window">${c}</span>` : ''}
-        </button>`;
-      }).join('');
-    }).join('')}</div>`).join('');
+      return sec ? sec.items.map(([id, label]) => {
+        return navChild(sec, id, label, pins);
+      }).join('') : '';
+    }).join('');
+    return `<div class="nav-area-block ${open ? 'expanded' : ''}">
+      <button class="nav-area-trigger ${current ? 'current' : ''}" data-area="${area.id}"
+        data-lbl="${esc(area.lbl)}" aria-label="${esc(area.lbl)}" aria-expanded="${open}">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="1.9" stroke-linecap="round"
+          stroke-linejoin="round">${NAVICONS[area.icon]}</svg>
+        <span class="lbl">${esc(area.lbl)}</span><span class="nav-chevron" aria-hidden="true">›</span>
+      </button><div class="nav-area-items" ${open ? '' : 'hidden'}>${children}</div>
+    </div>`;
+  }).join('');
   // Collapsed, the rail is icons alone. A native title works but arrives a
   // second late and in the operating system's styling, which on a rail
   // somebody is scanning is close enough to nothing.
   n.querySelectorAll('button').forEach(b => {
-    b.onmouseenter = () => navTip(b);
-    b.onmouseleave = hideNavTip;
-    b.onfocus = () => navTip(b);
-    b.onblur = hideNavTip;
+    b.onmouseenter = () => b.dataset.area && navCollapsed() ? navFlyShow(b) : navTip(b);
+    b.onmouseleave = () => b.dataset.area && navCollapsed() ? navFlyHideSoon() : hideNavTip();
+    b.onfocus = () => b.dataset.area && navCollapsed() ? navFlyShow(b) : navTip(b);
+    b.onblur = () => b.dataset.area && navCollapsed() ? navFlyHideSoon() : hideNavTip();
   });
-  n.querySelectorAll('button').forEach(b => b.onclick = () => {
-    const sec = NAV.find(s => s.id === b.dataset.s);
-    view = b.dataset.v || SECTAB[sec.id] || sec.items[0][0];
-    detail = null; EXTFROM = '';
-    document.body.classList.remove('nav-open');
-    // Replace rather than push: clicking through the nav should not fill the
-    // back button with every tab you glanced at.
-    history.replaceState(null, '', frag(view));
-    drawNav(); render();
+  n.querySelectorAll('[data-area]').forEach(b => b.onclick = () => {
+    if (navCollapsed()) { navFlyShow(b); return; }
+    NAVOPEN = NAVOPEN.includes(b.dataset.area)
+      ? NAVOPEN.filter(id => id !== b.dataset.area) : [...NAVOPEN, b.dataset.area];
+    drawNav();
   });
+  n.querySelectorAll('[data-v]').forEach(b => b.onclick = () => navGo(b.dataset.s, b.dataset.v));
+  n.querySelectorAll('[data-pin]').forEach(b => b.onclick = e => { e.stopPropagation(); navTogglePin(b.dataset.pin); });
   const fv = document.getElementById('footver');
   if (fv && CFG.version) fv.textContent = 'v' + CFG.version;
 }
@@ -9393,6 +9522,7 @@ async function renderView() {
   const tb = tabbar() + loadBanner();
   // settings and register each read a second endpoint, so they are async.
   if (view === 'settings') { app.innerHTML = tb + await settings(); return; }
+  if (view === 'diagnostics') { app.innerHTML = await diagnostics(); return; }
   if (view === 'register') { app.innerHTML = tb + await register(); return; }
   if (view === 'paste') { app.innerHTML = tb + await paste(); return; }
   if (view === 'agentic') { app.innerHTML = tb + await agentic(); return; }
@@ -9450,8 +9580,17 @@ function decorateView() {
     ? Math.round(hours / 24) + '-day window' : hours + '-hour window';
   const meta = document.createElement('div');
   meta.className = 'view-meta';
-  meta.innerHTML = `<span class="meta-chip">${esc(windowLabel)}</span>
-    <span class="meta-chip live">Live estate data</span>`;
+  const overviewWindow = hours >= 24 && hours % 24 === 0
+    ? Math.round(hours / 24) + ' days' : hours + ' hours';
+  meta.innerHTML = `<span class="meta-chip">${esc(view === 'overview' ? overviewWindow : windowLabel)}</span>`
+    + (view === 'overview'
+      ? `<a class="mini meta-export" href="/api/evidence?download=true">Export snapshot</a>`
+      : '');
+  // Section destinations live in the expandable sidebar on desktop. Any
+  // actual page actions that shared their old tab row belong beside the page
+  // title, where the reference design puts them.
+  const tabAside = app.querySelector(':scope > .tabrow .tabaside');
+  if (tabAside) while (tabAside.firstChild) meta.appendChild(tabAside.firstChild);
   head.appendChild(meta);
 
 }
@@ -9812,14 +9951,16 @@ document.getElementById('signout-menu').onclick = () => {
   document.getElementById('signout').click();
 };
 
-// The estate context is useful only if it leads somewhere. Diagnostics is
-// the existing, read-only place that explains what this deployment is
-// connected to and what it has verified.
+// The estate context leads to an estate-level health view. It is deliberately
+// separate from Settings: changing policy and checking runtime health are
+// different operator jobs.
 document.getElementById('estate-status').onclick = () => {
-  SETTAB = 'diagnostics'; view = 'settings'; detail = null; EXTFROM = '';
-  history.replaceState(null, '', frag('settings'));
+  view = 'diagnostics'; detail = null; EXTFROM = '';
+  history.replaceState(null, '', frag(view));
   drawNav(); render();
 };
+
+document.getElementById('brand-home').onclick = () => navGo('home', 'overview');
 
 // The one place that knows what the sign-in screen needs. Falls back to a
 // signed-out shape if the receiver cannot be reached, because a sign-out
