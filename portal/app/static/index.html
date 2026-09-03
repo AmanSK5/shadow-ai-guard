@@ -1655,7 +1655,10 @@ async function maybeTour() {
   TOURTRIED = true;
   const seen = await tourProgress();
   const role = tourRole();
-  if (seen[role]) return;
+  // Completion and dismissal are both answers for this edition. Older
+  // versions (including the old unversioned "skipped" marker) deliberately
+  // fall through so a redesigned interface can explain itself again.
+  if (seen[role] === TOUR_VERSION || seen[role] === TOUR_VERSION + ':skipped') return;
   // Having taken the other role's tour means the role changed under them,
   // which is worth saying out loud before offering a second walkthrough.
   const other = seen[role === 'admin' ? 'viewer' : 'admin'];
@@ -2661,7 +2664,7 @@ function devices() {
   const observedTools = new Set(rows.flatMap(([,d]) => d.tools || [])).size;
   return `<h2>Devices</h2><p class="lede">${rows.length} shown. The key is the most
   stable identifier the source could get, usually a serial. Click for detail.</p>
-  <div class="inventory-summary" aria-label="Device inventory summary">
+  <div class="inventory-summary" data-tour="device-summary" aria-label="Device inventory summary">
     <span><b>${rows.length}</b> devices</span>
     <span><b>${observedTools}</b> AI tools observed</span>
     <span class="${personal ? 'risk' : ''}"><b>${personal}</b> with personal accounts</span>
@@ -5749,21 +5752,25 @@ function gettingStarted() {
   const done = SETTINGS && SETTINGS.settings
     && SETTINGS.settings.onboarding_done
     && SETTINGS.settings.onboarding_done.value;
-  return `<div class="wcard" style="margin-bottom:10px"><h3>Getting started</h3>
+  return `<div class="wcard getting-started" data-tour="getting-started" style="margin-bottom:10px"><h3>Getting started</h3>
   <p class="lede" style="margin-bottom:16px">${done
-    ? `Setup is marked done. Both of these are safe to repeat - neither resets
-       anything.`
-    : `Setup has not been finished yet. Neither of these changes anything on
-       its own.`}</p>
-  <p class="src-note" style="margin:0 0 8px">Every step is one of these
-  settings, prefilled with what is already saved - so running it again is a
-  review rather than a reset.</p>
+    ? `Setup is marked done. Both options are safe to repeat - neither resets
+       your estate or removes a saved setting.`
+    : `Setup has not been finished yet. Neither option changes anything until
+       you choose to save it.`}</p>
+  <p class="src-note" style="margin:0 0 12px">The sidebar is organised by
+  work: <b>Workspace overview</b> for the executive picture, <b>Discovery</b>
+  for observed activity, <b>Governance</b> for decisions and evidence,
+  <b>Operations</b> for coverage and fleet health, and <b>Settings</b> for
+  deployment policy.</p>
+  <p class="src-note" style="margin:0 0 8px">The setup wizard reviews the
+  deployment configuration already saved here. It is a review, not a reset.</p>
   <p style="margin:0 0 20px">
     <button class="mini" style="padding:6px 14px" data-act="open-wizard">${done
       ? 'Run the setup wizard again' : 'Finish setting up'}</button></p>
-  <p class="src-note" style="margin:0 0 8px">The walkthrough from your first
-  sign-in. It shows the pages your account can act on, so an admin and a viewer
-  see different tours.</p>
+  <p class="src-note" style="margin:0 0 8px">The walkthrough is the quick
+  orientation for the current interface. It follows the pages your account can
+  use, so administrators and read-only users see the right version.</p>
   <p style="margin:0">
     <button class="mini" style="padding:6px 14px" data-act="take-tour">Take the
       tour again</button></p>
@@ -6080,9 +6087,9 @@ async function diagnostics() {
       if (ar.ok) AUDITLOG = (await ar.json()).events || [];
     } catch (e) { /* activity is useful context, never a prerequisite */ }
   }
-  return `<h2>System health</h2><p class="lede">A read-only view of the
+  return `<div data-tour="system-health"><h2>System health</h2><p class="lede">A read-only view of the
     services and deployment this managed estate depends on. Settings change
-    policy; this page confirms what the portal can currently verify.</p>
+    policy; this page confirms what the portal can currently verify.</p></div>
     ${diagnosticsCards()}`;
 }
 
@@ -6192,7 +6199,7 @@ function setup() {
   findings - not from whether something is configured. Every silent source
   carries a fold-out with exactly what it needs to start reporting.</p>
 
-  <dl class="stats">
+  <dl class="stats" data-tour="source-overview">
     ${g.map(x => `<div><dt>${x.reporting}/${x.total}</dt><dd>${esc(x.group)}</dd></div>`).join('')}
   </dl>
 
@@ -6201,7 +6208,7 @@ function setup() {
   collector (Getting started walks through it) and it will appear here.</div>` : ''}
 
   ${g.map(x => `
-    <div class="tcard source-group">
+    <div class="tcard source-group" data-tour="source-table">
     <div class="cardhead"><h3>${esc(x.group)}</h3>
       <span class="pill ${x.reporting ? 'p-ok' : 'p-mut'}">${x.reporting} of ${x.total}</span></div>
     <table class="source-table"><tr><th>source</th><th>status</th><th>findings</th><th>devices</th><th>last seen</th></tr>
@@ -9999,7 +10006,7 @@ window.addEventListener('pageshow', async e => {
 // Bumping the version re-runs the tour for everybody: progress records
 // which version somebody has seen, not a bare "yes", so a rewritten tour
 // reaches people who took the old one.
-const TOUR_VERSION = '1';
+const TOUR_VERSION = '2';
 
 // Two tours, because a viewer and an admin are looking at different
 // products. Showing a read-only account the settings it cannot save is
@@ -10012,170 +10019,106 @@ const TOUR_VERSION = '1';
 const TOURS = {
   admin: [
     {title: 'Welcome to Shadow AI Guard',
-     body: 'This is every AI tool your estate is actually using - the '
-         + 'browser, laptops, your cloud tenant - and the accounts behind '
-         + 'it. Two minutes and you will know where to look for what.',
-     ok: 'Start'},
+     body: 'This short orientation follows the enterprise workspace as it is '
+         + 'now organised: the executive picture first, then discovery, '
+         + 'governance, operations and administration.', ok: 'Start'},
+    {view: 'overview', sel: '[data-area="discovery"]',
+     title: 'Navigate by work area',
+     body: 'The sidebar groups pages by the work they support. Areas can stay '
+         + 'open together, so you can compare Discovery with Governance. Pin '
+         + 'frequent destinations; the compact rail keeps every area available '
+         + 'through its fly-out.'},
     {view: 'overview', sel: '[data-tour="stats"]',
-     title: 'The numbers that matter',
-     body: 'Personal accounts first, because that is the one worth acting '
-         + 'on. Everything here reads the window in the corner - findings '
-         + 'age out of it, so a number falling can mean a device went '
-         + 'quiet rather than a problem going away.'},
-    {view: 'overview', sel: '[data-act="ov-edit"]',
-     title: 'Read it your way',
-     body: 'Edit lets you drag these cards, stack two into one column, '
-         + 'resize them, or hide what you never look at. It is your own '
-         + 'view and changes nothing for anyone else. A few cards offer a '
-         + 'second form where the data has more than one honest reading.'},
-    {view: 'overview', sel: '[data-s="inventory"]', click: true,
-     title: 'What was found',
-     body: 'Tools, people, devices and the accounts they are signed into. '
-         + 'Open Inventory and I will show you the page most of this '
-         + 'exists for.'},
+     title: 'Workspace overview',
+     body: 'This is the executive starting point: posture, open personal '
+         + 'accounts, affected people, observed tools and detection coverage. '
+         + 'It always describes the selected reporting window, not an all-time '
+         + 'total.'},
+    {view: 'setup', sel: '[data-tour="source-overview"]',
+     title: 'Discovery starts with coverage',
+     body: 'Sources tells you what is actually reporting across each surface. '
+         + 'Read this before treating a low finding count as a clean estate: a '
+         + 'silent source cannot observe anything.'},
+    {view: 'devices', sel: '[data-tour="device-summary"]',
+     title: 'Turn findings into an estate',
+     body: 'Discovery connects observed tools, devices, people and accounts. '
+         + 'Devices use the most stable identifier available; unattributed is a '
+         + 'useful follow-up state, not a person guessed by the platform.'},
     {view: 'personal', sel: '[data-tour="personal"]',
-     title: 'The page this is all for',
-     body: 'An approved tool on a personal account is still unmanaged data '
-         + 'flow and an offboarding gap - so approval never changes '
-         + 'severity here. The account is the risk, not the tool.'},
-    {view: 'personal', sel: '[data-s="governance"]', click: true,
-     title: 'Deciding what is allowed',
-     body: 'Nothing is approved or refused until a person says so. Open '
-         + 'Governance for where those decisions live.'},
-    {view: 'register', sel: '[data-s="spend"]', click: true,
-     title: 'Before you trust a number',
-     body: 'The AI register is what you actually use, with what was '
-         + 'decided about each tool: owner, status, review date. A tool '
-         + 'missing from the registry is flagged rather than hidden. What '
-         + 'it all costs is next - open Budget.'},
-    {view: 'budget', sel: '[data-s="agentic"]', click: true,
-     title: 'What it costs',
-     body: 'Subscriptions set against what the estate is observed doing: '
-         + 'seats nobody uses, people on a tool no seat covers, personal '
-         + 'accounts running beside paid ones. Every page so far assumed a '
-         + 'person did something - open Agentic AI for the ones where '
-         + 'nobody did.'},
-    {view: 'agentic', sel: '[data-s="health"]', click: true,
-     title: 'The ones nobody is driving',
-     body: 'Things that start on a timer or a trigger, and what they can '
-         + 'reach once running. Read the second box in each chain: an empty '
-         + 'one is a credential with no person behind it, so revoking '
-         + 'somebody\'s sign-on does not stop it. All of it rests on '
-         + 'something still reporting - open Health.'},
-    {view: 'setup', sel: '[data-s="managed"]', click: true,
-     title: 'Is anything actually reporting?',
-     body: 'Which detection sources are reporting, which are set up but '
-         + 'silent, and which you have not enabled. A surface nobody '
-         + 'collects from looks exactly like a surface with nothing on '
-         + 'it. The devices themselves are next - open Fleet.'},
-    {view: 'fleet', sel: '[data-s="system"]', click: true,
-     title: 'Devices and their credentials',
-     body: 'Every device holding an enrollment credential, and the tokens '
-         + 'that invited them. Revoking cuts off one device and it holds: '
-         + 'the serial is refused even by a valid token until you allow '
-         + 'it back. Last stop - open Settings.'},
-    {view: 'settings', tab: 'fleet', sel: '#set-domains',
-     title: 'Corporate domains',
-     body: 'Every domain your people legitimately sign in with. Anything '
-         + 'else is a personal account and warns. Get this wrong and the '
-         + 'whole platform reports the wrong thing, so it is the first '
-         + 'field to fill in.'},
-    {view: 'settings', sel: '#who',
-     title: 'Your own account',
-     body: 'Your name in the corner opens your account, and changing your '
-         + 'own password lives there. Everything else on this screen is '
-         + 'about the deployment, or about other people\u2019s accounts.'},
-    {view: 'settings', sel: '#refresh',
-     title: 'One last thing',
-     body: 'Findings are cached, so this is how you force a fresh read. '
-         + 'You can take this tour again from Settings, under Getting '
-         + 'started.'},
+     title: 'Personal-account exposure',
+     body: 'A personal account can be a data-flow and offboarding risk even '
+         + 'when the tool itself is approved. Use this page to record the '
+         + 'follow-up rather than making that risk disappear from the headline.'},
+    {view: 'register', sel: '.register-overview',
+     title: 'Governance records the decision',
+     body: 'The AI register is the decision layer: owner, status and review '
+         + 'date sit beside observed use. Tools not yet in the registry are '
+         + 'shown as a governance gap rather than silently excluded.'},
+    {view: 'iso', sel: '.evidence-summary',
+     title: 'Evidence is an operational index',
+     body: 'Evidence centre gathers the records the platform can substantiate '
+         + 'for the current window. Export PDF for a review-ready snapshot, or '
+         + 'download JSON when the evidence needs to be inspected or retained.'},
+    {view: 'settings', tab: 'start', sel: '[data-tour="getting-started"]',
+     title: 'Return here when needed',
+     body: 'Settings › Getting started is the home for this tour and the '
+         + 'deployment setup review. Settings changes policy; it is separate '
+         + 'from the read-only health of the running estate.'},
+    {view: 'diagnostics', sel: '[data-tour="system-health"]',
+     title: 'System health is estate context',
+     body: 'Open System health from the Managed estate control beneath the '
+         + 'logo. It confirms what the portal can verify about itself and its '
+         + 'dependencies, without mixing diagnostics into policy settings.'},
   ],
   viewer: [
     {title: 'Welcome to Shadow AI Guard',
-     body: 'This account reads every page and changes nothing - made for '
-         + 'the auditor and the exec. Same tour as an admin gets, with who '
-         + 'to ask where a page needs a change.',
-     ok: 'Start'},
+     body: 'This account can inspect the same estate evidence as an admin. '
+         + 'The difference is that policy and decisions stay read-only, making '
+         + 'this view suitable for an auditor or executive reviewer.', ok: 'Start'},
+    {view: 'overview', sel: '[data-area="discovery"]',
+     title: 'Navigate by work area',
+     body: 'The sidebar groups pages by the work they support. Areas can stay '
+         + 'open together, and you can pin frequent destinations. In compact '
+         + 'mode, each icon opens a fly-out with its pages.'},
     {view: 'overview', sel: '[data-tour="stats"]',
-     title: 'The numbers that matter',
-     body: 'Personal accounts first, because that is the one worth acting '
-         + 'on. Everything here reads the window in the corner - findings '
-         + 'age out of it, so a number falling can mean a device went '
-         + 'quiet rather than a problem going away.'},
-    {view: 'overview', sel: '[data-act="ov-edit"]',
-     title: 'Read it your way',
-     body: 'Edit lets you drag these cards, stack two into one column, '
-         + 'resize them, or hide what you never look at. This one is '
-         + 'yours: it is a personal view kept with your account, and '
-         + 'read-only does not stop it.'},
-    {view: 'overview', sel: '[data-s="inventory"]', click: true,
-     title: 'What was found',
-     body: 'Tools, people, devices and the accounts they are signed into. '
-         + 'Open Inventory and I will show you the page most of this '
-         + 'exists for.'},
+     title: 'Workspace overview',
+     body: 'This is the executive starting point: posture, personal-account '
+         + 'exposure, affected people, observed tools and detection coverage '
+         + 'for the selected reporting window.'},
+    {view: 'setup', sel: '[data-tour="source-overview"]',
+     title: 'Read coverage before counts',
+     body: 'Sources shows what is actually reporting across the estate. A low '
+         + 'finding count is not a clean conclusion when a source is silent.'},
+    {view: 'devices', sel: '[data-tour="device-summary"]',
+     title: 'Discovery joins the evidence',
+     body: 'Tools, devices, people and accounts are kept distinct and linked '
+         + 'where the evidence supports it. Unattributed means no person has '
+         + 'been asserted for that device.'},
     {view: 'personal', sel: '[data-tour="personal"]',
-     title: 'The page this is all for',
-     body: 'An approved tool on a personal account is still unmanaged data '
-         + 'flow and an offboarding gap - so approval never changes '
-         + 'severity here. The account is the risk, not the tool.'},
-    {view: 'personal', sel: '[data-s="governance"]', click: true,
-     title: 'What was decided, and by whom',
-     body: 'Approvals, owners and review dates - the evidence an audit '
-         + 'asks for, and all of it readable from this account. Recording '
-         + 'a decision is the admin\u2019s half. Open Governance.'},
-    {view: 'register', sel: '[data-s="spend"]', click: true,
-     title: 'Before you trust a number',
-     body: 'The AI register is what you actually use; a tool missing from '
-         + 'the registry is flagged rather than hidden. Reading it is the '
-         + 'half this account does. What it all costs is next - open '
-         + 'Budget.'},
-    {view: 'budget', sel: '[data-s="agentic"]', click: true,
-     title: 'What it costs',
-     body: 'Unused seats, people on a tool no seat covers, and personal '
-         + 'accounts running beside paid ones - figures worth quoting. '
-         + 'Every figure so far counts something a person did - open '
-         + 'Agentic AI for what runs when nobody is there.'},
-    {view: 'agentic', sel: '[data-s="health"]', click: true,
-     title: 'What runs when nobody is there',
-     body: 'Tools that start on a schedule rather than because somebody '
-         + 'opened them, and what each can reach. The question an auditor '
-         + 'asks is who authorised it: where that box is empty there is no '
-         + 'person to name and nothing to revoke. All of it rests on '
-         + 'something still reporting, which is the next page - open '
-         + 'Health.'},
-    {view: 'setup', sel: '[data-s="managed"]', click: true,
-     title: 'Is anything actually reporting?',
-     body: 'Which detection sources are reporting, which are silent, and '
-         + 'which were never enabled. A surface nobody collects from '
-         + 'looks exactly like one with nothing on it, so read this '
-         + 'before quoting a number that fell. Open Fleet.'},
-    {view: 'fleet', sel: '[data-s="system"]', click: true,
-     title: 'Devices and their credentials',
-     body: 'Every device holding an enrollment credential, and the tokens '
-         + 'that invited them. Revoking one is an admin\u2019s job; seeing '
-         + 'what is enrolled, and what was revoked and when, is not. Last '
-         + 'stop - open Settings.'},
-    {view: 'settings', tab: 'fleet', sel: '#set-domains',
-     title: 'Corporate domains - read it, do not take it on trust',
-     body: 'Anything not on this list is treated as a personal account. '
-         + 'Every figure on the Personal accounts page rests on it, so a '
-         + 'missing domain overstates the problem and a wrong one hides '
-         + 'it. You can read it here; an admin changes it - and if it '
-         + 'looks wrong, that is the conversation to have before quoting '
-         + 'any of these numbers.'},
-    {view: 'settings', sel: '#who',
-     title: 'The one thing here you can change',
-     body: 'Your name in the corner opens your account. Your own password '
-         + 'is the single thing on this whole screen a read-only account '
-         + 'can change - the rest is the deployment, and an admin\u2019s '
-         + 'to save.'},
-    {view: 'settings', sel: '#refresh',
-     title: 'That is the tour',
-     body: 'Findings are cached, and this forces a fresh read. Saving is '
-         + 'the only thing this account cannot do - every page works. You '
-         + 'can take this tour again from Settings, under Getting '
-         + 'started.'},
+     title: 'Personal-account exposure',
+     body: 'This is the page to review unmanaged sign-ins. Approval of a tool '
+         + 'does not remove a personal-account finding; the account is the '
+         + 'question to follow up.'},
+    {view: 'register', sel: '.register-overview',
+     title: 'Read the governance record',
+     body: 'The AI register joins observed use to decisions, owners and review '
+         + 'dates. Missing decisions and unregistered tools remain visible as '
+         + 'review inputs for the accountable admin.'},
+    {view: 'iso', sel: '.evidence-summary',
+     title: 'Evidence for review',
+     body: 'Evidence centre is an operational index, not a compliance score. '
+         + 'Export PDF for a review-ready snapshot or download JSON for detailed '
+         + 'inspection and retention.'},
+    {view: 'settings', tab: 'start', sel: '[data-tour="getting-started"]',
+     title: 'Find this tour again',
+     body: 'Settings › Getting started keeps the orientation and setup review '
+         + 'in one predictable place. An administrator changes deployment '
+         + 'policy; this account can always see how that policy is presented.'},
+    {view: 'diagnostics', sel: '[data-tour="system-health"]',
+     title: 'System health stays separate',
+     body: 'The Managed estate control beneath the logo opens this read-only '
+         + 'health view. It shows what the portal can verify about its running '
+         + 'dependencies, independently of any policy settings.'},
   ],
 };
 
@@ -10284,10 +10227,10 @@ async function tourEnd(done) {
   TOUR = null;
   document.getElementById('tour').className = '';
   document.getElementById('tour-card').innerHTML = '';
-  // Recorded whether it was finished or skipped: somebody who closed it
-  // decided they did not want it, and reopening it every sign-in would be
-  // the tour arguing with them.
-  await tourRemember(done ? TOUR_VERSION : 'skipped');
+  // Remember both outcomes against this version. A person who closes this
+  // edition is not asked again at the next sign-in, but a changed tour can
+  // still be offered when its version is bumped.
+  await tourRemember(done ? TOUR_VERSION : TOUR_VERSION + ':skipped');
   // Only when it was left early. The last step says this in its own body,
   // and repeating it to somebody who read that line is telling them twice.
   if (!done) tourDoneShow();

@@ -31,22 +31,21 @@ def _nav_views() -> set:
 def test_every_step_points_at_a_view_that_exists():
     """A renamed view leaves the tour navigating to a blank page, and the
     person it was written for is the one who finds out."""
-    known = _nav_views()
+    # System health is intentionally reached from the estate control rather
+    # than a sidebar destination, but is still a real tour view.
+    known = _nav_views() | {"diagnostics"}
     assert known, "NAV did not parse; this test is guarding nothing"
     used = set(re.findall(r"view: '([a-z-]+)'", TOURS))
     assert used, "no steps parsed; this test is guarding nothing"
     assert used <= known, f"tour steps point at unknown views: {used - known}"
 
 
-def test_every_nav_target_is_a_real_section():
-    """The click steps drive the sidebar, so they carry section ids rather
-    than view ids - a different list, and just as easy to rename."""
-    nav = INDEX.split("const NAV = [", 1)[1].split("\n];", 1)[0]
-    sections = set(re.findall(r"\{id:'([a-z]+)'", nav))
-    assert sections, "NAV sections did not parse"
-    used = set(re.findall(r"""sel: '\[data-s="([a-z]+)"\]'""", TOURS))
-    assert used, "no nav steps parsed"
-    assert used <= sections, f"unknown nav sections: {used - sections}"
+def test_the_tour_points_at_the_current_navigation_model():
+    """The sidebar moved from a flat section list to expandable work areas.
+    The tour has to describe that model rather than retain a hidden dependency
+    on the old data-s navigation buttons."""
+    assert 'sel: \'[data-area="discovery"]\'' in TOURS
+    assert 'data-area="${area.id}"' in INDEX
 
 
 def test_every_hooked_element_is_still_rendered():
@@ -61,32 +60,24 @@ def test_every_id_target_is_still_rendered():
         assert f'id="{el}"' in INDEX, f"nothing renders #{el}"
 
 
-def test_every_action_target_is_still_rendered():
-    """A step can also aim at a control by its data-act, which is what the
-    overview's Edit button is. Unlike a data-tour hook that exists only for
-    the tour, a data-act is real wiring somebody may rename while doing
-    something else entirely - and the tour would then dim the page and
-    centre its card, which looks like the step meant to do that."""
-    used = set(re.findall(r'sel: \'\[data-act="([a-z-]+)"\]\'', TOURS))
-    assert used, "no data-act steps parsed; this test is guarding nothing"
-    for act in used:
-        assert f'data-act="{act}"' in INDEX, f"nothing renders data-act={act}"
+def test_every_class_target_is_still_rendered():
+    """The summary cards are semantic tour targets. A visual redesign that
+    removes one should fail here rather than leave an un-aimed tour card."""
+    for cls in set(re.findall(r"sel: '\\.([a-z-]+)'", TOURS)):
+        assert f'class="{cls}' in INDEX or f' {cls}"' in INDEX, \
+            f"nothing renders .{cls}"
 
 
-def test_the_tour_walks_every_section_of_the_nav():
-    """The tour is the only description of the whole product, and a section
-    it never mentions is one a new colleague does not know exists. Budget
-    and Fleet were both missing for exactly that reason: they shipped after
-    the tour was written, and nothing here noticed.
-
-    'home' is exempt because it is where the tour opens - there is no nav
-    click onto the page you already start on."""
-    nav = INDEX.split("const NAV = [", 1)[1].split("\n];", 1)[0]
-    sections = set(re.findall(r"\{id:'([a-z]+)'", nav)) - {"home"}
+def test_the_tour_covers_the_current_operating_path():
+    """The tour is an orientation, not a page-by-page inventory. It must
+    cover the current executive, discovery, governance, evidence, settings
+    and system-health journey for both roles."""
+    expected = {"overview", "setup", "devices", "personal", "register",
+                "iso", "settings", "diagnostics"}
     for role in ("admin", "viewer"):
         block = TOURS.split(role + ": [", 1)[1].split("\n  ],", 1)[0]
-        reached = set(re.findall(r'sel: \'\[data-s="([a-z]+)"\]\'', block))
-        missing = sections - reached
+        reached = set(re.findall(r"view: '([a-z-]+)'", block))
+        missing = expected - reached
         assert not missing, f"{role} tour never reaches: {sorted(missing)}"
 
 
@@ -100,7 +91,7 @@ def test_both_roles_walk_the_same_number_of_steps():
         block = TOURS.split(role + ": [", 1)[1].split("\n  ],", 1)[0]
         counts[role] = block.count("{title:") + block.count("{view:")
     assert counts["admin"] == counts["viewer"], counts
-    assert counts["admin"] >= 13, f"steps went missing: {counts}"
+    assert counts["admin"] >= 10, f"steps went missing: {counts}"
 
 
 def test_both_roles_have_a_tour():

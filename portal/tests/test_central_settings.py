@@ -273,11 +273,11 @@ def test_the_fleet_tab_is_renamed_but_keeps_its_id():
     """"Fleet" also names a whole nav section - enrolled devices and
     enrollment tokens - and two different things called Fleet in one product
     is a coin toss every time somebody says it. The id stays so existing
-    #settings/fleet links, and the tour step that targets this tab, still
-    land."""
+    #settings/fleet links still land. The orientation tour is intentionally
+    separate now: it teaches the work-area model rather than each setting."""
     html = (main.STATIC / "index.html").read_text()
     assert "['fleet', 'Detection & paste guard']" in html
-    assert "{view: 'settings', tab: 'fleet', sel: '#set-domains'," in html
+    assert "const SETTABS = STABS.map(([id]) => id);" in html
 
 
 def test_your_own_password_lives_in_the_account_menu():

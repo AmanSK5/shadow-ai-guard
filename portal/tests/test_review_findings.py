@@ -614,9 +614,9 @@ def test_a_settings_sub_tab_link_opens_the_tab_it_names():
     # with the screen.
     assert "const frag = v => '#' + v + (v === 'settings' ? '/' + SETTAB : '');" in html
     assert "replaceState(null, '', '#' + view)" not in html
-    # A tour step on Settings owns the sub-tab too - #set-domains exists
-    # only on Fleet, and the step found nothing when it did not.
-    assert "{view: 'settings', tab: 'fleet', sel: '#set-domains'," in html
+    # Settings steps may own a sub-tab. The current orientation uses Getting
+    # started rather than dropping somebody into a configuration field.
+    assert "{view: 'settings', tab: 'start', sel: '[data-tour=\"getting-started\"]'," in html
 
 
 def test_a_bare_url_lands_on_the_overview_not_on_sources():
