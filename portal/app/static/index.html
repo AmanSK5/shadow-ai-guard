@@ -6201,10 +6201,10 @@ function setup() {
   collector (Getting started walks through it) and it will appear here.</div>` : ''}
 
   ${g.map(x => `
-    <div class="tcard">
+    <div class="tcard source-group">
     <div class="cardhead"><h3>${esc(x.group)}</h3>
       <span class="pill ${x.reporting ? 'p-ok' : 'p-mut'}">${x.reporting} of ${x.total}</span></div>
-    <table><tr><th>source</th><th>status</th><th>findings</th><th>devices</th><th>last seen</th></tr>
+    <table class="source-table"><tr><th>source</th><th>status</th><th>findings</th><th>devices</th><th>last seen</th></tr>
     ${x.sources.map(r => `<tr>
       <td>${esc(r.label)}<br><span class="mono" style="font-size:11px;color:var(--mut)">${esc(r.source)}</span>
         ${r.reporting ? '' : `<details class="how"><summary>how to set this up</summary>

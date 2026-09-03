@@ -653,6 +653,22 @@ body.auth .licard{width:100%}
 .tcard td{line-height:1.45}.tcard td:first-child{color:var(--fg)}
 [data-theme=dark] .tcard tbody tr:nth-child(even) td{background:rgba(255,255,255,.012)}
 [data-theme=dark] .tcard tbody tr:hover td{background:#1a2940}
+
+/* Sources is a repeated operational matrix. Each surface carries the same
+   five answers, so their columns must line up identically from Endpoint to
+   MCP — an operator can compare a silent Browser source with a reporting
+   Network source without re-learning the layout. */
+.source-group>.cardhead{min-height:58px;margin:0!important;padding:0 18px!important;
+  align-items:center;border-bottom:1px solid var(--bd);background:var(--sf2)}
+.source-group>.cardhead h3{line-height:1}.source-group>.cardhead .pill{margin:0}
+.source-table{width:100%;table-layout:fixed}
+.source-table th:nth-child(1),.source-table td:nth-child(1){width:31%}
+.source-table th:nth-child(2),.source-table td:nth-child(2){width:19%}
+.source-table th:nth-child(3),.source-table td:nth-child(3){width:16%}
+.source-table th:nth-child(4),.source-table td:nth-child(4){width:15%}
+.source-table th:nth-child(5),.source-table td:nth-child(5){width:19%}
+.source-table td{vertical-align:middle;min-height:62px}
+@media(max-width:900px){.source-table{min-width:880px}}
 .budget-wizard .srcpick{max-width:760px}
 .budget-wizard .tiers{border-collapse:separate;border-spacing:0 7px;margin:11px 0 7px}
 .budget-wizard .tiers thead th{height:auto;padding:0 10px 4px 0;background:transparent;
