@@ -1757,3 +1757,31 @@ def test_a_real_bespoke_client_is_untouched_by_other_rulings():
                 evidence="DNS lookup for api.anthropic.com (via curl)"),
     ], REG_BIN, not_attributable=["firezone-client-tunnel"])
     assert out["agents"][0]["process"] == "curl"
+
+
+def test_a_process_attributed_to_a_tool_stops_being_a_mystery():
+    """Warp's macOS binary is called "stable", after its release channel.
+    Carrying that in the registry meant any process named stable was
+    silently excused as Warp, so it came out - and the queue asks instead.
+    An operator's answer has to reach this page, or the queue is again a
+    question whose answer goes nowhere."""
+    f = finding(tool="warp", surface="network", device="D1",
+                evidence="DNS lookup for app.warp.dev (via stable)")
+    assert derive.agentic_from([f], REG_BIN)["agents"][0]["process"] == "stable"
+    out = derive.agentic_from([f], REG_BIN, aliases={"stable": "warp"})
+    assert out["agents"] == []
+
+
+def test_an_alias_matches_the_name_in_every_shape():
+    f = finding(tool="warp", surface="network", device="D1",
+                evidence="DNS lookup for app.warp.dev (via Stable.exe)")
+    out = derive.agentic_from([f], REG_BIN, aliases={"stable": "warp"})
+    assert out["agents"] == []
+
+
+def test_attributing_one_name_does_not_excuse_another():
+    out = derive.agentic_from([
+        finding(tool="claude", surface="network", device="D1",
+                evidence="DNS lookup for api.anthropic.com (via curl)"),
+    ], REG_BIN, aliases={"stable": "warp"})
+    assert out["agents"][0]["process"] == "curl"

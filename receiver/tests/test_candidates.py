@@ -327,3 +327,46 @@ def test_only_a_process_can_be_called_unattributable(managed):
     key = rows[0]["key"]
     r = client.post("/admin/candidates/%s/not-attributable" % key, headers=ADMIN)
     assert r.status_code == 422
+
+
+def test_a_process_can_belong_to_a_tool_the_registry_knows(managed, monkeypatch):
+    """Vendors ship binaries named nothing like their product: Warp's macOS
+    one is "stable", after the release channel. That name was briefly carried
+    in the registry and had to come out - it is a word, and any process
+    called stable was being silently excused as Warp. An operator says it
+    once here instead."""
+    monkeypatch.setattr(main, "_KNOWN_PROCESSES", {"claude"})
+    monkeypatch.setattr(main, "_merged_registry",
+                        lambda: {"tools": [{"id": "warp", "name": "Warp"}]})
+    client.post("/report", json=_dns("stable", host="app.warp.dev"), headers=AUTH)
+    r = client.post("/admin/candidates/process:stable/belongs-to",
+                    headers=ADMIN, json={"tool_id": "warp"})
+    assert r.status_code == 200, r.text
+    got = client.get("/admin/candidates/process-aliases", headers=ADMIN).json()
+    assert got["aliases"] == {"stable": "warp"}
+
+
+def test_it_will_not_point_at_a_tool_that_does_not_exist(managed, monkeypatch):
+    """Inventing a tool from a process name is what "add to registry" is for,
+    and it produces a tool with no domains that matches nothing."""
+    monkeypatch.setattr(main, "_KNOWN_PROCESSES", {"claude"})
+    monkeypatch.setattr(main, "_merged_registry",
+                        lambda: {"tools": [{"id": "warp", "name": "Warp"}]})
+    client.post("/report", json=_dns("stable", host="app.warp.dev"), headers=AUTH)
+    r = client.post("/admin/candidates/process:stable/belongs-to",
+                    headers=ADMIN, json={"tool_id": "nonesuch"})
+    assert r.status_code == 422 and "no tool nonesuch" in r.json()["detail"]
+
+
+def test_an_attributed_name_is_not_asked_about_again(managed, monkeypatch):
+    monkeypatch.setattr(main, "_KNOWN_PROCESSES", {"claude"})
+    monkeypatch.setattr(main, "_merged_registry",
+                        lambda: {"tools": [{"id": "warp", "name": "Warp"}]})
+    client.post("/report", json=_dns("stable", host="app.warp.dev"), headers=AUTH)
+    client.post("/admin/candidates/process:stable/belongs-to",
+                headers=ADMIN, json={"tool_id": "warp"})
+    client.post("/report", json=_dns("stable", host="app.warp.dev", device="D2"),
+                headers=AUTH)
+    rows = client.get("/admin/candidates", headers=ADMIN).json()["candidates"]
+    assert [c for c in rows if c["kind"] == "process"
+            and not c.get("dismissed_at")] == []

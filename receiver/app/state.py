@@ -153,11 +153,16 @@ CREATE TABLE IF NOT EXISTS candidates (
   last_seen    TEXT NOT NULL,
   dismissed_at TEXT,
   dismissed_by TEXT NOT NULL DEFAULT '',
-  -- "" | "not_attributable". Dismissing says "not a tool"; this says the
-  -- name identifies no program at all - a resolver, a service host, a VPN
-  -- tunnel that resolves for everything behind it. Different claim, and
-  -- unlike a dismissal it has to reach the views that read process names.
-  disposition  TEXT NOT NULL DEFAULT ''
+  -- "" | "not_attributable" | "belongs_to". Dismissing says "not a tool".
+  -- not_attributable says the name identifies no program at all - a
+  -- resolver, a service host, a VPN tunnel that resolves for everything
+  -- behind it. belongs_to says it identifies a program the registry already
+  -- knows, under a name nothing would guess: Warp's macOS binary is called
+  -- "stable" after its release channel. All three close the card; only the
+  -- last two reach the views that read process names.
+  disposition  TEXT NOT NULL DEFAULT '',
+  -- The tool a belongs_to disposition points at.
+  disposition_tool TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS finding_status (
   key    TEXT PRIMARY KEY,
@@ -294,8 +299,9 @@ _BUDGET_SUB_COLUMNS_ADDED = (
 
 _CANDIDATE_COLUMNS_ADDED = (
     # A decision about the NAME rather than the thing: this identifies no
-    # program, so no view should present it as one.
+    # program, or it identifies one the registry already knows.
     ("disposition", "TEXT NOT NULL DEFAULT ''"),
+    ("disposition_tool", "TEXT NOT NULL DEFAULT ''"),
 )
 
 
@@ -1992,7 +1998,7 @@ class State:
         return out
 
     def set_candidate_disposition(self, key: str, disposition: str,
-                                  by: str = "") -> bool:
+                                  by: str = "", tool: str = "") -> bool:
         """Record what a name IS, as distinct from dismissing the row.
 
         Dismissing says "not a tool" and stops the queue asking. This says
@@ -2002,9 +2008,9 @@ class State:
         """
         with self._lock:
             cur = self._db.execute(
-                "UPDATE candidates SET disposition = ?, dismissed_at = ?,"
-                " dismissed_by = ? WHERE key = ?",
-                (disposition, _now(), by, key))
+                "UPDATE candidates SET disposition = ?, disposition_tool = ?,"
+                " dismissed_at = ?, dismissed_by = ? WHERE key = ?",
+                (disposition, tool, _now(), by, key))
             self._db.commit()
             return cur.rowcount > 0
 
@@ -2015,6 +2021,23 @@ class State:
                 "SELECT name FROM candidates WHERE disposition = ?",
                 (disposition,)).fetchall()
         return sorted({(r["name"] or "").strip().lower() for r in rows} - {""})
+
+    def process_aliases(self) -> dict:
+        """Process name -> the registry tool it belongs to.
+
+        Vendors ship binaries named nothing like their product: Warp's is
+        "stable", after the release channel. The registry cannot carry every
+        one of those and guessing them in a release is how "stable" came to
+        silently excuse any process with that name. An operator says it once,
+        here, and every view that reads a process name gets it.
+        """
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT name, disposition_tool FROM candidates"
+                " WHERE disposition = 'belongs_to' AND disposition_tool != ''"
+            ).fetchall()
+        return {(r["name"] or "").strip().lower(): r["disposition_tool"]
+                for r in rows if (r["name"] or "").strip()}
 
     def dismiss_candidate(self, key: str, by: str = "") -> bool:
         with self._lock:

@@ -1171,6 +1171,22 @@ def evidence_snapshot(request: Request,
     return JSONResponse(doc)
 
 
+def _process_aliases(request):
+    """Process names an operator has attributed to a registry tool, or {}
+    when there is no receiver to ask."""
+    if not RECEIVER_URL:
+        return {}
+    token = request.cookies.get(SESSION_COOKIE, "")
+    if not token:
+        return {}
+    try:
+        out = managed.receiver_request(
+            RECEIVER_URL, "GET", "/admin/candidates/process-aliases", token)
+    except Exception:
+        return {}
+    return (out or {}).get("aliases") or {}
+
+
 def _not_attributable(request):
     """Process names an operator has ruled out from the review queue.
 
@@ -1238,7 +1254,8 @@ def agentic(request: Request,
     def build():
         out = derive.agentic_from(_findings_cached(hours, request),
                                   _registry(request),
-                                  _not_attributable(request))
+                                  _not_attributable(request),
+                                  _process_aliases(request))
         # Whether an empty page is an answer or an absence. The collector
         # version lives on the receiver's device rows, not in any finding -
         # the same field Fleet shows. None means the question could not be
@@ -2697,6 +2714,21 @@ def api_candidates(_=Depends(require_auth), token: str = Depends(_admin_forward)
     defined. The receiver annotates each row resolved/dismissed; what to
     show is the page's business, so this forwards unfiltered."""
     return _receiver("GET", "/admin/candidates", token)
+
+
+class CandidateBelongsTo(BaseModel):
+    model_config = {"extra": "forbid"}
+    key: str = Field(min_length=1, max_length=200)
+    tool_id: str = Field(min_length=1, max_length=100)
+
+
+@app.post("/api/candidates/belongs-to")
+def api_candidate_belongs_to(req: CandidateBelongsTo, _=Depends(require_auth),
+                             token: str = Depends(_admin_forward)):
+    return _receiver(
+        "POST", "/admin/candidates/%s/belongs-to"
+        % urllib.parse.quote(req.key, safe=""), token,
+        {"tool_id": req.tool_id})
 
 
 @app.post("/api/candidates/not-attributable")
