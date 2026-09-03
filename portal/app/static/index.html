@@ -2322,8 +2322,14 @@ const WIDGETS = {
           ${c.kind === 'mcp_server' ? ' <span class="pill p-acc">MCP server</span>' : ''}
           ${c.kind === 'process' ? ' <span class="pill p-warn">process</span>' : ''}
           <div style="color:var(--mut);font-size:12px">
-          ${esc(c.kind === 'mcp_server' ? (c.evidence || '')
-                                        : (c.domains || []).join(', '))}</div></td>
+          ${esc(c.kind === 'mcp_server' || c.kind === 'process'
+                  ? (c.evidence || '') : (c.domains || []).join(', '))}</div>
+          ${c.kind === 'process' && c.suggested_tool ? `<div style="font-size:12px">
+            <span class="pill p-acc">looks like ${esc(
+              ((REGTOOLS || []).find(t => t.id === c.suggested_tool) || {}).name
+              || c.suggested_tool)}</span>
+            <span style="color:var(--mut)">it reached a host the registry knows as
+            that tool — confirm or change below</span></div>` : ''}</td>
         <td style="color:var(--mut)">${c.devices || 0} device${c.devices === 1 ? '' : 's'}
           ${c.confidence ? ' · ' + esc(c.confidence) : ''}</td>
         <td style="white-space:nowrap">
@@ -2332,7 +2338,8 @@ const WIDGETS = {
             title="A vendor's binary is often named nothing like its product - Warp's is called stable, after its release channel. Say which tool this is and every view that reads a process name gets it.">
             <option value="">belongs to…</option>
             ${(REGTOOLS || []).slice().sort((a, b) => a.name.localeCompare(b.name))
-              .map(t => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('')}
+              .map(t => `<option value="${esc(t.id)}"${
+                t.id === c.suggested_tool ? ' selected' : ''}>${esc(t.name)}</option>`).join('')}
           </select>
           <button class="mini" data-act="cand-belongs" data-key="${esc(c.key)}">Link</button>`
           // An empty dropdown reads as "no tools exist", which is never the
