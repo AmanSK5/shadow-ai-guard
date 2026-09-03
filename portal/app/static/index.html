@@ -3967,41 +3967,62 @@ async function iso() {
     [e.mcp_findings, `${e.mcp_findings} MCP finding${e.mcp_findings === 1 ? '' : 's'}`, 'mcp'],
   ].filter(([count]) => count > 0);
 
+  const from = esc((e.window||{}).from||'').slice(0,10);
+  const to = esc((e.window||{}).to||'').slice(0,10);
+  const coverage = e.sources_known
+    ? Math.round((e.sources_reporting || 0) / e.sources_known * 100) : 0;
+
   return `<h2>ISO/IEC 42001 evidence</h2>
-  <p class="lede">What Shadow AI Guard can currently say, and where each
-  record lives, as evidence for an AI management system. This is an index,
-  not an assessment: no compliance score, no clause mapping, no claim that a
-  control is satisfied. Gaps are shown next to totals on purpose - the gap is
-  usually the useful part.</p>
+  <p class="lede">An operational index of what Shadow AI Guard can currently
+  evidence and where each underlying record lives. It is deliberately not a
+  compliance score or clause mapping, and it does not claim a control is
+  satisfied.</p>
 
-  <table>
-  <tr><th>Theme</th><th>What Shadow AI Guard can say</th><th>Evidence source</th></tr>
-  ${rows.map(([theme, says, target, label]) => `<tr>
-    <td>${esc(theme)}</td>
-    <td style="font-family:inherit">${says}</td>
-    <td>${target ? `<a href="#${target}" style="color:var(--pri)">${esc(label)}</a>`
-                 : esc(label)}</td>
-  </tr>`).join('')}
-  </table>
+  <section class="evidence-summary" aria-label="Evidence snapshot summary">
+    <div class="evidence-summary-lead">
+      <span>Evidence package</span><strong>${from} — ${to}</strong>
+      <p>Generated on demand from the current window and protected with a checksum.</p>
+      <a class="mini evidence-download" href="/api/evidence?download=true">Download JSON</a>
+    </div>
+    <dl>
+      <div><dt>${rows.length}</dt><dd>evidence themes</dd></div>
+      <div><dt>${coverage}%</dt><dd>source coverage<small>${e.sources_reporting} of ${e.sources_known} reporting</small></dd></div>
+      <div class="${inputs.length ? 'attention' : 'clear'}"><dt>${inputs.length}</dt><dd>review areas<small>human assessment required</small></dd></div>
+    </dl>
+  </section>
 
-  <h3 style="margin-top:26px;font-size:14px">Review inputs</h3>
-  <p class="lede">Things a person may need to look at. The platform can tell
-  you a tool has no recorded decision; whether that matters is your call.</p>
-  ${inputs.length ? `<ul class="inputs">
-    ${inputs.map(([, text, target]) =>
-      `<li><a href="#${target}">${esc(text)}</a></li>`).join('')}
-  </ul>` : !dataOk() ? `<p class="lede">Nothing to review: the findings
-  could not be read.</p>` : `<p class="lede">Nothing outstanding in this window. Sanity check:
-  ${e.sources_reporting} of ${e.sources_known} expected sources are reporting -
-  an estate with nothing reporting looks "clean" too.</p>`}
+  <section class="evidence-panel">
+    <div class="evidence-panel-head"><div><h3>Evidence index</h3>
+      <p>Observable facts grouped by management-system theme.</p></div>
+      <span>${rows.length} indexed</span></div>
+    <div class="evidence-columns"><span>Theme</span><span>Current evidence</span><span>Source</span></div>
+    <div class="evidence-list">
+      ${rows.map(([theme, says, target, label], i) => `<div class="evidence-row">
+        <div class="evidence-theme"><span>${String(i + 1).padStart(2, '0')}</span><strong>${esc(theme)}</strong></div>
+        <div class="evidence-statement">${says}</div>
+        <div class="evidence-source">${target ? `<a href="#${target}">${esc(label)} <span aria-hidden="true">→</span></a>`
+                     : `<span>${esc(label)}</span>`}</div>
+      </div>`).join('')}
+    </div>
+  </section>
 
-  <h3 style="margin-top:26px;font-size:14px">Evidence snapshot</h3>
-  <p class="lede">A checksummed JSON file of the counts above for this window,
-  with the registry and governance files identified by hash. Generated on
-  demand, not stored. Note it can't be regenerated identically later (log
-  retention), and the checksum detects accidental changes, not deliberate
-  ones.
-  <a href="/api/evidence?download=true" style="color:var(--pri)">Download JSON</a></p>`;
+  <section class="evidence-review ${inputs.length ? 'has-inputs' : 'is-clear'}">
+    <div class="evidence-review-copy"><span>Human review</span><h3>Review inputs</h3>
+      <p>The platform identifies records that may need attention; materiality
+      and control effectiveness remain a human decision.</p></div>
+    <div class="evidence-review-items">
+      ${inputs.length ? inputs.map(([, text, target]) =>
+        `<a href="#${target}"><span class="review-marker"></span>${esc(text)}<span aria-hidden="true">→</span></a>`).join('')
+      : !dataOk() ? `<p>Findings could not be read, so no clean-state conclusion is shown.</p>`
+      : `<p>Nothing outstanding in this window. ${e.sources_reporting} of ${e.sources_known}
+        expected sources are reporting; zero reporting is never treated as a clean estate.</p>`}
+    </div>
+  </section>
+
+  <div class="evidence-footnote"><strong>About this snapshot</strong><p>The JSON
+    identifies registry and governance files by hash. It may not be reproduced
+    identically after log retention changes; its checksum detects accidental
+    changes, not deliberate modification.</p></div>`;
 }
 
 // One string setting as an editable row: input, save, and where the value
@@ -4069,30 +4090,44 @@ function widgetPickerRow() {
     && w.kind !== 'error').map(w => w.kind));
   const refs = new Set(eff.filter(w => w.kind === 'grafana')
     .map(w => String(w.ref)));
-  const box = (id, checked, ref, label, desc) => `
-    <label style="display:flex;align-items:baseline;gap:8px;margin-bottom:5px;cursor:pointer">
+  const box = (id, checked, ref, token, desc, source = 'Native') => {
+    const title = token.replace(/^grafana:/, '').replaceAll('_', ' ')
+      .replace(/\b\w/g, c => c.toUpperCase());
+    return `<label class="widget-choice">
       <input type="checkbox" id="${id}" ${ref ? `data-ref="${esc(ref)}"` : ''}
-        style="min-width:0;margin:0;accent-color:var(--pri)" ${checked ? 'checked' : ''}>
-      <span>${label}${desc ? ` <span style="color:var(--mut)">— ${esc(desc)}</span>` : ''}</span>
+        ${checked ? 'checked' : ''}>
+      <span class="widget-switch" aria-hidden="true"></span>
+      <span class="widget-choice-copy">
+        <span class="widget-choice-title">${esc(title)}</span>
+        <span class="widget-choice-desc">${esc(desc || '')}</span>
+        <span class="widget-choice-meta">${esc(source)} · <span class="mono">${esc(token)}</span></span>
+      </span>
     </label>`;
+  };
   const panels = (CFG.grafana_panels || []).filter(p => !p.error);
   const panelRef = p => p.title || String(p.panel_id);
   const orphans = [...refs].filter(r =>
     !panels.some(p => r === p.title || r === String(p.panel_id)));
-  return `<dt>Overview widgets${INFO}</dt><dd>
-    ${ents(catalog).map(([k, d]) => box('ow-' + k, on.has(k), '',
-      `<span class="mono">${esc(k)}</span>`, d)).join('')}
-    ${panels.map((p, i) => box('owg-' + i,
-      refs.has(p.title) || refs.has(String(p.panel_id)), panelRef(p),
-      `<span class="mono">grafana:${esc(panelRef(p))}</span>`,
-      'embedded Grafana panel')).join('')}
-    ${orphans.map((r, i) => box('owo-' + i, true, r,
-      `<span class="mono">grafana:${esc(r)}</span>`,
-      'saved panel reference (no longer in the panels list)')).join('')}
-    <button class="mini" data-act="save-widgets" style="margin-top:4px">Save</button>
-    <div class="src-note fnote">What the overview draws, in this order.
-    Unticking everything is refused rather than saved: an empty list falls
-    back to the default set, which is probably not what you meant.</div>
+  const hidden = overviewWidgets().hidden.length;
+  return `<dt>Overview widgets${INFO}</dt><dd class="widget-picker">
+    <div class="widget-picker-head">
+      <div><strong>Overview catalogue</strong><span>Choose which modules are available to people in this estate.</span></div>
+      <span class="widget-enabled-count">${on.size + refs.size} enabled</span>
+    </div>
+    <div class="widget-choice-grid">
+      ${ents(catalog).map(([k, d]) => box('ow-' + k, on.has(k), '', k, d)).join('')}
+      ${panels.map((p, i) => box('owg-' + i,
+        refs.has(p.title) || refs.has(String(p.panel_id)), panelRef(p),
+        `grafana:${panelRef(p)}`, 'Embedded Grafana panel', 'Grafana')).join('')}
+      ${orphans.map((r, i) => box('owo-' + i, true, r,
+        `grafana:${r}`, 'Saved panel reference no longer present in the panels list',
+        'Grafana')).join('')}
+    </div>
+    <div class="widget-picker-foot">
+      <div><strong>Deployment availability</strong><span>People can still arrange or hide these modules from Overview → Edit.</span></div>
+      ${hidden ? `<button class="mini" data-act="ov-showall">Restore ${hidden} hidden ${hidden === 1 ? 'widget' : 'widgets'}</button>` : ''}
+      <button class="mini widget-picker-save" data-act="save-widgets">Save catalogue</button>
+    </div>
   </dd>`;
 }
 
@@ -9090,7 +9125,7 @@ function tabbar() {
 function overviewTools() {
   const hidden = overviewWidgets().hidden.length;
   return `${hidden ? `<button class="mini" data-act="ov-showall"
-    >show all (${hidden} hidden)</button>` : ''}
+    >Restore ${hidden} hidden ${hidden === 1 ? 'widget' : 'widgets'}</button>` : ''}
     <button class="mini" data-act="ov-edit">Edit</button>`;
 }
 
