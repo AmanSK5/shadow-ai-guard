@@ -2866,9 +2866,12 @@ def _note_process_candidates(f: Finding):
         return
     if name.lower() in _BROWSERS or any(x in _BROWSERS for x in stems):
         return
-    # Already answered. Asking again is how a review queue becomes something
-    # nobody reads.
-    if name.strip().lower() in set(STATE.dispositioned_names("not_attributable")):
+    # Already answered, either way. Asking again is how a review queue
+    # becomes something nobody reads.
+    low = name.strip().lower()
+    if low in set(STATE.dispositioned_names("not_attributable")):
+        return
+    if low in STATE.process_aliases():
         return
     if not _CANDIDATE_TEXT.match(name):
         return
@@ -2939,6 +2942,52 @@ def mark_candidate_not_attributable(key: str,
             key, "not_attributable", _admin_actor(authorization)):
         raise HTTPException(404, "no candidate with that key")
     return {"not_attributable": key}
+
+
+class CandidateBelongsTo(BaseModel):
+    model_config = {"extra": "forbid"}
+    tool_id: str = Field(min_length=1, max_length=100)
+
+
+@app.post("/admin/candidates/{key}/belongs-to")
+def mark_candidate_belongs_to(key: str, req: CandidateBelongsTo,
+                              authorization: str = Header(default="")):
+    """This process is a tool the registry already knows, under a name
+    nothing would guess.
+
+    Warp's macOS binary is called "stable", after its release channel. That
+    name was briefly carried in the registry and had to come out: it is a
+    word, and any process called "stable" was being silently excused as Warp.
+    An operator can say it once here instead - which is the same trade the
+    candidates queue makes everywhere else, a maintained guess replaced by an
+    observed fact somebody confirmed.
+
+    The tool must already exist. Inventing one from a process name is what
+    "add to registry" is for, and it produces a tool with no domains that
+    matches nothing.
+    """
+    _admin_auth(authorization, write=True)
+    if not re.fullmatch(r"[a-z0-9_:-]{1,100}", key):
+        raise HTTPException(422, "malformed candidate key")
+    if not key.startswith("process:"):
+        raise HTTPException(
+            422, "only a process candidate can belong to a tool")
+    known = {t.get("id") for t in (_merged_registry() or {}).get("tools", [])}
+    if req.tool_id not in known:
+        raise HTTPException(
+            422, "no tool %s in the registry - define it first, or use "
+                 "\"add to registry\" to create it" % req.tool_id[:60])
+    if not STATE.set_candidate_disposition(
+            key, "belongs_to", _admin_actor(authorization), tool=req.tool_id):
+        raise HTTPException(404, "no candidate with that key")
+    return {"belongs_to": req.tool_id, "key": key}
+
+
+@app.get("/admin/candidates/process-aliases")
+def get_process_aliases(authorization: str = Header(default="")):
+    """Process name -> tool, for the views that read process names."""
+    _admin_auth(authorization)
+    return {"aliases": STATE.process_aliases()}
 
 
 @app.get("/admin/candidates/not-attributable")
@@ -3274,15 +3323,20 @@ def put_budget_subscription(req: BudgetSubscriptionWrite,
         same_tool = other["tool_id"] == req.tool_id
         if same_tool and other.get("plan_key") == pk:
             continue                      # this subscription, being edited
+        if same_tool:
+            # Two plans of one product entitle the same tools. A Max seat
+            # includes Claude Code exactly as a Team seat does, so their
+            # covered sets are SUPPOSED to be identical - different
+            # contracts, different people, different member lists, and the
+            # spend is each subscription's own seats times its own price.
+            #
+            # The first pass at this only excused the tool itself, so adding
+            # Max 20 beside Team was refused the moment either named a
+            # second tool. The rule is about one licence modelled twice,
+            # which is a thing that happens between DIFFERENT tools.
+            continue
         mine = set(covers)
         theirs = set(other.get("covers") or []) | {other["tool_id"]}
-        if same_tool:
-            # Two plans on one tool BOTH cover that tool, and that is the
-            # whole point: a Teams contract and a handful of Max seats are
-            # two subscriptions for the same product. The double-billing
-            # rule still holds for everything else they claim to cover.
-            mine.discard(req.tool_id)
-            theirs.discard(req.tool_id)
         clash = sorted(mine & theirs)
         if clash:
             raise HTTPException(

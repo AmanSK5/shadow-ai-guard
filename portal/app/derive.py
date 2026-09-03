@@ -1497,7 +1497,7 @@ def scheduler_coverage(devices):
     }
 
 
-def agentic_from(findings, reg=None, not_attributable=()):
+def agentic_from(findings, reg=None, not_attributable=(), aliases=None):
     """What runs without a person, and how far it can reach.
 
     Every other view here starts from something somebody did. This one
@@ -1525,6 +1525,11 @@ def agentic_from(findings, reg=None, not_attributable=()):
     # whose answer went nowhere - dismissing the row cleared the card and
     # left the process on this page for ever.
     ruled_out = {normalise_process(n) for n in (not_attributable or ())} - {""}
+    # Process names an operator has attributed to a tool the registry knows.
+    # A vendor's binary is often named nothing like its product - Warp's is
+    # "stable" - and the registry cannot carry every one of those without
+    # guessing. Said once in the review queue, read here.
+    known |= {normalise_process(n) for n in (aliases or {})} - {""}
 
     # Which MCP servers sit on each machine, so a chain can say what the
     # thing running there could reach.

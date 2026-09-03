@@ -826,3 +826,29 @@ def test_two_plans_on_one_tool_are_not_a_double_billed_licence(managed):
     r = client.put("/admin/budget/subscription", headers=ADMIN,
                    json=_sub("cursor", "Pro", 5, 20, covers=["claude-code"]))
     assert r.status_code == 422 and "already covered" in r.json()["detail"]
+
+
+def test_a_second_plan_may_cover_the_same_tools(managed):
+    """A Max seat includes Claude Code exactly as a Team seat does, so two
+    plans of one product cover the same set on purpose. The first pass at
+    the plan rework only excused the tool itself, so adding Max 20 beside
+    Team was refused the moment either named a second tool."""
+    a = _sub("claude", "Team", 40, 25, covers=["claude-code"])
+    assert client.put("/admin/budget/subscription", headers=ADMIN,
+                      json=a).status_code == 200
+    b = _sub("claude", "Max 20", 3, 100, covers=["claude-code"])
+    r = client.put("/admin/budget/subscription", headers=ADMIN, json=b)
+    assert r.status_code == 200, r.text
+    subs = client.get("/admin/budget", headers=ADMIN).json()["subscriptions"]
+    claude = sorted(x["plan_key"] for x in subs if x["tool_id"] == "claude")
+    assert claude == ["max-20", "team"]
+
+
+def test_a_different_tool_still_cannot_claim_a_covered_one(managed):
+    """The rule it exists for is untouched: one licence modelled as two
+    subscriptions bills it twice and halves every observed-use answer."""
+    client.put("/admin/budget/subscription", headers=ADMIN,
+               json=_sub("claude", "Team", 40, 25, covers=["claude-code"]))
+    r = client.put("/admin/budget/subscription", headers=ADMIN,
+                   json=_sub("cursor", "Pro", 5, 20, covers=["claude-code"]))
+    assert r.status_code == 422 and "already covered" in r.json()["detail"]

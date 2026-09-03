@@ -2319,7 +2319,15 @@ const WIDGETS = {
         <td style="color:var(--mut)">${c.devices || 0} device${c.devices === 1 ? '' : 's'}
           ${c.confidence ? ' · ' + esc(c.confidence) : ''}</td>
         <td style="white-space:nowrap">
-          ${c.kind === 'process' ? `<button class="mini" data-act="cand-noattr"
+          ${c.kind === 'process' ? `<select class="mfield" id="cb-${esc(c.key)}"
+            style="min-width:130px;font-size:12px"
+            title="A vendor's binary is often named nothing like its product - Warp's is called stable, after its release channel. Say which tool this is and every view that reads a process name gets it.">
+            <option value="">belongs to…</option>
+            ${(REGTOOLS || []).slice().sort((a, b) => a.name.localeCompare(b.name))
+              .map(t => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('')}
+          </select>
+          <button class="mini" data-act="cand-belongs" data-key="${esc(c.key)}">Link</button>
+          <button class="mini" data-act="cand-noattr"
             data-key="${esc(c.key)}" title="This name identifies no program - a resolver, a service host, a VPN tunnel that resolves for everything behind it. Recorded once and honoured everywhere a process name is read.">Names nothing</button> ` : ''}<button class="btn" data-act="cand-add" data-key="${esc(c.key)}">Add to registry</button>
           <button class="btn" data-act="cand-dismiss" data-key="${esc(c.key)}">Dismiss</button>
         </td></tr>`).join('')}</table>
@@ -8426,6 +8434,26 @@ async function managedAction(act, el) {
     view = 'registry'; detail = null;
     history.replaceState(null, '', '#registry');
     drawNav(); render(); return;
+  }
+  if (act === 'cand-belongs') {
+    // The third answer the queue could not give: this process IS a tool you
+    // already have, under a name nothing would guess. Recorded once rather
+    // than guessed at in a release - which is how "stable" came to silently
+    // excuse every process with that name.
+    const key = el.getAttribute('data-key');
+    const tool = _val('cb-' + key);
+    if (!tool) { alert('Pick which tool this process belongs to.'); return; }
+    const r = await mfetch('/api/candidates/belongs-to',
+      {method: 'POST', body: JSON.stringify({key, tool_id: tool})});
+    if (!r.ok) {
+      if (r.status === 401) { sessionLost(); return; }
+      let d = r.statusText; try { d = (await r.json()).detail || d; } catch (e) {}
+      alert('Could not link that: ' + d);
+    } else {
+      CAND = (CAND || []).filter(x => x.key !== key);
+      AGENTIC = null;   // that page shows this process as a mystery today
+    }
+    render(); return;
   }
   if (act === 'cand-noattr') {
     // Not a dismissal. Dismissing says "not a tool" and closes the card;
