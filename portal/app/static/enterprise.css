@@ -620,3 +620,27 @@ body.auth main{width:min(470px,calc(100vw - 32px));max-width:470px!important;mar
 body.auth #app>div{width:100%;margin:0!important}
 body.auth .licard{width:100%}
 @media(max-width:560px){body.auth main{width:min(100% - 28px,470px);padding-top:20px!important}}
+
+/* Discovery summary numbers are a compact estate scorecard: each signal
+   receives the same visual weight, rather than leaving an unexplained empty
+   half of the surface after four short labels. */
+.inventory-summary span{flex:1 1 0;min-width:0}
+
+/* Budget linking is a focused financial workflow. Give its fields a shared
+   readable measure and make the tier table a real form table, so the column
+   labels describe the inputs beneath them rather than visually colliding. */
+.budget-wizard .kv{grid-template-columns:170px minmax(0,560px);max-width:760px;gap:10px 16px}
+.budget-wizard .kv dd{min-width:0}
+.budget-wizard .kv dd>.mfield{width:100%!important;max-width:560px}
+.budget-wizard .srcpick{max-width:760px}
+.budget-wizard .tiers{border-collapse:separate;border-spacing:0 7px;margin:11px 0 7px}
+.budget-wizard .tiers thead th{height:auto;padding:0 10px 4px 0;background:transparent;
+  color:#778398;font-size:8.5px;line-height:1.3}
+.budget-wizard .tiers tbody td{padding:0 8px 0 0;vertical-align:middle;border:0}
+.budget-wizard .tiers .mfield{height:38px;min-height:38px}
+.budget-wizard .tiers .linetot{padding-top:0;white-space:nowrap;font-variant-numeric:tabular-nums}
+.budget-wizard .tiers .covers{margin:1px 0 2px}
+@media(max-width:700px){
+  .budget-wizard .kv{grid-template-columns:1fr;gap:5px;max-width:none}
+  .budget-wizard .tiers{min-width:620px}
+}

@@ -6847,10 +6847,10 @@ function bTierRows(tiers, eff, cur) {
         <input type="checkbox" id="bt-cov-${i}-${esc(tool)}"
           ${!t.covers || !t.covers.length || t.covers.includes(tool) ? 'checked' : ''}>
         <span class="mono">${esc(tool)}</span></label>`).join('')}</div></td></tr>`;
-  return `<table class="tiers">
+  return `<table class="tiers"><thead>
     <tr><th>Tier</th><th style="width:96px">Seats</th>
       <th style="width:140px">Price / seat</th>
-      <th style="width:110px">Monthly</th></tr>
+      <th style="width:110px">Monthly</th></tr></thead><tbody>
     ${rows.map((t, i) => {
       const line = (t.seats || 0) * (t.unit_price_monthly || 0);
       return `<tr>
@@ -6862,7 +6862,7 @@ function bTierRows(tiers, eff, cur) {
         value="${t.unit_price_monthly != null ? esc(String(t.unit_price_monthly)) : ''}"></td>
       <td class="linetot" id="bt-line-${i}">${line ? bMoney(line, cur) : ''}</td>
     </tr>${t.name ? covRow(t, i) : ''}`;
-    }).join('')}
+    }).join('')}</tbody>
   </table>`;
 }
 
@@ -7253,7 +7253,7 @@ function budgetWizard() {
   return `<h2>${w.editing ? 'Edit ' + esc(w.tool_id) : 'Link a tool'}</h2>
   ${BMSG ? `<div class="note">${esc(BMSG)}</div>` : ''}
   <div class="ssow">${bwRail()}
-    <div class="ssmain">${body}
+    <div class="ssmain budget-wizard">${body}
       <div class="ssfoot">
         <button class="mini" data-act="b-cancel">Cancel</button>
         <span class="sp"></span>
