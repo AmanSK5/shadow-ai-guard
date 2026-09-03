@@ -4007,7 +4007,10 @@ async function iso() {
     <div class="evidence-summary-lead">
       <span>Evidence package</span><strong>${from} — ${to}</strong>
       <p>Generated on demand from the current window and protected with a checksum.</p>
-      <a class="mini evidence-download" href="/api/evidence?download=true">Download JSON</a>
+      <div class="evidence-actions">
+        <button class="mini evidence-print" type="button" data-act="evidence-print">Export PDF</button>
+        <a class="mini evidence-download" href="/api/evidence?download=true">Download JSON</a>
+      </div>
     </div>
     <dl>
       <div><dt>${rows.length}</dt><dd>evidence themes</dd></div>
@@ -7115,7 +7118,7 @@ function bwBodySource() {
   ${w.source === 'api' ? `
     ${everything}
     <dl class="kv">
-      <dt>Provider</dt><dd><select id="bw-provider" class="mfield"
+      <dt>Provider</dt><dd><select id="bw-provider" class="mfield bw-provider-picker"
         style="min-width:300px">
         ${list.map(([id, p]) => `<option value="${esc(id)}"
           ${id === w.provider ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}
@@ -7857,6 +7860,7 @@ async function budgetAction(act, el) {
   }
   if (act === 'b-report-names') { BRNAMES = !BRNAMES; render(); return; }
   if (act === 'b-report-print') { window.print(); return; }
+  if (act === 'evidence-print') { window.print(); return; }
   if (act === 'b-report-csv') {
     const stamp = new Date().toISOString().slice(0, 10);
     const blob = new Blob([budgetCsv()], {type: 'text/csv;charset=utf-8'});
@@ -9584,7 +9588,7 @@ function decorateView() {
     ? Math.round(hours / 24) + ' days' : hours + ' hours';
   meta.innerHTML = `<span class="meta-chip">${esc(view === 'overview' ? overviewWindow : windowLabel)}</span>`
     + (view === 'overview'
-      ? `<a class="mini meta-export" href="/api/evidence?download=true">Export snapshot</a>`
+      ? `<button class="mini meta-export" type="button" data-act="evidence-print">Export PDF</button>`
       : '');
   // Section destinations live in the expandable sidebar on desktop. Any
   // actual page actions that shared their old tab row belong beside the page

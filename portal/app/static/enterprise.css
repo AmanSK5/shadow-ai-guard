@@ -507,8 +507,12 @@ main{max-width:none;width:100%;margin:0}
 .evidence-summary-lead>span{display:block;color:var(--pri);font-size:8.5px;font-weight:760;
   letter-spacing:.09em;text-transform:uppercase}.evidence-summary-lead>strong{display:block;
   margin-top:7px;font-size:16px;letter-spacing:-.02em}.evidence-summary-lead>p{margin:5px 0 12px;
-  color:var(--mut);font-size:9.5px}.evidence-download{display:inline-flex!important;
-  width:auto;text-decoration:none;color:var(--fg)!important;background:var(--sf)!important}
+  color:var(--mut);font-size:9.5px}.evidence-actions{display:flex;align-items:center;
+  gap:7px;flex-wrap:wrap}.evidence-download,.evidence-print{display:inline-flex!important;
+  align-items:center;justify-content:center;width:auto;text-decoration:none;background:transparent!important}
+.evidence-download{color:var(--pri)!important;border-color:color-mix(in srgb,var(--pri) 38%,var(--bd))!important}
+.evidence-print{background:var(--pri)!important;border-color:var(--pri)!important;color:#fff!important}
+.evidence-actions .mini{min-height:30px;padding:5px 9px;font-size:9.5px}
 .evidence-summary dl{display:grid;grid-template-columns:repeat(3,1fr);margin:0}
 .evidence-summary dl>div{padding:19px 17px;border-left:1px solid var(--bd)}
 .evidence-summary dl>div:first-child{border-left:0}.evidence-summary dt{font-size:23px;
@@ -636,6 +640,19 @@ body.auth .licard{width:100%}
   border-color:color-mix(in srgb,var(--acc) 70%,var(--bd));background:color-mix(in srgb,var(--acc-soft) 33%,var(--sf));
   color:var(--fg);font-size:13px;font-weight:680;box-shadow:0 0 0 1px color-mix(in srgb,var(--acc) 16%,transparent)}
 .budget-wizard .kv .bw-tool-picker:focus{border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-soft)}
+.budget-wizard .kv .bw-provider-picker{min-height:42px;height:42px;font-size:12px;
+  font-weight:630;border-color:color-mix(in srgb,var(--acc) 45%,var(--bd));background:var(--sf)}
+
+/* Tables stay tables: stable columns with faint guides, a quiet header band,
+   and scanable rows. This makes a wide estate inventory legible without
+   turning every collection into a stack of oversized cards. */
+.tcard table{border-collapse:separate;border-spacing:0}
+.tcard th+th,.tcard td+td{border-left:1px solid color-mix(in srgb,var(--bd) 72%,transparent)}
+.tcard tbody tr:nth-child(even) td{background:color-mix(in srgb,var(--sf2) 38%,transparent)}
+.tcard tbody tr:hover td{background:color-mix(in srgb,var(--acc-soft) 43%,var(--sf))}
+.tcard td{line-height:1.45}.tcard td:first-child{color:var(--fg)}
+[data-theme=dark] .tcard tbody tr:nth-child(even) td{background:rgba(255,255,255,.012)}
+[data-theme=dark] .tcard tbody tr:hover td{background:#1a2940}
 .budget-wizard .srcpick{max-width:760px}
 .budget-wizard .tiers{border-collapse:separate;border-spacing:0 7px;margin:11px 0 7px}
 .budget-wizard .tiers thead th{height:auto;padding:0 10px 4px 0;background:transparent;
