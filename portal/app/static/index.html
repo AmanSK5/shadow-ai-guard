@@ -5989,75 +5989,66 @@ function diagnosticsCards() {
     Math.round(Date.now()/1000 - t) + 's ago';
   const dur = sec => sec < 3600 ? Math.round(sec/60) + 'm'
     : Math.floor(sec/3600) + 'h ' + Math.round(sec%3600/60) + 'm';
+  const logFresh = r.loki_configured && (!r.loki_last_error
+    || r.loki_last_success >= r.loki_last_error_at);
+  const checks = [true, logFresh, !!r.registry_loaded];
+  const passing = checks.filter(Boolean).length;
+  const health = passing === checks.length;
 
-  return `<p class="lede">Read only. Everything except the last card is
-  something the portal verified about itself. What it was merely told is
-  labelled as such, so a value nobody updated cannot be mistaken for one
-  something checked.</p>
+  return `<section class="health-summary ${health ? 'healthy' : 'attention'}" aria-label="System health summary">
+    <div class="health-summary-copy"><span>Estate observability</span>
+      <strong>${health ? 'Core services operational' : 'Attention needed'}</strong>
+      <p>Read-only runtime checks for the portal, its log store and the tool registry.</p>
+    </div>
+    <dl>
+      <div><dt>${passing}/${checks.length}</dt><dd>core checks passing</dd></div>
+      <div><dt>${ago(r.loki_last_success)}</dt><dd>last successful read</dd></div>
+      <div><dt>${esc(r.registry_tools)}</dt><dd>tools in registry</dd></div>
+    </dl>
+  </section>
 
-  <div class="wcard" style="margin-bottom:10px"><h3>Application</h3>
-  <dl class="kv">
-    <dt>Version</dt><dd>${esc(r.version)}</dd>
-    <dt>Uptime</dt><dd>${dur(r.uptime_seconds)}</dd>
-  </dl></div>
+  <p class="health-intro">Everything below is verified by the portal at runtime,
+  apart from the separately labelled deployment context. Credentials are never
+  displayed; only their operating state is shown.</p>
 
-  <div class="wcard" style="margin-bottom:10px"><h3>Loki</h3>
-  <dl class="kv">
-    <dt>Configured</dt><dd>${yn(r.loki_configured)}</dd>
-    <dt>Reads with</dt><dd>${esc(r.portal_read_credential || '')}
-      ${r.portal_read_credential === 'the signed-in account' ? `
-      <div class="src-note" style="color:var(--warn)">This portal has no
-      log-store credential of its own, so every read is made with the
-      account that is signed in. That works for an admin and is refused
-      for a viewer, so read-only accounts see an empty estate. Give it
-      <span class="mono">RECEIVER_ADMIN_TOKEN</span> (the receiver's
-      ADMIN_TOKEN), or its own <span class="mono">LOKI_URL</span> and
-      credentials.</div>` : ''}</dd>
-    <dt>Last successful read</dt><dd>${ago(r.loki_last_success)}</dd>
-    ${r.loki_last_error ? `<dt>Last error</dt><dd style="color:var(--dstr)">${esc(r.loki_last_error)}${r.loki_last_error_at ? ` · ${ago(r.loki_last_error_at)}` : ''}</dd>` : ''}
-    ${r.loki_last_error && r.loki_last_error_at && r.loki_last_error_at > (r.loki_last_success || 0)
-      ? `<dt></dt><dd class="src-note" style="color:var(--warn)">The last read
-         attempt FAILED. Anything this portal shows is from the last
-         successful read above, or is empty because there was none.</dd>` : ''}
-    <dt>Lookback window</dt><dd>${esc(r.lookback_hours)}h</dd>
-    <dt>Cache TTL</dt><dd>${esc(r.cache_ttl_seconds)}s</dd>
-  </dl></div>
+  <div class="health-grid">
+    <section class="health-card"><div class="health-card-head"><div><span>Runtime</span><h3>Application</h3></div><span class="pill p-ok">running</span></div>
+      <dl class="health-facts"><div><dt>Version</dt><dd>${esc(r.version)}</dd></div>
+        <div><dt>Uptime</dt><dd>${dur(r.uptime_seconds)}</dd></div></dl>
+    </section>
 
-  <div class="wcard" style="margin-bottom:10px"><h3>Registry</h3>
-  <dl class="kv">
-    <dt>Loaded</dt><dd>${yn(r.registry_loaded)}</dd>
-    <dt>Tools</dt><dd>${esc(r.registry_tools)}${
-      r.registry_tools_with_domains != null && r.registry_tools_with_domains !== r.registry_tools
-        ? ` <span style="color:var(--mut)">· ${esc(r.registry_tools_with_domains)} with a domain</span>` : ''}</dd>
-    <dt>Path</dt><dd>${esc(r.registry_path)}</dd>
-    ${r.registry_error ? `<dt>Error</dt><dd style="color:var(--dstr)">${esc(r.registry_error)}</dd>` : ''}
-  </dl>
-  ${!r.registry_loaded ? `<p class="src-note">Without it, tool names are not
-  normalised, so chatgpt.com and chatgpt stay two different tools.</p>` : ''}
+    <section class="health-card ${logFresh ? '' : 'needs-attention'}"><div class="health-card-head"><div><span>Data pipeline</span><h3>Log store</h3></div>${logFresh ? '<span class="pill p-ok">reporting</span>' : '<span class="pill p-warn">check required</span>'}</div>
+      <dl class="health-facts"><div><dt>Configured</dt><dd>${yn(r.loki_configured)}</dd></div>
+        <div><dt>Reads with</dt><dd>${esc(r.portal_read_credential || '—')}</dd></div>
+        <div><dt>Last successful read</dt><dd>${ago(r.loki_last_success)}</dd></div>
+        <div><dt>Window / cache</dt><dd>${esc(r.lookback_hours)}h <span>·</span> ${esc(r.cache_ttl_seconds)}s</dd></div></dl>
+      ${r.portal_read_credential === 'the signed-in account' ? `<p class="health-note warning">This portal has no log-store credential of its own. Viewer reads are refused; set <span class="mono">RECEIVER_ADMIN_TOKEN</span> or its own <span class="mono">LOKI_URL</span> and credentials.</p>` : ''}
+      ${r.loki_last_error ? `<p class="health-note danger"><b>Last error</b> ${esc(r.loki_last_error)}${r.loki_last_error_at ? ` · ${ago(r.loki_last_error_at)}` : ''}</p>` : ''}
+    </section>
+
+    <section class="health-card ${r.registry_loaded ? '' : 'needs-attention'}"><div class="health-card-head"><div><span>Reference data</span><h3>Tool registry</h3></div>${r.registry_loaded ? '<span class="pill p-ok">loaded</span>' : '<span class="pill p-warn">unavailable</span>'}</div>
+      <dl class="health-facts"><div><dt>Tools</dt><dd>${esc(r.registry_tools)}${r.registry_tools_with_domains != null && r.registry_tools_with_domains !== r.registry_tools ? ` <span>· ${esc(r.registry_tools_with_domains)} with a domain</span>` : ''}</dd></div>
+        <div><dt>Registry path</dt><dd class="mono">${esc(r.registry_path)}</dd></div></dl>
+      ${r.registry_error ? `<p class="health-note danger"><b>Error</b> ${esc(r.registry_error)}</p>` : ''}
+      ${!r.registry_loaded ? `<p class="health-note warning">Without the registry, tool names cannot be normalised across observations.</p>` : ''}
+    </section>
+
+    <section class="health-card"><div class="health-card-head"><div><span>Portal capability</span><h3>Access & integrations</h3></div><span class="pill p-mut">configuration</span></div>
+      <dl class="health-facts"><div><dt>Authentication</dt><dd>${esc(r.auth_mode)}</dd></div>
+        <div><dt>Identity map</dt><dd>${yn(r.identity_map_configured)}</dd></div>
+        <div><dt>Grafana</dt><dd>${yn(r.grafana_configured)}</dd></div>
+        <div><dt>Overview widgets</dt><dd>${(r.overview_widgets||[]).length}</dd></div></dl>
+    </section>
   </div>
 
-  <div class="wcard" style="margin-bottom:10px"><h3>Access and embedding</h3>
-  <dl class="kv">
-    <dt>Auth mode</dt><dd>${esc(r.auth_mode)}</dd>
-    <dt>Identity map</dt><dd>${yn(r.identity_map_configured)}</dd>
-    <dt>Grafana</dt><dd>${yn(r.grafana_configured)}</dd>
-    <dt>Overview widgets</dt><dd>${(r.overview_widgets||[]).length}</dd>
-  </dl>
-  <p class="src-note">Credential values are never shown here, only whether one
-  is configured.</p></div>
+  <section class="health-deployment"><div><span>Deployment context</span><h3>Provided by configuration</h3>
+    <p>The portal cannot verify these values. They are retained for support and release tracing, never treated as runtime evidence.</p></div>
+    <dl><div><dt>Chart version</dt><dd>${esc(d.chart_version) || '—'}</dd></div>
+      <div><dt>Release</dt><dd>${esc(d.release) || '—'}</dd></div>
+      <div><dt>Namespace</dt><dd>${esc(d.namespace) || '—'}</dd></div></dl>
+  </section>
 
-  <div class="wcard" style="border-style:dashed"><h3>Provided by deployment configuration</h3>
-  <dl class="kv">
-    <dt>Chart version</dt><dd>${esc(d.chart_version) || '—'}</dd>
-    <dt>Release</dt><dd>${esc(d.release) || '—'}</dd>
-    <dt>Namespace</dt><dd>${esc(d.namespace) || '—'}</dd>
-  </dl>
-  <p class="src-note">The portal cannot verify any of this. It is passed in as
-  environment variables by whatever deployed it, and shown because it helps
-  when raising an issue, not because it was observed. A deployment that does
-  not set it leaves it empty rather than guessing.</p></div>
-
-  ${AUDITLOG === null ? '' : `<div class="wcard" style="margin:10px 0 0"><h3>Recent admin activity</h3>
+  ${AUDITLOG === null ? '' : `<section class="health-activity"><div class="health-card-head"><div><span>Traceability</span><h3>Recent admin activity</h3></div><span>${AUDITLOG.length} recorded</span></div>
   ${AUDITLOG.length ? `<table><tr><th>when</th><th>what</th><th>who</th></tr>
   ${AUDITLOG.map(e => `<tr>
     <td class="nw" style="color:var(--mut)">${esc((e.at||'').replace('T',' ').slice(0,16))}</td>
@@ -6065,9 +6056,7 @@ function diagnosticsCards() {
       ? ` <span class="mono" style="color:var(--mut)">${esc(String(e.detail.key || e.detail.tool).slice(0,60))}</span>` : ''}</td>
     <td>${esc((e.detail && (e.detail.by || e.detail.username)) || '')}</td>
   </tr>`).join('')}</table>` : '<p class="lede">Nothing recorded yet.</p>'}
-  <p class="src-note">Every change made through the portal, recorded by the
-  receiver as it happened. The trail survives sign-outs and cannot be edited
-  from here.</p></div>`}`;
+  <p class="health-note">Every change made through the portal is recorded by the receiver as it happened. The trail survives sign-outs and cannot be edited from here.</p></section>`}`;
 }
 
 // System health belongs to the estate context, not inside the place an

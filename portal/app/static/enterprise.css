@@ -681,3 +681,55 @@ body.auth .licard{width:100%}
   .budget-wizard .kv{grid-template-columns:1fr;gap:5px;max-width:none}
   .budget-wizard .tiers{min-width:620px}
 }
+
+/* System health is operational context, not a stack of settings cards. The
+   summary answers "is the estate observable?" first; the cards below retain
+   the evidence needed to diagnose a failed answer without wasting a full
+   viewport on two-column key/value rows. */
+.health-summary{display:grid;grid-template-columns:minmax(290px,1.1fr) 1fr;
+  overflow:hidden;margin:0 0 14px;border:1px solid var(--bd);border-radius:12px;
+  background:var(--sf);box-shadow:var(--shadow)}
+.health-summary-copy{padding:19px 21px;background:linear-gradient(135deg,#edf9f6,#f7fbfa 72%,var(--sf));
+  border-right:1px solid var(--bd)}
+.health-summary.attention .health-summary-copy{background:linear-gradient(135deg,#fff7e9,#fcfaf5 72%,var(--sf))}
+.health-summary-copy>span,.health-card-head>div>span,.health-deployment>div>span,.health-activity .health-card-head>div>span{display:block;
+  color:var(--pri);font-size:8.5px;font-weight:760;letter-spacing:.09em;text-transform:uppercase}
+.health-summary.attention .health-summary-copy>span{color:var(--warn)}
+.health-summary-copy>strong{display:block;margin-top:7px;color:var(--fg);font-size:17px;letter-spacing:-.025em}
+.health-summary-copy>p{margin:5px 0 0;color:var(--mut);font-size:10px;line-height:1.45}
+.health-summary>dl{display:grid;grid-template-columns:repeat(3,1fr);margin:0}
+.health-summary>dl>div{padding:20px 17px;border-left:1px solid var(--bd)}
+.health-summary>dl>div:first-child{border-left:0}.health-summary dt{color:var(--fg);font-size:22px;font-weight:740;
+  letter-spacing:-.04em;font-variant-numeric:tabular-nums}.health-summary dd{margin:7px 0 0;color:var(--mut);
+  font-size:8px;font-weight:740;letter-spacing:.075em;text-transform:uppercase;line-height:1.35}
+.health-intro{margin:0 0 13px;color:var(--mut);font-size:10.5px;line-height:1.5}
+.health-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px;margin-bottom:13px}
+.health-card,.health-activity{min-width:0;padding:16px 18px;border:1px solid var(--bd);border-radius:11px;
+  background:var(--sf);box-shadow:var(--shadow)}
+.health-card.needs-attention{border-color:color-mix(in srgb,var(--warn) 48%,var(--bd));box-shadow:inset 3px 0 0 var(--warn),var(--shadow)}
+.health-card-head{display:flex;align-items:flex-start;gap:12px;margin-bottom:13px}.health-card-head>div{min-width:0;flex:1}
+.health-card-head h3{margin:4px 0 0;color:var(--fg);font-size:13px;letter-spacing:-.015em;text-transform:none}
+.health-card-head>.pill,.health-card-head>span:last-child{flex:0 0 auto;margin-top:1px}
+.health-card-head>span:last-child:not(.pill){color:var(--mut);font-size:9px;font-variant-numeric:tabular-nums}
+.health-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 18px;margin:0}
+.health-facts>div{min-width:0;padding:9px 0;border-top:1px solid var(--bd)}
+.health-facts dt{margin:0 0 4px;color:var(--mut);font-size:8px;font-weight:730;letter-spacing:.065em;text-transform:uppercase}
+.health-facts dd{margin:0;overflow-wrap:anywhere;color:var(--fg);font-size:10.5px;font-weight:620;font-variant-numeric:tabular-nums}
+.health-facts dd>span{color:var(--mut);font-weight:450}.health-note{margin:11px 0 0;padding:9px 10px;
+  border:1px solid var(--bd);border-radius:7px;background:var(--sf2);color:var(--mut);font-size:9.5px;line-height:1.5}
+.health-note.warning{border-left:3px solid var(--warn)}.health-note.danger{border-left:3px solid var(--dstr);color:var(--dstr)}
+.health-note b{margin-right:4px;color:var(--fg)}.health-deployment{display:grid;grid-template-columns:minmax(250px,.9fr) 1.4fr;
+  gap:20px;align-items:center;margin-bottom:13px;padding:16px 18px;border:1px dashed var(--bd);border-radius:11px;background:var(--sf)}
+.health-deployment h3{margin:4px 0 0;color:var(--fg);font-size:12.5px;letter-spacing:-.01em}.health-deployment p{margin:5px 0 0;color:var(--mut);font-size:9.5px;line-height:1.45}
+.health-deployment dl{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:0}.health-deployment dl>div{min-width:0}
+.health-deployment dt{margin-bottom:4px;color:var(--mut);font-size:8px;font-weight:730;letter-spacing:.065em;text-transform:uppercase}
+.health-deployment dd{margin:0;overflow-wrap:anywhere;color:var(--fg);font-size:10px;font-weight:620}
+.health-activity{margin-bottom:4px;padding:0;overflow:hidden}.health-activity .health-card-head{align-items:center;margin:0;padding:15px 18px;border-bottom:1px solid var(--bd)}
+.health-activity table{margin:0}.health-activity .health-note{margin:0;border-width:1px 0 0;border-radius:0;background:var(--sf2)}
+[data-theme=dark] .health-summary-copy{background:linear-gradient(135deg,#123236,#102a36 63%,#112138)}
+[data-theme=dark] .health-summary.attention .health-summary-copy{background:linear-gradient(135deg,#352b19,#29231a 63%,#172134)}
+@media(max-width:900px){.health-summary{grid-template-columns:1fr}.health-summary-copy{border-right:0;border-bottom:1px solid var(--bd)}
+  .health-grid{grid-template-columns:1fr}.health-deployment{grid-template-columns:1fr;gap:13px}}
+@media(max-width:600px){.health-summary>dl{grid-template-columns:1fr}.health-summary>dl>div{border-left:0;border-top:1px solid var(--bd)}
+  .health-facts{grid-template-columns:1fr}.health-deployment dl{grid-template-columns:1fr}.health-card,.health-activity{padding-left:14px;padding-right:14px}
+  .health-activity{padding:0}.health-activity .health-card-head{padding-left:14px;padding-right:14px}}
