@@ -2878,7 +2878,18 @@ def _note_process_candidates(f: Finding):
     if STATE.observe_candidate(
             _candidate_key("process", name), "process", name,
             (f.evidence or "")[:500], "network",
-            f.device if f.device != "unknown" else ""):
+            f.device if f.device != "unknown" else "",
+            # What the registry already thinks this is. By the time this runs
+            # the finding's tool has been resolved from the domain it
+            # reached, so "stable reached app.warp.dev" is known here - and
+            # asking an operator what "stable" is, with the answer one
+            # variable away, is a question nobody should have to research.
+            #
+            # A suggestion only. curl reaching api.anthropic.com is a script
+            # somebody wrote, not Claude, and applying this automatically
+            # would delete the exact finding this view exists for.
+            suggested_tool=(f.tool or "") if (f.tool or "") in _REGISTRY_IDS
+            else ""):
         _notify_webhook(
             "ai-guard: %r reached a model host and is not a tool, a browser"
             " or a system process this knows - now in the review queue"

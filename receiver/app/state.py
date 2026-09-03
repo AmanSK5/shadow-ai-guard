@@ -162,7 +162,18 @@ CREATE TABLE IF NOT EXISTS candidates (
   -- last two reach the views that read process names.
   disposition  TEXT NOT NULL DEFAULT '',
   -- The tool a belongs_to disposition points at.
-  disposition_tool TEXT NOT NULL DEFAULT ''
+  disposition_tool TEXT NOT NULL DEFAULT '',
+  -- What the registry already thinks this is. A process candidate is raised
+  -- from a finding whose tool has ALREADY been resolved from the domain it
+  -- reached, so "stable reached app.warp.dev" is known at the moment the
+  -- question is asked. Carrying it turns "what is this?" into "is this
+  -- Warp?", which is a question an operator can answer without knowing that
+  -- Warp names its binary after a release channel.
+  --
+  -- A suggestion, never applied on its own: curl reaching api.anthropic.com
+  -- is a script somebody wrote, not Claude, and that is the whole signal the
+  -- agentic view exists for.
+  suggested_tool TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS finding_status (
   key    TEXT PRIMARY KEY,
@@ -302,6 +313,7 @@ _CANDIDATE_COLUMNS_ADDED = (
     # program, or it identifies one the registry already knows.
     ("disposition", "TEXT NOT NULL DEFAULT ''"),
     ("disposition_tool", "TEXT NOT NULL DEFAULT ''"),
+    ("suggested_tool", "TEXT NOT NULL DEFAULT ''"),
 )
 
 
@@ -1850,7 +1862,8 @@ class State:
             rows = self._db.execute(
                 "SELECT key, kind, name, vendor, category, confidence,"
                 " domains, devices, evidence, source, first_seen, last_seen,"
-                " dismissed_at, dismissed_by, disposition FROM candidates"
+                " dismissed_at, dismissed_by, disposition, suggested_tool"
+                " FROM candidates"
                 " ORDER BY last_seen DESC"
             ).fetchall()
         out = []
@@ -1890,7 +1903,8 @@ class State:
         return fresh
 
     def observe_candidate(self, key: str, kind: str, name: str,
-                          evidence: str, source: str, device: str = ""):
+                          evidence: str, source: str, device: str = "",
+                          suggested_tool: str = ""):
         """An ingest-time sighting, as opposed to a scanner's whole-picture
         report: insert the candidate if it is new, refresh last_seen if it
         is not, and count the reporting device once. devices becomes the
@@ -1908,9 +1922,17 @@ class State:
             ).fetchone() is None
             self._db.execute(
                 "INSERT INTO candidates (key, kind, name, evidence, source,"
-                " first_seen, last_seen) VALUES (?, ?, ?, ?, ?, ?, ?)"
-                " ON CONFLICT(key) DO UPDATE SET last_seen = excluded.last_seen",
-                (key, kind, name, evidence, source, now, now),
+                " first_seen, last_seen, suggested_tool)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+                " ON CONFLICT(key) DO UPDATE SET"
+                " last_seen = excluded.last_seen,"
+                # A later sighting can supply the suggestion an earlier one
+                # lacked, but never blank one already recorded.
+                " suggested_tool = CASE WHEN excluded.suggested_tool != ''"
+                " THEN excluded.suggested_tool"
+                " ELSE candidates.suggested_tool END",
+                (key, kind, name, evidence, source, now, now,
+                 suggested_tool),
             )
             if device:
                 self._db.execute(

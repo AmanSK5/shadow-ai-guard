@@ -370,3 +370,46 @@ def test_an_attributed_name_is_not_asked_about_again(managed, monkeypatch):
     rows = client.get("/admin/candidates", headers=ADMIN).json()["candidates"]
     assert [c for c in rows if c["kind"] == "process"
             and not c.get("dismissed_at")] == []
+
+
+def test_a_process_candidate_carries_what_the_registry_thinks_it_is(managed, monkeypatch):
+    """By the time the candidate is raised, the finding's tool has already
+    been resolved from the domain it reached. Asking an operator what
+    "stable" is, with the answer one variable away, is a question nobody
+    should have to research - you would need to know Warp names its binary
+    after a release channel."""
+    monkeypatch.setattr(main, "_KNOWN_PROCESSES", {"claude"})
+    monkeypatch.setattr(main, "_REGISTRY_IDS", {"warp", "claude"})
+    client.post("/report", headers=AUTH, json=dict(
+        _dns("stable", host="app.warp.dev"), tool="warp"))
+    rows = client.get("/admin/candidates", headers=ADMIN).json()["candidates"]
+    got = [c for c in rows if c["kind"] == "process"][0]
+    assert got["suggested_tool"] == "warp"
+    assert "app.warp.dev" in got["evidence"]
+
+
+def test_the_suggestion_is_only_ever_a_suggestion(managed, monkeypatch):
+    """curl reaching api.anthropic.com is a script somebody wrote, not
+    Claude. The candidate still says what the registry thinks, and still
+    waits for a human - applying it would delete the exact finding the
+    agentic view exists for."""
+    monkeypatch.setattr(main, "_KNOWN_PROCESSES", set())
+    monkeypatch.setattr(main, "_REGISTRY_IDS", {"claude"})
+    client.post("/report", headers=AUTH, json=_dns("curl"))
+    rows = client.get("/admin/candidates", headers=ADMIN).json()["candidates"]
+    got = [c for c in rows if c["kind"] == "process"][0]
+    assert got["suggested_tool"] == "claude"     # said
+    assert got["disposition"] == ""              # not acted on
+    assert not got["dismissed_at"]               # still awaiting a decision
+
+
+def test_a_tool_the_registry_does_not_have_is_not_suggested(managed, monkeypatch):
+    """A suggestion pointing at nothing is worse than none: the picker could
+    not offer it, and the card would name a tool that does not exist."""
+    monkeypatch.setattr(main, "_KNOWN_PROCESSES", set())
+    monkeypatch.setattr(main, "_REGISTRY_IDS", {"claude"})
+    client.post("/report", headers=AUTH, json=dict(_dns("weird-agent"),
+                                                   tool="not-in-registry"))
+    rows = client.get("/admin/candidates", headers=ADMIN).json()["candidates"]
+    got = [c for c in rows if c["kind"] == "process"][0]
+    assert got["suggested_tool"] == ""
