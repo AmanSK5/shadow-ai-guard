@@ -3025,9 +3025,18 @@ def logo(_=Depends(require_page_auth)):
     return FileResponse(STATIC / "logo.png", media_type="image/png")
 
 
+# The enterprise presentation layer is named explicitly for the same reason as
+# the logo: the page has one known asset, and no caller-controlled filesystem
+# path is ever resolved. It uses the page-auth boundary too, so classic-mode
+# credentials protect the stylesheet exactly as they protect the document.
+@app.get("/enterprise.css")
+def enterprise_css(_=Depends(require_page_auth)):
+    return FileResponse(STATIC / "enterprise.css", media_type="text/css")
+
+
 # There is no /static route, deliberately. The UI is one self-contained file
-# with its CSS and JS inline, served by / above, so a route that resolved a
-# caller-supplied path under a directory would exist only to serve nothing.
+# plus one explicitly named stylesheet, so a route that resolved a caller-
+# supplied path under a directory would exist only to expose files.
 #
 # It did exist briefly, guarded by a prefix check, and CodeQL was right to flag
 # it: comparing resolved paths with startswith is a weak guard - /srv/static-x

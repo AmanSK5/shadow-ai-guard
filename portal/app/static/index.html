@@ -951,12 +951,18 @@ a.libtn:hover{border-color:var(--pri)}
 .ag-limit li:last-child{margin-bottom:0}
 .ag-limit li b{color:var(--fg);font-weight:600}
 </style>
+<link rel="stylesheet" href="/enterprise.css">
 <div class="overlay" id="overlay"></div>
 <div class="drawer" id="drawer"></div>
 <div class="shell" id="shell">
   <aside>
     <div class="brand"><img src="/logo.png" alt="Shadow AI Guard"></div>
     <div class="brandline"></div>
+    <div class="tenant-switch" aria-label="Current organisation and environment">
+      <span class="tenant-avatar">SA</span>
+      <span class="tenant-copy"><b>Shadow AI Guard</b><span>Production environment</span></span>
+      <span class="tenant-chev" aria-hidden="true">⌄</span>
+    </div>
     <nav id="nav"></nav>
     <button class="fold" id="fold" title="collapse sidebar">«</button>
     <div class="foot"><span class="txt">
@@ -967,11 +973,15 @@ a.libtn:hover{border-color:var(--pri)}
   </aside>
   <div>
     <div class="topbar">
+      <button class="mobile-nav" id="mobile-nav" title="open navigation"
+        aria-label="Open navigation">☰</button>
+      <span class="top-context"><b>Shadow AI Guard</b><span>Production</span></span>
       <div class="search">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.8-3.8"/></svg>
-        <input id="q" placeholder="filter this view…">
+        <input id="q" placeholder="Search this view…">
+        <span class="search-key" aria-hidden="true">/</span>
       </div>
-      <span id="freshness" class="mono" style="font-size:11px;color:var(--mut)"></span>
+      <span class="live-state"><span id="freshness" class="mono"></span></span>
       <button id="refresh" class="back" style="margin:0">Refresh</button>
       <span id="whowrap" style="margin-left:auto;position:relative">
         <button id="who" class="back mono" style="margin:0;font-size:11px;
@@ -8955,6 +8965,7 @@ function drawNav() {
   n.querySelectorAll('button').forEach(b => b.onclick = () => {
     const sec = NAV.find(s => s.id === b.dataset.s);
     view = SECTAB[sec.id] || sec.items[0][0]; detail = null; EXTFROM = '';
+    document.body.classList.remove('nav-open');
     // Replace rather than push: clicking through the nav should not fill the
     // back button with every tab you glanced at.
     history.replaceState(null, '', frag(view));
@@ -9277,11 +9288,69 @@ async function renderView() {
                          dashboard, personal, mcp})[view]();
 }
 
+// Presentation is applied after a view renders so every existing view keeps
+// its own data contract and action hooks. The heading treatment is furniture,
+// not a second rendering path: adding a field to a view still means changing
+// that view once, above, rather than keeping a redesign in sync beside it.
+function decorateView() {
+  if (['wizard', 'extsetup', 'budget-report'].includes(view)
+      || document.body.classList.contains('auth')) return;
+  const h = app.querySelector(':scope > h2');
+  if (!h || h.closest('.view-head')) return;
+  const lede = h.nextElementSibling && h.nextElementSibling.classList
+    && h.nextElementSibling.classList.contains('lede')
+    ? h.nextElementSibling : null;
+  const sec = sectionOf(view);
+  const head = document.createElement('div');
+  head.className = 'view-head';
+  const title = document.createElement('div');
+  title.className = 'view-title';
+  title.innerHTML = `<div class="view-kicker">${esc(sec ? sec.lbl : 'Workspace')}</div>`;
+  h.parentNode.insertBefore(head, h);
+  head.appendChild(title);
+  title.appendChild(h);
+  if (lede) title.appendChild(lede);
+  const hours = Number(CFG.lookback_hours || 168);
+  const windowLabel = hours >= 24 && hours % 24 === 0
+    ? Math.round(hours / 24) + '-day window' : hours + '-hour window';
+  const meta = document.createElement('div');
+  meta.className = 'view-meta';
+  meta.innerHTML = `<span class="meta-chip">${esc(windowLabel)}</span>
+    <span class="meta-chip live">Live estate data</span>`;
+  head.appendChild(meta);
+
+  if (view === 'overview' && !OVEDIT) {
+    const pa = G.personal_accounts || [];
+    const open = PSTAT
+      ? pa.filter(r => (PSTAT[paKey(r)] || {}).status !== 'accepted').length
+      : pa.length;
+    const devices = ents(G.devices).length;
+    const tools = ents(G.tools).length;
+    const gaps = ents(G.devices).filter(([, d]) => d.scanner_seen && !d.collector_seen).length;
+    const posture = document.createElement('section');
+    posture.className = 'overview-posture' + (open ? '' : ' good');
+    posture.innerHTML = `<span class="posture-mark">${open ? '!' : '✓'}</span>
+      <span class="posture-copy"><span>Current posture</span>
+        <strong>${open ? open + ' personal AI account' + (open === 1 ? '' : 's')
+          + ' need attention' : 'No open personal AI accounts in this window'}</strong>
+        <p>${open ? 'Prioritise identity ownership and the account lifecycle before treating tool approval as sufficient.'
+          : 'The reporting sources below determine how much confidence to place in that result.'}</p>
+      </span>
+      <span class="posture-facts">
+        <span class="posture-fact"><b>${tools}</b><span>tools observed</span></span>
+        <span class="posture-fact"><b>${devices}</b><span>devices known</span></span>
+        <span class="posture-fact"><b>${gaps}</b><span>coverage gaps</span></span>
+      </span>`;
+    head.after(posture);
+  }
+}
+
 // Every navigation lands here, and half the views above return early, so
 // the tour's own check hangs off the wrapper rather than the body - a call
 // per branch is a call somebody adding the twelfth view forgets.
 async function render() {
   await renderView();
+  decorateView();
   drawSetup();
   maybeTour();
 }
@@ -9550,6 +9619,16 @@ app.addEventListener('keydown', e => {
 });
 q.oninput = e => { filter = e.target.value.toLowerCase(); detail = null; render(); };
 document.getElementById('refresh').onclick = () => load(true);
+const mobileNav = document.getElementById('mobile-nav');
+if (mobileNav) mobileNav.onclick = () => document.body.classList.toggle('nav-open');
+// Slash-to-search is standard furniture in dense admin products. It does not
+// replace ordinary tab navigation and stands down while someone is typing.
+window.addEventListener('keydown', e => {
+  if (e.key === '/' && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) {
+    e.preventDefault(); q.focus(); q.select();
+  }
+  if (e.key === 'Escape') document.body.classList.remove('nav-open');
+});
 // Theme and sidebar width are the viewer's own habits, so they live in this
 // browser rather than in a setting every operator would share.
 function setTheme(t) {
