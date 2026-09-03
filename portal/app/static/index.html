@@ -2133,27 +2133,39 @@ const WIDGETS = {
     // "what needs someone", and an answered finding no longer does.
     const open = PSTAT
       ? pa.filter(r => (PSTAT[paKey(r)] || {}).status !== 'accepted') : pa;
-    return `<dl class="stats" data-tour="stats">
-      <div><dt style="color:var(--dstr)">${open.length}${trendChip(tr.personal, true)}</dt>
-        <dd${open.length !== pa.length
-          ? ` title="${pa.length - open.length} more accepted with a reason"` : ''}>
-        open personal accounts</dd>${spark(tr.personal, true)}</div>
-      <div><dt>${fresh}</dt><dd title="First seen in the last 7 days, within the current lookback window">new this week</dd></div>
-      ${(() => {
-        // People and unattributed devices, counted apart. This was one
-        // tile of `user || device`, so an unattributed laptop counted as
-        // a person - and a person seen on two surfaces, named on one and
-        // unresolved on the other, counted twice in the same number.
-        const named = new Set(pa.filter(r => r.user).map(r => r.user));
-        const anon = new Set(pa.filter(r => !r.user && r.device).map(r => r.device));
-        return `<div><dt>${named.size}</dt><dd>affected people</dd></div>
-      ${anon.size ? `<div><dt>${anon.size}</dt><dd title="Personal-account rows whose device no identity map covers - counted apart, because a device is not a person">unattributed devices</dd></div>` : ''}`;
-      })()}
-      <div><dt>${new Set(pa.map(r=>r.tool)).size}</dt><dd>affected tools</dd></div>
-      <div><dt>${devs.length}</dt><dd>devices</dd>${spark(tr.devices)}</div>
-      <div><dt>${ents(G.tools).length}</dt><dd>tools</dd></div>
-      <div><dt${gaps.length ? ' style="color:var(--warn)"' : ''}>${gaps.length}</dt><dd>coverage gaps</dd></div>
-    </dl>`;
+    // People and unattributed devices remain separate: a machine is not a
+    // person, even when it is the only identity the finding carries.
+    const named = new Set(pa.filter(r => r.user).map(r => r.user));
+    const anon = new Set(pa.filter(r => !r.user && r.device).map(r => r.device));
+    const affectedTools = new Set(pa.map(r => r.tool)).size;
+    const tools = ents(G.tools).length;
+    const covered = Math.max(0, devs.length - gaps.length);
+    const coverage = devs.length ? Math.round(covered / devs.length * 100) : 0;
+    const attention = open.length || gaps.length;
+    return `<div class="overview-executive w12${attention ? ' needs-attention' : ' healthy'}"
+      data-tour="stats">
+      <section class="executive-posture">
+        <span>Overall posture</span>
+        <strong>${attention ? 'Needs attention' : 'Monitoring healthy'}</strong>
+        <p>${open.length} open personal account${open.length === 1 ? '' : 's'} ·
+          ${gaps.length} coverage gap${gaps.length === 1 ? '' : 's'}</p>
+        <div class="executive-actions">
+          ${open.length ? '<button class="mini" data-nav="personal">Review accounts</button>' : ''}
+          <button class="mini" data-nav="coverage">Verify coverage</button>
+        </div>
+      </section>
+      <dl class="executive-metrics">
+        <div><dt${open.length ? ' class="risk"' : ''}>${open.length}${trendChip(tr.personal, true)}</dt>
+          <dd>Open personal accounts</dd><small>${fresh} first seen this week${
+            open.length !== pa.length ? ` · ${pa.length - open.length} accepted` : ''}</small></div>
+        <div><dt>${named.size}</dt><dd>Affected people</dd>
+          <small>${anon.size ? anon.size + ' unattributed device' + (anon.size === 1 ? '' : 's') : 'Every device is attributed'}</small></div>
+        <div><dt>${tools}</dt><dd>AI tools observed</dd>
+          <small>${affectedTools} linked to personal-account use</small></div>
+        <div><dt class="${gaps.length ? 'attention' : 'good'}">${coverage}%</dt>
+          <dd>Detection coverage</dd><small>${covered} of ${devs.length} devices · ${gaps.length} gaps</small></div>
+      </dl>
+    </div>`;
   },
 
   budget_spend: () => {
@@ -2262,15 +2274,17 @@ const WIDGETS = {
   // whether it was 12 last week or 40.
   activity_trend: () => {
     const tr = G.trends || {}, days = tr.days || [];
-    if (days.length < 2) return `<div class="wcard w6"><h3>Activity</h3>
+    if (days.length < 2) return `<div class="wcard w6 exposure-trend-card"><h3>Personal-account exposure</h3>
       <p class="lede">Not enough days in the window to draw a trend yet.</p></div>`;
-    return `<div class="wcard w6"><h3>Activity</h3>
-    ${trendChart(days, tr.personal || days.map(() => 0),
-                 tr.devices || days.map(() => 0),
-                 'personal accounts', 'devices reporting')}
-    <p class="src-note">Per day across the window. Devices is context, not a
-    second story: personal accounts falling while devices falls with it is a
-    fleet going quiet, not a problem being fixed.</p></div>`;
+    return `<div class="wcard w6 exposure-trend-card">
+    <div class="trend-heading"><div><h3>Personal-account exposure</h3>
+      <p>Daily detections against reporting coverage</p></div></div>
+    <div class="exposure-chart">${trendChart(days,
+      tr.personal || days.map(() => 0), tr.devices || days.map(() => 0),
+      'personal-account detections', 'reporting devices')}</div>
+    <p class="src-note">Real findings per day, not a synthetic risk score.
+      Reporting devices provide the confidence check: both lines falling
+      together can mean the fleet went quiet rather than exposure improved.</p></div>`;
   },
 
   source_health: () => {
@@ -2333,41 +2347,45 @@ const WIDGETS = {
     // dismissed means a human did.
     const cands = (CAND || []).filter(c => !c.resolved && !c.dismissed_at);
     const candBlock = !cands.length ? '' : `
-      <h4 style="margin:10px 0 4px">New AI tools found
-        <span class="count">${cands.length}</span></h4>
-      <table>${cands.slice(0, 6).map(c => `<tr>
-        <td>${esc(c.name)}
-          ${c.kind === 'mcp_server' ? ' <span class="pill p-acc">MCP server</span>' : ''}
-          ${c.kind === 'process' ? ' <span class="pill p-warn">process</span>' : ''}
-          <div style="color:var(--mut);font-size:12px">
-          ${esc(c.kind === 'mcp_server' || c.kind === 'process'
-                  ? (c.evidence || '') : (c.domains || []).join(', '))}</div>
-          ${c.kind === 'process' && c.suggested_tool ? `<div style="font-size:12px">
-            <span class="pill p-acc">looks like ${esc(
-              ((REGTOOLS || []).find(t => t.id === c.suggested_tool) || {}).name
-              || c.suggested_tool)}</span>
-            <span style="color:var(--mut)">it reached a host the registry knows as
-            that tool — confirm or change below</span></div>` : ''}</td>
-        <td style="color:var(--mut)">${c.devices || 0} device${c.devices === 1 ? '' : 's'}
-          ${c.confidence ? ' · ' + esc(c.confidence) : ''}</td>
-        <td style="white-space:nowrap">
-          ${c.kind === 'process' ? ((REGTOOLS || []).length ? `<select class="mfield" id="cb-${esc(c.key)}"
-            style="min-width:130px;font-size:12px"
-            title="A vendor's binary is often named nothing like its product - Warp's is called stable, after its release channel. Say which tool this is and every view that reads a process name gets it.">
-            <option value="">belongs to…</option>
-            ${(REGTOOLS || []).slice().sort((a, b) => a.name.localeCompare(b.name))
-              .map(t => `<option value="${esc(t.id)}"${
-                t.id === c.suggested_tool ? ' selected' : ''}>${esc(t.name)}</option>`).join('')}
-          </select>
-          <button class="mini" data-act="cand-belongs" data-key="${esc(c.key)}">Link</button>`
-          // An empty dropdown reads as "no tools exist", which is never the
-          // answer - it means the list did not load. Say that instead.
-          : `<span class="src-note" title="The registry tool list did not load, so there is nothing to point this at. Refresh the page.">belongs-to unavailable</span> `)
-          + `<button class="mini" data-act="cand-noattr"
-            data-key="${esc(c.key)}" title="This name identifies no program - a resolver, a service host, a VPN tunnel that resolves for everything behind it. Recorded once and honoured everywhere a process name is read.">Names nothing</button> ` : ''}<button class="btn" data-act="cand-add" data-key="${esc(c.key)}">Add to registry</button>
-          <button class="btn" data-act="cand-dismiss" data-key="${esc(c.key)}">Dismiss</button>
-        </td></tr>`).join('')}</table>
-      ${cands.length > 6 ? `<p class="src-note">And ${cands.length - 6} more in the queue.</p>` : ''}`;
+      <section class="decision-section">
+        <div class="decision-section-head"><div><strong>New discoveries</strong>
+          <span>Observed signals that do not yet name a governed tool</span></div>
+          <span class="count">${cands.length}</span></div>
+        <div class="candidate-list">${cands.slice(0, 6).map(c => `
+          <article class="decision-candidate">
+            <div class="candidate-identity"><strong>${esc(c.name)}</strong>
+              ${c.kind === 'mcp_server' ? ' <span class="pill p-acc">MCP server</span>' : ''}
+              ${c.kind === 'process' ? ' <span class="pill p-warn">process</span>' : ''}
+              <p>${esc(c.kind === 'mcp_server' || c.kind === 'process'
+                    ? (c.evidence || '') : (c.domains || []).join(', '))}</p>
+              ${c.kind === 'process' && c.suggested_tool ? `<div class="candidate-suggestion">
+                <span class="pill p-acc">looks like ${esc(
+                  ((REGTOOLS || []).find(t => t.id === c.suggested_tool) || {}).name
+                  || c.suggested_tool)}</span>
+                <span>Confirm the tool match below.</span></div>` : ''}
+            </div>
+            <div class="candidate-scope"><b>${c.devices || 0}</b>
+              <span>device${c.devices === 1 ? '' : 's'}${
+                c.confidence ? ' · ' + esc(c.confidence) : ''}</span></div>
+            <div class="candidate-actions">
+              ${c.kind === 'process' ? ((REGTOOLS || []).length ? `<span class="candidate-linker">
+                <select class="mfield" id="cb-${esc(c.key)}"
+                  title="A vendor's binary is often named nothing like its product. Confirm which governed tool this process belongs to.">
+                  <option value="">belongs to…</option>
+                  ${(REGTOOLS || []).slice().sort((a, b) => a.name.localeCompare(b.name))
+                    .map(t => `<option value="${esc(t.id)}"${
+                      t.id === c.suggested_tool ? ' selected' : ''}>${esc(t.name)}</option>`).join('')}
+                </select><button class="mini" data-act="cand-belongs"
+                  data-key="${esc(c.key)}">Link</button></span>`
+                : `<span class="src-note" title="The registry tool list did not load. Refresh the page.">tool list unavailable</span>`)
+                + `<button class="mini" data-act="cand-noattr"
+                  data-key="${esc(c.key)}" title="Record that this signal identifies no program.">Names nothing</button>` : ''}
+              <button class="mini pri" data-act="cand-add" data-key="${esc(c.key)}">Add to registry</button>
+              <button class="mini" data-act="cand-dismiss" data-key="${esc(c.key)}">Dismiss</button>
+            </div>
+          </article>`).join('')}</div>
+        ${cands.length > 6 ? `<p class="src-note">And ${cands.length - 6} more in the queue.</p>` : ''}
+      </section>`;
     if (!undecided.length && !cands.length) {
       const ago = t => {
         const m = Math.round((Date.now() - Date.parse(t)) / 60000);
@@ -2376,25 +2394,29 @@ const WIDGETS = {
       const srcs = ((S && S.groups) || []).flatMap(g => g.sources || [])
         .filter(x => x.last_seen).sort((a, b) => a.last_seen < b.last_seen ? 1 : -1)
         .slice(0, 2);
-      return `<div class="wcard w6"><h3>Awaiting a decision</h3>
+      return `<div class="wcard w6 decision-widget"><h3>Awaiting a decision</h3>
         <p class="lede">No new AI tools awaiting a decision.${srcs.length
           ? ' Latest data: ' + srcs.map(x =>
               esc(x.label) + ' ' + ago(x.last_seen)).join(', ') + '.' : ''}</p></div>`;
     }
-    return `<div class="wcard w6"><h3>Awaiting a decision
-      <span class="count">${undecided.length + cands.length}</span></h3>
+    return `<div class="wcard w6 decision-widget"><div class="decision-widget-head">
+      <div><h3>Awaiting a decision</h3><p>Discovery and governance work that still needs an owner.</p></div>
+      <span class="count">${undecided.length + cands.length}</span>
+      </div>
     ${candBlock}
     ${!undecided.length ? '' : `
-    ${cands.length ? '<h4 style="margin:10px 0 4px">Observed, no decision recorded</h4>' : ''}
-    <table>${undecided.slice(0, 6).map(r => `<tr>
-      <td><a href="#register" style="color:var(--fg);text-decoration:none">${esc(r.name)}</a></td>
-      <td>${!r.in_registry ? '<span class="pill p-warn">not in registry</span>' : ''}
-          ${isNew(r) ? '<span class="pill p-acc">new today</span>' : ''}</td>
-      <td style="color:var(--mut)">${esc((r.first_seen || '').slice(0, 10))}</td>
-    </tr>`).join('')}</table>`}
-    <p class="src-note"><a href="#register" style="color:var(--pri)">Decide on
-    the AI register</a> - recording a decision clears the tool from this
-    queue.</p></div>`;
+    <section class="decision-section undecided-section">
+      <div class="decision-section-head"><div><strong>Observed, no decision recorded</strong>
+        <span>Known tools currently in use without an explicit outcome</span></div>
+        <span class="count">${undecided.length}</span></div>
+      <div class="undecided-list">${undecided.slice(0, 6).map(r => `<a href="#register">
+        <strong>${esc(r.name)}</strong><span>${!r.in_registry
+          ? '<span class="pill p-warn">not in registry</span>' : ''}${
+          isNew(r) ? '<span class="pill p-acc">new today</span>' : ''}</span>
+        <time>${esc((r.first_seen || '').slice(0, 10))}</time></a>`).join('')}</div>
+    </section>`}
+    <div class="decision-footer"><span>Recording a decision clears the tool from this queue.</span>
+      <a href="#register">Open AI register</a></div></div>`;
   },
 
   grafana: (w) => {
@@ -9397,34 +9419,6 @@ function decorateView() {
     <span class="meta-chip live">Live estate data</span>`;
   head.appendChild(meta);
 
-  if (view === 'overview' && !OVEDIT) {
-    const pa = G.personal_accounts || [];
-    const open = PSTAT
-      ? pa.filter(r => (PSTAT[paKey(r)] || {}).status !== 'accepted').length
-      : pa.length;
-    const devices = ents(G.devices).length;
-    const tools = ents(G.tools).length;
-    const gaps = ents(G.devices).filter(([, d]) => d.scanner_seen && !d.collector_seen).length;
-    const posture = document.createElement('section');
-    posture.className = 'overview-posture' + (open ? '' : ' good');
-    posture.innerHTML = `<span class="posture-mark">${open ? '!' : '✓'}</span>
-      <span class="posture-copy"><span>Current posture</span>
-        <strong>${open ? open + ' personal AI account' + (open === 1 ? '' : 's')
-          + ' need attention' : 'No open personal AI accounts in this window'}</strong>
-        <p>${open ? 'Prioritise identity ownership and the account lifecycle before treating tool approval as sufficient.'
-          : 'The reporting sources below determine how much confidence to place in that result.'}</p>
-      </span>
-      <span class="posture-facts">
-        <span class="posture-fact"><b>${tools}</b><span>tools observed</span></span>
-        <span class="posture-fact"><b>${devices}</b><span>devices known</span></span>
-        <span class="posture-fact"><b>${gaps}</b><span>coverage gaps</span></span>
-      </span>
-      <span class="posture-actions">
-        ${open ? '<button class="mini pri" data-nav="personal">Review accounts</button>' : ''}
-        <button class="mini" data-nav="coverage">Verify coverage</button>
-      </span>`;
-    head.after(posture);
-  }
 }
 
 // Every navigation lands here, and half the views above return early, so
