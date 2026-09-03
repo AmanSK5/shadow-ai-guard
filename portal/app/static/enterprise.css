@@ -632,6 +632,10 @@ body.auth .licard{width:100%}
 .budget-wizard .kv{grid-template-columns:170px minmax(0,560px);max-width:760px;gap:10px 16px}
 .budget-wizard .kv dd{min-width:0}
 .budget-wizard .kv dd>.mfield{width:100%!important;max-width:560px}
+.budget-wizard .kv .bw-tool-picker{min-height:46px;height:46px;padding-left:14px;
+  border-color:color-mix(in srgb,var(--acc) 70%,var(--bd));background:color-mix(in srgb,var(--acc-soft) 33%,var(--sf));
+  color:var(--fg);font-size:13px;font-weight:680;box-shadow:0 0 0 1px color-mix(in srgb,var(--acc) 16%,transparent)}
+.budget-wizard .kv .bw-tool-picker:focus{border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-soft)}
 .budget-wizard .srcpick{max-width:760px}
 .budget-wizard .tiers{border-collapse:separate;border-spacing:0 7px;margin:11px 0 7px}
 .budget-wizard .tiers thead th{height:auto;padding:0 10px 4px 0;background:transparent;

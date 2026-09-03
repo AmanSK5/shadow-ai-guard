@@ -6991,7 +6991,7 @@ function bwBodyTool() {
     };
     const obs = tools.filter(t => seen.has(t.id));
     const rest = tools.filter(t => !seen.has(t.id));
-    return `<select id="bw-tool" class="mfield" style="min-width:240px">
+    return `<select id="bw-tool" class="mfield bw-tool-picker" style="min-width:240px">
       ${obs.length ? `<optgroup label="Seen in your estate">${obs.map(opt).join('')}</optgroup>
         <optgroup label="Registry watchlist">${rest.map(opt).join('')}</optgroup>`
         : tools.map(opt).join('')}</select>`;
