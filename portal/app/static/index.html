@@ -958,9 +958,9 @@ a.libtn:hover{border-color:var(--pri)}
   <aside>
     <div class="brand"><img src="/logo.png" alt="Shadow AI Guard"></div>
     <div class="brandline"></div>
-    <div class="tenant-switch" aria-label="Current organisation and environment">
-      <span class="tenant-avatar">SA</span>
-      <span class="tenant-copy"><b>Shadow AI Guard</b><span>Production environment</span></span>
+    <div class="tenant-switch" aria-label="Current workspace and environment">
+      <span class="tenant-avatar">M</span>
+      <span class="tenant-copy"><b>Managed estate</b><span><i class="estate-dot"></i> Production</span></span>
       <span class="tenant-chev" aria-hidden="true">⌄</span>
     </div>
     <nav id="nav"></nav>
@@ -975,7 +975,7 @@ a.libtn:hover{border-color:var(--pri)}
     <div class="topbar">
       <button class="mobile-nav" id="mobile-nav" title="open navigation"
         aria-label="Open navigation">☰</button>
-      <span class="top-context"><b>Shadow AI Guard</b><span>Production</span></span>
+      <span class="top-context"><b>Managed estate</b><span>Production</span></span>
       <div class="search">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.8-3.8"/></svg>
         <input id="q" placeholder="Search this view…">
@@ -983,6 +983,12 @@ a.libtn:hover{border-color:var(--pri)}
       </div>
       <span class="live-state"><span id="freshness" class="mono"></span></span>
       <button id="refresh" class="back" style="margin:0">Refresh</button>
+      <span class="trust-state" title="The portal is receiving estate data">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="2" aria-hidden="true"><path
+          d="M12 3l8 3v5.5c0 4.7-3.2 8.2-8 10-4.8-1.8-8-5.3-8-10V6l8-3z"/>
+          <path d="m8.5 12 2.2 2.2 4.8-5"/></svg><span>Monitoring active</span>
+      </span>
       <span id="whowrap" style="margin-left:auto;position:relative">
         <button id="who" class="back mono" style="margin:0;font-size:11px;
           color:var(--mut);display:none" aria-haspopup="true"
@@ -8942,17 +8948,43 @@ function hideNavTip() { if (NAVTIP) NAVTIP.classList.remove('on'); }
 function drawNav() {
   const n = document.getElementById('nav');
   const cur = sectionOf(view);
-  n.innerHTML = NAV.map(sec => {
-    // Personal accounts outstanding. An unexplained number on a nav
-    // item reads as a notification of something unspecified.
-    const c = sec.id === 'inventory' ? (G.personal_accounts||[]).length : null;
-    return `<button data-s="${sec.id}" class="${cur && cur.id===sec.id ? 'on':''}"
-      aria-label="${sec.lbl}" data-lbl="${sec.lbl}">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-        stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${NAVICONS[sec.id]}</svg>
-      <span class="lbl">${sec.lbl}</span>` +
-      (c ? `<span class="count" title="${c} personal account${c === 1 ? '' : 's'} seen in this window">${c}</span>` : '') + `</button>`;
-  }).join('');
+  // Every destination is visible in the rail. The previous section-only
+  // navigation saved vertical space by putting the actual destinations in a
+  // second row of tabs after the click. That made a feature-rich product look
+  // smaller than it is and forced operators to remember which section hid a
+  // page. These groups are presentation only: their destinations still come
+  // from NAV, so a renamed or removed view has one source of truth.
+  const groups = [
+    ['Monitor', ['home', 'inventory', 'agentic']],
+    ['Govern', ['governance', 'spend']],
+    ['Operate', ['health', 'managed']],
+    ['Administration', ['system']],
+  ];
+  const names = {
+    dashboard:'Grafana dashboard', personal:'Personal accounts',
+    register:'AI register', registry:'Tool registry', paste:'Paste guard',
+    iso:'Evidence centre', agentic:'Agentic AI', setup:'Detection sources',
+    coverage:'Coverage gaps', fleet:'Enrolled devices', tokens:'Enrollment tokens',
+  };
+  n.innerHTML = groups.map(([group, ids]) => `<div class="nav-zone">
+    <div class="nav-zone-label">${group}</div>${ids.map(sid => {
+      const sec = NAV.find(s => s.id === sid);
+      if (!sec) return '';
+      return sec.items.map(([id, label], i) => {
+        const shown = names[id] || label;
+        const c = id === 'personal' ? (G.personal_accounts || []).length : null;
+        return `<button data-s="${sec.id}" data-v="${id}"
+          class="${view === id ? 'on' : ''}${i ? ' nav-child' : ''}"
+          aria-label="${esc(shown)}" data-lbl="${esc(shown)}">
+          ${i ? '<span class="nav-dot" aria-hidden="true"></span>'
+              : `<svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="1.9" stroke-linecap="round"
+                  stroke-linejoin="round">${NAVICONS[sec.id]}</svg>`}
+          <span class="lbl">${esc(shown)}</span>${c ? `<span class="count"
+            title="${c} personal account${c === 1 ? '' : 's'} seen in this window">${c}</span>` : ''}
+        </button>`;
+      }).join('');
+    }).join('')}</div>`).join('');
   // Collapsed, the rail is icons alone. A native title works but arrives a
   // second late and in the operating system's styling, which on a rail
   // somebody is scanning is close enough to nothing.
@@ -8964,7 +8996,8 @@ function drawNav() {
   });
   n.querySelectorAll('button').forEach(b => b.onclick = () => {
     const sec = NAV.find(s => s.id === b.dataset.s);
-    view = SECTAB[sec.id] || sec.items[0][0]; detail = null; EXTFROM = '';
+    view = b.dataset.v || SECTAB[sec.id] || sec.items[0][0];
+    detail = null; EXTFROM = '';
     document.body.classList.remove('nav-open');
     // Replace rather than push: clicking through the nav should not fill the
     // back button with every tab you glanced at.
@@ -9301,11 +9334,14 @@ function decorateView() {
     && h.nextElementSibling.classList.contains('lede')
     ? h.nextElementSibling : null;
   const sec = sectionOf(view);
+  const areas = {home:'Workspace', inventory:'Discovery', governance:'Governance',
+    spend:'Financial governance', agentic:'Autonomous activity', health:'Coverage',
+    managed:'Fleet operations', system:'Administration'};
   const head = document.createElement('div');
   head.className = 'view-head';
   const title = document.createElement('div');
   title.className = 'view-title';
-  title.innerHTML = `<div class="view-kicker">${esc(sec ? sec.lbl : 'Workspace')}</div>`;
+  title.innerHTML = `<div class="view-kicker">${esc(sec ? areas[sec.id] || sec.lbl : 'Workspace')}</div>`;
   h.parentNode.insertBefore(head, h);
   head.appendChild(title);
   title.appendChild(h);
@@ -9340,6 +9376,10 @@ function decorateView() {
         <span class="posture-fact"><b>${tools}</b><span>tools observed</span></span>
         <span class="posture-fact"><b>${devices}</b><span>devices known</span></span>
         <span class="posture-fact"><b>${gaps}</b><span>coverage gaps</span></span>
+      </span>
+      <span class="posture-actions">
+        ${open ? '<button class="mini pri" data-nav="personal">Review accounts</button>' : ''}
+        <button class="mini" data-nav="coverage">Verify coverage</button>
       </span>`;
     head.after(posture);
   }
