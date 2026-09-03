@@ -3695,6 +3695,16 @@ async function register() {
       ${sub}</div>`;
   };
 
+  const allRows = REG.rows || [];
+  const decidedCount = allRows.filter(_decided).length;
+  const undecidedCount = allRows.length - decidedCount;
+  const decisionCoverage = allRows.length
+    ? Math.round(decidedCount / allRows.length * 100) : 100;
+  const approvedCount = allRows.filter(r => r.status === 'approved').length;
+  const reviewingCount = allRows.filter(r => r.status === 'reviewing').length;
+  const overdueCount = allRows.filter(r => r.days_overdue).length;
+  const personalToolCount = allRows.filter(r => r.personal_accounts).length;
+
   return `<h2>AI register</h2>
   ${truncNote(REG.findings_truncated)}
   <p class="lede">The AI tools actually in use, from findings in the last
@@ -3702,12 +3712,23 @@ async function register() {
   below, not listed. Tools in use that the registry doesn't know are flagged -
   those are the ones to act on.</p>
 
-  <dl class="stats">
-    <div><dt>${REG.tools_observed}</dt><dd>in use</dd></div>
-    <div><dt style="color:var(--dstr)">${REG.observed_not_in_registry}</dt><dd>not in registry</dd></div>
-    <div><dt>${REG.tools_known}</dt><dd>watched for</dd></div>
-    <div><dt>${REG.known_not_observed}</dt><dd>watched for, not seen</dd></div>
-  </dl>
+  <div class="register-overview">
+    <section class="register-score" aria-label="Governance decision coverage">
+      <div class="register-score-head"><span>Decision coverage</span>
+        <strong>${decisionCoverage}%</strong></div>
+      <div class="register-progress"><i style="width:${decisionCoverage}%"></i></div>
+      <p>${decidedCount} of ${allRows.length} observed tools have a recorded
+        governance decision.</p>
+    </section>
+    <dl class="register-metrics">
+      <div class="attention"><dt>${undecidedCount}</dt><dd>awaiting decision</dd></div>
+      <div><dt>${approvedCount}</dt><dd>approved</dd></div>
+      <div><dt>${reviewingCount}</dt><dd>under review</dd></div>
+      <div class="${overdueCount ? 'risk' : ''}"><dt>${overdueCount}</dt><dd>reviews overdue</dd></div>
+      <div class="${REG.observed_not_in_registry ? 'risk' : ''}"><dt>${REG.observed_not_in_registry}</dt><dd>not in registry</dd></div>
+      <div class="${personalToolCount ? 'risk' : ''}"><dt>${personalToolCount}</dt><dd>using personal accounts</dd></div>
+    </dl>
+  </div>
 
   ${!REG.governance_configured ? (CFG.managed && CFG.managed.enabled
     ? `<p class="lede">No decisions recorded yet, so every tool shows the
@@ -3735,45 +3756,45 @@ async function register() {
     Either way the record isn't being applied to anything right now.</div>
   </div>` : ''}
 
-  <p class="lede">One card per tool: what it is, how it's used, and what was
-  decided about it.
-  <a href="/api/register?fmt=csv" style="color:var(--pri)">Download CSV</a></p>
+  <div class="register-toolbar">
+    <div><strong>Governance queue</strong><span>${rows.length} of
+      ${allRows.length} observed tools · undecided tools appear first</span></div>
+    <span class="register-legend"><i class="queue"></i>needs a decision</span>
+    <a class="reg-export" href="/api/register?fmt=csv">Download CSV</a>
+  </div>
 
-  ${rows.length ? `<div class="cards">
-  ${rows.map(r => `<div class="card">
-    <div class="card-top">
-      <div style="min-width:0">
-        <div class="card-name">${esc(r.name)}
-          ${_newToday(r) ? '<span class="pill p-acc">new today</span>' : ''}</div>
-        <div class="card-meta">${r.vendor ? esc(r.vendor) + ' · ' : ''}${esc(r.id)}</div>
+  ${rows.length ? `<div class="register-list">
+  ${rows.map(r => `<article class="register-record${_decided(r) ? '' : ' needs-decision'}">
+    <div class="register-primary">
+      <span class="register-tool-mark" aria-hidden="true">${esc(String(r.name || r.id).trim().charAt(0).toUpperCase())}</span>
+      <div class="register-identity">
+        <strong>${esc(r.name)} ${_newToday(r) ? '<span class="pill p-acc">new today</span>' : ''}</strong>
+        <span>${r.vendor ? esc(r.vendor) + ' · ' : ''}<span class="mono">${esc(r.id)}</span></span>
       </div>
-      ${status(r)}
+      <div class="register-cell"><span>Decision</span>${status(r)}</div>
+      <div class="register-cell"><span>Exposure</span><b>${r.devices} device${r.devices === 1 ? '' : 's'}</b><small>${r.users} user${r.users === 1 ? '' : 's'}</small></div>
+      <div class="register-cell"><span>Personal accounts</span>${r.personal_accounts
+        ? `<b class="register-risk-value">${r.personal_accounts}</b>`
+        : '<b class="register-zero">0</b>'}</div>
+      <div class="register-cell"><span>Risk tier</span>${risk(r.risk_tier)}</div>
+      <div class="register-cell"><span>Review</span>${review(r)}</div>
+      <div class="register-cell register-owner"><span>Owner</span><b>${r.owner ? esc(r.owner) : 'Unassigned'}</b></div>
     </div>
-    <hr>
-    <dl class="card-kv">
-      <dt>usage</dt><dd>${r.devices} device${r.devices === 1 ? '' : 's'},
-        ${r.users} user${r.users === 1 ? '' : 's'}</dd>
-      <dt>accounts</dt><dd>corp ${num(r.corporate_accounts)} ·
-        personal ${r.personal_accounts
-          ? `<span class="pill p-warn">${r.personal_accounts}</span>` : num(0)}</dd>
-      <dt>surfaces</dt><dd>${r.surfaces.length ? esc(r.surfaces.join(', ')) : '—'}</dd>
-      <dt title="The registry's own risk_tier for this tool - a shipped default about the tool's category and data reach, not an assessment of how you use it. Editable per tool in the Tool registry.">risk</dt><dd>${risk(r.risk_tier) || '<span class="src-note">not set in the registry</span>'}</dd>
-      <dt>last seen</dt><dd>${when(r.last_seen)}</dd>
-    </dl>
-    <hr>
-    <div class="card-section">governance</div>
-    ${GOVEDIT === r.id ? govForm(r) : `<dl class="card-kv">
-      <dt>owner</dt><dd>${r.owner ? esc(r.owner) : dash}</dd>
-      <dt>review</dt><dd>${review(r)}</dd>
-    </dl>
-    ${CFG.managed && CFG.managed.enabled ? `<div style="margin-top:8px">
-      <button class="mini" data-act="gov-edit" data-key="${esc(r.id)}">Edit</button>
-      ${r.status_source === 'portal' ? `<button class="mini" data-act="gov-clear"
-        data-key="${esc(r.id)}">Clear decision</button>` : ''}
-      ${!r.in_registry ? `<button class="mini" data-act="reg-suggest"
-        data-key="${esc(r.id)}">Add to registry</button>` : ''}</div>` : ''}`}
+    <div class="register-secondary">
+      <span><b>Surfaces</b>${r.surfaces.length ? esc(r.surfaces.join(', ')) : '—'}</span>
+      <span><b>Accounts</b>${num(r.corporate_accounts)} corporate · ${num(r.personal_accounts)} personal</span>
+      <span><b>Category</b>${r.category ? esc(r.category) : '—'}</span>
+      <span><b>Last seen</b>${when(r.last_seen)}</span>
+      ${CFG.managed && CFG.managed.enabled && GOVEDIT !== r.id ? `<span class="register-actions">
+        <button class="mini" data-act="gov-edit" data-key="${esc(r.id)}">Edit decision</button>
+        ${r.status_source === 'portal' ? `<button class="mini" data-act="gov-clear"
+          data-key="${esc(r.id)}">Clear decision</button>` : ''}
+        ${!r.in_registry ? `<button class="mini" data-act="reg-suggest"
+          data-key="${esc(r.id)}">Add to registry</button>` : ''}</span>` : ''}
+    </div>
+    ${GOVEDIT === r.id ? `<div class="register-editor"><div><strong>Record governance decision</strong><span>Set the outcome, accountable owner and next review.</span></div>${govForm(r)}</div>` : ''}
     ${exceptionBlock(r)}
-  </div>`).join('')}
+  </article>`).join('')}
   </div>` : !dataOk() ? `<p class="lede">No AI tools to show: the findings
   could not be read. This is not an empty estate.</p>` : `<p class="lede">No AI tools observed in the last ${esc(win)}.
   That is a real answer for a small estate, and it is also what a fleet with no
