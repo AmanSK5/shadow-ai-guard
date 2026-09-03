@@ -1561,6 +1561,14 @@ async function load(force) {
       if (CFG.managed && CFG.managed.enabled && AUTH && AUTH.mode === 'login') {
         const cq = await mfetch('/api/candidates');
         if (cq.ok) CAND = (await cq.json()).candidates || [];
+        // The queue's "belongs to" picker offers registry tools, and every
+        // other fetch of them lives inside a VIEW - budget, registry,
+        // register, the wizard. The widget is on the overview, which visits
+        // none of those, so the picker rendered with nothing in it.
+        if (!REGTOOLS) {
+          const tr = await mfetch('/api/registry-tools');
+          if (tr.ok) REGTOOLS = (await tr.json()).tools || [];
+        }
       }
     }
     loadError = '';
@@ -2319,15 +2327,18 @@ const WIDGETS = {
         <td style="color:var(--mut)">${c.devices || 0} device${c.devices === 1 ? '' : 's'}
           ${c.confidence ? ' · ' + esc(c.confidence) : ''}</td>
         <td style="white-space:nowrap">
-          ${c.kind === 'process' ? `<select class="mfield" id="cb-${esc(c.key)}"
+          ${c.kind === 'process' ? ((REGTOOLS || []).length ? `<select class="mfield" id="cb-${esc(c.key)}"
             style="min-width:130px;font-size:12px"
             title="A vendor's binary is often named nothing like its product - Warp's is called stable, after its release channel. Say which tool this is and every view that reads a process name gets it.">
             <option value="">belongs to…</option>
             ${(REGTOOLS || []).slice().sort((a, b) => a.name.localeCompare(b.name))
               .map(t => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('')}
           </select>
-          <button class="mini" data-act="cand-belongs" data-key="${esc(c.key)}">Link</button>
-          <button class="mini" data-act="cand-noattr"
+          <button class="mini" data-act="cand-belongs" data-key="${esc(c.key)}">Link</button>`
+          // An empty dropdown reads as "no tools exist", which is never the
+          // answer - it means the list did not load. Say that instead.
+          : `<span class="src-note" title="The registry tool list did not load, so there is nothing to point this at. Refresh the page.">belongs-to unavailable</span> `)
+          + `<button class="mini" data-act="cand-noattr"
             data-key="${esc(c.key)}" title="This name identifies no program - a resolver, a service host, a VPN tunnel that resolves for everything behind it. Recorded once and honoured everywhere a process name is read.">Names nothing</button> ` : ''}<button class="btn" data-act="cand-add" data-key="${esc(c.key)}">Add to registry</button>
           <button class="btn" data-act="cand-dismiss" data-key="${esc(c.key)}">Dismiss</button>
         </td></tr>`).join('')}</table>
@@ -7865,6 +7876,10 @@ async function reloadDerived() {
     try {
       const cq = await mfetch('/api/candidates');
       if (cq.ok) CAND = (await cq.json()).candidates || [];
+      // Nulled just above, and the queue's picker needs it. Leaving it for
+      // a view to fetch is what emptied the picker in the first place.
+      const tr = await mfetch('/api/registry-tools');
+      if (tr.ok) REGTOOLS = (await tr.json()).tools || [];
     } catch (e) { /* the queue simply stays unread until the next load */ }
   }
 }
