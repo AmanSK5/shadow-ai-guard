@@ -958,11 +958,12 @@ a.libtn:hover{border-color:var(--pri)}
   <aside>
     <div class="brand"><img src="/logo.png" alt="Shadow AI Guard"></div>
     <div class="brandline"></div>
-    <div class="tenant-switch" aria-label="Current workspace and environment">
+    <button class="tenant-switch" id="estate-status" type="button"
+      aria-label="Open estate diagnostics">
       <span class="tenant-avatar">M</span>
       <span class="tenant-copy"><b>Managed estate</b><span><i class="estate-dot"></i> Production</span></span>
-      <span class="tenant-chev" aria-hidden="true">⌄</span>
-    </div>
+      <span class="tenant-chev" aria-hidden="true">Diagnostics</span>
+    </button>
     <nav id="nav"></nav>
     <button class="fold" id="fold" title="collapse sidebar">«</button>
     <div class="foot"><span class="txt">
@@ -996,6 +997,7 @@ a.libtn:hover{border-color:var(--pri)}
         <div id="usermenu" hidden>
           <div class="umhead" id="um-who"></div>
           <button class="umitem" data-act="open-password">Change password</button>
+          <button class="umitem" id="signout-menu">Sign out</button>
         </div>
       </span>
       <button id="signout" class="back" style="margin:0;display:none">Sign out</button>
@@ -2607,9 +2609,28 @@ function devices() {
   const rows = ents(G.devices)
     .filter(([k,d]) => match(k) || match(d.device_name) || (d.local_users||[]).some(match) || (d.tools||[]).some(match))
     .sort((a,b) => (b[1].tools||[]).length - (a[1].tools||[]).length);
+  const personal = rows.filter(([,d]) => (d.personal_accounts||[]).length).length;
+  const unattributed = rows.filter(([,d]) => !d.person).length;
+  const observedTools = new Set(rows.flatMap(([,d]) => d.tools || [])).size;
   return `<h2>Devices</h2><p class="lede">${rows.length} shown. The key is the most
   stable identifier the source could get, usually a serial. Click for detail.</p>
-  ${rows.map(([k,d]) => card(k,d)).join('')}`;
+  <div class="inventory-summary" aria-label="Device inventory summary">
+    <span><b>${rows.length}</b> devices</span>
+    <span><b>${observedTools}</b> AI tools observed</span>
+    <span class="${personal ? 'risk' : ''}"><b>${personal}</b> with personal accounts</span>
+    <span class="${unattributed ? 'attention' : ''}"><b>${unattributed}</b> unattributed</span>
+  </div>
+  <div class="tcard device-inventory"><table>
+    <thead><tr><th>Device</th><th>Person</th><th>AI tools</th>
+      <th>Personal accounts</th><th>Local users</th></tr></thead>
+    <tbody>${rows.map(([k,d]) => `<tr data-open="device" data-key="${esc(k)}">
+      <td><strong>${esc(label(k,d))}</strong><br><span class="mono row-key">${esc(k)}</span></td>
+      <td>${d.person ? `<span class="pill p-ok">${esc(d.person)}</span>` : '<span class="muted-value">Unattributed</span>'}</td>
+      <td><div class="cell-tags">${(d.tools||[]).map(t=>`<span class="pill p-mut">${esc(t)}</span>`).join('') || '<span class="muted-value">None observed</span>'}</div></td>
+      <td><div class="cell-tags">${(d.personal_accounts||[]).map(a=>`<span class="pill p-warn">${esc(a)}</span>`).join('') || '<span class="muted-value">None</span>'}</div></td>
+      <td><div class="cell-tags">${(d.local_users||[]).map(u=>`<span class="pill p-mut">${esc(u)}</span>`).join('') || '<span class="muted-value">—</span>'}</div></td>
+    </tr>`).join('')}</tbody>
+  </table></div>`;
 }
 
 // The identity map, editable here. It used to be the last piece of
@@ -6095,7 +6116,7 @@ function setup() {
       a legitimate answer, and one you can shorten:
       <button class="mini" data-nav="people">Edit the map on People</button>`;
   })()}</p>`
-  : `<details class="how" style="margin:0 0 14px"><summary>how to build the map</summary><div>
+  : `<details class="how map-help"><summary>how to build the map</summary><div>
   <ol style="padding-left:18px;line-height:2;margin:6px 0">
     <li><a href="/api/suggest-identities?fmt=csv" style="color:var(--pri)">Download
       a proposed map</a>. It matches local usernames against identities from
@@ -9731,6 +9752,23 @@ document.getElementById('signout').onclick = async () => {
   // break-glass account could use.
   await refreshAuth();
   showLogin('Signed out.');
+};
+
+// Keep account actions together in the account menu. The original sign-out
+// button remains the single implementation so authentication behaviour does
+// not fork between two controls.
+document.getElementById('signout-menu').onclick = () => {
+  umClose();
+  document.getElementById('signout').click();
+};
+
+// The estate context is useful only if it leads somewhere. Diagnostics is
+// the existing, read-only place that explains what this deployment is
+// connected to and what it has verified.
+document.getElementById('estate-status').onclick = () => {
+  SETTAB = 'diagnostics'; view = 'settings'; detail = null; EXTFROM = '';
+  history.replaceState(null, '', frag('settings'));
+  drawNav(); render();
 };
 
 // The one place that knows what the sign-in screen needs. Falls back to a

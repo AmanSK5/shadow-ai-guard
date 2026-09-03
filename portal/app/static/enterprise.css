@@ -153,3 +153,76 @@ input,select,.mfield{min-height:36px;background:var(--sf);font-size:11px;box-sha
   .wcard table{table-layout:auto}.wcard td,.wcard th{white-space:normal}
   .posture-actions{margin-left:0}.posture-actions button{flex:1}
 }
+
+/* --------------------------------------------------------------------------
+   V2 review refinements — denser investigation surfaces and quieter chrome.
+   ----------------------------------------------------------------------- */
+.brand{justify-content:center}
+.brand img{object-position:center;width:190px}
+.tenant-switch{width:calc(100% - 24px);font:inherit;text-align:left;cursor:pointer}
+.tenant-switch:hover{background:rgba(255,255,255,.07);border-color:rgba(104,224,199,.24)}
+.tenant-switch:focus-visible{outline:2px solid #55d9bd;outline-offset:2px}
+.tenant-chev{font-size:8px;letter-spacing:.02em;color:#788ba4}
+
+/* One search surface. Global form styling must not turn its input into a
+   second inset field. */
+.search{gap:10px;padding:8px 12px;background:var(--sf2);box-shadow:none}
+.search input,[data-theme=dark] .search input{min-height:0!important;padding:0!important;
+  border:0!important;background:transparent!important;box-shadow:none!important;
+  border-radius:0!important}
+.search input:focus,[data-theme=dark] .search input:focus{box-shadow:none!important}
+
+/* Account actions belong to the account menu. Keep the bell as one icon
+   with one badge instead of three neighbouring visual signals. */
+.topbar #signout{display:none!important}
+.topbar #themebtn,.topbar #setupbell{width:34px;height:34px;display:grid;place-items:center}
+#setupbell{position:relative;gap:0;font-size:0}
+#setupbell .bdot{display:none}
+#setupbell .bcount{position:absolute;top:-5px;right:-5px;min-width:17px;height:17px;
+  padding:0 4px;display:grid;place-items:center;border-radius:99px;
+  background:var(--dstr);color:#fff;border:2px solid var(--sf);font-size:8.5px;
+  line-height:1;font-weight:750}
+#usermenu #signout-menu{border-top:1px solid var(--pop-bd);border-radius:0 0 7px 7px;
+  margin-top:4px;padding-top:10px;color:var(--dstr)}
+
+/* Use the available workspace. The previous reading-width cap made normal
+   data pages appear as though the layout ended before the browser did. */
+main{max-width:none;width:100%;margin:0}
+.view-title{flex:1}
+.view-head .lede{max-width:none}
+
+/* Restore the original neutral KPI tile: severity lives in the number, not
+   in a glossy block of colour. */
+.gcard>.stats>div:first-child{background:var(--sf)!important}
+
+/* The help disclosure belongs to the content inset of its parent card. */
+.map-help{margin:0 17px 14px!important}
+.map-help>div{margin-top:7px;color:var(--mut)}
+
+/* A device estate is an investigation table, not a stack of large cards. */
+.inventory-summary{display:flex;align-items:center;gap:0;margin:0 0 12px;
+  border:1px solid var(--bd);border-radius:9px;background:var(--sf);overflow:hidden}
+.inventory-summary span{display:flex;align-items:baseline;gap:6px;min-height:46px;
+  padding:12px 17px;border-right:1px solid var(--bd);color:var(--mut);font-size:10px}
+.inventory-summary span:last-child{border-right:0}.inventory-summary b{font-size:16px;
+  line-height:1;color:var(--fg)}.inventory-summary .risk b{color:var(--dstr)}
+.inventory-summary .attention b{color:var(--warn)}
+.device-inventory table{width:100%;table-layout:fixed}
+.device-inventory th:nth-child(1){width:21%}.device-inventory th:nth-child(2){width:16%}
+.device-inventory th:nth-child(3){width:23%}.device-inventory th:nth-child(4){width:23%}
+.device-inventory th:nth-child(5){width:17%}
+.device-inventory td{vertical-align:middle;height:60px}.device-inventory td strong{font-size:11.5px}
+.row-key{font-size:9px;color:var(--mut)}.cell-tags{display:flex;gap:3px;flex-wrap:wrap}
+.muted-value{color:var(--mut);font-size:10px}
+[data-theme=dark] tr[data-open]:hover td{background:#1a2940}
+
+@media(max-width:900px){
+  .brand{justify-content:flex-start}.brand img{object-position:left center}
+  .device-inventory table{min-width:880px}.inventory-summary{overflow-x:auto}
+  .inventory-summary span{white-space:nowrap}
+}
+@media(max-width:560px){
+  .inventory-summary{display:grid;grid-template-columns:1fr 1fr}
+  .inventory-summary span{border-bottom:1px solid var(--bd)}
+  .inventory-summary span:nth-child(2){border-right:0}
+}
