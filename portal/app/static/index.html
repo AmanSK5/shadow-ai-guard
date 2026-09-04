@@ -961,8 +961,8 @@ a.libtn:hover{border-color:var(--pri)}
     <div class="brandline"></div>
     <button class="tenant-switch" id="estate-status" type="button"
       aria-label="Open estate diagnostics">
-      <span class="tenant-avatar">M</span>
-      <span class="tenant-copy"><b>Managed estate</b><span><i class="estate-dot"></i> Production</span></span>
+      <span class="tenant-avatar" id="estate-avatar">·</span>
+      <span class="tenant-copy"><b id="estate-name">Portal</b><span id="estate-sub"><i class="estate-dot off"></i> Checking sources…</span></span>
       <span class="tenant-chev" aria-hidden="true">Diagnostics</span>
     </button>
     <nav id="nav"></nav>
@@ -977,7 +977,7 @@ a.libtn:hover{border-color:var(--pri)}
     <div class="topbar">
       <button class="mobile-nav" id="mobile-nav" title="open navigation"
         aria-label="Open navigation">☰</button>
-      <span class="top-context"><b>Managed estate</b><span>Production</span></span>
+      <span class="top-context"><b id="topctx-name">Portal</b><span id="topctx-sub">Checking sources…</span></span>
       <div class="search">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.8-3.8"/></svg>
         <input id="q" placeholder="Search this view…">
@@ -985,11 +985,11 @@ a.libtn:hover{border-color:var(--pri)}
       </div>
       <span class="live-state"><span id="freshness" class="mono"></span></span>
       <button id="refresh" class="back" style="margin:0">Refresh</button>
-      <span class="trust-state" title="The portal is receiving estate data">
+      <span class="trust-state off" id="trust-state" title="Checking which detection sources have reported">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
           stroke="currentColor" stroke-width="2" aria-hidden="true"><path
           d="M12 3l8 3v5.5c0 4.7-3.2 8.2-8 10-4.8-1.8-8-5.3-8-10V6l8-3z"/>
-          <path d="m8.5 12 2.2 2.2 4.8-5"/></svg><span>Monitoring active</span>
+          <path d="m8.5 12 2.2 2.2 4.8-5"/></svg><span id="trust-text">Checking sources…</span>
       </span>
       <button id="signout" class="back" style="margin:0;display:none">Sign out</button>
       <button id="themebtn" class="back" style="margin:0" title="light / dark">◐</button>
@@ -1157,7 +1157,7 @@ let CAND = null;
 // Finding lifecycle: key -> {status, reason, actor, at} from the receiver,
 // and which personal-account row has its accept-reason form open.
 let PSTAT = null, PAFORM = null;
-// The audit trail, fetched when the Diagnostics tab asks for it.
+// The audit trail, fetched when the System health view asks for it.
 let AUDITLOG = null;
 // The accounts list (admins only), which row has its reset form open, and
 // the last account-management refusal.
@@ -1631,6 +1631,7 @@ async function load(force) {
   }
   render();
   showFreshness();
+  showEstate();
 }
 
 // The tour opens itself once, for somebody who has not seen the one for
@@ -1805,6 +1806,38 @@ function showFreshness() {
   tick();
   clearInterval(window._freshTimer);
   window._freshTimer = setInterval(tick, 5000);
+}
+// The estate control and the top-bar badge say what the last read said, not
+// a fixed word. "Monitoring active" holds when at least one detection source
+// reported inside the lookback window; a fresh install, a silent estate and a
+// failed read each say exactly that instead. Whether the estate is managed
+// comes from the same config the rest of the page gates on.
+function showEstate() {
+  const managed = !!(CFG && CFG.managed && CFG.managed.enabled);
+  const name = managed ? 'Managed estate' : 'Standalone portal';
+  const rep = S ? (S.reporting || 0) : 0, total = S ? (S.total || 0) : 0;
+  const hours = CFG && CFG.lookback_hours ? CFG.lookback_hours + 'h' : 'the lookback window';
+  let state, text, sub, title;
+  if (loadError || !G) {
+    state = 'warn'; text = 'Data unavailable'; sub = 'Last read failed';
+    title = 'The portal could not read the estate. Open System health.';
+  } else if (rep > 0) {
+    state = 'ok'; text = 'Monitoring active';
+    // Short enough for the sidebar control; the title carries the sentence.
+    sub = rep + '/' + total + ' reporting';
+    title = rep + ' of ' + total + ' detection sources reported within ' + hours + '.';
+  } else {
+    state = 'off'; text = 'No sources reporting'; sub = 'No source has reported';
+    title = 'No detection source has reported within ' + hours
+      + '. Open Detection sources to link one.';
+  }
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  set('estate-name', name); set('estate-avatar', managed ? 'M' : 'P');
+  set('topctx-name', name); set('topctx-sub', sub); set('trust-text', text);
+  const es = document.getElementById('estate-sub');
+  if (es) es.innerHTML = '<i class="estate-dot ' + state + '"></i> ' + esc(sub);
+  const ts = document.getElementById('trust-state');
+  if (ts) { ts.className = 'trust-state ' + state; ts.title = title; }
 }
 const app = document.getElementById('app'), q = document.getElementById('q');
 // The view lives in the URL fragment. A reload landing back on Setup loses
@@ -5991,14 +6024,16 @@ function diagnosticsCards() {
     : Math.floor(sec/3600) + 'h ' + Math.round(sec%3600/60) + 'm';
   const logFresh = r.loki_configured && (!r.loki_last_error
     || r.loki_last_success >= r.loki_last_error_at);
-  const checks = [true, logFresh, !!r.registry_loaded];
+  // Only what is checked. The application row below is informational: this
+  // page rendering is the whole of that evidence, so it is not a check.
+  const checks = [logFresh, !!r.registry_loaded];
   const passing = checks.filter(Boolean).length;
   const health = passing === checks.length;
 
   return `<section class="health-summary ${health ? 'healthy' : 'attention'}" aria-label="System health summary">
     <div class="health-summary-copy"><span>Estate observability</span>
       <strong>${health ? 'Core services operational' : 'Attention needed'}</strong>
-      <p>Read-only runtime checks for the portal, its log store and the tool registry.</p>
+      <p>Read-only runtime checks of the log-store read and the tool registry.</p>
     </div>
     <dl>
       <div><dt>${passing}/${checks.length}</dt><dd>core checks passing</dd></div>
@@ -6119,11 +6154,6 @@ function sBarSync() {
 }));
 
 async function settings() {
-  if (!DIAG) {
-    try { DIAG = await (await fetch('/api/diagnostics')).json(); }
-    catch (e) { return `<h2>Settings</h2><div class="note">Could not read
-      diagnostics: ${esc(String(e.message || e))}</div>`; }
-  }
   const managed = CFG.managed && CFG.managed.enabled;
   if (managed && !SETTINGS) {
     const r = await mfetch('/api/settings');
@@ -9079,15 +9109,19 @@ const navEntry = id => {
   }
   return null;
 };
+// Stored as a JSON string: a preference value is a string on both the
+// portal and the receiver model, and an array would be refused with a 422
+// the client never reads - pins that looked saved and were gone on reload.
 const navPins = () => {
-  const raw = pref(NAV_PIN_KEY, []);
+  let raw = pref(NAV_PIN_KEY, '[]');
+  if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch (e) { raw = []; } }
   const ids = Array.isArray(raw) ? raw : [];
   return [...new Set(ids)].filter(id => navEntry(id));
 };
 async function navTogglePin(id) {
   const pins = navPins();
   const next = pins.includes(id) ? pins.filter(item => item !== id) : [...pins, id];
-  await prefSet(NAV_PIN_KEY, next);
+  await prefSet(NAV_PIN_KEY, JSON.stringify(next));
   drawNav();
 }
 
@@ -9283,8 +9317,8 @@ function loadBanner() {
          giving it <span class="mono">LOKI_URL</span> and its own
          credentials. Until then the counts below are zeros because
          nothing was read, not because nothing is happening.`
-      : `Every count below is missing rather than zero. Settings >
-         Diagnostics records when the last read succeeded and when the
+      : `Every count below is missing rather than zero. System health, from the estate control
+         beneath the logo, records when the last read succeeded and when the
          last one failed.`}</div>
   </div>`;
 }
