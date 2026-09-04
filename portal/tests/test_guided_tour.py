@@ -176,7 +176,7 @@ def test_the_frozen_control_is_always_released():
     assert "tourRelease()" in end, "ending the tour has to release it"
     abort = INDEX.split("function tourAbort()", 1)[1][:300]
     assert "tourRelease()" in abort, "a session going away has to release it"
-    show = INDEX.split("async function tourShow()", 1)[1][:1400]
+    show = INDEX.split("async function tourShow()", 1)[1].split("\nfunction tourRelease()", 1)[0]
     assert "tourRelease()" in show, "each step has to release the last one"
 
 
@@ -212,3 +212,18 @@ def test_a_step_that_only_applies_in_login_mode_says_so():
     the step now carries its own condition and tourStart filters on it."""
     assert "sel: '#who', when: () => !!(AUTH && AUTH.mode === 'login' && AUTH.username)" in TOURS
     assert "TOURS[role].filter(st => !st.when || st.when())" in INDEX
+
+
+def test_the_spotlight_snaps_and_fades_rather_than_gliding():
+    """The hole is a 9999px box-shadow. Animating its position repainted the
+    whole viewport every frame, and between pages the old box visibly slid
+    across to the new target. Geometry snaps; only opacity transitions, and
+    the target is measured after an instant scroll, not part-way through a
+    smooth one."""
+    css = INDEX.split("</style>", 1)[0]
+    tour_css = css[css.index("#tour {"):css.index("/* ---- charts")]
+    assert "transition: top" not in tour_css
+    assert "transition: opacity" in tour_css
+    assert "#tour.moving #tour-ring, #tour.moving #tour-card { opacity: 0; }" in tour_css
+    assert "el.scrollIntoView({block: 'center', behavior: 'auto'});" in INDEX
+    assert "behavior: 'smooth'" not in INDEX.split("async function tourShow()", 1)[1].split("\nfunction tourRelease", 1)[0]

@@ -599,10 +599,11 @@ a.libtn:hover{border-color:var(--pri)}
   /* Clicks pass through to the real control underneath. A step that asks
      somebody to press something has to let them press it. */
   pointer-events: none;
-  transition: top .32s cubic-bezier(.4, 0, .2, 1),
-              left .32s cubic-bezier(.4, 0, .2, 1),
-              width .32s cubic-bezier(.4, 0, .2, 1),
-              height .32s cubic-bezier(.4, 0, .2, 1);
+  /* No geometry transition, deliberately. The hole is a 9999px box-shadow,
+     so sliding it repaints the whole viewport on every frame, and between
+     pages the old box visibly glided across to the new one. It snaps; the
+     ring and card fade instead, which is what reads as one step ending
+     and the next beginning. */
 }
 /* A step with nowhere to point (the welcome, the sign-off) dims the whole
    page instead of cutting a hole in the middle of it. */
@@ -610,12 +611,12 @@ a.libtn:hover{border-color:var(--pri)}
 #tour-ring {
   position: absolute; border-radius: 10px; pointer-events: none;
   border: 2px solid var(--acc); opacity: 0;
-  transition: top .32s cubic-bezier(.4, 0, .2, 1),
-              left .32s cubic-bezier(.4, 0, .2, 1),
-              width .32s cubic-bezier(.4, 0, .2, 1),
-              height .32s cubic-bezier(.4, 0, .2, 1);
+  transition: opacity .18s ease;
 }
 #tour.aimed #tour-ring { opacity: 1; }
+/* Between steps: the old spotlight fades before the page changes under
+   it, and the new one fades in where it lands. */
+#tour.moving #tour-ring, #tour.moving #tour-card { opacity: 0; }
 /* Only the steps that want a click pulse. Everywhere else it would be an
    animation asking for something the step does not want. */
 #tour.wants-click #tour-ring { animation: tour-pulse 1.6s ease-out infinite; }
@@ -630,8 +631,7 @@ a.libtn:hover{border-color:var(--pri)}
   border-radius: 12px; padding: 16px 18px 14px;
   box-shadow: 0 8px 32px rgba(8, 12, 18, .28);
   pointer-events: auto;
-  transition: top .32s cubic-bezier(.4, 0, .2, 1),
-              left .32s cubic-bezier(.4, 0, .2, 1);
+  transition: opacity .12s ease;
 }
 #tour-card.step-in { animation: tour-in .34s cubic-bezier(.2, .8, .3, 1); }
 @keyframes tour-in {
@@ -10468,6 +10468,13 @@ async function tourGo(n) {
 
 async function tourShow() {
   const st = TOUR.steps[TOUR.i];
+  const layer = document.getElementById('tour');
+  // Let the current spotlight fade before anything moves. Skipped on the
+  // first step, where there is nothing to fade.
+  if (layer.classList.contains('on') && !layer.classList.contains('plain')) {
+    layer.classList.add('moving');
+    await new Promise(r => setTimeout(r, 120));
+  }
   // The step owns where it happens, so Back works across views and a step
   // never describes a page somebody navigated away from. A step on Settings
   // owns the sub-tab too: #set-domains exists only on Fleet, so a tour taken
@@ -10496,11 +10503,14 @@ async function tourShow() {
     || (st.view && st.sel ? document.getElementById('app') : null);
   if (el && !st.click) { el.inert = true; TOUR.inert = el; }
   if (el && el.scrollIntoView) {
-    el.scrollIntoView({block: 'center', behavior: 'smooth'});
-    // Let the scroll settle before measuring, or the hole lands where the
-    // target used to be.
-    await new Promise(r => setTimeout(r, 240));
+    // Instant, not smooth: a smooth scroll was measured part-way through,
+    // so the hole landed where the target had been and then sat wrong.
+    // The page has just changed under the spotlight anyway; a jump is
+    // invisible behind the fade, a drift is not.
+    el.scrollIntoView({block: 'center', behavior: 'auto'});
   }
+  // Measure after the browser has laid the new page out.
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
   tourPaint(el, st);
   if (st.click && el) {
     // One shot, on the way down, so a nav button still does its own job.
