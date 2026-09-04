@@ -1974,16 +1974,20 @@ function windowSelect(cls) {
 }
 // A preference of the person, not a setting of the deployment, so it sits
 // with the other display choices and says so.
-function windowSettings() {
+function windowRow() {
   const dflt = Number((CFG && CFG.lookback_hours) || 168);
-  return `<div class="wcard" style="margin-bottom:10px"><h3>Reporting window</h3>
-  <dl class="kv">
-    <dt>Window</dt><dd>${windowSelect('mfield window-field')}
+  return `<dt>Reporting window${INFO}</dt><dd>${windowSelect('mfield window-field')}
+    <span class="pill p-mut">yours</span>
     <div class="src-note fnote">Every page reports over this window, and the
-    choice follows your account. The deployment default is
-    ${esc(fmtWindow(dflt))}. The Overview header carries the same control for
-    quick changes; Grafana panels keep their own time range.</div></dd>
-  </dl></div>`;
+    choice follows your account rather than the deployment. The deployment
+    default is ${esc(fmtWindow(dflt))}. The Overview header carries the same
+    control for quick changes; Grafana panels keep their own time range.</div></dd>`;
+}
+// Standalone portals have no central settings, but the window is still a
+// choice a person can make, so the card stands alone there.
+function windowSettings() {
+  return `<div class="wcard" style="margin-bottom:10px"><h3>Display</h3>
+  <dl class="kv">${windowRow()}</dl></div>`;
 }
 async function setWindow(h) {
   const dflt = Number((CFG && CFG.lookback_hours) || 168);
@@ -5454,11 +5458,14 @@ function mailSettings() {
 
 // The estate's name. Its own card rather than a row among alerting URLs:
 // it is the one setting a person sees before they have signed in.
+// One card for the two things that shape what everybody sees: the estate's
+// name and the reporting window. Two rows, not two cards.
 function orgSettings() {
-  return `<div class="wcard" style="margin-bottom:10px"><h3>Organisation</h3>
+  return `<div class="wcard" style="margin-bottom:10px"><h3>Display</h3>
   <dl class="kv">
     ${settingRow('org_name', 'Organisation name', 'Acme Ltd',
       'Names the estate: the control beneath the logo, the top bar on narrow screens and the sign-in screen all say it. It is shown before anybody signs in, so keep it to a name. Empty means the portal says "Managed estate".')}
+    ${windowRow()}
   </dl></div>`;
 }
 
@@ -6242,7 +6249,7 @@ async function settings() {
   // dispatch on here at all, and nothing to get wrong twice.
   let body;
   if (SETTAB === 'connection') body = connectionSettings();
-  else if (SETTAB === 'alerting') body = orgSettings() + windowSettings() + mailSettings() + alertingSettings();
+  else if (SETTAB === 'alerting') body = orgSettings() + mailSettings() + alertingSettings();
   else if (SETTAB === 'account') body = accountSettings();
   else if (SETTAB === 'start') body = gettingStarted();
   else { SETTAB = 'fleet'; body = fleetSettings(); }

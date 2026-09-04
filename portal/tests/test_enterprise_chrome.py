@@ -86,7 +86,7 @@ def test_the_estate_control_takes_the_organisations_name():
     assert "const name = org || kind;" in HTML
     assert "settingRow('org_name', 'Organisation name', 'Acme Ltd'," in HTML
     assert "function orgSettings()" in HTML
-    assert "body = orgSettings() + windowSettings() + mailSettings() + alertingSettings();" in HTML
+    assert "body = orgSettings() + mailSettings() + alertingSettings();" in HTML
     assert "<h4>Name the estate</h4>" in HTML
     assert "Sign in to ${esc(org)}." in HTML
     assert "if (key === 'org_name' && AUTH) { AUTH.org_name = val.trim(); showEstate(); }" in HTML
@@ -133,7 +133,7 @@ def test_the_reporting_window_is_a_control_sent_on_every_read_that_takes_one():
     assert "view === 'overview' ? windowSelect('meta-chip window-pick')" in HTML
     assert 'class="meta-chip window-label"' in HTML
     assert "function windowSettings()" in HTML
-    assert "orgSettings() + windowSettings() + mailSettings() + alertingSettings()" in HTML
+    assert "${windowRow()}" in HTML.split("function orgSettings()", 1)[1][:700]
     assert "[2160, '90 days']" in HTML  # the server's ceiling, le=24*90
 
 
