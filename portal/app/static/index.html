@@ -7610,7 +7610,21 @@ function budgetCard(sub) {
 
 function budgetImport() {
   const parsed = BCSV && BCSV.parsed;
-  return `<h2>Import users — ${esc(BCSV.tool_id)}</h2>
+  // Which plan these people are on. Known when the import was opened from
+  // a plan's card or straight after linking; asked for when it is not and
+  // the tool has more than one, because the receiver will not guess.
+  const plans = (BUDGET && BUDGET.subscriptions || [])
+    .filter(x => x.tool_id === BCSV.tool_id);
+  const plan = plans.find(x => (x.plan_key || 'default') === BCSV.plan_key);
+  if (!BCSV.plan_key && plans.length === 1) BCSV.plan_key = plans[0].plan_key || 'default';
+  const askPlan = !BCSV.plan_key && plans.length > 1;
+  return `<h2>Import users — ${esc(BCSV.tool_id)}${plan && plan.plan ? ` · ${esc(plan.plan)}` : ''}</h2>
+  ${askPlan ? `<div class="note">${esc(BCSV.tool_id)} has ${plans.length} plans.
+    <label style="margin-left:6px">Import these people into
+      <select id="b-csv-plan" class="mfield" style="min-width:160px;display:inline-block;width:auto;margin-left:6px">
+        <option value="">choose a plan…</option>
+        ${plans.map(x => `<option value="${esc(x.plan_key || 'default')}">${esc(x.plan || x.plan_key || 'default')}</option>`).join('')}
+      </select></label></div>` : ''}
   <p class="lede">Paste the member export from the vendor's admin page
   (ChatGPT Business: Workspace settings → Members; Claude: Organization
   settings → Members, which exports name / email / role / status / seat
@@ -7624,7 +7638,7 @@ function budgetImport() {
   <div style="margin-top:8px;display:flex;gap:6px">
     <button class="mini" data-act="b-csv-parse">Preview</button>
     <button class="mini" data-act="b-csv-cancel">Cancel</button>
-    ${parsed && parsed.members.length ? `<button class="mini" data-act="b-csv-save">import ${parsed.members.length} members</button>` : ''}
+    ${parsed && parsed.members.length && !askPlan ? `<button class="mini" data-act="b-csv-save">import ${parsed.members.length} members</button>` : ''}
   </div>
   ${parsed ? `${parsed.headerless ? `<p class="src-note" style="color:var(--warn)">These
     rows carry more columns than the addresses, but with no header line to
@@ -7977,22 +7991,35 @@ async function budgetAction(act, el) {
       seat_tiers: w.tiers || []});
     if (!r) return;
     if (!r.ok) { BMSG = 'Not saved: ' + await _refusal(r); render(); return; }
+    // A new plan has no key until the receiver derives one from its name,
+    // and the receiver answers the save with the whole budget. Read the key
+    // back from there: the connection, the first sync and the CSV import
+    // that follow all name the plan, and the receiver refuses to guess once
+    // a tool has two - which is exactly when a second plan is being added.
+    let pk = w.plan_key || '';
+    try {
+      const saved = await r.json();
+      const mine = (saved.subscriptions || []).find(x => x.tool_id === w.tool_id
+        && (pk ? (x.plan_key || 'default') === pk
+               : (x.plan || '') === (w.plan || '')));
+      if (mine) pk = mine.plan_key || 'default';
+    } catch (e) { /* the wizard's own value is the fallback */ }
     if (w.source === 'api' && w.api_key) {
       r = await post('/api/budget/connection', {
-        tool_id: w.tool_id, plan_key: w.plan_key || '',
+        tool_id: w.tool_id, plan_key: pk,
         provider: w.provider, api_key: w.api_key});
       if (!r) return;
       if (!r.ok) { BMSG = 'Subscription saved, but the connection was refused: '
         + await _refusal(r); BUDGET = null; BWIZ = null; render(); return; }
       const s = await post('/api/budget/sync',
-                           {tool_id: w.tool_id, plan_key: w.plan_key || ''});
+                           {tool_id: w.tool_id, plan_key: pk});
       if (!s) return;
       const out = s.ok ? await s.json() : {ok: false, detail: await _refusal(s)};
       BMSG = out.ok ? `Linked. Synced ${out.count} members from the vendor.`
         : 'Linked, but the first sync failed: ' + out.detail;
     } else if (w.source === 'csv' && !w.editing) {
       BWIZ = null; BUDGET = null;
-      BCSV = {tool_id: w.tool_id, plan_key: w.plan_key || '',
+      BCSV = {tool_id: w.tool_id, plan_key: pk,
               text: '', parsed: null};
       BMSG = '';
       render(); return;
@@ -9797,6 +9824,12 @@ app.addEventListener('change', e => {
   if (e.target && e.target.id === 'bw-tool' && BWIZ) {
     BWIZ.tool_id = e.target.value;
     BWIZ.covers = null;
+    render();
+  }
+  if (e.target && e.target.id === 'b-csv-plan' && BCSV) {
+    BCSV.plan_key = e.target.value;
+    // The pasted text survives the re-render; the preview is rebuilt from it.
+    BCSV.text = (document.getElementById('b-csv') || {}).value || BCSV.text;
     render();
   }
 });

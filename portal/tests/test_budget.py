@@ -272,3 +272,29 @@ def test_the_budget_page_lists_providers_as_a_list_not_a_chain():
     what applies to the tool being linked."""
     assert "ChatGPT Business has no admin API on that plan" not in INDEX
     assert "labels.slice(0, -1).join(', ')" in INDEX
+
+
+def test_a_new_plan_hands_its_key_to_what_follows():
+    """Linking a second plan on a tool with "CSV" as the source opened the
+    import with no plan key: the wizard passed on its own empty one, and the
+    receiver - rightly - refuses to guess between two plans. The wizard now
+    reads the key the receiver derived back from the save's answer and hands
+    it to the connection, the first sync and the import alike."""
+    html = (main.STATIC / "index.html").read_text()
+    save = html.split("if (act === 'b-save') {", 1)[1].split("if (act === 'b-sync')", 1)[0]
+    assert "const mine = (saved.subscriptions || []).find(x => x.tool_id === w.tool_id" in save
+    assert "if (mine) pk = mine.plan_key || 'default';" in save
+    assert "plan_key: w.plan_key || ''" not in save.split("let pk =", 1)[1]
+    assert save.count("plan_key: pk") == 3
+
+
+def test_the_import_asks_which_plan_when_it_does_not_know():
+    """The screen names the plan it is importing into, and when it has no key
+    on a tool with several plans it asks rather than letting the import fail
+    with the receiver's refusal after the paste."""
+    html = (main.STATIC / "index.html").read_text()
+    view = html.split("function budgetImport() {", 1)[1].split("\nfunction ", 1)[0]
+    assert "const askPlan = !BCSV.plan_key && plans.length > 1;" in view
+    assert 'id="b-csv-plan"' in view
+    assert "parsed.members.length && !askPlan" in view
+    assert "e.target.id === 'b-csv-plan' && BCSV" in html
