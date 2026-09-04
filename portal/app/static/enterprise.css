@@ -120,7 +120,7 @@ aside{background:linear-gradient(180deg,var(--side),#0c1527)}
 .tenant-switch{margin:13px 12px 8px;padding:10px 11px;background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.09);min-height:50px}
 .tenant-avatar{width:29px;height:29px;flex-basis:29px;background:linear-gradient(145deg,#24415d,#116c68);color:#c9fff0;font-size:11px}.tenant-copy b{font-size:12px}.tenant-copy span{font-size:9.5px}.estate-dot{display:inline-block;width:5px;height:5px;border-radius:50%;background:#46d59e;margin-right:4px;box-shadow:0 0 0 2px rgba(70,213,158,.12)}.estate-dot.off{background:#8a97a8;box-shadow:0 0 0 2px rgba(138,151,168,.14)}.estate-dot.warn{background:#f0a840;box-shadow:0 0 0 2px rgba(240,168,64,.16)}
 aside nav{padding:7px 10px 16px}.nav-area-block{padding:4px 0;border-top:1px solid var(--side-line)}
-.nav-area-block:first-child{border-top:0}.nav-area-trigger{min-height:39px;padding:8px 10px;
+.nav-area-block:first-child{border-top:0}.nav-pinned+.nav-area-block{border-top:0}.nav-area-trigger{min-height:39px;padding:8px 10px;
   margin:0;font-size:12px;font-weight:630;color:var(--side-mut)}
 .nav-area-trigger.current{color:#eaf1fa}.nav-area-trigger svg{color:#8090a7}
 .nav-area-trigger.current svg,.nav-area-trigger.on svg{color:#72dfc8}
@@ -733,3 +733,32 @@ body.auth .licard{width:100%}
 @media(max-width:600px){.health-summary>dl{grid-template-columns:1fr}.health-summary>dl>div{border-left:0;border-top:1px solid var(--bd)}
   .health-facts{grid-template-columns:1fr}.health-deployment dl{grid-template-columns:1fr}.health-card,.health-activity{padding-left:14px;padding-right:14px}
   .health-activity{padding:0}.health-activity .health-card-head{padding-left:14px;padding-right:14px}}
+
+/* ---- the reporting window control, in every view header ------------- */
+.window-pick{cursor:pointer;gap:5px}
+.window-pick span{color:var(--mut)}
+.window-pick select{font:inherit;font-size:10.5px;font-weight:650;color:var(--fg);background:transparent;border:0;outline:0;cursor:pointer;padding:0;margin:0}
+.window-pick select:focus-visible{outline:2px solid var(--acc);outline-offset:2px;border-radius:3px}
+.window-pick option{color:#111;background:#fff}
+
+/* ---- the finder under the search box --------------------------------- */
+.search{position:relative}
+#qresults{position:absolute;left:-1px;right:-1px;top:calc(100% + 6px);z-index:70;padding:6px;max-height:60vh;overflow:auto;
+  background:var(--pop);border:1px solid var(--pop-bd);border-radius:9px;box-shadow:var(--pop-shadow)}
+#qresults[hidden]{display:none}
+.qr-head{padding:4px 9px 6px;font-size:8.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--mut)}
+.qr-item{display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:7px 9px;border:0;border-radius:6px;
+  background:transparent;color:var(--fg);font:inherit;font-size:12px;font-weight:600;cursor:pointer}
+.qr-item:hover,.qr-item:focus-visible{background:var(--sf2);outline:0}
+.qr-kind{margin-left:auto;font-size:8.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--mut)}
+.qr-none{padding:6px 9px 8px;font-size:11.5px;color:var(--mut)}
+
+/* ---- print: the page, not the chrome; ink on paper ------------------- */
+@media print{
+  aside,.topbar,.view-meta,#tour,#qresults,.tabrow,.nav-pinned{display:none!important}
+  .shell,.shell.collapsed{display:block!important}
+  main#app,main#app *{color:#111!important;background:transparent!important;box-shadow:none!important;text-shadow:none!important}
+  main#app .wcard,main#app table,main#app .gcard,main#app .executive-posture,main#app .evidence-summary,
+  main#app .health-card,main#app .health-summary,main#app .register-overview,main#app .tcard{background:#fff!important;border:1px solid #bbb!important}
+  main#app .pill{border:1px solid #999!important}
+}

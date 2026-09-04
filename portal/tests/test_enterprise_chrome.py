@@ -99,3 +99,49 @@ def test_the_pin_button_does_not_wear_the_current_page_marker():
     assert "class=\"nav-pin ${isPinned ? 'pinned' : ''}\"" in HTML
     assert ".nav-pin.on" not in CSS
     assert ".nav-pin.pinned" in CSS
+
+
+def test_export_pdf_is_reachable_from_every_page_that_offers_it():
+    """The Overview and Evidence centre buttons carry data-act=evidence-print.
+    The handler sat in budgetAction, which managedAction only enters for
+    acts starting with b-, so both buttons did nothing."""
+    head = HTML.split("async function managedAction(act, el) {", 1)[1][:600]
+    assert "if (act === 'evidence-print') { window.print(); return; }" in head
+    assert "if (act.startsWith('b-')) return budgetAction(act, el);" in head
+    assert HTML.count('data-act="evidence-print"') == 2
+
+
+def test_the_reporting_window_is_a_control_sent_on_every_read_that_takes_one():
+    """Six reads accept hours and cache per window; the page sends the chosen
+    window on each of them and on the two downloads, and labels derive from
+    the same value, so no page reports a different 'now'."""
+    assert "let HOURS = null;" in HTML
+    assert "const hq = sep => HOURS ? (sep || '?') + 'hours=' + HOURS : '';" in HTML
+    assert "fetch('/api/graph' + q + hq(q ? '&' : '?'))" in HTML
+    assert HTML.count("fetch('/api/status' + hq())") == 1
+    assert HTML.count("fetch('/api/paste-guard' + hq())") == 2
+    assert HTML.count("fetch('/api/agentic' + hq())") == 2
+    assert HTML.count("fetch('/api/register' + hq())") == 2
+    assert HTML.count("fetch('/api/evidence' + hq())") == 1
+    assert "href=\"/api/register?fmt=csv${hq('&')}\"" in HTML
+    assert "href=\"/api/evidence?download=true${hq('&')}\"" in HTML
+    assert "CFG.lookback_hours || 168" not in HTML.split("const hoursNow", 1)[1]
+    assert "<select data-window" in HTML
+    assert "const el = e.target.closest('[data-window]');" in HTML
+    assert "[2160, '90 days']" in HTML  # the server's ceiling, le=24*90
+
+
+def test_the_search_box_is_a_finder_everywhere():
+    """It filtered the views that call match() and did nothing on the rest,
+    which reads as broken. It still filters those, says so, and on every
+    view offers pages, tools, devices, people and MCP servers to jump to."""
+    assert 'id="qresults"' in HTML
+    assert "function qMatches()" in HTML and "function qResults()" in HTML
+    assert "render(); qResults(); };" in HTML
+    for kind in ("'page'", "'tool'", "'device'", "'person'", "'mcp'"):
+        assert "kind: " + kind in HTML, kind
+    assert "#qresults{position:absolute" in CSS
+
+
+def test_one_divider_under_the_pinned_list():
+    assert ".nav-pinned+.nav-area-block{border-top:0}" in CSS

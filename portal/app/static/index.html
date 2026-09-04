@@ -980,8 +980,10 @@ a.libtn:hover{border-color:var(--pri)}
       <span class="top-context"><b id="topctx-name">Portal</b><span id="topctx-sub">Checking sources…</span></span>
       <div class="search">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.8-3.8"/></svg>
-        <input id="q" placeholder="Search this view…">
+        <input id="q" placeholder="Search this view, or jump to a page, tool or device…"
+          autocomplete="off" aria-autocomplete="list" aria-controls="qresults">
         <span class="search-key" aria-hidden="true">/</span>
+        <div id="qresults" role="listbox" hidden></div>
       </div>
       <span class="live-state"><span id="freshness" class="mono"></span></span>
       <button id="refresh" class="back" style="margin:0">Refresh</button>
@@ -1545,14 +1547,15 @@ async function load(force) {
     // Its own try as well: failing to read a preference is a reason to
     // fall back to the browser copy, never a reason to lose the page.
     try { await prefsLoad(); } catch (e) { /* prefsLoad has its own fallback */ }
-    const gr = await fetch('/api/graph' + q);
+    HOURS = windowPref();
+    const gr = await fetch('/api/graph' + q + hq(q ? '&' : '?'));
     if (!gr.ok) throw new Error((await gr.json()).detail || gr.statusText);
     G = await gr.json();
-    const sr = await fetch('/api/status');
+    const sr = await fetch('/api/status' + hq());
     if (sr.ok) S = await sr.json();
     // Fetched here rather than lazily, because the overview may draw a paste
     // guard widget and a widget that fetches on render would flash empty.
-    const pr = await fetch('/api/paste-guard');
+    const pr = await fetch('/api/paste-guard' + hq());
     if (pr.ok) PG = await pr.json();
     // The recorded answers to findings (acknowledged / accepted), managed
     // mode only. Failure leaves PSTAT null and every row simply reads open.
@@ -1584,14 +1587,14 @@ async function load(force) {
     // The agentic tile needs its own read, and only when it is on the page.
     if ((CFG.overview_widgets || []).some(w => w.kind === 'agentic') && !AGENTIC) {
       try {
-        const ar = await fetch('/api/agentic');
+        const ar = await fetch('/api/agentic' + hq());
         if (ar.ok) AGENTIC = await ar.json();
       } catch (e) { /* the tile says it has not been read */ }
     }
     // Same again for the review queue: it draws from the register, and in
     // managed mode from the discovery candidates queue too.
     if ((CFG.overview_widgets || []).some(w => w.kind === 'review_queue')) {
-      const rr = await fetch('/api/register');
+      const rr = await fetch('/api/register' + hq());
       if (rr.ok) REG = await rr.json();
       if (CFG.managed && CFG.managed.enabled && AUTH && AUTH.mode === 'login') {
         const cq = await mfetch('/api/candidates');
@@ -1822,7 +1825,7 @@ function showEstate() {
   const kind = managed ? 'Managed estate' : 'Standalone portal';
   const name = org || kind;
   const rep = S ? (S.reporting || 0) : 0, total = S ? (S.total || 0) : 0;
-  const hours = CFG && CFG.lookback_hours ? CFG.lookback_hours + 'h' : 'the lookback window';
+  const hours = hoursNow() + 'h';
   let state, text, sub, title;
   if (loadError || !G) {
     state = 'warn'; text = 'Data unavailable'; sub = 'Last read failed';
@@ -1939,6 +1942,30 @@ if (BOOT.view === 'settings' && !BOOT.tab) {
   history.replaceState(null, '', frag('settings'));
 }
 let view = BOOT.view, detail = null, filter = '';
+// The reporting window. Null means the deployment's LOOKBACK_HOURS; a
+// choice is kept as a preference and sent on every read that accepts one
+// (the server caches per window), so every page agrees on what "now" is.
+// Ninety days is the server's ceiling.
+let HOURS = null;
+const WINDOWS = [[24, '24 hours'], [72, '3 days'], [168, '7 days'],
+                 [336, '14 days'], [720, '30 days'], [2160, '90 days']];
+const hoursNow = () => Number(HOURS || (CFG && CFG.lookback_hours) || 168);
+const hq = sep => HOURS ? (sep || '?') + 'hours=' + HOURS : '';
+const windowPref = () => {
+  const v = Number(pref('window.hours', ''));
+  return v > 0 && v <= 2160 ? v : null;
+};
+const fmtWindow = h => h >= 24 && h % 24 === 0
+  ? (h === 24 ? '24 hours' : Math.round(h / 24) + ' days') : h + ' hours';
+async function setWindow(h) {
+  const dflt = Number((CFG && CFG.lookback_hours) || 168);
+  HOURS = h === dflt ? null : h;
+  await prefSet('window.hours', HOURS ? String(HOURS) : null);
+  // Everything read for the old window is stale, including the views that
+  // fetch on first render.
+  REG = null; EV = null; PG = null; AGENTIC = null;
+  await load();
+}
 
 // Escapes the five characters that matter in HTML text and in a quoted
 // attribute. The apostrophe was missing, and it mattered: values were
@@ -3116,7 +3143,7 @@ function personal() {
     <td style="color:var(--mut)">${esc((r.sources||[]).join(', ')) || '—'}</td>
     ${lifecycle ? `<td class="nw">${paChip(paStatus(r))} ${paActions(r)}</td>` : ''}
   </tr>`).join('')}</table></div>`
-  : `<p class="lede">None seen in the last ${CFG.lookback_hours || '?'} hours.
+  : `<p class="lede">None seen in the last ${hoursNow()} hours.
   Worth trusting only if the sources on the Setup page are reporting.</p>`}`;
 }
 
@@ -3645,7 +3672,7 @@ function watchlistBlock(observedIds) {
 async function register() {
   if (!REG) {
     try {
-      const r = await fetch('/api/register');
+      const r = await fetch('/api/register' + hq());
       if (!r.ok) {
         if (r.status === 401 && AUTH && AUTH.mode === 'login') { sessionLost(); return ''; }
         // An error body parses as JSON too; storing it as REG rendered a
@@ -3852,7 +3879,7 @@ async function register() {
     <div><strong>Governance queue</strong><span>${rows.length} of
       ${allRows.length} observed tools · undecided tools appear first</span></div>
     <span class="register-legend"><i class="queue"></i>needs a decision</span>
-    <a class="reg-export" href="/api/register?fmt=csv">Download CSV</a>
+    <a class="reg-export" href="/api/register?fmt=csv${hq('&')}">Download CSV</a>
   </div>
 
   ${rows.length ? `<div class="register-list">
@@ -3897,7 +3924,7 @@ async function register() {
 
 async function paste() {
   if (!PG) {
-    try { PG = await (await fetch('/api/paste-guard')).json(); }
+    try { PG = await (await fetch('/api/paste-guard' + hq())).json(); }
     catch (e) { return `<h2>Paste guard</h2><div class="note">Could not read
       paste guard activity: ${esc(String(e.message || e))}</div>`; }
   }
@@ -3962,7 +3989,7 @@ async function paste() {
 
 async function iso() {
   if (!EV) {
-    try { EV = await (await fetch('/api/evidence')).json(); }
+    try { EV = await (await fetch('/api/evidence' + hq())).json(); }
     catch (e) { return `<h2>ISO/IEC 42001 evidence</h2><div class="note">Could
       not build the evidence index: ${esc(String(e.message || e))}</div>`; }
   }
@@ -4054,7 +4081,7 @@ async function iso() {
       <p>Generated on demand from the current window and protected with a checksum.</p>
       <div class="evidence-actions">
         <button class="mini evidence-print" type="button" data-act="evidence-print">Export PDF</button>
-        <a class="mini evidence-download" href="/api/evidence?download=true">Download JSON</a>
+        <a class="mini evidence-download" href="/api/evidence?download=true${hq('&')}">Download JSON</a>
       </div>
     </div>
     <dl>
@@ -7668,7 +7695,7 @@ function budgetReport() {
   const subs = BUDGET.subscriptions || [];
   const spendParts = bSpendParts(subs);
   const conv = bConverted(subs);
-  const hours = CFG.lookback_hours || 168;
+  const hours = hoursNow();
   const days = Math.round(hours / 24);
   const stamp = new Date().toISOString().replace('T', ' ').slice(0, 16);
   const who = e => BRNAMES ? esc(e) : '<span style="color:var(--mut)">withheld</span>';
@@ -7912,7 +7939,6 @@ async function budgetAction(act, el) {
   }
   if (act === 'b-report-names') { BRNAMES = !BRNAMES; render(); return; }
   if (act === 'b-report-print') { window.print(); return; }
-  if (act === 'evidence-print') { window.print(); return; }
   if (act === 'b-report-csv') {
     const stamp = new Date().toISOString().slice(0, 10);
     const blob = new Blob([budgetCsv()], {type: 'text/csv;charset=utf-8'});
@@ -8104,6 +8130,10 @@ async function reloadDerived() {
 }
 
 async function managedAction(act, el) {
+  // Browser print, which is where "save as PDF" lives. Handled here, not in
+  // the budget branch below: the Overview and Evidence buttons carry this
+  // act too, and a handler only reachable from Budget left them inert.
+  if (act === 'evidence-print') { window.print(); return; }
   if (act.startsWith('b-')) return budgetAction(act, el);
   if (act === 'id-download') {
     window.location = '/api/suggest-identities?fmt=csv';
@@ -9359,7 +9389,7 @@ function loadBanner() {
 let AGENTIC = null;
 async function agentic() {
   if (!AGENTIC) {
-    const r = await fetch('/api/agentic');
+    const r = await fetch('/api/agentic' + hq());
     if (!r.ok) return `<h2>Agentic AI</h2><p class="lede">${
       esc((await r.json().catch(() => ({}))).detail || r.statusText)}</p>`;
     AGENTIC = await r.json();
@@ -9638,14 +9668,19 @@ function decorateView() {
   head.appendChild(title);
   title.appendChild(h);
   if (lede) title.appendChild(lede);
-  const hours = Number(CFG.lookback_hours || 168);
-  const windowLabel = hours >= 24 && hours % 24 === 0
-    ? Math.round(hours / 24) + '-day window' : hours + '-hour window';
+  // The window is a control, not a badge: every count on the page is for
+  // it, and the choice follows the person to every other page.
+  const hours = hoursNow();
+  const dflt = Number((CFG && CFG.lookback_hours) || 168);
+  const choices = WINDOWS.some(w => w[0] === dflt) ? WINDOWS
+    : [[dflt, fmtWindow(dflt)]].concat(WINDOWS).sort((a, b) => a[0] - b[0]);
   const meta = document.createElement('div');
   meta.className = 'view-meta';
-  const overviewWindow = hours >= 24 && hours % 24 === 0
-    ? Math.round(hours / 24) + ' days' : hours + ' hours';
-  meta.innerHTML = `<span class="meta-chip">${esc(view === 'overview' ? overviewWindow : windowLabel)}</span>`
+  meta.innerHTML = `<label class="meta-chip window-pick"
+      title="Every count on this page is for this window. The deployment default is ${esc(fmtWindow(dflt))}; Grafana panels keep their own time range.">
+      <span>Window</span><select data-window aria-label="Reporting window">${
+        choices.map(([h, l]) => `<option value="${h}"${h === hours ? ' selected' : ''}>${esc(l)}${
+          h === dflt ? ' · default' : ''}</option>`).join('')}</select></label>`
     + (view === 'overview'
       ? `<button class="mini meta-export" type="button" data-act="evidence-print">Export PDF</button>`
       : '');
@@ -9850,6 +9885,12 @@ app.addEventListener('drop', e => {
   render();
 });
 
+// The reporting window, drawn into every view's header by decorateView.
+app.addEventListener('change', e => {
+  const el = e.target.closest('[data-window]');
+  if (el) setWindow(Number(el.value));
+});
+
 // The Settings sub-tabs, delegated like everything else in #app.
 app.addEventListener('click', e => {
   const el = e.target.closest('[data-settab]');
@@ -9930,7 +9971,80 @@ app.addEventListener('keydown', e => {
   const btn = app.querySelector('[data-act="do-login"],[data-act="do-setup"]');
   if (btn) btn.click();
 });
-q.oninput = e => { filter = e.target.value.toLowerCase(); detail = null; render(); };
+q.oninput = e => { filter = e.target.value.toLowerCase(); detail = null; render(); qResults(); };
+
+// The box filters the list on views that have one, and on every view it is
+// a finder: pages by name, tools, devices, people and MCP servers from the
+// current read. Before this it silently did nothing on the Overview, which
+// reads as broken rather than as "nothing to filter here".
+const FILTERED_VIEWS = ['overview', 'tools', 'people', 'devices', 'personal',
+                        'mcp', 'register', 'paste'];
+function qMatches() {
+  const f = filter.trim();
+  if (!f) return [];
+  const hit = v => String(v || '').toLowerCase().includes(f);
+  const out = [];
+  for (const sec of NAV) for (const [id, label] of sec.items) {
+    const shown = NAVNAMES[id] || label;
+    if (hit(shown)) out.push({kind: 'page', label: shown, go: () => navGo(sec.id, id)});
+  }
+  if (G) {
+    for (const id of Object.keys(G.tools || {}))
+      if (hit(id)) out.push({kind: 'tool', label: id, go: () => open_('tool', id)});
+    for (const [id, d] of ents(G.devices))
+      if (hit(id) || hit(d.device_name))
+        out.push({kind: 'device', label: d.device_name || id, go: () => open_('device', id)});
+    for (const id of Object.keys(G.identities || {}))
+      if (hit(id)) out.push({kind: 'person', label: id, keep: true,
+                             go: () => navGo('inventory', 'people')});
+    for (const m of (G.mcp_servers || []))
+      if (hit(m.server)) out.push({kind: 'mcp', label: m.server, go: () => open_('mcp', m.server)});
+  }
+  return out.slice(0, 8);
+}
+function qGo(i) {
+  const m = qMatches()[i];
+  if (!m) return;
+  // A person opens the People list filtered to them; everything else lands
+  // on its own page or drawer, so the filter would only hide things there.
+  if (!m.keep) { q.value = ''; filter = ''; }
+  const box = document.getElementById('qresults');
+  box.hidden = true;
+  m.go();
+  if (!m.keep) render();
+}
+function qResults() {
+  const box = document.getElementById('qresults');
+  if (!box) return;
+  if (!filter.trim()) { box.hidden = true; box.innerHTML = ''; return; }
+  const name = (navEntry(view) || {}).label || NAVNAMES[view] || 'This page';
+  const filtering = FILTERED_VIEWS.includes(view);
+  const found = qMatches();
+  box.innerHTML = `<div class="qr-head">${esc(filtering
+      ? 'Filtering ' + name : name + ' has no list to filter')}</div>`
+    + (found.length ? found.map((m, i) => `<button type="button" class="qr-item"
+        role="option" data-qgo="${i}"><span>${esc(m.label)}</span>
+        <span class="qr-kind">${esc(m.kind)}</span></button>`).join('')
+      : '<div class="qr-none">Nothing else matches</div>');
+  box.hidden = false;
+}
+document.getElementById('qresults').addEventListener('mousedown', e => {
+  const el = e.target.closest('[data-qgo]');
+  if (!el) return;
+  e.preventDefault();
+  qGo(Number(el.getAttribute('data-qgo')));
+});
+q.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); qGo(0); }
+  if (e.key === 'Escape') {
+    q.value = ''; filter = ''; render(); qResults(); q.blur();
+  }
+});
+q.addEventListener('focus', qResults);
+q.addEventListener('blur', () => setTimeout(() => {
+  const box = document.getElementById('qresults');
+  if (box) box.hidden = true;
+}, 150));
 document.getElementById('refresh').onclick = () => load(true);
 const mobileNav = document.getElementById('mobile-nav');
 if (mobileNav) mobileNav.onclick = () => document.body.classList.toggle('nav-open');
