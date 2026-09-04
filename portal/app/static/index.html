@@ -6824,7 +6824,8 @@ function parseUsersCsv(text) {
   // and jane@example.com's cell.
   const hasHeader = !head.some(h => B_EMAIL_RE.test(h));
   const col = names => head.findIndex(h => names.some(n => h.includes(n)));
-  let iEmail, iName = -1, iRole = -1, iTier = -1;
+  let iEmail, iName = -1, iRole = -1, iTier = -1, guessed = false;
+  const ignored = [];
   if (hasHeader) {
     iEmail = col(['email', 'e-mail', 'mail']);
     iName = col(['name', 'member', 'user']);
@@ -6833,14 +6834,37 @@ function parseUsersCsv(text) {
     if (iEmail < 0) return {members: [], skipped: lines.length};
   } else {
     // No header: the email column is wherever the first row keeps its
-    // address.
-    iEmail = Math.max(0, row(lines[0]).findIndex(c => B_EMAIL_RE.test(c)));
+    // address. The other columns are named from what they hold, because
+    // "jane@corp.example,member,max 5" is the common paste and dropping
+    // "member" and "max 5" from it reads as a broken import. A column
+    // whose every value is a role word is the role; one whose values are
+    // account states is a status and is ignored; when exactly one column
+    // is left, it is the seat tier. Anything less certain is left unread
+    // and said so, rather than guessed.
+    const rows = lines.map(row);
+    iEmail = Math.max(0, rows[0].findIndex(c => B_EMAIL_RE.test(c)));
+    const width = Math.max(...rows.map(r => r.length));
+    const isRole = /^(owner|admin|administrator|member|members|user|users|viewer|guest|billing|manager|editor)$/i;
+    const isStatus = /^(active|inactive|invited|pending|suspended|deactivated|disabled|enabled)$/i;
+    const spare = [];
+    for (let c = 0; c < width; c++) {
+      if (c === iEmail) continue;
+      const vals = rows.map(r => (r[c] || '').trim()).filter(Boolean);
+      if (!vals.length) continue;
+      if (iRole < 0 && vals.every(v => isRole.test(v))) iRole = c;
+      else if (vals.every(v => isStatus.test(v))) ignored.push(c);
+      else spare.push(c);
+    }
+    if (spare.length === 1) iTier = spare[0];
+    guessed = iRole >= 0 || iTier >= 0;
   }
   const members = []; let skipped = 0, extra = 0;
   const seen = new Set();
   lines.slice(hasHeader ? 1 : 0).forEach(l => {
     const cells = row(l);
-    if (!hasHeader) extra = Math.max(extra, cells.filter(c => c).length - 1);
+    // Columns beyond the ones the paste could name.
+    if (!hasHeader) extra = Math.max(extra, cells.filter((c, i) => c && i !== iEmail
+      && i !== iRole && i !== iTier && !ignored.includes(i)).length);
     const email = (cells[iEmail] || '').toLowerCase();
     if (!B_EMAIL_RE.test(email) || seen.has(email)) { skipped++; return; }
     seen.add(email);
@@ -6862,7 +6886,7 @@ function parseUsersCsv(text) {
           // a delimiter mismatch over a support thread is slower than the
           // page just saying what it decided.
           map: {delim: delim === '\t' ? 'tabs' : delim === ';' ? 'semicolons' : 'commas',
-                header: hasHeader,
+                header: hasHeader, guessed,
                 cols: {email: iEmail, name: iName, role: iRole, tier: iTier}}};
 }
 
@@ -7610,7 +7634,21 @@ function budgetCard(sub) {
 
 function budgetImport() {
   const parsed = BCSV && BCSV.parsed;
-  return `<h2>Import users — ${esc(BCSV.tool_id)}</h2>
+  // Which plan these people are on. Known when the import was opened from
+  // a plan's card or straight after linking; asked for when it is not and
+  // the tool has more than one, because the receiver will not guess.
+  const plans = (BUDGET && BUDGET.subscriptions || [])
+    .filter(x => x.tool_id === BCSV.tool_id);
+  const plan = plans.find(x => (x.plan_key || 'default') === BCSV.plan_key);
+  if (!BCSV.plan_key && plans.length === 1) BCSV.plan_key = plans[0].plan_key || 'default';
+  const askPlan = !BCSV.plan_key && plans.length > 1;
+  return `<h2>Import users — ${esc(BCSV.tool_id)}${plan && plan.plan ? ` · ${esc(plan.plan)}` : ''}</h2>
+  ${askPlan ? `<div class="note">${esc(BCSV.tool_id)} has ${plans.length} plans.
+    <label style="margin-left:6px">Import these people into
+      <select id="b-csv-plan" class="mfield" style="min-width:160px;display:inline-block;width:auto;margin-left:6px">
+        <option value="">choose a plan…</option>
+        ${plans.map(x => `<option value="${esc(x.plan_key || 'default')}">${esc(x.plan || x.plan_key || 'default')}</option>`).join('')}
+      </select></label></div>` : ''}
   <p class="lede">Paste the member export from the vendor's admin page
   (ChatGPT Business: Workspace settings → Members; Claude: Organization
   settings → Members, which exports name / email / role / status / seat
@@ -7624,18 +7662,18 @@ function budgetImport() {
   <div style="margin-top:8px;display:flex;gap:6px">
     <button class="mini" data-act="b-csv-parse">Preview</button>
     <button class="mini" data-act="b-csv-cancel">Cancel</button>
-    ${parsed && parsed.members.length ? `<button class="mini" data-act="b-csv-save">import ${parsed.members.length} members</button>` : ''}
+    ${parsed && parsed.members.length && !askPlan ? `<button class="mini" data-act="b-csv-save">import ${parsed.members.length} members</button>` : ''}
   </div>
-  ${parsed ? `${parsed.headerless ? `<p class="src-note" style="color:var(--warn)">These
-    rows carry more columns than the addresses, but with no header line to
-    name them only the emails can be kept. Paste again with the header row
-    included (e.g. name, email, role, seat tier) and role and seat tier
-    come through.</p>` : ''}
+  ${parsed ? `${parsed.headerless ? `<p class="src-note" style="color:var(--warn)">Some
+    columns in these rows could not be named from their values, and with no
+    header line they are left out. Paste again with the header row included
+    (e.g. name, email, role, seat tier) and every column comes through.</p>` : ''}
     ${parsed.missing && parsed.missing.tier ? `<p class="src-note" style="color:var(--warn)">No
     seat/tier column recognised in the header, so seat tiers will import
     empty and the tier table cannot count these users against seats.</p>` : ''}
     ${parsed.map ? `<p class="src-note">Read as: ${parsed.map.delim},
-    ${parsed.map.header ? 'header row found' : 'no header row'};
+    ${parsed.map.header ? 'header row found' : parsed.map.guessed
+      ? 'no header row, columns named from their values' : 'no header row'};
     ${ents(parsed.map.cols).map(([f, i]) =>
       `${f === 'tier' ? 'seat tier' : f} ${i >= 0 ? ordinal(i + 1) + ' column' : 'not found'}`)
       .join(', ')}.</p>` : ''}
@@ -7977,22 +8015,35 @@ async function budgetAction(act, el) {
       seat_tiers: w.tiers || []});
     if (!r) return;
     if (!r.ok) { BMSG = 'Not saved: ' + await _refusal(r); render(); return; }
+    // A new plan has no key until the receiver derives one from its name,
+    // and the receiver answers the save with the whole budget. Read the key
+    // back from there: the connection, the first sync and the CSV import
+    // that follow all name the plan, and the receiver refuses to guess once
+    // a tool has two - which is exactly when a second plan is being added.
+    let pk = w.plan_key || '';
+    try {
+      const saved = await r.json();
+      const mine = (saved.subscriptions || []).find(x => x.tool_id === w.tool_id
+        && (pk ? (x.plan_key || 'default') === pk
+               : (x.plan || '') === (w.plan || '')));
+      if (mine) pk = mine.plan_key || 'default';
+    } catch (e) { /* the wizard's own value is the fallback */ }
     if (w.source === 'api' && w.api_key) {
       r = await post('/api/budget/connection', {
-        tool_id: w.tool_id, plan_key: w.plan_key || '',
+        tool_id: w.tool_id, plan_key: pk,
         provider: w.provider, api_key: w.api_key});
       if (!r) return;
       if (!r.ok) { BMSG = 'Subscription saved, but the connection was refused: '
         + await _refusal(r); BUDGET = null; BWIZ = null; render(); return; }
       const s = await post('/api/budget/sync',
-                           {tool_id: w.tool_id, plan_key: w.plan_key || ''});
+                           {tool_id: w.tool_id, plan_key: pk});
       if (!s) return;
       const out = s.ok ? await s.json() : {ok: false, detail: await _refusal(s)};
       BMSG = out.ok ? `Linked. Synced ${out.count} members from the vendor.`
         : 'Linked, but the first sync failed: ' + out.detail;
     } else if (w.source === 'csv' && !w.editing) {
       BWIZ = null; BUDGET = null;
-      BCSV = {tool_id: w.tool_id, plan_key: w.plan_key || '',
+      BCSV = {tool_id: w.tool_id, plan_key: pk,
               text: '', parsed: null};
       BMSG = '';
       render(); return;
@@ -9797,6 +9848,12 @@ app.addEventListener('change', e => {
   if (e.target && e.target.id === 'bw-tool' && BWIZ) {
     BWIZ.tool_id = e.target.value;
     BWIZ.covers = null;
+    render();
+  }
+  if (e.target && e.target.id === 'b-csv-plan' && BCSV) {
+    BCSV.plan_key = e.target.value;
+    // The pasted text survives the re-render; the preview is rebuilt from it.
+    BCSV.text = (document.getElementById('b-csv') || {}).value || BCSV.text;
     render();
   }
 });
