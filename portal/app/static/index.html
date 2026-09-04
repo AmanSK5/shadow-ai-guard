@@ -9678,7 +9678,7 @@ function decorateView() {
   meta.className = 'view-meta';
   meta.innerHTML = `<label class="meta-chip window-pick"
       title="Every count on this page is for this window. The deployment default is ${esc(fmtWindow(dflt))}; Grafana panels keep their own time range.">
-      <span>Window</span><select data-window aria-label="Reporting window">${
+      <select data-window aria-label="Reporting window">${
         choices.map(([h, l]) => `<option value="${h}"${h === hours ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label>`
     + (view === 'overview'
       ? `<button class="mini meta-export" type="button" data-act="evidence-print">Export PDF</button>`
