@@ -737,7 +737,7 @@ body.auth .licard{width:100%}
 /* ---- the reporting window control, in every view header ------------- */
 .window-pick{cursor:pointer;gap:5px;min-height:29px;padding:5px 10px;border-radius:var(--radius-sm);font-size:10.5px;font-weight:630;color:var(--fg)}
 .window-pick{flex:0 0 auto}
-.window-pick select{font:inherit;font-size:10.5px;font-weight:650;color:var(--fg);background:transparent;border:0;outline:0;cursor:pointer;padding:0 14px 0 0;margin:0;width:auto;min-width:0;min-height:0;box-shadow:none}
+.window-pick select{font:inherit;font-size:10.5px;font-weight:650;color:var(--fg);border:0;outline:0;cursor:pointer;margin:0;width:auto;min-width:0;min-height:0;box-shadow:none;appearance:none;-webkit-appearance:none;padding:0 16px 0 0;background:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%238a97a8' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>") right center no-repeat;background-size:10px 10px}
 @media(max-width:900px){.window-pick{min-height:31px;padding:6px 10px;font-size:10px}}
 .window-pick select:focus-visible{outline:2px solid var(--acc);outline-offset:2px;border-radius:3px}
 .window-pick option{color:#111;background:#fff}
@@ -786,5 +786,5 @@ body.auth .licard{width:100%}
 
 /* ---- the window: a label on every page but the Overview ------------- */
 .window-label{font-weight:600;color:var(--fg)}
-.window-field{display:inline-flex;align-items:center;min-width:220px;padding:0 10px}
-.window-field select{font:inherit;font-size:11.5px;color:var(--fg);background:transparent;border:0;outline:0;width:100%;min-width:0;min-height:0;box-shadow:none;cursor:pointer}
+.window-field{display:inline-flex;align-items:center;min-width:340px;padding:0 10px}
+.window-field select{font:inherit;font-size:11.5px;color:var(--fg);border:0;outline:0;width:100%;min-width:0;min-height:0;box-shadow:none;cursor:pointer;margin:0;appearance:none;-webkit-appearance:none;padding:0 18px 0 0;background:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%238a97a8' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>") right center no-repeat;background-size:11px 11px}
