@@ -227,3 +227,14 @@ def test_the_spotlight_snaps_and_fades_rather_than_gliding():
     assert "#tour.moving #tour-ring, #tour.moving #tour-card { opacity: 0; }" in tour_css
     assert "el.scrollIntoView({block: 'center', behavior: 'auto'});" in INDEX
     assert "behavior: 'smooth'" not in INDEX.split("async function tourShow()", 1)[1].split("\nfunction tourRelease", 1)[0]
+
+
+def test_every_action_target_is_still_rendered():
+    """A step can aim at a control by its data-act, which is what the
+    overview's Edit button is. Unlike a data-tour hook that exists only for
+    the tour, a data-act is real wiring somebody may rename while doing
+    something else entirely."""
+    used = set(re.findall(r'sel: \'\[data-act="([a-z-]+)"\]\'', TOURS))
+    assert used, "no data-act steps parsed; this test is guarding nothing"
+    for act in used:
+        assert f'data-act="{act}"' in INDEX, f"nothing renders data-act={act}"

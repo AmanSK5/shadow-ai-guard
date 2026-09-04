@@ -776,3 +776,10 @@ body.auth .licard{width:100%}
   main#app *{border-color:#d7dbe2!important}
   main#app .evidence-row{display:grid!important;grid-template-columns:34px minmax(150px,.8fr) 1.6fr auto!important;align-items:center!important}
 }
+
+/* ---- the spend card lists its plans -------------------------------- */
+.budget-lines{margin:12px 0 4px}
+.budget-lines td{padding:7px 6px;font-size:12px;vertical-align:middle}
+.budget-lines td:first-child{font-weight:650;padding-left:0}
+.budget-lines td.num{text-align:right;white-space:nowrap;color:var(--mut)}
+.budget-lines td:first-child .pill{margin-left:4px}

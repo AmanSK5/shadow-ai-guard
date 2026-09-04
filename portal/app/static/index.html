@@ -2302,6 +2302,17 @@ const WIDGETS = {
       <div><dt>${subs.length}</dt><dd>tools linked</dd></div>
       <div><dt${unob ? ' style="color:var(--warn)"' : ''}>${unob}</dt><dd>paid seats never observed</dd></div>
     </dl>
+    <table class="plain budget-lines">${subs.map(sub => {
+      const r = bReconcile(sub);
+      const seats = (sub.seat_tiers || []).reduce((x, t) => x + (t.seats || 0), 0);
+      return `<tr data-nav="budget" style="cursor:pointer">
+        <td>${esc(sub.tool_id)}${sub.plan ? ` <span class="pill p-mut">${esc(sub.plan)}</span>` : ''}</td>
+        <td class="num">${bMoney(bSubMonthly(sub), sub.currency)}<span class="src-note"> /month</span></td>
+        <td class="num">${r.matched.length} of ${seats} seat${seats === 1 ? '' : 's'} in use</td>
+        <td class="num">${r.unobserved.length
+          ? `<span class="pill p-warn">${r.unobserved.length} idle</span>` : ''}${r.strangers.length
+          ? ` <span class="pill p-amb">${r.strangers.length} unseated</span>` : ''}</td></tr>`;
+    }).join('')}</table>
     <p class="src-note">${next ? `next renewal: ${esc(next.tool_id)} ${when(next.renewal_date)} · ` : ''}<button class="mini" data-nav="budget">Open Budget</button></p></div>`;
   },
 
@@ -10170,6 +10181,11 @@ const TOURS = {
          + 'affected, tools seen and how much of the fleet is reporting. '
          + 'Everything is for the time window chosen at the top right, not '
          + 'all time.'},
+    {view: 'overview', sel: '[data-act="ov-edit"]',
+     title: 'Make the overview yours',
+     body: 'Edit lets you show, hide, reorder and resize the cards, or stack '
+         + 'two side by side. The layout is saved to your account, so it is '
+         + 'the same at your next sign-in.'},
     {view: 'setup', sel: '[data-tour="source-overview"]',
      title: 'Check what is reporting first',
      body: 'This page shows which detection sources are sending data. Look '
@@ -10239,6 +10255,11 @@ const TOURS = {
          + 'affected, tools seen and how much of the fleet is reporting. '
          + 'Everything is for the time window chosen at the top right, not '
          + 'all time.'},
+    {view: 'overview', sel: '[data-act="ov-edit"]',
+     title: 'Make the overview yours',
+     body: 'Edit lets you show, hide, reorder and resize the cards, or stack '
+         + 'two side by side. The layout is saved to your account, so it is '
+         + 'the same at your next sign-in.'},
     {view: 'setup', sel: '[data-tour="source-overview"]',
      title: 'Check what is reporting first',
      body: 'This page shows which detection sources are sending data. Look '
