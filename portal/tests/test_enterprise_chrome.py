@@ -145,3 +145,35 @@ def test_the_search_box_is_a_finder_everywhere():
 
 def test_one_divider_under_the_pinned_list():
     assert ".nav-pinned+.nav-area-block{border-top:0}" in CSS
+
+
+def test_the_posture_headline_needs_a_source_to_have_reported():
+    """"Monitoring healthy" was derived from open personal accounts and
+    coverage gaps alone, so a fleet nobody heard from showed healthy with
+    100% coverage. It now needs the same status read the top-bar badge uses
+    to show at least one source reporting."""
+    assert "const silent = !S || !S.reporting;" in HTML
+    assert "silent ? 'Nothing reporting' : attention ? 'Needs attention' : 'Monitoring healthy'" in HTML
+    assert ".overview-executive.silent" in CSS
+
+
+def test_every_time_label_follows_the_chosen_window():
+    """A week hard-coded into a label under a 24-hour window is a lie."""
+    body = HTML.split("</style>", 1)[1]
+    assert "first seen this week" not in body
+    assert "from=now-7d" not in body
+    assert "'One bar per day for the last ' + fmtWindow(hoursNow())" in HTML
+    assert "'&from=now-' + hoursNow() + 'h&to=now&kiosk'" in HTML
+
+
+def test_system_health_is_called_that_everywhere_a_person_reads():
+    assert '<span class="tenant-chev" aria-hidden="true">System health</span>' in HTML
+    assert 'aria-label="Open System health">' in HTML
+    assert "managed-estate switcher" not in HTML
+
+
+def test_a_printed_page_says_which_estate_window_and_when():
+    assert "stamp.className = 'print-head';" in HTML
+    assert ".print-head{display:none}" in CSS
+    assert ".print-head{display:block!important" in CSS
+    assert "main#app .evidence-actions,main#app .view-meta" in CSS

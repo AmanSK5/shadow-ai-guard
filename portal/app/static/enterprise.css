@@ -763,3 +763,16 @@ body.auth .licard{width:100%}
   main#app .health-card,main#app .health-summary,main#app .register-overview,main#app .tcard{background:#fff!important;border:1px solid #bbb!important}
   main#app .pill{border:1px solid #999!important}
 }
+
+/* ---- a fleet nobody heard from is not a healthy one ------------------- */
+.overview-executive.silent .executive-posture strong{color:var(--mut)}
+.overview-executive.silent .executive-posture{background:var(--sf)}
+
+/* ---- the print stamp: which estate, which window, when --------------- */
+.print-head{display:none}
+@media print{
+  .print-head{display:block!important;margin:0 0 12px;font-size:10px;letter-spacing:.04em;color:#555!important}
+  main#app .evidence-actions,main#app .view-meta,main#app .meta-export,main#app .tabaside{display:none!important}
+  main#app *{border-color:#d7dbe2!important}
+  main#app .evidence-row{display:grid!important;grid-template-columns:34px minmax(150px,.8fr) 1.6fr auto!important;align-items:center!important}
+}

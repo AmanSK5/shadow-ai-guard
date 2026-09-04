@@ -654,7 +654,9 @@ a.libtn:hover{border-color:var(--pri)}
    should give way, not the way forward. */
 #tour-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
              row-gap: 10px; }
-#tour-dots { display: flex; gap: 4px; margin-right: auto; flex-wrap: wrap;
+/* Dots on their own row: fourteen of them beside three buttons wrapped
+   Next onto a line of its own at the card's width. */
+#tour-dots { display: flex; gap: 4px; flex-basis: 100%; margin: 0 0 2px;
              min-width: 0; }
 #tour-card button { flex: 0 0 auto; }
 #tour-dots i {
@@ -671,7 +673,7 @@ a.libtn:hover{border-color:var(--pri)}
   background: var(--acc); border-color: var(--acc); color: #fff;
 }
 #tour-card button.ghost { border-color: transparent; background: transparent;
-                          color: var(--mut); padding: 6px 8px; }
+                          color: var(--mut); padding: 6px 8px; margin-right: auto; }
 #tour-card button:hover { filter: brightness(1.06); }
 /* Somebody who has asked their browser to stop things moving gets the same
    tour with none of the motion. */
@@ -960,10 +962,10 @@ a.libtn:hover{border-color:var(--pri)}
       aria-label="Go to Workspace overview"><img src="/logo.png" alt="Shadow AI Guard"></button>
     <div class="brandline"></div>
     <button class="tenant-switch" id="estate-status" type="button"
-      aria-label="Open estate diagnostics">
+      aria-label="Open System health">
       <span class="tenant-avatar" id="estate-avatar">·</span>
       <span class="tenant-copy"><b id="estate-name">Portal</b><span id="estate-sub"><i class="estate-dot off"></i> Checking sources…</span></span>
-      <span class="tenant-chev" aria-hidden="true">Diagnostics</span>
+      <span class="tenant-chev" aria-hidden="true">System health</span>
     </button>
     <nav id="nav"></nav>
     <button class="fold" id="fold" title="collapse sidebar">«</button>
@@ -2222,7 +2224,10 @@ const WIDGETS = {
   stat_row: () => {
     const devs = ents(G.devices), pa = G.personal_accounts || [];
     const gaps = devs.filter(([,d]) => d.scanner_seen && !d.collector_seen);
-    const week = Date.now()/1000 - 7*86400;
+    // "New" is relative to the window, capped at a week: in a 30-day
+    // window a week is still what somebody means by recent.
+    const freshH = Math.min(hoursNow(), 168);
+    const week = Date.now()/1000 - freshH*3600;
     const fresh = pa.filter(r => r.first_seen &&
       Date.parse(r.first_seen)/1000 > week).length;
     const tr = G.trends || {};
@@ -2239,13 +2244,20 @@ const WIDGETS = {
     const covered = Math.max(0, devs.length - gaps.length);
     const coverage = devs.length ? Math.round(covered / devs.length * 100) : 0;
     const attention = open.length || gaps.length;
-    return `<div class="overview-executive w12${attention ? ' needs-attention' : ' healthy'}"
+    // "Healthy" needs something to have looked: a fleet where no source
+    // reported in this window has zero of everything, and zero is not a
+    // clean bill. The status read is the same one the top-bar badge uses.
+    const silent = !S || !S.reporting;
+    const mood = silent ? 'silent' : attention ? 'needs-attention' : 'healthy';
+    return `<div class="overview-executive w12 ${mood}"
       data-tour="stats">
       <section class="executive-posture">
         <span>Overall posture</span>
-        <strong>${attention ? 'Needs attention' : 'Monitoring healthy'}</strong>
-        <p>${open.length} open personal account${open.length === 1 ? '' : 's'} ·
-          ${gaps.length} coverage gap${gaps.length === 1 ? '' : 's'}</p>
+        <strong>${silent ? 'Nothing reporting' : attention ? 'Needs attention' : 'Monitoring healthy'}</strong>
+        <p>${silent
+          ? 'No detection source reported in this window. These counts are missing data, not a clean result.'
+          : `${open.length} open personal account${open.length === 1 ? '' : 's'} ·
+          ${gaps.length} coverage gap${gaps.length === 1 ? '' : 's'}`}</p>
         <div class="executive-actions">
           ${open.length ? '<button class="mini" data-nav="personal">Review accounts</button>' : ''}
           <button class="mini" data-nav="coverage">Verify coverage</button>
@@ -2253,7 +2265,7 @@ const WIDGETS = {
       </section>
       <dl class="executive-metrics">
         <div><dt${open.length ? ' class="risk"' : ''}>${open.length}${trendChip(tr.personal, true)}</dt>
-          <dd>Open personal accounts</dd><small>${fresh} first seen this week${
+          <dd>Open personal accounts</dd><small>${fresh} first seen in the last ${fmtWindow(freshH)}${
             open.length !== pa.length ? ` · ${pa.length - open.length} accepted` : ''}</small></div>
         <div><dt>${named.size}</dt><dd>Affected people</dd>
           <small>${anon.size ? anon.size + ' unattributed device' + (anon.size === 1 ? '' : 's') : 'Every device is attributed'}</small></div>
@@ -2310,11 +2322,11 @@ const WIDGETS = {
         <td class="num">${(t.devices||[]).length || (t.identities||[]).length}</td></tr>`;
     }).join('')}</table>`)
     + `<p class="src-note">${bars
-      ? 'Devices per tool over the window. Click a tool to open it, or '
-        + 'switch to the table for the last ' + ((tr.days||[]).length || 7)
-        + ' days per tool.'
-      : 'The bars are the last ' + ((tr.days||[]).length || 7) + ' days, '
-        + 'left to right. Click a tool to open it.'}</p>`
+      ? 'Devices per tool over the last ' + fmtWindow(hoursNow())
+        + '. Click a tool to open it, or switch to the table for one bar '
+        + 'per day.'
+      : 'One bar per day for the last ' + fmtWindow(hoursNow())
+        + ', left to right. Click a tool to open it.'}</p>`
     : '<p class="lede">Nothing reported yet.</p>'}</div>`;
   },
 
@@ -2526,7 +2538,7 @@ const WIDGETS = {
       "${esc(w.ref)}". Named here but not defined there, so there is nothing
       to draw.</div></div>`;
     const q = 'orgId=1&theme=' + (document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light')
-    + '&from=now-7d&to=now&kiosk';
+    + '&from=now-' + hoursNow() + 'h&to=now&kiosk';
     // No heading of our own. The panel draws its own, from the dashboard, so a
     // second one is both duplicated and less trustworthy: ours comes from
     // GRAFANA_PANELS, which is a snapshot of a title someone can rename in
@@ -2731,8 +2743,7 @@ function devices() {
   const personal = rows.filter(([,d]) => (d.personal_accounts||[]).length).length;
   const unattributed = rows.filter(([,d]) => !d.person).length;
   const observedTools = new Set(rows.flatMap(([,d]) => d.tools || [])).size;
-  return `<h2>Devices</h2><p class="lede">${rows.length} shown. The key is the most
-  stable identifier the source could get, usually a serial. Click for detail.</p>
+  return `<h2>Devices</h2><p class="lede">${rows.length} device${rows.length === 1 ? '' : 's'} in this window. Each is keyed by the most stable identifier its source could get, usually a serial. Click one for detail.</p>
   <div class="inventory-summary" data-tour="device-summary" aria-label="Device inventory summary">
     <span><b>${rows.length}</b> devices</span>
     <span><b>${observedTools}</b> AI tools observed</span>
@@ -2884,8 +2895,7 @@ async function people() {
   const rows = ents(G.identities).filter(([k]) => match(k))
     .sort((a,b) => (b[1].tools||[]).length - (a[1].tools||[]).length);
   const unattributed = ents(G.devices).filter(([,d]) => !d.person).length;
-  return `<h2>People</h2><p class="lede">Identities come from cloud sources, which know people rather
-  than machines. Devices appear here only where an identity map attaches them.</p>
+  return `<h2>People</h2><p class="lede">People named by cloud sources, which see accounts rather than machines. A device shows against a person only where the identity map links them.</p>
   ${identityMapPanel(unattributed)}
   <div class="tcard"><table><tr><th>identity</th><th>tools</th><th>devices</th></tr>
   ${rows.map(([k,i]) => `<tr><td>${esc(k)}${(i.aliases||[]).length
@@ -2913,7 +2923,7 @@ function attention(k, t) {
   if (t.usage === 'installed' && devs) f.push('installed, never used');
   if ((t.surfaces || []).filter(Boolean).length >= 2) f.push('multiple surfaces');
   const fs = ((G.trends || {}).tool_first_seen || {})[k];
-  if (fs && Date.parse(fs) > Date.now() - 2 * 86400000) f.push('new this week');
+  if (fs && Date.parse(fs) > Date.now() - 2 * 86400000) f.push('new in the last 2 days');
   const level = (personal && devs >= 3) || personal >= 2 ? 'high'
     : personal || f.length >= 2 ? 'medium' : '';
   return {level, factors: f};
@@ -2931,17 +2941,7 @@ function tools() {
       const rank = x => x[2].level === 'high' ? 2 : x[2].level === 'medium' ? 1 : 0;
       return rank(b) - rank(a) || (b[1].devices||[]).length - (a[1].devices||[]).length;
     });
-  return `<h2>Tools</h2><p class="lede">Surfaces are kept apart on purpose: the same
-  tool in a browser, a desktop app and a CLI are different exposures. The ones
-  needing a look sort first, marked <span class="pill p-warn">attention</span>
-  when several factors stack up and <span class="pill p-amb">watch</span> for
-  one - open a tool to see exactly which. "Identities from sources" counts
-  people a source named directly; the AI register counts those plus the people
-  the identity map attaches through a device, so the two differ for tools found
-  on endpoints. Editors that bundle AI - Cursor, Windsurf/Devin Desktop - are
-  marked <span class="pill p-mut">installed only</span> until something shows a
-  model actually ran, because finding one on a laptop proves an editor is
-  installed and not that anyone sent code to it.</p>
+  return `<h2>Tools</h2><p class="lede">The same tool in a browser, a desktop app and a CLI is three different exposures, so surfaces are listed separately. Tools that need a look sort first: <span class="pill p-warn">attention</span> when several factors stack up, <span class="pill p-amb">watch</span> for one. Open a tool to see which. Editors that bundle AI, such as Cursor or Windsurf, show as <span class="pill p-mut">installed only</span> until something shows a model actually ran. "Identities from sources" counts people a source named directly; the AI register also counts people linked through a device, so the two can differ.</p>
   <div class="tcard"><table><tr><th>tool</th><th></th><th>devices</th>
     <th title="People a SOURCE named on this tool. A cloud sign-in carries a person; an endpoint finding carries a machine, and the person behind it comes from the identity map - so this is lower than the register's user count for tools found on endpoints.">identities from sources</th>
     <th>by surface</th></tr>
@@ -2970,9 +2970,7 @@ function tools() {
 
 function coverage() {
   const gaps = ents(G.devices).filter(([,d]) => d.scanner_seen && !d.collector_seen);
-  return `<h2>Coverage</h2><p class="lede">These machines are known to an inventory or
-  telemetry source, but no endpoint collector has reported from them. Usually
-  that means the collector isn't installed there yet.</p>
+  return `<h2>Coverage</h2><p class="lede">Machines an inventory or telemetry source knows about, but no endpoint collector has reported from. Usually the collector is not installed there yet.</p>
   ${gaps.length ? `<div class="tcard"><table><tr><th>device</th><th>sources</th><th>tools seen</th></tr>
   ${gaps.map(([k,d])=>`<tr><td>${esc(label(k,d))}</td>
     <td>${(d.sources||[]).map(s=>`<span class="pill p-mut">${esc(s)}</span>`).join('')}</td>
@@ -3038,10 +3036,7 @@ function mcp() {
   const tools = ents(G.tools).filter(([,t]) => (t.surfaces||[]).includes('mcp'));
   const devs = new Set(rows.flatMap(r => r.devices || []));
   return `<h2>MCP servers</h2>
-  <p class="lede">MCP servers are integrations AI tools are configured to use.
-  They hold their own credentials and can reach whatever they were pointed at,
-  even when the tool that configured them isn't open. That's why they get
-  their own page.</p>
+  <p class="lede">Integrations that AI tools are set up to use. Each holds its own credentials and can reach whatever it was pointed at, even when the tool that configured it is closed. That is why they get their own page.</p>
 
   <dl class="stats">
     <div><dt>${rows.length}</dt><dd>servers</dd></div>
@@ -3118,13 +3113,7 @@ function personal() {
     match(r.device) || match(r.device_name));
   const lifecycle = CFG.managed && CFG.managed.enabled && PSTAT !== null;
   return `<h2>Personal accounts</h2>
-  <p class="lede" data-tour="personal">AI tools signed into personal accounts. Even an approved
-  tool on a personal account means company data flowing somewhere you don't
-  manage, and access that survives offboarding. "Personal" means the account
-  domain isn't in your corporate domains list. Treat these as leads to follow
-  up, not verdicts${lifecycle ? ` - and record where each one got to:
-  acknowledged keeps it visible, accepted needs a reason and drops it from
-  the open count` : ''}.</p>
+  <p class="lede" data-tour="personal">AI tools signed in with personal accounts. Even on an approved tool, that means company data going somewhere you do not manage, with access that outlives offboarding. Personal means the account domain is not in your corporate domains list. Treat each one as a lead to follow up, not a verdict${lifecycle ? `, and record where it got to: acknowledged keeps it visible, accepted needs a reason and takes it out of the open count` : ''}.</p>
   ${rows.length ? `<div class="tcard"><table>
   <tr><th>who</th><th>account domain</th><th>tool</th><th>device</th>
   <th>surface</th><th>first seen</th><th>last seen</th><th>source</th>
@@ -3585,11 +3574,7 @@ async function registryView() {
   }
   const shipped = REGTOOLS.filter(t => !t.custom);
   return `<h2>Tool registry</h2>
-  <p class="lede">What the fleet scans for. Tools defined here are served to
-  every collector on its next check-in and normalize findings immediately -
-  the whole point is that a new tool needs no repo, no rebuild and no
-  re-push. Whether a tool is <i>approved</i> is a separate question: record
-  that on the AI register.</p>
+  <p class="lede">What every collector scans for. A tool defined here reaches the fleet on its next check-in and is recognised in findings straight away, with no rebuild or re-push. Whether a tool is <i>approved</i> is a separate question, recorded on the AI register.</p>
 
   ${REDIT !== null ? regForm() : `<div style="margin-bottom:14px">
     <button class="mini" style="padding:6px 14px" data-act="reg-add">Define a tool</button>
@@ -3931,12 +3916,7 @@ async function paste() {
   const rows = (PG.rows || []).filter(r => match(r.tool));
 
   return `<h2>Paste guard</h2>
-  <p class="lede">What the paste guard stopped, on which tool, and how often.
-  Metadata only: the guard inspects clipboard content on the device and reports
-  detector identifiers, so what was nearly pasted is not here and is not stored
-  anywhere. A warning heeded is the guard working; an override is somebody who
-  was shown the detector by name and pasted anyway, which is the row worth
-  following up.</p>
+  <p class="lede">What the paste guard stopped, on which tool, and how often. Only metadata is kept: the guard checks clipboard content on the device and reports which detector fired, so the text itself is never sent or stored. A heeded warning is the guard doing its job. An override is someone who saw the warning and pasted anyway, which is the row worth following up.</p>
 
   <dl class="stats">
     <div><dt${(PG.guard_devices || 0) ? '' : ' style="color:var(--dstr)"'}>${PG.guard_devices || 0}</dt>
@@ -4070,10 +4050,7 @@ async function iso() {
     ? Math.round((e.sources_reporting || 0) / e.sources_known * 100) : 0;
 
   return `<h2>ISO/IEC 42001 evidence</h2>
-  <p class="lede">An operational index of what Shadow AI Guard can currently
-  evidence and where each underlying record lives. It is deliberately not a
-  compliance score or clause mapping, and it does not claim a control is
-  satisfied.</p>
+  <p class="lede">An index of what Shadow AI Guard can show records for, and where each record lives. It is not a compliance score or a clause mapping, and it does not claim any control is satisfied.</p>
 
   <section class="evidence-summary" aria-label="Evidence snapshot summary">
     <div class="evidence-summary-lead">
@@ -4565,9 +4542,7 @@ async function extSetup() {
     through your MDM is the actual rollout.</p>`;
 
   return `<h2>Extension setup</h2>
-  <p class="lede">The browser extension, from source to hosted package, one
-  step at a time. This is where its values live - come back to a step to
-  change one.</p>
+  <p class="lede">The browser extension, from source to hosted package, one step at a time. Its settings live here; come back to a step to change one.</p>
   ${SETMSG ? `<div class="note">${esc(SETMSG)}</div>` : ''}
   <div class="ssow">${rail}
     <div class="ssmain">${body}
@@ -4857,8 +4832,7 @@ async function wizard() {
   </div>` : `<div class="note">No public receiver URL yet, so downloads cannot
   bake a URL agents can reach - save one in step 1 and these appear.</div>`}`;
   return `<h2>Welcome — set up your deployment</h2>
-  <p class="lede">One step at a time. Everything here can be changed later
-  under Settings, and changes take effect immediately - no redeploys.</p>
+  <p class="lede">One step at a time. Everything here can be changed later under Settings, and changes take effect straight away with no redeploy.</p>
   ${SETMSG ? `<div class="note">${esc(SETMSG)}</div>` : ''}
   <div class="ssow">${rail}
     <div class="ssmain">${body}
@@ -6103,6 +6077,8 @@ function diagnosticsCards() {
     <section class="health-card"><div class="health-card-head"><div><span>Runtime</span><h3>Application</h3></div><span class="pill p-ok">running</span></div>
       <dl class="health-facts"><div><dt>Version</dt><dd>${esc(r.version)}</dd></div>
         <div><dt>Uptime</dt><dd>${dur(r.uptime_seconds)}</dd></div></dl>
+      <p class="health-note">Shadow AI Guard is built by Aman Karir.
+        <a href="https://github.com/AmanSK5/shadow-ai-guard" target="_blank" rel="noopener">Source and issues</a></p>
     </section>
 
     <section class="health-card ${logFresh ? '' : 'needs-attention'}"><div class="health-card-head"><div><span>Data pipeline</span><h3>Log store</h3></div>${logFresh ? '<span class="pill p-ok">reporting</span>' : '<span class="pill p-warn">check required</span>'}</div>
@@ -6164,9 +6140,7 @@ async function diagnostics() {
       if (ar.ok) AUDITLOG = (await ar.json()).events || [];
     } catch (e) { /* activity is useful context, never a prerequisite */ }
   }
-  return `<div data-tour="system-health"><h2>System health</h2><p class="lede">A read-only view of the
-    services and deployment this managed estate depends on. Settings change
-    policy; this page confirms what the portal can currently verify.</p></div>
+  return `<div data-tour="system-health"><h2>System health</h2><p class="lede">What the portal can verify about itself right now: its log store, its registry and its access setup. Settings change policy; this page only reports.</p></div>
     ${diagnosticsCards()}`;
 }
 
@@ -6222,8 +6196,8 @@ async function settings() {
     } catch (e) { /* the accounts card simply stays absent */ }
   }
   if (!managed || !SETTINGS) return `<h2>Settings</h2><p class="lede">This
-    deployment does not expose centrally managed settings. System health is
-    available from the managed-estate switcher.</p>`;
+    deployment has no centrally managed settings. System health is under the
+    estate name beneath the logo.</p>`;
 
   // Named outright rather than looked up by a key that came from the URL.
   // SETTAB is allow-listed where it enters, in fromHash(), so it can only
@@ -6267,9 +6241,7 @@ function setup() {
 
   const g = S.groups || [];
   return `<h2>Sources</h2>
-  <p class="lede">What's reporting and what isn't, worked out from actual
-  findings - not from whether something is configured. Every silent source
-  carries a fold-out with exactly what it needs to start reporting.</p>
+  <p class="lede">Which detection sources are reporting and which are silent, judged from actual findings rather than configuration. Every silent source opens to show exactly what it needs to start reporting.</p>
 
   <dl class="stats" data-tour="source-overview">
     ${g.map(x => `<div><dt>${x.reporting}/${x.total}</dt><dd>${esc(x.group)}</dd></div>`).join('')}
@@ -6372,7 +6344,7 @@ function dashboard() {
 
   const base = CFG.grafana_url, panels = CFG.grafana_panels || [];
   const q = 'orgId=1&theme=' + (document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light')
-    + '&from=now-7d&to=now&kiosk';
+    + '&from=now-' + hoursNow() + 'h&to=now&kiosk';
 
   if (!panels.length && CFG.grafana_dashboard_uid) {
     return `<h2>Grafana</h2>
@@ -6443,13 +6415,7 @@ async function fleet() {
   }
   const ds = FLEET.devices || [];
   return `<h2 data-tour="fleet">Fleet</h2>
-  <p class="lede">Every device holding a credential. (The Devices view is
-  different: it shows who has actually reported findings.) Revoke cuts off
-  that one device and nothing else, and it holds: a revoked serial is
-  refused at /enroll even by a valid enrollment token, until an admin allows
-  it back for a reimage or a replacement. Re-enrollments of a live device -
-  a reimaged laptop, a scanner that enrolls every run - keep their row and
-  are noted under "enrolled".</p>
+  <p class="lede">Every device holding a credential. Devices, under Discovery, is different: it shows which have actually reported findings. Revoke cuts off one device only, and it holds: a revoked serial is refused at enrollment even with a valid token, until an admin allows it back for a reimage or a replacement. A live device that enrolls again, such as a reimaged laptop or a scanner that enrolls every run, keeps its row and is noted under enrolled.</p>
   ${ds.length ? `<table><tr><th>device</th><th>platform</th><th>serial</th>
     <th>enrolled</th><th>last seen</th><th>agent</th><th>status</th><th></th></tr>
   ${ds.map(d => `<tr>
@@ -6493,11 +6459,7 @@ async function tokens() {
   const state = t => t.revoked_at ? ['revoked', 'p-mut']
     : t.expires_at <= nowIso ? ['expired', 'p-mut'] : ['active', 'p-ok'];
   return `<h2>Enrollment tokens</h2>
-  <p class="lede">An enrollment token goes into your MDM or RMM (a Jamf
-  parameter, the Intune script, an RMM variable). Each machine exchanges it
-  once for its own credential. The token itself can only enroll devices - it
-  can't submit findings - so a long expiry inside an MDM artifact is fine.
-  Revoke it here when a rollout is done or a token leaks.</p>
+  <p class="lede">An enrollment token goes into your MDM or RMM: a Jamf parameter, the Intune script, an RMM variable. Each machine exchanges it once for its own credential. The token can only enroll devices and cannot submit findings, so a long expiry inside an MDM artifact is fine. Revoke it here when a rollout is done or a token leaks.</p>
   ${MINTED ? (MINTED.error
     ? `<div class="note">${esc(MINTED.error)}
        <button class="mini" data-act="dismiss-minted">Dismiss</button></div>`
@@ -7841,11 +7803,7 @@ async function budget() {
   const spend = conv ? bMoney(conv.total, bPrefCur())
     : spendParts.join(' + ') || '0';
   return `<h2 data-tour="budget">Budget</h2>
-  <p class="lede">The AI tools the organisation pays for, against what the
-  estate is observed doing: seats nobody uses, users no seat covers, and
-  personal accounts running alongside paid ones. User lists come from a
-  vendor's admin API where one exists, or a CSV export where one does not -
-  the numbers work the same either way and each card says which it is.</p>
+  <p class="lede">What the organisation pays for AI tools, set against what is actually used: seats nobody uses, people without a seat, and personal accounts running alongside paid ones. User lists come from a vendor's admin API where one exists, or a CSV export where not; the numbers work the same either way, and each card says which.</p>
   ${BMSG ? `<div class="note">${esc(BMSG)}</div>` : ''}
   ${(() => { const n = conv ? '' : bConversionNote(subs);
      return n ? `<p class="src-note" style="margin-bottom:10px">${n}</p>` : ''; })()}
@@ -9674,6 +9632,15 @@ function decorateView() {
   const dflt = Number((CFG && CFG.lookback_hours) || 168);
   const choices = WINDOWS.some(w => w[0] === dflt) ? WINDOWS
     : [[dflt, fmtWindow(dflt)]].concat(WINDOWS).sort((a, b) => a[0] - b[0]);
+  // Print only: which estate, which window, when. A PDF with none of those
+  // is a screenshot, not a record.
+  const stamp = document.createElement('div');
+  stamp.className = 'print-head';
+  const orgName = ((AUTH && AUTH.org_name) || '').trim()
+    || (CFG && CFG.managed && CFG.managed.enabled ? 'Managed estate' : 'Standalone portal');
+  stamp.textContent = orgName + ' · last ' + fmtWindow(hours) + ' · exported '
+    + new Date().toLocaleString();
+  head.appendChild(stamp);
   const meta = document.createElement('div');
   meta.className = 'view-meta';
   meta.innerHTML = `<label class="meta-chip window-pick"
