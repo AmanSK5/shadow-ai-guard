@@ -232,7 +232,7 @@ screen with the Microsoft button on it and nothing behind it is empty.
 Use the portal to explore people, devices, tools, source health and the
 relationships between them.
 
-https://github.com/user-attachments/assets/ffd150f1-f4c1-4459-8a10-039e68c48c03
+https://github.com/user-attachments/assets/bac90dff-1c83-4c71-9808-8125eda2cc75
 
 ### Grafana
 
