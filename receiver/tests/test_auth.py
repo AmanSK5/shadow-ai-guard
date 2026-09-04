@@ -67,7 +67,7 @@ def test_auth_routes_do_not_exist_in_classic_mode():
 def test_the_first_boot_flow(managed):
     """The acceptance test's opening move: fresh install, setup code from
     the logs, create the account, and leave already signed in."""
-    assert client.get("/admin/setup").json() == {"needed": True, "sso_enabled": False, "sso_enforced": False}
+    assert client.get("/admin/setup").json() == {"needed": True, "org_name": "", "sso_enabled": False, "sso_enforced": False}
 
     resp = _setup()
     assert resp.status_code == 200
@@ -76,7 +76,7 @@ def test_the_first_boot_flow(managed):
 
     # The session from setup is immediately an admin.
     assert client.get("/admin/devices", headers=_hdr(token)).status_code == 200
-    assert client.get("/admin/setup").json() == {"needed": False, "sso_enabled": False, "sso_enforced": False}
+    assert client.get("/admin/setup").json() == {"needed": False, "org_name": "", "sso_enabled": False, "sso_enforced": False}
 
     # And it is a named person, not a credential.
     who = client.get("/admin/session", headers=_hdr(token)).json()
@@ -87,7 +87,7 @@ def test_a_wrong_setup_code_is_refused(managed):
     assert _setup(setup_code="aigs_guessed").status_code == 401
     # Non-ASCII must be a 401, not a compare_digest TypeError and a 500.
     assert _setup(setup_code="aigs_guéssed").status_code == 401
-    assert client.get("/admin/setup").json() == {"needed": True, "sso_enabled": False, "sso_enforced": False}
+    assert client.get("/admin/setup").json() == {"needed": True, "org_name": "", "sso_enabled": False, "sso_enforced": False}
 
 
 def test_the_door_shuts_after_the_first_account(managed):
@@ -101,7 +101,7 @@ def test_the_door_shuts_after_the_first_account(managed):
 
 def test_a_short_password_is_refused_at_the_door(managed):
     assert _setup(password="short").status_code == 422
-    assert client.get("/admin/setup").json() == {"needed": True, "sso_enabled": False, "sso_enforced": False}
+    assert client.get("/admin/setup").json() == {"needed": True, "org_name": "", "sso_enabled": False, "sso_enforced": False}
 
 
 def test_a_fresh_managed_boot_without_admin_token_starts_and_prints_a_code(tmp_path):
@@ -236,3 +236,18 @@ def test_password_change_with_no_account_is_409(managed, monkeypatch):
     resp = client.post("/admin/password", headers=API_ADMIN,
                        json={"new": "recovered-long-password"})
     assert resp.status_code == 409
+
+
+def test_a_fixed_setup_code_is_only_ever_the_demo_stacks_and_says_so(monkeypatch, capsys):
+    """SETUP_CODE pins the first-boot code so the demo seeder can create the
+    owner account itself. Unset, every boot mints a random one; set, the
+    receiver uses it verbatim and prints a warning naming the risk."""
+    from app import main
+    monkeypatch.delenv("SETUP_CODE", raising=False)
+    minted = main._mint_setup_code()
+    assert minted.startswith("aigs_") and len(minted) > 20
+    assert "setup_code_override" not in capsys.readouterr().out
+    monkeypatch.setenv("SETUP_CODE", " demo-setup-code ")
+    assert main._mint_setup_code() == "demo-setup-code"
+    out = capsys.readouterr().out
+    assert "setup_code_override" in out and "FIXED" in out

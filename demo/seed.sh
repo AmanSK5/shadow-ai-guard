@@ -68,3 +68,75 @@ post "{\"tool\":\"paste-guard\",\"surface\":\"browser\",\"source\":\"paste_guard
 
 echo ""
 echo "done. open http://localhost:3000 and view the Shadow AI dashboard."
+# --- the estate itself ---------------------------------------------------
+# A real deployment's operator does this by hand: read the setup code from
+# the receiver's log, create the owner account, name the estate, walk the
+# single sign-on wizard. The demo pins the code (SETUP_CODE on the receiver,
+# demo only) so this script can do the same over the same endpoints, and the
+# portal opens on a sign-in screen with the Microsoft button already there.
+#
+# Safe to re-run. Once the owner exists the setup door is closed, so a re-run
+# signs in with the owner's password instead and leaves the estate settings
+# alone - somebody who switched single sign-on off to walk the wizard keeps
+# it off. The demo data below is re-applied every time.
+A="${RECEIVER:-http://receiver:8080}"
+U="${OWNER_USER:-gengar}"; PW="${OWNER_PASSWORD:-gengar-demo-portal}"
+tok=""
+if [ -n "${SETUP_CODE:-}" ]; then
+  sess=$(curl -s -X POST "$A/admin/setup" -H 'Content-Type: application/json' \
+    --data "{\"setup_code\":\"$SETUP_CODE\",\"username\":\"$U\",\"password\":\"$PW\"}")
+  tok=$(printf '%s' "$sess" | sed -n 's/.*"token": *"\([^"]*\)".*/\1/p')
+  if [ -n "$tok" ]; then
+    echo "created the owner account; naming the estate and switching single sign-on on"
+    auth="Authorization: Bearer $tok"
+    users=$(curl -s "$A/admin/users" -H "$auth")
+    uid=$(printf '%s' "$users" | tr '{' '\n' | grep "\"username\": *\"$U\"" \
+      | sed -n 's/.*"id": *"\([0-9a-f]\{16\}\)".*/\1/p' | head -n 1)
+    printf '  sign-on address: '
+    curl -s -o /dev/null -w '%{http_code}\n' -X POST "$A/admin/users/$uid/email" -H "$auth" \
+      -H 'Content-Type: application/json' --data "{\"email\":\"${OWNER_EMAIL:-gengar@example.com}\"}"
+    printf '  estate name and single sign-on: '
+    curl -s -o /dev/null -w '%{http_code}\n' -X PUT "$A/admin/settings" -H "$auth" \
+      -H 'Content-Type: application/json' --data "{\"org_name\":\"${ORG_NAME:-Pallet Town Ltd}\",\"sso_tenant_id\":\"11111111-2222-3333-4444-555555555555\",\"sso_client_id\":\"66666666-7777-8888-9999-000000000000\",\"sso_client_secret\":\"demo-client-secret\",\"sso_redirect_uri\":\"${PORTAL_URL:-http://localhost:8091}/sso/callback\",\"sso_enabled\":\"1\"}"
+  else
+    echo "owner account already exists; signing in to refresh the demo data"
+    sess=$(curl -s -X POST "$A/admin/login" -H 'Content-Type: application/json' \
+      --data "{\"username\":\"$U\",\"password\":\"$PW\"}")
+    tok=$(printf '%s' "$sess" | sed -n 's/.*"token": *"\([^"]*\)".*/\1/p')
+    [ -z "$tok" ] && echo "  could not sign in as $U (password changed?): $sess"
+  fi
+fi
+
+# --- demo data behind the sign-in ------------------------------------------
+# Budget and Fleet are empty until an admin links a plan or enrolls a device,
+# and a demo that shows two empty pages teaches nothing. Three plans with
+# seat tiers and member lists, chosen so every Budget state appears: seats
+# nobody uses, people using a tool with no seat, a personal account running
+# beside a paid one. And one enrollment token with three devices enrolled
+# through the real /enroll exchange, so Fleet has a roll to show.
+if [ -n "$tok" ]; then
+  auth="Authorization: Bearer $tok"
+  put() { curl -s -o /dev/null -w '%{http_code} ' -X PUT "$A$1" -H "$auth" -H 'Content-Type: application/json' --data "$2"; }
+  printf 'budget plans: '
+  put /admin/budget/subscription '{"tool_id":"chatgpt","plan_key":"business","vendor":"OpenAI","plan":"Business","currency":"GBP","renewal_date":"2027-03-31","owner":"Security","notes":"Annual, invoiced quarterly","seat_tiers":[{"name":"Business","seats":10,"unit_price_monthly":25}],"covers":["codex-cli"]}'
+  put /admin/budget/subscription '{"tool_id":"claude","plan_key":"team","vendor":"Anthropic","plan":"Team","currency":"GBP","renewal_date":"2027-01-15","owner":"Engineering","notes":"Premium seats include Claude Code","seat_tiers":[{"name":"Standard","seats":6,"unit_price_monthly":27},{"name":"Premium","seats":2,"unit_price_monthly":120,"covers":["claude-code"]}],"covers":["claude-code"]}'
+  put /admin/budget/subscription '{"tool_id":"github-copilot","plan_key":"business","vendor":"GitHub","plan":"Copilot Business","currency":"USD","renewal_date":"2026-12-01","owner":"Engineering","seat_tiers":[{"name":"Business","seats":8,"unit_price_monthly":19}]}'
+  echo
+  printf 'budget members: '
+  put /admin/budget/members '{"tool_id":"chatgpt","plan_key":"business","source":"csv","members":[{"email":"eevee@example.com","name":"Eevee","role":"member","seat_tier":"Business"},{"email":"snorlax@example.com","name":"Snorlax","role":"member","seat_tier":"Business"},{"email":"psyduck@example.com","name":"Psyduck","role":"member","seat_tier":"Business"},{"email":"mew@example.com","name":"Mew","role":"admin","seat_tier":"Business"},{"email":"jigglypuff@example.com","name":"Jigglypuff","role":"member","seat_tier":"Business"},{"email":"meowth@example.com","name":"Meowth","role":"member","seat_tier":"Business"}]}'
+  put /admin/budget/members '{"tool_id":"claude","plan_key":"team","source":"csv","members":[{"email":"eevee@example.com","name":"Eevee","role":"member","seat_tier":"Premium"},{"email":"mew@example.com","name":"Mew","role":"member","seat_tier":"Standard"},{"email":"gengar@example.com","name":"Gengar","role":"owner","seat_tier":"Standard"},{"email":"snorlax@example.com","name":"Snorlax","role":"member","seat_tier":"Standard"},{"email":"lapras@example.com","name":"Lapras","role":"member","seat_tier":"Standard"}]}'
+  put /admin/budget/members '{"tool_id":"github-copilot","plan_key":"business","source":"csv","members":[{"email":"snorlax@example.com","name":"Snorlax","role":"member","seat_tier":"Business"},{"email":"eevee@example.com","name":"Eevee","role":"member","seat_tier":"Business"},{"email":"onix@example.com","name":"Onix","role":"member","seat_tier":"Business"}]}'
+  echo
+  if ! curl -s "$A/admin/enrollment-tokens" -H "$auth" | grep -q "Demo rollout"; then
+    printf 'enrollment: '
+    mint=$(curl -s -X POST "$A/admin/enrollment-tokens" -H "$auth" -H 'Content-Type: application/json' \
+      --data '{"note":"Demo rollout (Jamf and Intune)","ttl_days":365}')
+    et=$(printf '%s' "$mint" | sed -n 's/.*"token": *"\([^"]*\)".*/\1/p')
+    for d in "macos C02PIKACHU pikachu-mbp" "linux NIX-BULBA nix-bulba" "windows WIN-CHARM WIN-CHARM"; do
+      set -- $d
+      curl -s -o /dev/null -w '%{http_code} ' -X POST "$A/enroll" -H "Authorization: Bearer $et" \
+        -H 'Content-Type: application/json' --data "{\"platform\":\"$1\",\"serial\":\"$2\",\"hostname\":\"$3\",\"agent_version\":\"demo\"}"
+    done
+    echo
+  fi
+fi

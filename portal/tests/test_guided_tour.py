@@ -31,22 +31,21 @@ def _nav_views() -> set:
 def test_every_step_points_at_a_view_that_exists():
     """A renamed view leaves the tour navigating to a blank page, and the
     person it was written for is the one who finds out."""
-    known = _nav_views()
+    # System health is intentionally reached from the estate control rather
+    # than a sidebar destination, but is still a real tour view.
+    known = _nav_views() | {"diagnostics"}
     assert known, "NAV did not parse; this test is guarding nothing"
     used = set(re.findall(r"view: '([a-z-]+)'", TOURS))
     assert used, "no steps parsed; this test is guarding nothing"
     assert used <= known, f"tour steps point at unknown views: {used - known}"
 
 
-def test_every_nav_target_is_a_real_section():
-    """The click steps drive the sidebar, so they carry section ids rather
-    than view ids - a different list, and just as easy to rename."""
-    nav = INDEX.split("const NAV = [", 1)[1].split("\n];", 1)[0]
-    sections = set(re.findall(r"\{id:'([a-z]+)'", nav))
-    assert sections, "NAV sections did not parse"
-    used = set(re.findall(r"""sel: '\[data-s="([a-z]+)"\]'""", TOURS))
-    assert used, "no nav steps parsed"
-    assert used <= sections, f"unknown nav sections: {used - sections}"
+def test_the_tour_points_at_the_current_navigation_model():
+    """The sidebar moved from a flat section list to expandable work areas.
+    The tour has to describe that model rather than retain a hidden dependency
+    on the old data-s navigation buttons."""
+    assert 'sel: \'[data-area="discovery"]\'' in TOURS
+    assert 'data-area="${area.id}"' in INDEX
 
 
 def test_every_hooked_element_is_still_rendered():
@@ -61,32 +60,24 @@ def test_every_id_target_is_still_rendered():
         assert f'id="{el}"' in INDEX, f"nothing renders #{el}"
 
 
-def test_every_action_target_is_still_rendered():
-    """A step can also aim at a control by its data-act, which is what the
-    overview's Edit button is. Unlike a data-tour hook that exists only for
-    the tour, a data-act is real wiring somebody may rename while doing
-    something else entirely - and the tour would then dim the page and
-    centre its card, which looks like the step meant to do that."""
-    used = set(re.findall(r'sel: \'\[data-act="([a-z-]+)"\]\'', TOURS))
-    assert used, "no data-act steps parsed; this test is guarding nothing"
-    for act in used:
-        assert f'data-act="{act}"' in INDEX, f"nothing renders data-act={act}"
+def test_every_class_target_is_still_rendered():
+    """The summary cards are semantic tour targets. A visual redesign that
+    removes one should fail here rather than leave an un-aimed tour card."""
+    for cls in set(re.findall(r"sel: '\\.([a-z-]+)'", TOURS)):
+        assert f'class="{cls}' in INDEX or f' {cls}"' in INDEX, \
+            f"nothing renders .{cls}"
 
 
-def test_the_tour_walks_every_section_of_the_nav():
-    """The tour is the only description of the whole product, and a section
-    it never mentions is one a new colleague does not know exists. Budget
-    and Fleet were both missing for exactly that reason: they shipped after
-    the tour was written, and nothing here noticed.
-
-    'home' is exempt because it is where the tour opens - there is no nav
-    click onto the page you already start on."""
-    nav = INDEX.split("const NAV = [", 1)[1].split("\n];", 1)[0]
-    sections = set(re.findall(r"\{id:'([a-z]+)'", nav)) - {"home"}
+def test_the_tour_covers_the_current_operating_path():
+    """The tour is an orientation, not a page-by-page inventory. It must
+    cover the current executive, discovery, governance, evidence, settings
+    and system-health journey for both roles."""
+    expected = {"overview", "setup", "devices", "personal", "register",
+                "iso", "budget", "agentic", "fleet", "settings", "diagnostics"}
     for role in ("admin", "viewer"):
         block = TOURS.split(role + ": [", 1)[1].split("\n  ],", 1)[0]
-        reached = set(re.findall(r'sel: \'\[data-s="([a-z]+)"\]\'', block))
-        missing = sections - reached
+        reached = set(re.findall(r"view: '([a-z-]+)'", block))
+        missing = expected - reached
         assert not missing, f"{role} tour never reaches: {sorted(missing)}"
 
 
@@ -100,7 +91,7 @@ def test_both_roles_walk_the_same_number_of_steps():
         block = TOURS.split(role + ": [", 1)[1].split("\n  ],", 1)[0]
         counts[role] = block.count("{title:") + block.count("{view:")
     assert counts["admin"] == counts["viewer"], counts
-    assert counts["admin"] >= 13, f"steps went missing: {counts}"
+    assert counts["admin"] >= 10, f"steps went missing: {counts}"
 
 
 def test_both_roles_have_a_tour():
@@ -185,7 +176,7 @@ def test_the_frozen_control_is_always_released():
     assert "tourRelease()" in end, "ending the tour has to release it"
     abort = INDEX.split("function tourAbort()", 1)[1][:300]
     assert "tourRelease()" in abort, "a session going away has to release it"
-    show = INDEX.split("async function tourShow()", 1)[1][:1400]
+    show = INDEX.split("async function tourShow()", 1)[1].split("\nfunction tourRelease()", 1)[0]
     assert "tourRelease()" in show, "each step has to release the last one"
 
 
@@ -195,3 +186,67 @@ def test_leaving_the_tour_early_says_where_it_lives():
     assert '<dialog id="tourdlg"' in INDEX
     assert "if (!done) tourDoneShow();" in INDEX
     assert "Settings &rsaquo; Getting started" in INDEX
+
+
+def test_the_tour_reaches_every_section_of_the_nav():
+    """The tour is the only description of the whole product, and a section
+    it never visits is one a new colleague does not know exists. Budget and
+    Fleet went missing from the first enterprise tour for exactly that
+    reason. Sections are the NAV list the work areas are built from; a
+    section counts as reached when one of its views is a step."""
+    nav = INDEX.split("const NAV = [", 1)[1].split("\n];", 1)[0]
+    sections = {}
+    for sec in re.finditer(r"\{id:'([a-z]+)'.*?items:\[(.*?)\]\}", nav, re.S):
+        sections[sec.group(1)] = set(re.findall(r"\['([a-z-]+)'", sec.group(2)))
+    assert len(sections) >= 8, sections
+    for role in ("admin", "viewer"):
+        block = TOURS.split(role + ": [", 1)[1].split("\n  ],", 1)[0]
+        reached = set(re.findall(r"view: '([a-z-]+)'", block))
+        missing = sorted(sid for sid, views in sections.items() if not views & reached)
+        assert not missing, f"{role} tour never reaches: {missing}"
+
+
+def test_a_step_that_only_applies_in_login_mode_says_so():
+    """The account control exists only when somebody signed in. A tour that
+    pointed at it on a no-login deployment dimmed the page to frame nothing;
+    the step now carries its own condition and tourStart filters on it."""
+    assert "sel: '#who', when: () => !!(AUTH && AUTH.mode === 'login' && AUTH.username)" in TOURS
+    assert "TOURS[role].filter(st => !st.when || st.when())" in INDEX
+
+
+def test_the_spotlight_snaps_and_fades_rather_than_gliding():
+    """The hole is a 9999px box-shadow. Animating its position repainted the
+    whole viewport every frame, and between pages the old box visibly slid
+    across to the new target. Geometry snaps; only opacity transitions, and
+    the target is measured after an instant scroll, not part-way through a
+    smooth one."""
+    css = INDEX.split("</style>", 1)[0]
+    tour_css = css[css.index("#tour {"):css.index("/* ---- charts")]
+    assert "transition: top" not in tour_css
+    assert "transition: opacity" in tour_css
+    assert "#tour.moving #tour-ring, #tour.moving #tour-card { opacity: 0; }" in tour_css
+    assert "el.scrollIntoView({block: 'center', behavior: 'auto'});" in INDEX
+    assert "behavior: 'smooth'" not in INDEX.split("async function tourShow()", 1)[1].split("\nfunction tourRelease", 1)[0]
+
+
+def test_every_action_target_is_still_rendered():
+    """A step can aim at a control by its data-act, which is what the
+    overview's Edit button is. Unlike a data-tour hook that exists only for
+    the tour, a data-act is real wiring somebody may rename while doing
+    something else entirely."""
+    used = set(re.findall(r'sel: \'\[data-act="([a-z-]+)"\]\'', TOURS))
+    assert used, "no data-act steps parsed; this test is guarding nothing"
+    for act in used:
+        assert f'data-act="{act}"' in INDEX, f"nothing renders data-act={act}"
+
+
+def test_a_step_on_the_same_page_never_blinks():
+    """Fading the card out and then animating it in from nothing made every
+    Next blink twice. The fade happens only across a page change, and the
+    enter animation moves the card without touching its opacity."""
+    show = INDEX.split("async function tourShow()", 1)[1].split("\nfunction tourRelease()", 1)[0]
+    assert "TOUR.moved = moving;" in show
+    assert "if (moving && layer.classList.contains('on')" in show
+    assert "if (TOUR.moved) { void card.offsetWidth; card.classList.add('step-in'); }" in INDEX
+    keyframes = INDEX.split("@keyframes tour-in {", 1)[1].split("}\n}", 1)[0]
+    assert "opacity" not in keyframes

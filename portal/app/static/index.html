@@ -599,10 +599,11 @@ a.libtn:hover{border-color:var(--pri)}
   /* Clicks pass through to the real control underneath. A step that asks
      somebody to press something has to let them press it. */
   pointer-events: none;
-  transition: top .32s cubic-bezier(.4, 0, .2, 1),
-              left .32s cubic-bezier(.4, 0, .2, 1),
-              width .32s cubic-bezier(.4, 0, .2, 1),
-              height .32s cubic-bezier(.4, 0, .2, 1);
+  /* No geometry transition, deliberately. The hole is a 9999px box-shadow,
+     so sliding it repaints the whole viewport on every frame, and between
+     pages the old box visibly glided across to the new one. It snaps; the
+     ring and card fade instead, which is what reads as one step ending
+     and the next beginning. */
 }
 /* A step with nowhere to point (the welcome, the sign-off) dims the whole
    page instead of cutting a hole in the middle of it. */
@@ -610,12 +611,12 @@ a.libtn:hover{border-color:var(--pri)}
 #tour-ring {
   position: absolute; border-radius: 10px; pointer-events: none;
   border: 2px solid var(--acc); opacity: 0;
-  transition: top .32s cubic-bezier(.4, 0, .2, 1),
-              left .32s cubic-bezier(.4, 0, .2, 1),
-              width .32s cubic-bezier(.4, 0, .2, 1),
-              height .32s cubic-bezier(.4, 0, .2, 1);
+  transition: opacity .18s ease;
 }
 #tour.aimed #tour-ring { opacity: 1; }
+/* Between steps: the old spotlight fades before the page changes under
+   it, and the new one fades in where it lands. */
+#tour.moving #tour-ring, #tour.moving #tour-card { opacity: 0; }
 /* Only the steps that want a click pulse. Everywhere else it would be an
    animation asking for something the step does not want. */
 #tour.wants-click #tour-ring { animation: tour-pulse 1.6s ease-out infinite; }
@@ -630,13 +631,12 @@ a.libtn:hover{border-color:var(--pri)}
   border-radius: 12px; padding: 16px 18px 14px;
   box-shadow: 0 8px 32px rgba(8, 12, 18, .28);
   pointer-events: auto;
-  transition: top .32s cubic-bezier(.4, 0, .2, 1),
-              left .32s cubic-bezier(.4, 0, .2, 1);
+  transition: opacity .12s ease;
 }
 #tour-card.step-in { animation: tour-in .34s cubic-bezier(.2, .8, .3, 1); }
 @keyframes tour-in {
-  from { opacity: 0; transform: translateY(6px) scale(.985); }
-  to   { opacity: 1; transform: none; }
+  from { transform: translateY(6px) scale(.985); }
+  to   { transform: none; }
 }
 #tour-card h4 { margin: 0 0 6px; font-size: 15px; }
 #tour-card p { margin: 0 0 12px; font-size: 13px; line-height: 1.5;
@@ -654,7 +654,9 @@ a.libtn:hover{border-color:var(--pri)}
    should give way, not the way forward. */
 #tour-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
              row-gap: 10px; }
-#tour-dots { display: flex; gap: 4px; margin-right: auto; flex-wrap: wrap;
+/* Dots on their own row: fourteen of them beside three buttons wrapped
+   Next onto a line of its own at the card's width. */
+#tour-dots { display: flex; gap: 4px; flex-basis: 100%; margin: 0 0 2px;
              min-width: 0; }
 #tour-card button { flex: 0 0 auto; }
 #tour-dots i {
@@ -671,7 +673,7 @@ a.libtn:hover{border-color:var(--pri)}
   background: var(--acc); border-color: var(--acc); color: #fff;
 }
 #tour-card button.ghost { border-color: transparent; background: transparent;
-                          color: var(--mut); padding: 6px 8px; }
+                          color: var(--mut); padding: 6px 8px; margin-right: auto; }
 #tour-card button:hover { filter: brightness(1.06); }
 /* Somebody who has asked their browser to stop things moving gets the same
    tour with none of the motion. */
@@ -951,12 +953,20 @@ a.libtn:hover{border-color:var(--pri)}
 .ag-limit li:last-child{margin-bottom:0}
 .ag-limit li b{color:var(--fg);font-weight:600}
 </style>
+<link rel="stylesheet" href="/enterprise.css">
 <div class="overlay" id="overlay"></div>
 <div class="drawer" id="drawer"></div>
 <div class="shell" id="shell">
   <aside>
-    <div class="brand"><img src="/logo.png" alt="Shadow AI Guard"></div>
+    <button class="brand" id="brand-home" type="button"
+      aria-label="Go to Workspace overview"><img src="/logo.png" alt="Shadow AI Guard"></button>
     <div class="brandline"></div>
+    <button class="tenant-switch" id="estate-status" type="button"
+      aria-label="Open System health">
+      <span class="tenant-avatar" id="estate-avatar">·</span>
+      <span class="tenant-copy"><b id="estate-name">Portal</b><span id="estate-sub"><i class="estate-dot off"></i> Checking sources…</span></span>
+      <span class="tenant-chev" aria-hidden="true">System health</span>
+    </button>
     <nav id="nav"></nav>
     <button class="fold" id="fold" title="collapse sidebar">«</button>
     <div class="foot"><span class="txt">
@@ -967,20 +977,23 @@ a.libtn:hover{border-color:var(--pri)}
   </aside>
   <div>
     <div class="topbar">
+      <button class="mobile-nav" id="mobile-nav" title="open navigation"
+        aria-label="Open navigation">☰</button>
+      <span class="top-context"><b id="topctx-name">Portal</b><span id="topctx-sub">Checking sources…</span></span>
       <div class="search">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.8-3.8"/></svg>
-        <input id="q" placeholder="filter this view…">
+        <input id="q" placeholder="Search this view, or jump to a page, tool or device…"
+          autocomplete="off" aria-autocomplete="list" aria-controls="qresults">
+        <span class="search-key" aria-hidden="true">/</span>
+        <div id="qresults" role="listbox" hidden></div>
       </div>
-      <span id="freshness" class="mono" style="font-size:11px;color:var(--mut)"></span>
+      <span class="live-state"><span id="freshness" class="mono"></span></span>
       <button id="refresh" class="back" style="margin:0">Refresh</button>
-      <span id="whowrap" style="margin-left:auto;position:relative">
-        <button id="who" class="back mono" style="margin:0;font-size:11px;
-          color:var(--mut);display:none" aria-haspopup="true"
-          aria-expanded="false"></button>
-        <div id="usermenu" hidden>
-          <div class="umhead" id="um-who"></div>
-          <button class="umitem" data-act="open-password">Change password</button>
-        </div>
+      <span class="trust-state off" id="trust-state" title="Checking which detection sources have reported">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="2" aria-hidden="true"><path
+          d="M12 3l8 3v5.5c0 4.7-3.2 8.2-8 10-4.8-1.8-8-5.3-8-10V6l8-3z"/>
+          <path d="m8.5 12 2.2 2.2 4.8-5"/></svg><span id="trust-text">Checking sources…</span>
       </span>
       <button id="signout" class="back" style="margin:0;display:none">Sign out</button>
       <button id="themebtn" class="back" style="margin:0" title="light / dark">◐</button>
@@ -995,6 +1008,19 @@ a.libtn:hover{border-color:var(--pri)}
             0"/></svg><span class="bcount"></span><span class="bdot"></span>
         </button>
         <div id="setuppanel" hidden></div>
+      </span>
+      <span id="whowrap" class="account-wrap">
+        <button id="who" class="account-button" style="display:none"
+          aria-haspopup="true" aria-expanded="false">
+          <span class="account-avatar" id="who-avatar" aria-hidden="true"></span>
+          <span class="account-copy"><b id="who-name"></b><span id="who-role"></span></span>
+          <span class="account-chevron" aria-hidden="true">⌄</span>
+        </button>
+        <div id="usermenu" hidden>
+          <div class="umhead" id="um-who"></div>
+          <button class="umitem" data-act="open-password">Change password</button>
+          <button class="umitem" id="signout-menu">Sign out</button>
+        </div>
       </span>
     </div>
     <main id="app"></main>
@@ -1070,7 +1096,7 @@ let SETTAB = 'fleet';
 const STABS = [['fleet', 'Detection & paste guard'],
                ['connection', 'Receiver & log store'],
                ['alerting', 'Display & alerting'], ['account', 'Account'],
-               ['start', 'Getting started'], ['diagnostics', 'Diagnostics']];
+               ['start', 'Getting started']];
 const SETTABS = STABS.map(([id]) => id);
 let DIAG = null;
 let REG = null;
@@ -1135,7 +1161,7 @@ let CAND = null;
 // Finding lifecycle: key -> {status, reason, actor, at} from the receiver,
 // and which personal-account row has its accept-reason form open.
 let PSTAT = null, PAFORM = null;
-// The audit trail, fetched when the Diagnostics tab asks for it.
+// The audit trail, fetched when the System health view asks for it.
 let AUDITLOG = null;
 // The accounts list (admins only), which row has its reset form open, and
 // the last account-management refusal.
@@ -1228,9 +1254,19 @@ function chrome(on) {
   const so = document.getElementById('signout'), who = document.getElementById('who');
   const login = AUTH && AUTH.mode === 'login';
   so.style.display = on && login ? '' : 'none';
-  const label = on && login && AUTH.username
-    ? AUTH.username + (AUTH.role === 'viewer' ? ' · read-only' : '') : '';
-  who.textContent = label;
+  const label = on && login && AUTH.username ? AUTH.username : '';
+  const roleLabel = !label ? '' : AUTH.role === 'owner' ? 'Owner'
+    : AUTH.role === 'viewer' ? 'Read-only' : 'Administrator';
+  const displayName = label ? label.replace(/[._-]+/g, ' ')
+    .replace(/\b\w/g, c => c.toUpperCase()) : '';
+  const initials = displayName ? displayName.split(/\s+/).filter(Boolean)
+    .slice(0, 2).map(p => p[0]).join('').toUpperCase() : '';
+  const whoName = document.getElementById('who-name');
+  const whoRole = document.getElementById('who-role');
+  const whoAvatar = document.getElementById('who-avatar');
+  if (whoName) whoName.textContent = displayName;
+  if (whoRole) whoRole.textContent = roleLabel;
+  if (whoAvatar) whoAvatar.textContent = initials;
   // A button only when there is a menu behind it. Signed out, or on a
   // no-login deployment, it would open an empty panel.
   who.style.display = label ? '' : 'none';
@@ -1238,7 +1274,8 @@ function chrome(on) {
   if (!label) { if (um) um.hidden = true; who.setAttribute('aria-expanded', 'false');
                 pwHide(); }
   const umw = document.getElementById('um-who');
-  if (umw) umw.textContent = label;
+  if (umw) umw.innerHTML = label
+    ? `<strong>${esc(displayName)}</strong><span>${esc(roleLabel)}</span>` : '';
 }
 
 // The account menu. It carries the one thing a person changes about
@@ -1411,6 +1448,7 @@ function showLogin(msg) {
   // and that account is needed precisely when the provider is unreachable,
   // which is the worst moment to discover the form is gone.
   const forced = !create && AUTH && AUTH.sso && AUTH.sso_enforced;
+  const org = ((AUTH && AUTH.org_name) || '').trim();
   const passwordFields = `
     <p><input id="li-user" class="mfield" style="width:100%"
       placeholder="username" autocomplete="username"></p>
@@ -1431,8 +1469,9 @@ function showLogin(msg) {
          <code>kubectl logs deploy/&lt;release&gt;-ai-guard | grep setup_code</code>
          or <code>docker compose logs receiver</code>. The code works once;
          if you lose it, restart the receiver for a fresh one.`
-      : forced ? `Sign in with your work account.`
-      : `Sign in with your account.`}</p>
+      : forced ? (org ? `Sign in to ${esc(org)} with your work account.`
+                      : `Sign in with your work account.`)
+      : org ? `Sign in to ${esc(org)}.` : `Sign in with your account.`}</p>
     ${msg ? `<div class="note">${esc(msg)}</div>` : ''}
     ${forced ? `
       <p style="margin:0 0 10px">${ssoButton()}</p>
@@ -1510,14 +1549,15 @@ async function load(force) {
     // Its own try as well: failing to read a preference is a reason to
     // fall back to the browser copy, never a reason to lose the page.
     try { await prefsLoad(); } catch (e) { /* prefsLoad has its own fallback */ }
-    const gr = await fetch('/api/graph' + q);
+    HOURS = windowPref();
+    const gr = await fetch('/api/graph' + q + hq(q ? '&' : '?'));
     if (!gr.ok) throw new Error((await gr.json()).detail || gr.statusText);
     G = await gr.json();
-    const sr = await fetch('/api/status');
+    const sr = await fetch('/api/status' + hq());
     if (sr.ok) S = await sr.json();
     // Fetched here rather than lazily, because the overview may draw a paste
     // guard widget and a widget that fetches on render would flash empty.
-    const pr = await fetch('/api/paste-guard');
+    const pr = await fetch('/api/paste-guard' + hq());
     if (pr.ok) PG = await pr.json();
     // The recorded answers to findings (acknowledged / accepted), managed
     // mode only. Failure leaves PSTAT null and every row simply reads open.
@@ -1549,14 +1589,14 @@ async function load(force) {
     // The agentic tile needs its own read, and only when it is on the page.
     if ((CFG.overview_widgets || []).some(w => w.kind === 'agentic') && !AGENTIC) {
       try {
-        const ar = await fetch('/api/agentic');
+        const ar = await fetch('/api/agentic' + hq());
         if (ar.ok) AGENTIC = await ar.json();
       } catch (e) { /* the tile says it has not been read */ }
     }
     // Same again for the review queue: it draws from the register, and in
     // managed mode from the discovery candidates queue too.
     if ((CFG.overview_widgets || []).some(w => w.kind === 'review_queue')) {
-      const rr = await fetch('/api/register');
+      const rr = await fetch('/api/register' + hq());
       if (rr.ok) REG = await rr.json();
       if (CFG.managed && CFG.managed.enabled && AUTH && AUTH.mode === 'login') {
         const cq = await mfetch('/api/candidates');
@@ -1598,6 +1638,7 @@ async function load(force) {
   }
   render();
   showFreshness();
+  showEstate();
 }
 
 // The tour opens itself once, for somebody who has not seen the one for
@@ -1622,7 +1663,10 @@ async function maybeTour() {
   TOURTRIED = true;
   const seen = await tourProgress();
   const role = tourRole();
-  if (seen[role]) return;
+  // Completion and dismissal are both answers for this edition. Older
+  // versions (including the old unversioned "skipped" marker) deliberately
+  // fall through so a redesigned interface can explain itself again.
+  if (seen[role] === TOUR_VERSION || seen[role] === TOUR_VERSION + ':skipped') return;
   // Having taken the other role's tour means the role changed under them,
   // which is worth saying out loud before offering a second walkthrough.
   const other = seen[role === 'admin' ? 'viewer' : 'admin'];
@@ -1770,6 +1814,45 @@ function showFreshness() {
   clearInterval(window._freshTimer);
   window._freshTimer = setInterval(tick, 5000);
 }
+// The estate control and the top-bar badge say what the last read said, not
+// a fixed word. "Monitoring active" holds when at least one detection source
+// reported inside the lookback window; a fresh install, a silent estate and a
+// failed read each say exactly that instead. Whether the estate is managed
+// comes from the same config the rest of the page gates on.
+function showEstate() {
+  const managed = !!(CFG && CFG.managed && CFG.managed.enabled);
+  // The organisation's own name when an admin has set one (a central
+  // setting, served to the sign-in screen too), else what the portal is.
+  const org = ((AUTH && AUTH.org_name) || '').trim();
+  const kind = managed ? 'Managed estate' : 'Standalone portal';
+  const name = org || kind;
+  const rep = S ? (S.reporting || 0) : 0, total = S ? (S.total || 0) : 0;
+  const hours = hoursNow() + 'h';
+  let state, text, sub, title;
+  if (loadError || !G) {
+    state = 'warn'; text = 'Data unavailable'; sub = 'Last read failed';
+    title = 'The portal could not read the estate. Open System health.';
+  } else if (rep > 0) {
+    state = 'ok'; text = 'Monitoring active';
+    // Short enough for the sidebar control; the title carries the sentence.
+    sub = rep + '/' + total + ' reporting';
+    title = rep + ' of ' + total + ' detection sources reported within ' + hours + '.';
+  } else {
+    state = 'off'; text = 'No sources reporting'; sub = 'No source has reported';
+    title = 'No detection source has reported within ' + hours
+      + '. Open Detection sources to link one.';
+  }
+  const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  set('estate-name', name);
+  set('estate-avatar', org ? org.replace(/^[^a-z0-9]+/i, '')[0] || 'M' : managed ? 'M' : 'P');
+  set('topctx-name', name); set('topctx-sub', sub); set('trust-text', text);
+  const es = document.getElementById('estate-sub');
+  if (es) es.innerHTML = '<i class="estate-dot ' + state + '"></i> ' + esc(sub);
+  const ts = document.getElementById('trust-state');
+  if (ts) { ts.className = 'trust-state ' + state; ts.title = title; }
+  const ctl = document.getElementById('estate-status');
+  if (ctl) ctl.title = (org ? kind + ' · ' : '') + title + ' Opens System health.';
+}
 const app = document.getElementById('app'), q = document.getElementById('q');
 // The view lives in the URL fragment. A reload landing back on Setup loses
 // where you were, and storing it would need somewhere to store it; the
@@ -1802,6 +1885,13 @@ const NAVICONS = {
   managed:'<rect x="3" y="5" width="18" height="12" rx="1.5"/><path d="M8 21h8"/>',
   system:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3m0 14v3M2 12h3m14 0h3M4.9 4.9l2.1 2.1m10 10l2.1 2.1M19.1 4.9l-2.1 2.1m-10 10l-2.1 2.1"/>',
 };
+const NAVAREAS = [
+  {id:'overview', lbl:'Overview', icon:'home', sections:['home']},
+  {id:'discovery', lbl:'Discovery', icon:'inventory', sections:['inventory']},
+  {id:'governance', lbl:'Governance', icon:'governance', sections:['governance','spend']},
+  {id:'operations', lbl:'Operations', icon:'health', sections:['agentic','health','managed']},
+  {id:'administration', lbl:'Settings', icon:'system', sections:['system'], direct:'settings'},
+];
 
 // Derived from NAV rather than written out beside it. Kept as a second list,
 // #register was missing from it: the nav entry worked, the view rendered, and
@@ -1810,7 +1900,7 @@ const NAVICONS = {
 // 'wizard' is reachable by fragment but absent from the nav: it is a door
 // you walk through once, not a place to live.
 const VIEWS = NAV.flatMap(sec => sec.items.map(([id]) => id))
-  .concat(['wizard', 'extsetup', 'budget-report']);
+  .concat(['wizard', 'extsetup', 'budget-report', 'diagnostics']);
 // Where a bare URL lands. Derived from the nav rather than spelled out, so
 // the front door is whatever the sidebar names first and there is no second
 // list to keep in step.
@@ -1830,6 +1920,9 @@ const fromHash = () => {
     // Checked against the known tabs exactly like the view below it. This
     // is the point the value stops being a fragment and starts being a tab.
     const tab = h.split('/')[1];
+    // Diagnostics used to be a Settings tab. Keep old bookmarks working,
+    // but let the estate-level health view have its own destination now.
+    if (tab === 'diagnostics') return {view: 'diagnostics', tab: null};
     return {view: 'settings', tab: SETTABS.includes(tab) ? tab : null};
   }
   // An unknown or empty fragment lands on the Overview. It used to land on
@@ -1851,6 +1944,60 @@ if (BOOT.view === 'settings' && !BOOT.tab) {
   history.replaceState(null, '', frag('settings'));
 }
 let view = BOOT.view, detail = null, filter = '';
+// The reporting window. Null means the deployment's LOOKBACK_HOURS; a
+// choice is kept as a preference and sent on every read that accepts one
+// (the server caches per window), so every page agrees on what "now" is.
+// Ninety days is the server's ceiling.
+let HOURS = null;
+const WINDOWS = [[24, '24 hours'], [72, '3 days'], [168, '7 days'],
+                 [336, '14 days'], [720, '30 days'], [2160, '90 days']];
+const hoursNow = () => Number(HOURS || (CFG && CFG.lookback_hours) || 168);
+const hq = sep => HOURS ? (sep || '?') + 'hours=' + HOURS : '';
+const windowPref = () => {
+  const v = Number(pref('window.hours', ''));
+  return v > 0 && v <= 2160 ? v : null;
+};
+const fmtWindow = h => h >= 24 && h % 24 === 0
+  ? (h === 24 ? '24 hours' : Math.round(h / 24) + ' days') : h + ' hours';
+// The one select for the window, used by the Overview header and the
+// Settings card. Options are the fixed set plus the deployment default when
+// that is not among them, so the default can always be chosen back.
+function windowSelect(cls) {
+  const hours = hoursNow();
+  const dflt = Number((CFG && CFG.lookback_hours) || 168);
+  const choices = WINDOWS.some(w => w[0] === dflt) ? WINDOWS
+    : [[dflt, fmtWindow(dflt)]].concat(WINDOWS).sort((a, b) => a[0] - b[0]);
+  return `<label class="${cls}"
+      title="Every count is for this window. The deployment default is ${esc(fmtWindow(dflt))}; Grafana panels keep their own time range.">
+      <select data-window aria-label="Reporting window">${
+        choices.map(([h, l]) => `<option value="${h}"${h === hours ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label>`;
+}
+// A preference of the person, not a setting of the deployment, so it sits
+// with the other display choices and says so.
+function windowRow() {
+  const dflt = Number((CFG && CFG.lookback_hours) || 168);
+  return `<dt>Reporting window${INFO}</dt><dd>${windowSelect('mfield window-field')}
+    <span class="pill p-mut">yours</span>
+    <div class="src-note fnote">Every page reports over this window, and the
+    choice follows your account rather than the deployment. The deployment
+    default is ${esc(fmtWindow(dflt))}. The Overview header carries the same
+    control for quick changes; Grafana panels keep their own time range.</div></dd>`;
+}
+// Standalone portals have no central settings, but the window is still a
+// choice a person can make, so the card stands alone there.
+function windowSettings() {
+  return `<div class="wcard" style="margin-bottom:10px"><h3>Display</h3>
+  <dl class="kv">${windowRow()}</dl></div>`;
+}
+async function setWindow(h) {
+  const dflt = Number((CFG && CFG.lookback_hours) || 168);
+  HOURS = h === dflt ? null : h;
+  await prefSet('window.hours', HOURS ? String(HOURS) : null);
+  // Everything read for the old window is stale, including the views that
+  // fetch on first render.
+  REG = null; EV = null; PG = null; AGENTIC = null;
+  await load();
+}
 
 // Escapes the five characters that matter in HTML text and in a quoted
 // attribute. The apostrophe was missing, and it mattered: values were
@@ -2107,7 +2254,10 @@ const WIDGETS = {
   stat_row: () => {
     const devs = ents(G.devices), pa = G.personal_accounts || [];
     const gaps = devs.filter(([,d]) => d.scanner_seen && !d.collector_seen);
-    const week = Date.now()/1000 - 7*86400;
+    // "New" is relative to the window, capped at a week: in a 30-day
+    // window a week is still what somebody means by recent.
+    const freshH = Math.min(hoursNow(), 168);
+    const week = Date.now()/1000 - freshH*3600;
     const fresh = pa.filter(r => r.first_seen &&
       Date.parse(r.first_seen)/1000 > week).length;
     const tr = G.trends || {};
@@ -2115,27 +2265,46 @@ const WIDGETS = {
     // "what needs someone", and an answered finding no longer does.
     const open = PSTAT
       ? pa.filter(r => (PSTAT[paKey(r)] || {}).status !== 'accepted') : pa;
-    return `<dl class="stats" data-tour="stats">
-      <div><dt style="color:var(--dstr)">${open.length}${trendChip(tr.personal, true)}</dt>
-        <dd${open.length !== pa.length
-          ? ` title="${pa.length - open.length} more accepted with a reason"` : ''}>
-        open personal accounts</dd>${spark(tr.personal, true)}</div>
-      <div><dt>${fresh}</dt><dd title="First seen in the last 7 days, within the current lookback window">new this week</dd></div>
-      ${(() => {
-        // People and unattributed devices, counted apart. This was one
-        // tile of `user || device`, so an unattributed laptop counted as
-        // a person - and a person seen on two surfaces, named on one and
-        // unresolved on the other, counted twice in the same number.
-        const named = new Set(pa.filter(r => r.user).map(r => r.user));
-        const anon = new Set(pa.filter(r => !r.user && r.device).map(r => r.device));
-        return `<div><dt>${named.size}</dt><dd>affected people</dd></div>
-      ${anon.size ? `<div><dt>${anon.size}</dt><dd title="Personal-account rows whose device no identity map covers - counted apart, because a device is not a person">unattributed devices</dd></div>` : ''}`;
-      })()}
-      <div><dt>${new Set(pa.map(r=>r.tool)).size}</dt><dd>affected tools</dd></div>
-      <div><dt>${devs.length}</dt><dd>devices</dd>${spark(tr.devices)}</div>
-      <div><dt>${ents(G.tools).length}</dt><dd>tools</dd></div>
-      <div><dt${gaps.length ? ' style="color:var(--warn)"' : ''}>${gaps.length}</dt><dd>coverage gaps</dd></div>
-    </dl>`;
+    // People and unattributed devices remain separate: a machine is not a
+    // person, even when it is the only identity the finding carries.
+    const named = new Set(pa.filter(r => r.user).map(r => r.user));
+    const anon = new Set(pa.filter(r => !r.user && r.device).map(r => r.device));
+    const affectedTools = new Set(pa.map(r => r.tool)).size;
+    const tools = ents(G.tools).length;
+    const covered = Math.max(0, devs.length - gaps.length);
+    const coverage = devs.length ? Math.round(covered / devs.length * 100) : 0;
+    const attention = open.length || gaps.length;
+    // "Healthy" needs something to have looked: a fleet where no source
+    // reported in this window has zero of everything, and zero is not a
+    // clean bill. The status read is the same one the top-bar badge uses.
+    const silent = !S || !S.reporting;
+    const mood = silent ? 'silent' : attention ? 'needs-attention' : 'healthy';
+    return `<div class="overview-executive w12 ${mood}"
+      data-tour="stats">
+      <section class="executive-posture">
+        <span>Overall posture</span>
+        <strong>${silent ? 'Nothing reporting' : attention ? 'Needs attention' : 'Monitoring healthy'}</strong>
+        <p>${silent
+          ? 'No detection source reported in this window. These counts are missing data, not a clean result.'
+          : `${open.length} open personal account${open.length === 1 ? '' : 's'} ·
+          ${gaps.length} coverage gap${gaps.length === 1 ? '' : 's'}`}</p>
+        <div class="executive-actions">
+          ${open.length ? '<button class="mini" data-nav="personal">Review accounts</button>' : ''}
+          <button class="mini" data-nav="coverage">Verify coverage</button>
+        </div>
+      </section>
+      <dl class="executive-metrics">
+        <div><dt${open.length ? ' class="risk"' : ''}>${open.length}${trendChip(tr.personal, true)}</dt>
+          <dd>Open personal accounts</dd><small>${fresh} first seen in the last ${fmtWindow(freshH)}${
+            open.length !== pa.length ? ` · ${pa.length - open.length} accepted` : ''}</small></div>
+        <div><dt>${named.size}</dt><dd>Affected people</dd>
+          <small>${anon.size ? anon.size + ' unattributed device' + (anon.size === 1 ? '' : 's') : 'Every device is attributed'}</small></div>
+        <div><dt>${tools}</dt><dd>AI tools observed</dd>
+          <small>${affectedTools} linked to personal-account use</small></div>
+        <div><dt class="${gaps.length ? 'attention' : 'good'}">${coverage}%</dt>
+          <dd>Detection coverage</dd><small>${covered} of ${devs.length} devices · ${gaps.length} gaps</small></div>
+      </dl>
+    </div>`;
   },
 
   budget_spend: () => {
@@ -2163,6 +2332,17 @@ const WIDGETS = {
       <div><dt>${subs.length}</dt><dd>tools linked</dd></div>
       <div><dt${unob ? ' style="color:var(--warn)"' : ''}>${unob}</dt><dd>paid seats never observed</dd></div>
     </dl>
+    <table class="plain budget-lines">${subs.map(sub => {
+      const r = bReconcile(sub);
+      const seats = (sub.seat_tiers || []).reduce((x, t) => x + (t.seats || 0), 0);
+      return `<tr data-nav="budget" style="cursor:pointer">
+        <td>${esc(sub.tool_id)}${sub.plan ? ` <span class="pill p-mut">${esc(sub.plan)}</span>` : ''}</td>
+        <td class="num">${bMoney(bSubMonthly(sub), sub.currency)}<span class="src-note"> /month</span></td>
+        <td class="num">${r.matched.length} of ${seats} seat${seats === 1 ? '' : 's'} in use</td>
+        <td class="num">${r.unobserved.length
+          ? `<span class="pill p-warn">${r.unobserved.length} idle</span>` : ''}${r.strangers.length
+          ? ` <span class="pill p-amb">${r.strangers.length} unseated</span>` : ''}</td></tr>`;
+    }).join('')}</table>
     <p class="src-note">${next ? `next renewal: ${esc(next.tool_id)} ${when(next.renewal_date)} · ` : ''}<button class="mini" data-nav="budget">Open Budget</button></p></div>`;
   },
 
@@ -2183,11 +2363,11 @@ const WIDGETS = {
         <td class="num">${(t.devices||[]).length || (t.identities||[]).length}</td></tr>`;
     }).join('')}</table>`)
     + `<p class="src-note">${bars
-      ? 'Devices per tool over the window. Click a tool to open it, or '
-        + 'switch to the table for the last ' + ((tr.days||[]).length || 7)
-        + ' days per tool.'
-      : 'The bars are the last ' + ((tr.days||[]).length || 7) + ' days, '
-        + 'left to right. Click a tool to open it.'}</p>`
+      ? 'Devices per tool over the last ' + fmtWindow(hoursNow())
+        + '. Click a tool to open it, or switch to the table for one bar '
+        + 'per day.'
+      : 'One bar per day for the last ' + fmtWindow(hoursNow())
+        + ', left to right. Click a tool to open it.'}</p>`
     : '<p class="lede">Nothing reported yet.</p>'}</div>`;
   },
 
@@ -2244,15 +2424,17 @@ const WIDGETS = {
   // whether it was 12 last week or 40.
   activity_trend: () => {
     const tr = G.trends || {}, days = tr.days || [];
-    if (days.length < 2) return `<div class="wcard w6"><h3>Activity</h3>
+    if (days.length < 2) return `<div class="wcard w6 exposure-trend-card"><h3>Personal-account exposure</h3>
       <p class="lede">Not enough days in the window to draw a trend yet.</p></div>`;
-    return `<div class="wcard w6"><h3>Activity</h3>
-    ${trendChart(days, tr.personal || days.map(() => 0),
-                 tr.devices || days.map(() => 0),
-                 'personal accounts', 'devices reporting')}
-    <p class="src-note">Per day across the window. Devices is context, not a
-    second story: personal accounts falling while devices falls with it is a
-    fleet going quiet, not a problem being fixed.</p></div>`;
+    return `<div class="wcard w6 exposure-trend-card">
+    <div class="trend-heading"><div><h3>Personal-account exposure</h3>
+      <p>Daily detections against reporting coverage</p></div></div>
+    <div class="exposure-chart">${trendChart(days,
+      tr.personal || days.map(() => 0), tr.devices || days.map(() => 0),
+      'personal-account detections', 'reporting devices')}</div>
+    <p class="src-note">Real findings per day, not a synthetic risk score.
+      Reporting devices provide the confidence check: both lines falling
+      together can mean the fleet went quiet rather than exposure improved.</p></div>`;
   },
 
   source_health: () => {
@@ -2315,41 +2497,45 @@ const WIDGETS = {
     // dismissed means a human did.
     const cands = (CAND || []).filter(c => !c.resolved && !c.dismissed_at);
     const candBlock = !cands.length ? '' : `
-      <h4 style="margin:10px 0 4px">New AI tools found
-        <span class="count">${cands.length}</span></h4>
-      <table>${cands.slice(0, 6).map(c => `<tr>
-        <td>${esc(c.name)}
-          ${c.kind === 'mcp_server' ? ' <span class="pill p-acc">MCP server</span>' : ''}
-          ${c.kind === 'process' ? ' <span class="pill p-warn">process</span>' : ''}
-          <div style="color:var(--mut);font-size:12px">
-          ${esc(c.kind === 'mcp_server' || c.kind === 'process'
-                  ? (c.evidence || '') : (c.domains || []).join(', '))}</div>
-          ${c.kind === 'process' && c.suggested_tool ? `<div style="font-size:12px">
-            <span class="pill p-acc">looks like ${esc(
-              ((REGTOOLS || []).find(t => t.id === c.suggested_tool) || {}).name
-              || c.suggested_tool)}</span>
-            <span style="color:var(--mut)">it reached a host the registry knows as
-            that tool — confirm or change below</span></div>` : ''}</td>
-        <td style="color:var(--mut)">${c.devices || 0} device${c.devices === 1 ? '' : 's'}
-          ${c.confidence ? ' · ' + esc(c.confidence) : ''}</td>
-        <td style="white-space:nowrap">
-          ${c.kind === 'process' ? ((REGTOOLS || []).length ? `<select class="mfield" id="cb-${esc(c.key)}"
-            style="min-width:130px;font-size:12px"
-            title="A vendor's binary is often named nothing like its product - Warp's is called stable, after its release channel. Say which tool this is and every view that reads a process name gets it.">
-            <option value="">belongs to…</option>
-            ${(REGTOOLS || []).slice().sort((a, b) => a.name.localeCompare(b.name))
-              .map(t => `<option value="${esc(t.id)}"${
-                t.id === c.suggested_tool ? ' selected' : ''}>${esc(t.name)}</option>`).join('')}
-          </select>
-          <button class="mini" data-act="cand-belongs" data-key="${esc(c.key)}">Link</button>`
-          // An empty dropdown reads as "no tools exist", which is never the
-          // answer - it means the list did not load. Say that instead.
-          : `<span class="src-note" title="The registry tool list did not load, so there is nothing to point this at. Refresh the page.">belongs-to unavailable</span> `)
-          + `<button class="mini" data-act="cand-noattr"
-            data-key="${esc(c.key)}" title="This name identifies no program - a resolver, a service host, a VPN tunnel that resolves for everything behind it. Recorded once and honoured everywhere a process name is read.">Names nothing</button> ` : ''}<button class="btn" data-act="cand-add" data-key="${esc(c.key)}">Add to registry</button>
-          <button class="btn" data-act="cand-dismiss" data-key="${esc(c.key)}">Dismiss</button>
-        </td></tr>`).join('')}</table>
-      ${cands.length > 6 ? `<p class="src-note">And ${cands.length - 6} more in the queue.</p>` : ''}`;
+      <section class="decision-section">
+        <div class="decision-section-head"><div><strong>New discoveries</strong>
+          <span>Observed signals that do not yet name a governed tool</span></div>
+          <span class="count">${cands.length}</span></div>
+        <div class="candidate-list">${cands.slice(0, 6).map(c => `
+          <article class="decision-candidate">
+            <div class="candidate-identity"><strong>${esc(c.name)}</strong>
+              ${c.kind === 'mcp_server' ? ' <span class="pill p-acc">MCP server</span>' : ''}
+              ${c.kind === 'process' ? ' <span class="pill p-warn">process</span>' : ''}
+              <p>${esc(c.kind === 'mcp_server' || c.kind === 'process'
+                    ? (c.evidence || '') : (c.domains || []).join(', '))}</p>
+              ${c.kind === 'process' && c.suggested_tool ? `<div class="candidate-suggestion">
+                <span class="pill p-acc">looks like ${esc(
+                  ((REGTOOLS || []).find(t => t.id === c.suggested_tool) || {}).name
+                  || c.suggested_tool)}</span>
+                <span>Confirm the tool match below.</span></div>` : ''}
+            </div>
+            <div class="candidate-scope"><b>${c.devices || 0}</b>
+              <span>device${c.devices === 1 ? '' : 's'}${
+                c.confidence ? ' · ' + esc(c.confidence) : ''}</span></div>
+            <div class="candidate-actions">
+              ${c.kind === 'process' ? ((REGTOOLS || []).length ? `<span class="candidate-linker">
+                <select class="mfield" id="cb-${esc(c.key)}"
+                  title="A vendor's binary is often named nothing like its product. Confirm which governed tool this process belongs to.">
+                  <option value="">belongs to…</option>
+                  ${(REGTOOLS || []).slice().sort((a, b) => a.name.localeCompare(b.name))
+                    .map(t => `<option value="${esc(t.id)}"${
+                      t.id === c.suggested_tool ? ' selected' : ''}>${esc(t.name)}</option>`).join('')}
+                </select><button class="mini" data-act="cand-belongs"
+                  data-key="${esc(c.key)}">Link</button></span>`
+                : `<span class="src-note" title="The registry tool list did not load. Refresh the page.">tool list unavailable</span>`)
+                + `<button class="mini" data-act="cand-noattr"
+                  data-key="${esc(c.key)}" title="Record that this signal identifies no program.">Names nothing</button>` : ''}
+              <button class="mini pri" data-act="cand-add" data-key="${esc(c.key)}">Add to registry</button>
+              <button class="mini" data-act="cand-dismiss" data-key="${esc(c.key)}">Dismiss</button>
+            </div>
+          </article>`).join('')}</div>
+        ${cands.length > 6 ? `<p class="src-note">And ${cands.length - 6} more in the queue.</p>` : ''}
+      </section>`;
     if (!undecided.length && !cands.length) {
       const ago = t => {
         const m = Math.round((Date.now() - Date.parse(t)) / 60000);
@@ -2358,25 +2544,29 @@ const WIDGETS = {
       const srcs = ((S && S.groups) || []).flatMap(g => g.sources || [])
         .filter(x => x.last_seen).sort((a, b) => a.last_seen < b.last_seen ? 1 : -1)
         .slice(0, 2);
-      return `<div class="wcard w6"><h3>Awaiting a decision</h3>
+      return `<div class="wcard w6 decision-widget"><h3>Awaiting a decision</h3>
         <p class="lede">No new AI tools awaiting a decision.${srcs.length
           ? ' Latest data: ' + srcs.map(x =>
               esc(x.label) + ' ' + ago(x.last_seen)).join(', ') + '.' : ''}</p></div>`;
     }
-    return `<div class="wcard w6"><h3>Awaiting a decision
-      <span class="count">${undecided.length + cands.length}</span></h3>
+    return `<div class="wcard w6 decision-widget"><div class="decision-widget-head">
+      <div><h3>Awaiting a decision</h3><p>Discovery and governance work that still needs an owner.</p></div>
+      <span class="count">${undecided.length + cands.length}</span>
+      </div>
     ${candBlock}
     ${!undecided.length ? '' : `
-    ${cands.length ? '<h4 style="margin:10px 0 4px">Observed, no decision recorded</h4>' : ''}
-    <table>${undecided.slice(0, 6).map(r => `<tr>
-      <td><a href="#register" style="color:var(--fg);text-decoration:none">${esc(r.name)}</a></td>
-      <td>${!r.in_registry ? '<span class="pill p-warn">not in registry</span>' : ''}
-          ${isNew(r) ? '<span class="pill p-acc">new today</span>' : ''}</td>
-      <td style="color:var(--mut)">${esc((r.first_seen || '').slice(0, 10))}</td>
-    </tr>`).join('')}</table>`}
-    <p class="src-note"><a href="#register" style="color:var(--pri)">Decide on
-    the AI register</a> - recording a decision clears the tool from this
-    queue.</p></div>`;
+    <section class="decision-section undecided-section">
+      <div class="decision-section-head"><div><strong>Observed, no decision recorded</strong>
+        <span>Known tools currently in use without an explicit outcome</span></div>
+        <span class="count">${undecided.length}</span></div>
+      <div class="undecided-list">${undecided.slice(0, 6).map(r => `<a href="#register">
+        <strong>${esc(r.name)}</strong><span>${!r.in_registry
+          ? '<span class="pill p-warn">not in registry</span>' : ''}${
+          isNew(r) ? '<span class="pill p-acc">new today</span>' : ''}</span>
+        <time>${esc((r.first_seen || '').slice(0, 10))}</time></a>`).join('')}</div>
+    </section>`}
+    <div class="decision-footer"><span>Recording a decision clears the tool from this queue.</span>
+      <a href="#register">Open AI register</a></div></div>`;
   },
 
   grafana: (w) => {
@@ -2389,7 +2579,7 @@ const WIDGETS = {
       "${esc(w.ref)}". Named here but not defined there, so there is nothing
       to draw.</div></div>`;
     const q = 'orgId=1&theme=' + (document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light')
-    + '&from=now-7d&to=now&kiosk';
+    + '&from=now-' + hoursNow() + 'h&to=now&kiosk';
     // No heading of our own. The panel draws its own, from the dashboard, so a
     // second one is both duplicated and less trustworthy: ours comes from
     // GRAFANA_PANELS, which is a snapshot of a title someone can rename in
@@ -2591,9 +2781,27 @@ function devices() {
   const rows = ents(G.devices)
     .filter(([k,d]) => match(k) || match(d.device_name) || (d.local_users||[]).some(match) || (d.tools||[]).some(match))
     .sort((a,b) => (b[1].tools||[]).length - (a[1].tools||[]).length);
-  return `<h2>Devices</h2><p class="lede">${rows.length} shown. The key is the most
-  stable identifier the source could get, usually a serial. Click for detail.</p>
-  ${rows.map(([k,d]) => card(k,d)).join('')}`;
+  const personal = rows.filter(([,d]) => (d.personal_accounts||[]).length).length;
+  const unattributed = rows.filter(([,d]) => !d.person).length;
+  const observedTools = new Set(rows.flatMap(([,d]) => d.tools || [])).size;
+  return `<h2>Devices</h2><p class="lede">${rows.length} device${rows.length === 1 ? '' : 's'} in this window. Each is keyed by the most stable identifier its source could get, usually a serial. Click one for detail.</p>
+  <div class="inventory-summary" data-tour="device-summary" aria-label="Device inventory summary">
+    <span><b>${rows.length}</b> devices</span>
+    <span><b>${observedTools}</b> AI tools observed</span>
+    <span class="${personal ? 'risk' : ''}"><b>${personal}</b> with personal accounts</span>
+    <span class="${unattributed ? 'attention' : ''}"><b>${unattributed}</b> unattributed</span>
+  </div>
+  <div class="tcard device-inventory"><table>
+    <thead><tr><th>Device</th><th>Person</th><th>AI tools</th>
+      <th>Personal accounts</th><th>Local users</th></tr></thead>
+    <tbody>${rows.map(([k,d]) => `<tr data-open="device" data-key="${esc(k)}">
+      <td><strong>${esc(label(k,d))}</strong><br><span class="mono row-key">${esc(k)}</span></td>
+      <td>${d.person ? `<span class="pill p-ok">${esc(d.person)}</span>` : '<span class="muted-value">Unattributed</span>'}</td>
+      <td><div class="cell-tags">${(d.tools||[]).map(t=>`<span class="pill p-mut">${esc(t)}</span>`).join('') || '<span class="muted-value">None observed</span>'}</div></td>
+      <td><div class="cell-tags">${(d.personal_accounts||[]).map(a=>`<span class="pill p-warn">${esc(a)}</span>`).join('') || '<span class="muted-value">None</span>'}</div></td>
+      <td><div class="cell-tags">${(d.local_users||[]).map(u=>`<span class="pill p-mut">${esc(u)}</span>`).join('') || '<span class="muted-value">—</span>'}</div></td>
+    </tr>`).join('')}</tbody>
+  </table></div>`;
 }
 
 // The identity map, editable here. It used to be the last piece of
@@ -2728,8 +2936,7 @@ async function people() {
   const rows = ents(G.identities).filter(([k]) => match(k))
     .sort((a,b) => (b[1].tools||[]).length - (a[1].tools||[]).length);
   const unattributed = ents(G.devices).filter(([,d]) => !d.person).length;
-  return `<h2>People</h2><p class="lede">Identities come from cloud sources, which know people rather
-  than machines. Devices appear here only where an identity map attaches them.</p>
+  return `<h2>People</h2><p class="lede">People named by cloud sources, which see accounts rather than machines. A device shows against a person only where the identity map links them.</p>
   ${identityMapPanel(unattributed)}
   <div class="tcard"><table><tr><th>identity</th><th>tools</th><th>devices</th></tr>
   ${rows.map(([k,i]) => `<tr><td>${esc(k)}${(i.aliases||[]).length
@@ -2757,7 +2964,7 @@ function attention(k, t) {
   if (t.usage === 'installed' && devs) f.push('installed, never used');
   if ((t.surfaces || []).filter(Boolean).length >= 2) f.push('multiple surfaces');
   const fs = ((G.trends || {}).tool_first_seen || {})[k];
-  if (fs && Date.parse(fs) > Date.now() - 2 * 86400000) f.push('new this week');
+  if (fs && Date.parse(fs) > Date.now() - 2 * 86400000) f.push('new in the last 2 days');
   const level = (personal && devs >= 3) || personal >= 2 ? 'high'
     : personal || f.length >= 2 ? 'medium' : '';
   return {level, factors: f};
@@ -2775,17 +2982,7 @@ function tools() {
       const rank = x => x[2].level === 'high' ? 2 : x[2].level === 'medium' ? 1 : 0;
       return rank(b) - rank(a) || (b[1].devices||[]).length - (a[1].devices||[]).length;
     });
-  return `<h2>Tools</h2><p class="lede">Surfaces are kept apart on purpose: the same
-  tool in a browser, a desktop app and a CLI are different exposures. The ones
-  needing a look sort first, marked <span class="pill p-warn">attention</span>
-  when several factors stack up and <span class="pill p-amb">watch</span> for
-  one - open a tool to see exactly which. "Identities from sources" counts
-  people a source named directly; the AI register counts those plus the people
-  the identity map attaches through a device, so the two differ for tools found
-  on endpoints. Editors that bundle AI - Cursor, Windsurf/Devin Desktop - are
-  marked <span class="pill p-mut">installed only</span> until something shows a
-  model actually ran, because finding one on a laptop proves an editor is
-  installed and not that anyone sent code to it.</p>
+  return `<h2>Tools</h2><p class="lede">The same tool in a browser, a desktop app and a CLI is three different exposures, so surfaces are listed separately. Tools that need a look sort first: <span class="pill p-warn">attention</span> when several factors stack up, <span class="pill p-amb">watch</span> for one. Open a tool to see which. Editors that bundle AI, such as Cursor or Windsurf, show as <span class="pill p-mut">installed only</span> until something shows a model actually ran. "Identities from sources" counts people a source named directly; the AI register also counts people linked through a device, so the two can differ.</p>
   <div class="tcard"><table><tr><th>tool</th><th></th><th>devices</th>
     <th title="People a SOURCE named on this tool. A cloud sign-in carries a person; an endpoint finding carries a machine, and the person behind it comes from the identity map - so this is lower than the register's user count for tools found on endpoints.">identities from sources</th>
     <th>by surface</th></tr>
@@ -2814,9 +3011,7 @@ function tools() {
 
 function coverage() {
   const gaps = ents(G.devices).filter(([,d]) => d.scanner_seen && !d.collector_seen);
-  return `<h2>Coverage</h2><p class="lede">These machines are known to an inventory or
-  telemetry source, but no endpoint collector has reported from them. Usually
-  that means the collector isn't installed there yet.</p>
+  return `<h2>Coverage</h2><p class="lede">Machines an inventory or telemetry source knows about, but no endpoint collector has reported from. Usually the collector is not installed there yet.</p>
   ${gaps.length ? `<div class="tcard"><table><tr><th>device</th><th>sources</th><th>tools seen</th></tr>
   ${gaps.map(([k,d])=>`<tr><td>${esc(label(k,d))}</td>
     <td>${(d.sources||[]).map(s=>`<span class="pill p-mut">${esc(s)}</span>`).join('')}</td>
@@ -2882,10 +3077,7 @@ function mcp() {
   const tools = ents(G.tools).filter(([,t]) => (t.surfaces||[]).includes('mcp'));
   const devs = new Set(rows.flatMap(r => r.devices || []));
   return `<h2>MCP servers</h2>
-  <p class="lede">MCP servers are integrations AI tools are configured to use.
-  They hold their own credentials and can reach whatever they were pointed at,
-  even when the tool that configured them isn't open. That's why they get
-  their own page.</p>
+  <p class="lede">Integrations that AI tools are set up to use. Each holds its own credentials and can reach whatever it was pointed at, even when the tool that configured it is closed. That is why they get their own page.</p>
 
   <dl class="stats">
     <div><dt>${rows.length}</dt><dd>servers</dd></div>
@@ -2962,13 +3154,7 @@ function personal() {
     match(r.device) || match(r.device_name));
   const lifecycle = CFG.managed && CFG.managed.enabled && PSTAT !== null;
   return `<h2>Personal accounts</h2>
-  <p class="lede" data-tour="personal">AI tools signed into personal accounts. Even an approved
-  tool on a personal account means company data flowing somewhere you don't
-  manage, and access that survives offboarding. "Personal" means the account
-  domain isn't in your corporate domains list. Treat these as leads to follow
-  up, not verdicts${lifecycle ? ` - and record where each one got to:
-  acknowledged keeps it visible, accepted needs a reason and drops it from
-  the open count` : ''}.</p>
+  <p class="lede" data-tour="personal">AI tools signed in with personal accounts. Even on an approved tool, that means company data going somewhere you do not manage, with access that outlives offboarding. Personal means the account domain is not in your corporate domains list. Treat each one as a lead to follow up, not a verdict${lifecycle ? `, and record where it got to: acknowledged keeps it visible, accepted needs a reason and takes it out of the open count` : ''}.</p>
   ${rows.length ? `<div class="tcard"><table>
   <tr><th>who</th><th>account domain</th><th>tool</th><th>device</th>
   <th>surface</th><th>first seen</th><th>last seen</th><th>source</th>
@@ -2987,7 +3173,7 @@ function personal() {
     <td style="color:var(--mut)">${esc((r.sources||[]).join(', ')) || '—'}</td>
     ${lifecycle ? `<td class="nw">${paChip(paStatus(r))} ${paActions(r)}</td>` : ''}
   </tr>`).join('')}</table></div>`
-  : `<p class="lede">None seen in the last ${CFG.lookback_hours || '?'} hours.
+  : `<p class="lede">None seen in the last ${hoursNow()} hours.
   Worth trusting only if the sources on the Setup page are reporting.</p>`}`;
 }
 
@@ -3429,11 +3615,7 @@ async function registryView() {
   }
   const shipped = REGTOOLS.filter(t => !t.custom);
   return `<h2>Tool registry</h2>
-  <p class="lede">What the fleet scans for. Tools defined here are served to
-  every collector on its next check-in and normalize findings immediately -
-  the whole point is that a new tool needs no repo, no rebuild and no
-  re-push. Whether a tool is <i>approved</i> is a separate question: record
-  that on the AI register.</p>
+  <p class="lede">What every collector scans for. A tool defined here reaches the fleet on its next check-in and is recognised in findings straight away, with no rebuild or re-push. Whether a tool is <i>approved</i> is a separate question, recorded on the AI register.</p>
 
   ${REDIT !== null ? regForm() : `<div style="margin-bottom:14px">
     <button class="mini" style="padding:6px 14px" data-act="reg-add">Define a tool</button>
@@ -3516,7 +3698,7 @@ function watchlistBlock(observedIds) {
 async function register() {
   if (!REG) {
     try {
-      const r = await fetch('/api/register');
+      const r = await fetch('/api/register' + hq());
       if (!r.ok) {
         if (r.status === 401 && AUTH && AUTH.mode === 'login') { sessionLost(); return ''; }
         // An error body parses as JSON too; storing it as REG rendered a
@@ -3658,6 +3840,16 @@ async function register() {
       ${sub}</div>`;
   };
 
+  const allRows = REG.rows || [];
+  const decidedCount = allRows.filter(_decided).length;
+  const undecidedCount = allRows.length - decidedCount;
+  const decisionCoverage = allRows.length
+    ? Math.round(decidedCount / allRows.length * 100) : 100;
+  const approvedCount = allRows.filter(r => r.status === 'approved').length;
+  const reviewingCount = allRows.filter(r => r.status === 'reviewing').length;
+  const overdueCount = allRows.filter(r => r.days_overdue).length;
+  const personalToolCount = allRows.filter(r => r.personal_accounts).length;
+
   return `<h2>AI register</h2>
   ${truncNote(REG.findings_truncated)}
   <p class="lede">The AI tools actually in use, from findings in the last
@@ -3665,12 +3857,23 @@ async function register() {
   below, not listed. Tools in use that the registry doesn't know are flagged -
   those are the ones to act on.</p>
 
-  <dl class="stats">
-    <div><dt>${REG.tools_observed}</dt><dd>in use</dd></div>
-    <div><dt style="color:var(--dstr)">${REG.observed_not_in_registry}</dt><dd>not in registry</dd></div>
-    <div><dt>${REG.tools_known}</dt><dd>watched for</dd></div>
-    <div><dt>${REG.known_not_observed}</dt><dd>watched for, not seen</dd></div>
-  </dl>
+  <div class="register-overview">
+    <section class="register-score" aria-label="Governance decision coverage">
+      <div class="register-score-head"><span>Decision coverage</span>
+        <strong>${decisionCoverage}%</strong></div>
+      <div class="register-progress"><i style="width:${decisionCoverage}%"></i></div>
+      <p>${decidedCount} of ${allRows.length} observed tools have a recorded
+        governance decision.</p>
+    </section>
+    <dl class="register-metrics">
+      <div class="attention"><dt>${undecidedCount}</dt><dd>awaiting decision</dd></div>
+      <div><dt>${approvedCount}</dt><dd>approved</dd></div>
+      <div><dt>${reviewingCount}</dt><dd>under review</dd></div>
+      <div class="${overdueCount ? 'risk' : ''}"><dt>${overdueCount}</dt><dd>reviews overdue</dd></div>
+      <div class="${REG.observed_not_in_registry ? 'risk' : ''}"><dt>${REG.observed_not_in_registry}</dt><dd>not in registry</dd></div>
+      <div class="${personalToolCount ? 'risk' : ''}"><dt>${personalToolCount}</dt><dd>using personal accounts</dd></div>
+    </dl>
+  </div>
 
   ${!REG.governance_configured ? (CFG.managed && CFG.managed.enabled
     ? `<p class="lede">No decisions recorded yet, so every tool shows the
@@ -3698,45 +3901,45 @@ async function register() {
     Either way the record isn't being applied to anything right now.</div>
   </div>` : ''}
 
-  <p class="lede">One card per tool: what it is, how it's used, and what was
-  decided about it.
-  <a href="/api/register?fmt=csv" style="color:var(--pri)">Download CSV</a></p>
+  <div class="register-toolbar">
+    <div><strong>Governance queue</strong><span>${rows.length} of
+      ${allRows.length} observed tools · undecided tools appear first</span></div>
+    <span class="register-legend"><i class="queue"></i>needs a decision</span>
+    <a class="reg-export" href="/api/register?fmt=csv${hq('&')}">Download CSV</a>
+  </div>
 
-  ${rows.length ? `<div class="cards">
-  ${rows.map(r => `<div class="card">
-    <div class="card-top">
-      <div style="min-width:0">
-        <div class="card-name">${esc(r.name)}
-          ${_newToday(r) ? '<span class="pill p-acc">new today</span>' : ''}</div>
-        <div class="card-meta">${r.vendor ? esc(r.vendor) + ' · ' : ''}${esc(r.id)}</div>
+  ${rows.length ? `<div class="register-list">
+  ${rows.map(r => `<article class="register-record${_decided(r) ? '' : ' needs-decision'}">
+    <div class="register-primary">
+      <span class="register-tool-mark" aria-hidden="true">${esc(String(r.name || r.id).trim().charAt(0).toUpperCase())}</span>
+      <div class="register-identity">
+        <strong>${esc(r.name)} ${_newToday(r) ? '<span class="pill p-acc">new today</span>' : ''}</strong>
+        <span>${r.vendor ? esc(r.vendor) + ' · ' : ''}<span class="mono">${esc(r.id)}</span></span>
       </div>
-      ${status(r)}
+      <div class="register-cell"><span>Decision</span>${status(r)}</div>
+      <div class="register-cell"><span>Exposure</span><b>${r.devices} device${r.devices === 1 ? '' : 's'}</b><small>${r.users} user${r.users === 1 ? '' : 's'}</small></div>
+      <div class="register-cell"><span>Personal accounts</span>${r.personal_accounts
+        ? `<b class="register-risk-value">${r.personal_accounts}</b>`
+        : '<b class="register-zero">0</b>'}</div>
+      <div class="register-cell"><span>Risk tier</span>${risk(r.risk_tier)}</div>
+      <div class="register-cell"><span>Review</span>${review(r)}</div>
+      <div class="register-cell register-owner"><span>Owner</span><b>${r.owner ? esc(r.owner) : 'Unassigned'}</b></div>
     </div>
-    <hr>
-    <dl class="card-kv">
-      <dt>usage</dt><dd>${r.devices} device${r.devices === 1 ? '' : 's'},
-        ${r.users} user${r.users === 1 ? '' : 's'}</dd>
-      <dt>accounts</dt><dd>corp ${num(r.corporate_accounts)} ·
-        personal ${r.personal_accounts
-          ? `<span class="pill p-warn">${r.personal_accounts}</span>` : num(0)}</dd>
-      <dt>surfaces</dt><dd>${r.surfaces.length ? esc(r.surfaces.join(', ')) : '—'}</dd>
-      <dt title="The registry's own risk_tier for this tool - a shipped default about the tool's category and data reach, not an assessment of how you use it. Editable per tool in the Tool registry.">risk</dt><dd>${risk(r.risk_tier) || '<span class="src-note">not set in the registry</span>'}</dd>
-      <dt>last seen</dt><dd>${when(r.last_seen)}</dd>
-    </dl>
-    <hr>
-    <div class="card-section">governance</div>
-    ${GOVEDIT === r.id ? govForm(r) : `<dl class="card-kv">
-      <dt>owner</dt><dd>${r.owner ? esc(r.owner) : dash}</dd>
-      <dt>review</dt><dd>${review(r)}</dd>
-    </dl>
-    ${CFG.managed && CFG.managed.enabled ? `<div style="margin-top:8px">
-      <button class="mini" data-act="gov-edit" data-key="${esc(r.id)}">Edit</button>
-      ${r.status_source === 'portal' ? `<button class="mini" data-act="gov-clear"
-        data-key="${esc(r.id)}">Clear decision</button>` : ''}
-      ${!r.in_registry ? `<button class="mini" data-act="reg-suggest"
-        data-key="${esc(r.id)}">Add to registry</button>` : ''}</div>` : ''}`}
+    <div class="register-secondary">
+      <span><b>Surfaces</b>${r.surfaces.length ? esc(r.surfaces.join(', ')) : '—'}</span>
+      <span><b>Accounts</b>${num(r.corporate_accounts)} corporate · ${num(r.personal_accounts)} personal</span>
+      <span><b>Category</b>${r.category ? esc(r.category) : '—'}</span>
+      <span><b>Last seen</b>${when(r.last_seen)}</span>
+      ${CFG.managed && CFG.managed.enabled && GOVEDIT !== r.id ? `<span class="register-actions">
+        <button class="mini" data-act="gov-edit" data-key="${esc(r.id)}">Edit decision</button>
+        ${r.status_source === 'portal' ? `<button class="mini" data-act="gov-clear"
+          data-key="${esc(r.id)}">Clear decision</button>` : ''}
+        ${!r.in_registry ? `<button class="mini" data-act="reg-suggest"
+          data-key="${esc(r.id)}">Add to registry</button>` : ''}</span>` : ''}
+    </div>
+    ${GOVEDIT === r.id ? `<div class="register-editor"><div><strong>Record governance decision</strong><span>Set the outcome, accountable owner and next review.</span></div>${govForm(r)}</div>` : ''}
     ${exceptionBlock(r)}
-  </div>`).join('')}
+  </article>`).join('')}
   </div>` : !dataOk() ? `<p class="lede">No AI tools to show: the findings
   could not be read. This is not an empty estate.</p>` : `<p class="lede">No AI tools observed in the last ${esc(win)}.
   That is a real answer for a small estate, and it is also what a fleet with no
@@ -3747,19 +3950,14 @@ async function register() {
 
 async function paste() {
   if (!PG) {
-    try { PG = await (await fetch('/api/paste-guard')).json(); }
+    try { PG = await (await fetch('/api/paste-guard' + hq())).json(); }
     catch (e) { return `<h2>Paste guard</h2><div class="note">Could not read
       paste guard activity: ${esc(String(e.message || e))}</div>`; }
   }
   const rows = (PG.rows || []).filter(r => match(r.tool));
 
   return `<h2>Paste guard</h2>
-  <p class="lede">What the paste guard stopped, on which tool, and how often.
-  Metadata only: the guard inspects clipboard content on the device and reports
-  detector identifiers, so what was nearly pasted is not here and is not stored
-  anywhere. A warning heeded is the guard working; an override is somebody who
-  was shown the detector by name and pasted anyway, which is the row worth
-  following up.</p>
+  <p class="lede">What the paste guard stopped, on which tool, and how often. Only metadata is kept: the guard checks clipboard content on the device and reports which detector fired, so the text itself is never sent or stored. A heeded warning is the guard doing its job. An override is someone who saw the warning and pasted anyway, which is the row worth following up.</p>
 
   <dl class="stats">
     <div><dt${(PG.guard_devices || 0) ? '' : ' style="color:var(--dstr)"'}>${PG.guard_devices || 0}</dt>
@@ -3812,7 +4010,7 @@ async function paste() {
 
 async function iso() {
   if (!EV) {
-    try { EV = await (await fetch('/api/evidence')).json(); }
+    try { EV = await (await fetch('/api/evidence' + hq())).json(); }
     catch (e) { return `<h2>ISO/IEC 42001 evidence</h2><div class="note">Could
       not build the evidence index: ${esc(String(e.message || e))}</div>`; }
   }
@@ -3887,41 +4085,62 @@ async function iso() {
     [e.mcp_findings, `${e.mcp_findings} MCP finding${e.mcp_findings === 1 ? '' : 's'}`, 'mcp'],
   ].filter(([count]) => count > 0);
 
+  const from = esc((e.window||{}).from||'').slice(0,10);
+  const to = esc((e.window||{}).to||'').slice(0,10);
+  const coverage = e.sources_known
+    ? Math.round((e.sources_reporting || 0) / e.sources_known * 100) : 0;
+
   return `<h2>ISO/IEC 42001 evidence</h2>
-  <p class="lede">What Shadow AI Guard can currently say, and where each
-  record lives, as evidence for an AI management system. This is an index,
-  not an assessment: no compliance score, no clause mapping, no claim that a
-  control is satisfied. Gaps are shown next to totals on purpose - the gap is
-  usually the useful part.</p>
+  <p class="lede">An index of what Shadow AI Guard can show records for, and where each record lives. It is not a compliance score or a clause mapping, and it does not claim any control is satisfied.</p>
 
-  <table>
-  <tr><th>Theme</th><th>What Shadow AI Guard can say</th><th>Evidence source</th></tr>
-  ${rows.map(([theme, says, target, label]) => `<tr>
-    <td>${esc(theme)}</td>
-    <td style="font-family:inherit">${says}</td>
-    <td>${target ? `<a href="#${target}" style="color:var(--pri)">${esc(label)}</a>`
-                 : esc(label)}</td>
-  </tr>`).join('')}
-  </table>
+  <section class="evidence-summary" aria-label="Evidence snapshot summary">
+    <div class="evidence-summary-lead">
+      <span>Evidence package</span><strong>${from} — ${to}</strong>
+      <p>Generated on demand from the current window and protected with a checksum.</p>
+      <div class="evidence-actions">
+        <button class="mini evidence-print" type="button" data-act="evidence-print">Export PDF</button>
+        <a class="mini evidence-download" href="/api/evidence?download=true${hq('&')}">Download JSON</a>
+      </div>
+    </div>
+    <dl>
+      <div><dt>${rows.length}</dt><dd>evidence themes</dd></div>
+      <div><dt>${coverage}%</dt><dd>source coverage<small>${e.sources_reporting} of ${e.sources_known} reporting</small></dd></div>
+      <div class="${inputs.length ? 'attention' : 'clear'}"><dt>${inputs.length}</dt><dd>review areas<small>human assessment required</small></dd></div>
+    </dl>
+  </section>
 
-  <h3 style="margin-top:26px;font-size:14px">Review inputs</h3>
-  <p class="lede">Things a person may need to look at. The platform can tell
-  you a tool has no recorded decision; whether that matters is your call.</p>
-  ${inputs.length ? `<ul class="inputs">
-    ${inputs.map(([, text, target]) =>
-      `<li><a href="#${target}">${esc(text)}</a></li>`).join('')}
-  </ul>` : !dataOk() ? `<p class="lede">Nothing to review: the findings
-  could not be read.</p>` : `<p class="lede">Nothing outstanding in this window. Sanity check:
-  ${e.sources_reporting} of ${e.sources_known} expected sources are reporting -
-  an estate with nothing reporting looks "clean" too.</p>`}
+  <section class="evidence-panel">
+    <div class="evidence-panel-head"><div><h3>Evidence index</h3>
+      <p>Observable facts grouped by management-system theme.</p></div>
+      <span>${rows.length} indexed</span></div>
+    <div class="evidence-columns"><span>Theme</span><span>Current evidence</span><span>Source</span></div>
+    <div class="evidence-list">
+      ${rows.map(([theme, says, target, label], i) => `<div class="evidence-row">
+        <div class="evidence-theme"><span>${String(i + 1).padStart(2, '0')}</span><strong>${esc(theme)}</strong></div>
+        <div class="evidence-statement">${says}</div>
+        <div class="evidence-source">${target ? `<a href="#${target}">${esc(label)} <span aria-hidden="true">→</span></a>`
+                     : `<span>${esc(label)}</span>`}</div>
+      </div>`).join('')}
+    </div>
+  </section>
 
-  <h3 style="margin-top:26px;font-size:14px">Evidence snapshot</h3>
-  <p class="lede">A checksummed JSON file of the counts above for this window,
-  with the registry and governance files identified by hash. Generated on
-  demand, not stored. Note it can't be regenerated identically later (log
-  retention), and the checksum detects accidental changes, not deliberate
-  ones.
-  <a href="/api/evidence?download=true" style="color:var(--pri)">Download JSON</a></p>`;
+  <section class="evidence-review ${inputs.length ? 'has-inputs' : 'is-clear'}">
+    <div class="evidence-review-copy"><span>Human review</span><h3>Review inputs</h3>
+      <p>The platform identifies records that may need attention; materiality
+      and control effectiveness remain a human decision.</p></div>
+    <div class="evidence-review-items">
+      ${inputs.length ? inputs.map(([, text, target]) =>
+        `<a href="#${target}"><span class="review-marker"></span>${esc(text)}<span aria-hidden="true">→</span></a>`).join('')
+      : !dataOk() ? `<p>Findings could not be read, so no clean-state conclusion is shown.</p>`
+      : `<p>Nothing outstanding in this window. ${e.sources_reporting} of ${e.sources_known}
+        expected sources are reporting; zero reporting is never treated as a clean estate.</p>`}
+    </div>
+  </section>
+
+  <div class="evidence-footnote"><strong>About this snapshot</strong><p>The JSON
+    identifies registry and governance files by hash. It may not be reproduced
+    identically after log retention changes; its checksum detects accidental
+    changes, not deliberate modification.</p></div>`;
 }
 
 // One string setting as an editable row: input, save, and where the value
@@ -3989,30 +4208,44 @@ function widgetPickerRow() {
     && w.kind !== 'error').map(w => w.kind));
   const refs = new Set(eff.filter(w => w.kind === 'grafana')
     .map(w => String(w.ref)));
-  const box = (id, checked, ref, label, desc) => `
-    <label style="display:flex;align-items:baseline;gap:8px;margin-bottom:5px;cursor:pointer">
+  const box = (id, checked, ref, token, desc, source = 'Native') => {
+    const title = token.replace(/^grafana:/, '').replaceAll('_', ' ')
+      .replace(/\b\w/g, c => c.toUpperCase());
+    return `<label class="widget-choice">
       <input type="checkbox" id="${id}" ${ref ? `data-ref="${esc(ref)}"` : ''}
-        style="min-width:0;margin:0;accent-color:var(--pri)" ${checked ? 'checked' : ''}>
-      <span>${label}${desc ? ` <span style="color:var(--mut)">— ${esc(desc)}</span>` : ''}</span>
+        ${checked ? 'checked' : ''}>
+      <span class="widget-switch" aria-hidden="true"></span>
+      <span class="widget-choice-copy">
+        <span class="widget-choice-title">${esc(title)}</span>
+        <span class="widget-choice-desc">${esc(desc || '')}</span>
+        <span class="widget-choice-meta">${esc(source)} · <span class="mono">${esc(token)}</span></span>
+      </span>
     </label>`;
+  };
   const panels = (CFG.grafana_panels || []).filter(p => !p.error);
   const panelRef = p => p.title || String(p.panel_id);
   const orphans = [...refs].filter(r =>
     !panels.some(p => r === p.title || r === String(p.panel_id)));
-  return `<dt>Overview widgets${INFO}</dt><dd>
-    ${ents(catalog).map(([k, d]) => box('ow-' + k, on.has(k), '',
-      `<span class="mono">${esc(k)}</span>`, d)).join('')}
-    ${panels.map((p, i) => box('owg-' + i,
-      refs.has(p.title) || refs.has(String(p.panel_id)), panelRef(p),
-      `<span class="mono">grafana:${esc(panelRef(p))}</span>`,
-      'embedded Grafana panel')).join('')}
-    ${orphans.map((r, i) => box('owo-' + i, true, r,
-      `<span class="mono">grafana:${esc(r)}</span>`,
-      'saved panel reference (no longer in the panels list)')).join('')}
-    <button class="mini" data-act="save-widgets" style="margin-top:4px">Save</button>
-    <div class="src-note fnote">What the overview draws, in this order.
-    Unticking everything is refused rather than saved: an empty list falls
-    back to the default set, which is probably not what you meant.</div>
+  const hidden = overviewWidgets().hidden.length;
+  return `<dt>Overview widgets${INFO}</dt><dd class="widget-picker">
+    <div class="widget-picker-head">
+      <div><strong>Overview catalogue</strong><span>Choose which modules are available to people in this estate.</span></div>
+      <span class="widget-enabled-count">${on.size + refs.size} enabled</span>
+    </div>
+    <div class="widget-choice-grid">
+      ${ents(catalog).map(([k, d]) => box('ow-' + k, on.has(k), '', k, d)).join('')}
+      ${panels.map((p, i) => box('owg-' + i,
+        refs.has(p.title) || refs.has(String(p.panel_id)), panelRef(p),
+        `grafana:${panelRef(p)}`, 'Embedded Grafana panel', 'Grafana')).join('')}
+      ${orphans.map((r, i) => box('owo-' + i, true, r,
+        `grafana:${r}`, 'Saved panel reference no longer present in the panels list',
+        'Grafana')).join('')}
+    </div>
+    <div class="widget-picker-foot">
+      <div><strong>Deployment availability</strong><span>People can still arrange or hide these modules from Overview → Edit.</span></div>
+      ${hidden ? `<button class="mini" data-act="ov-showall">Restore ${hidden} hidden ${hidden === 1 ? 'widget' : 'widgets'}</button>` : ''}
+      <button class="mini widget-picker-save" data-act="save-widgets">Save catalogue</button>
+    </div>
   </dd>`;
 }
 
@@ -4350,9 +4583,7 @@ async function extSetup() {
     through your MDM is the actual rollout.</p>`;
 
   return `<h2>Extension setup</h2>
-  <p class="lede">The browser extension, from source to hosted package, one
-  step at a time. This is where its values live - come back to a step to
-  change one.</p>
+  <p class="lede">The browser extension, from source to hosted package, one step at a time. Its settings live here; come back to a step to change one.</p>
   ${SETMSG ? `<div class="note">${esc(SETMSG)}</div>` : ''}
   <div class="ssow">${rail}
     <div class="ssmain">${body}
@@ -4503,7 +4734,14 @@ async function wizard() {
     </div></div>`;
 
   let body = '';
-  if (WIZSTEP === 1) body = `<h4>Where your machines reach the receiver</h4>
+  if (WIZSTEP === 1) body = `<h4>Name the estate</h4>
+  <p class="lede" style="margin-bottom:10px">Optional, and shown everywhere:
+  the control beneath the logo, the sign-in screen and the narrow top bar all
+  carry it. Editable later under Settings › Display &amp; alerting.</p>
+  <dl class="kv">
+    ${settingRow('org_name', 'Organisation name', 'Acme Ltd', '')}
+  </dl>
+  <h4 style="margin-top:18px">Where your machines reach the receiver</h4>
   <p class="lede" style="margin-bottom:10px">The URL your laptops and servers
   will send findings to. It gets baked into every download below, so it has
   to work from those machines - not just from inside the cluster. That means
@@ -4635,8 +4873,7 @@ async function wizard() {
   </div>` : `<div class="note">No public receiver URL yet, so downloads cannot
   bake a URL agents can reach - save one in step 1 and these appear.</div>`}`;
   return `<h2>Welcome — set up your deployment</h2>
-  <p class="lede">One step at a time. Everything here can be changed later
-  under Settings, and changes take effect immediately - no redeploys.</p>
+  <p class="lede">One step at a time. Everything here can be changed later under Settings, and changes take effect straight away with no redeploy.</p>
   ${SETMSG ? `<div class="note">${esc(SETMSG)}</div>` : ''}
   <div class="ssow">${rail}
     <div class="ssmain">${body}
@@ -5219,6 +5456,19 @@ function mailSettings() {
   </div>`;
 }
 
+// The estate's name. Its own card rather than a row among alerting URLs:
+// it is the one setting a person sees before they have signed in.
+// One card for the two things that shape what everybody sees: the estate's
+// name and the reporting window. Two rows, not two cards.
+function orgSettings() {
+  return `<div class="wcard" style="margin-bottom:10px"><h3>Display</h3>
+  <dl class="kv">
+    ${settingRow('org_name', 'Organisation name', 'Acme Ltd',
+      'Names the estate: the control beneath the logo, the top bar on narrow screens and the sign-in screen all say it. It is shown before anybody signs in, so keep it to a name. Empty means the portal says "Managed estate".')}
+    ${windowRow()}
+  </dl></div>`;
+}
+
 function alertingSettings() {
   return `<div class="wcard" style="margin-bottom:10px"><h3>Display and alerting</h3>
   <dl class="kv">
@@ -5606,21 +5856,25 @@ function gettingStarted() {
   const done = SETTINGS && SETTINGS.settings
     && SETTINGS.settings.onboarding_done
     && SETTINGS.settings.onboarding_done.value;
-  return `<div class="wcard" style="margin-bottom:10px"><h3>Getting started</h3>
+  return `<div class="wcard getting-started" data-tour="getting-started" style="margin-bottom:10px"><h3>Getting started</h3>
   <p class="lede" style="margin-bottom:16px">${done
-    ? `Setup is marked done. Both of these are safe to repeat - neither resets
-       anything.`
-    : `Setup has not been finished yet. Neither of these changes anything on
-       its own.`}</p>
-  <p class="src-note" style="margin:0 0 8px">Every step is one of these
-  settings, prefilled with what is already saved - so running it again is a
-  review rather than a reset.</p>
+    ? `Setup is marked done. Both options are safe to repeat - neither resets
+       your estate or removes a saved setting.`
+    : `Setup has not been finished yet. Neither option changes anything until
+       you choose to save it.`}</p>
+  <p class="src-note" style="margin:0 0 12px">The sidebar is organised by
+  work: <b>Workspace overview</b> for the executive picture, <b>Discovery</b>
+  for observed activity, <b>Governance</b> for decisions and evidence,
+  <b>Operations</b> for coverage and fleet health, and <b>Settings</b> for
+  deployment policy.</p>
+  <p class="src-note" style="margin:0 0 8px">The setup wizard reviews the
+  deployment configuration already saved here. It is a review, not a reset.</p>
   <p style="margin:0 0 20px">
     <button class="mini" style="padding:6px 14px" data-act="open-wizard">${done
       ? 'Run the setup wizard again' : 'Finish setting up'}</button></p>
-  <p class="src-note" style="margin:0 0 8px">The walkthrough from your first
-  sign-in. It shows the pages your account can act on, so an admin and a viewer
-  see different tours.</p>
+  <p class="src-note" style="margin:0 0 8px">The walkthrough is the quick
+  orientation for the current interface. It follows the pages your account can
+  use, so administrators and read-only users see the right version.</p>
   <p style="margin:0">
     <button class="mini" style="padding:6px 14px" data-act="take-tour">Take the
       tour again</button></p>
@@ -5839,75 +6093,70 @@ function diagnosticsCards() {
     Math.round(Date.now()/1000 - t) + 's ago';
   const dur = sec => sec < 3600 ? Math.round(sec/60) + 'm'
     : Math.floor(sec/3600) + 'h ' + Math.round(sec%3600/60) + 'm';
+  const logFresh = r.loki_configured && (!r.loki_last_error
+    || r.loki_last_success >= r.loki_last_error_at);
+  // Only what is checked. The application row below is informational: this
+  // page rendering is the whole of that evidence, so it is not a check.
+  const checks = [logFresh, !!r.registry_loaded];
+  const passing = checks.filter(Boolean).length;
+  const health = passing === checks.length;
 
-  return `<p class="lede">Read only. Everything except the last card is
-  something the portal verified about itself. What it was merely told is
-  labelled as such, so a value nobody updated cannot be mistaken for one
-  something checked.</p>
+  return `<section class="health-summary ${health ? 'healthy' : 'attention'}" aria-label="System health summary">
+    <div class="health-summary-copy"><span>Estate observability</span>
+      <strong>${health ? 'Core services operational' : 'Attention needed'}</strong>
+      <p>Read-only runtime checks of the log-store read and the tool registry.</p>
+    </div>
+    <dl>
+      <div><dt>${passing}/${checks.length}</dt><dd>core checks passing</dd></div>
+      <div><dt>${ago(r.loki_last_success)}</dt><dd>last successful read</dd></div>
+      <div><dt>${esc(r.registry_tools)}</dt><dd>tools in registry</dd></div>
+    </dl>
+  </section>
 
-  <div class="wcard" style="margin-bottom:10px"><h3>Application</h3>
-  <dl class="kv">
-    <dt>Version</dt><dd>${esc(r.version)}</dd>
-    <dt>Uptime</dt><dd>${dur(r.uptime_seconds)}</dd>
-  </dl></div>
+  <p class="health-intro">Everything below is verified by the portal at runtime,
+  apart from the separately labelled deployment context. Credentials are never
+  displayed; only their operating state is shown.</p>
 
-  <div class="wcard" style="margin-bottom:10px"><h3>Loki</h3>
-  <dl class="kv">
-    <dt>Configured</dt><dd>${yn(r.loki_configured)}</dd>
-    <dt>Reads with</dt><dd>${esc(r.portal_read_credential || '')}
-      ${r.portal_read_credential === 'the signed-in account' ? `
-      <div class="src-note" style="color:var(--warn)">This portal has no
-      log-store credential of its own, so every read is made with the
-      account that is signed in. That works for an admin and is refused
-      for a viewer, so read-only accounts see an empty estate. Give it
-      <span class="mono">RECEIVER_ADMIN_TOKEN</span> (the receiver's
-      ADMIN_TOKEN), or its own <span class="mono">LOKI_URL</span> and
-      credentials.</div>` : ''}</dd>
-    <dt>Last successful read</dt><dd>${ago(r.loki_last_success)}</dd>
-    ${r.loki_last_error ? `<dt>Last error</dt><dd style="color:var(--dstr)">${esc(r.loki_last_error)}${r.loki_last_error_at ? ` · ${ago(r.loki_last_error_at)}` : ''}</dd>` : ''}
-    ${r.loki_last_error && r.loki_last_error_at && r.loki_last_error_at > (r.loki_last_success || 0)
-      ? `<dt></dt><dd class="src-note" style="color:var(--warn)">The last read
-         attempt FAILED. Anything this portal shows is from the last
-         successful read above, or is empty because there was none.</dd>` : ''}
-    <dt>Lookback window</dt><dd>${esc(r.lookback_hours)}h</dd>
-    <dt>Cache TTL</dt><dd>${esc(r.cache_ttl_seconds)}s</dd>
-  </dl></div>
+  <div class="health-grid">
+    <section class="health-card"><div class="health-card-head"><div><span>Runtime</span><h3>Application</h3></div><span class="pill p-ok">running</span></div>
+      <dl class="health-facts"><div><dt>Version</dt><dd>${esc(r.version)}</dd></div>
+        <div><dt>Uptime</dt><dd>${dur(r.uptime_seconds)}</dd></div></dl>
+      <p class="health-note">Shadow AI Guard is built by Aman Karir.
+        <a href="https://github.com/AmanSK5/shadow-ai-guard" target="_blank" rel="noopener">Source and issues</a></p>
+    </section>
 
-  <div class="wcard" style="margin-bottom:10px"><h3>Registry</h3>
-  <dl class="kv">
-    <dt>Loaded</dt><dd>${yn(r.registry_loaded)}</dd>
-    <dt>Tools</dt><dd>${esc(r.registry_tools)}${
-      r.registry_tools_with_domains != null && r.registry_tools_with_domains !== r.registry_tools
-        ? ` <span style="color:var(--mut)">· ${esc(r.registry_tools_with_domains)} with a domain</span>` : ''}</dd>
-    <dt>Path</dt><dd>${esc(r.registry_path)}</dd>
-    ${r.registry_error ? `<dt>Error</dt><dd style="color:var(--dstr)">${esc(r.registry_error)}</dd>` : ''}
-  </dl>
-  ${!r.registry_loaded ? `<p class="src-note">Without it, tool names are not
-  normalised, so chatgpt.com and chatgpt stay two different tools.</p>` : ''}
+    <section class="health-card ${logFresh ? '' : 'needs-attention'}"><div class="health-card-head"><div><span>Data pipeline</span><h3>Log store</h3></div>${logFresh ? '<span class="pill p-ok">reporting</span>' : '<span class="pill p-warn">check required</span>'}</div>
+      <dl class="health-facts"><div><dt>Configured</dt><dd>${yn(r.loki_configured)}</dd></div>
+        <div><dt>Reads with</dt><dd>${esc(r.portal_read_credential || '—')}</dd></div>
+        <div><dt>Last successful read</dt><dd>${ago(r.loki_last_success)}</dd></div>
+        <div><dt>Window / cache</dt><dd>${esc(r.lookback_hours)}h <span>·</span> ${esc(r.cache_ttl_seconds)}s</dd></div></dl>
+      ${r.portal_read_credential === 'the signed-in account' ? `<p class="health-note warning">This portal has no log-store credential of its own. Viewer reads are refused; set <span class="mono">RECEIVER_ADMIN_TOKEN</span> or its own <span class="mono">LOKI_URL</span> and credentials.</p>` : ''}
+      ${r.loki_last_error ? `<p class="health-note danger"><b>Last error</b> ${esc(r.loki_last_error)}${r.loki_last_error_at ? ` · ${ago(r.loki_last_error_at)}` : ''}</p>` : ''}
+    </section>
+
+    <section class="health-card ${r.registry_loaded ? '' : 'needs-attention'}"><div class="health-card-head"><div><span>Reference data</span><h3>Tool registry</h3></div>${r.registry_loaded ? '<span class="pill p-ok">loaded</span>' : '<span class="pill p-warn">unavailable</span>'}</div>
+      <dl class="health-facts"><div><dt>Tools</dt><dd>${esc(r.registry_tools)}${r.registry_tools_with_domains != null && r.registry_tools_with_domains !== r.registry_tools ? ` <span>· ${esc(r.registry_tools_with_domains)} with a domain</span>` : ''}</dd></div>
+        <div><dt>Registry path</dt><dd class="mono">${esc(r.registry_path)}</dd></div></dl>
+      ${r.registry_error ? `<p class="health-note danger"><b>Error</b> ${esc(r.registry_error)}</p>` : ''}
+      ${!r.registry_loaded ? `<p class="health-note warning">Without the registry, tool names cannot be normalised across observations.</p>` : ''}
+    </section>
+
+    <section class="health-card"><div class="health-card-head"><div><span>Portal capability</span><h3>Access & integrations</h3></div><span class="pill p-mut">configuration</span></div>
+      <dl class="health-facts"><div><dt>Authentication</dt><dd>${esc(r.auth_mode)}</dd></div>
+        <div><dt>Identity map</dt><dd>${yn(r.identity_map_configured)}</dd></div>
+        <div><dt>Grafana</dt><dd>${yn(r.grafana_configured)}</dd></div>
+        <div><dt>Overview widgets</dt><dd>${(r.overview_widgets||[]).length}</dd></div></dl>
+    </section>
   </div>
 
-  <div class="wcard" style="margin-bottom:10px"><h3>Access and embedding</h3>
-  <dl class="kv">
-    <dt>Auth mode</dt><dd>${esc(r.auth_mode)}</dd>
-    <dt>Identity map</dt><dd>${yn(r.identity_map_configured)}</dd>
-    <dt>Grafana</dt><dd>${yn(r.grafana_configured)}</dd>
-    <dt>Overview widgets</dt><dd>${(r.overview_widgets||[]).length}</dd>
-  </dl>
-  <p class="src-note">Credential values are never shown here, only whether one
-  is configured.</p></div>
+  <section class="health-deployment"><div><span>Deployment context</span><h3>Provided by configuration</h3>
+    <p>The portal cannot verify these values. They are retained for support and release tracing, never treated as runtime evidence.</p></div>
+    <dl><div><dt>Chart version</dt><dd>${esc(d.chart_version) || '—'}</dd></div>
+      <div><dt>Release</dt><dd>${esc(d.release) || '—'}</dd></div>
+      <div><dt>Namespace</dt><dd>${esc(d.namespace) || '—'}</dd></div></dl>
+  </section>
 
-  <div class="wcard" style="border-style:dashed"><h3>Provided by deployment configuration</h3>
-  <dl class="kv">
-    <dt>Chart version</dt><dd>${esc(d.chart_version) || '—'}</dd>
-    <dt>Release</dt><dd>${esc(d.release) || '—'}</dd>
-    <dt>Namespace</dt><dd>${esc(d.namespace) || '—'}</dd>
-  </dl>
-  <p class="src-note">The portal cannot verify any of this. It is passed in as
-  environment variables by whatever deployed it, and shown because it helps
-  when raising an issue, not because it was observed. A deployment that does
-  not set it leaves it empty rather than guessing.</p></div>
-
-  ${AUDITLOG === null ? '' : `<div class="wcard" style="margin:10px 0 0"><h3>Recent admin activity</h3>
+  ${AUDITLOG === null ? '' : `<section class="health-activity"><div class="health-card-head"><div><span>Traceability</span><h3>Recent admin activity</h3></div><span>${AUDITLOG.length} recorded</span></div>
   ${AUDITLOG.length ? `<table><tr><th>when</th><th>what</th><th>who</th></tr>
   ${AUDITLOG.map(e => `<tr>
     <td class="nw" style="color:var(--mut)">${esc((e.at||'').replace('T',' ').slice(0,16))}</td>
@@ -5915,9 +6164,28 @@ function diagnosticsCards() {
       ? ` <span class="mono" style="color:var(--mut)">${esc(String(e.detail.key || e.detail.tool).slice(0,60))}</span>` : ''}</td>
     <td>${esc((e.detail && (e.detail.by || e.detail.username)) || '')}</td>
   </tr>`).join('')}</table>` : '<p class="lede">Nothing recorded yet.</p>'}
-  <p class="src-note">Every change made through the portal, recorded by the
-  receiver as it happened. The trail survives sign-outs and cannot be edited
-  from here.</p></div>`}`;
+  <p class="health-note">Every change made through the portal is recorded by the receiver as it happened. The trail survives sign-outs and cannot be edited from here.</p></section>`}`;
+}
+
+// System health belongs to the estate context, not inside the place an
+// operator edits policy. It still uses the original diagnostics endpoint and
+// cards, so this is a change of information architecture rather than a new
+// operational dependency.
+async function diagnostics() {
+  if (!DIAG) {
+    try { DIAG = await (await fetch('/api/diagnostics')).json(); }
+    catch (e) { return `<h2>System health</h2><div class="note">Could not read
+      system health: ${esc(String(e.message || e))}</div>`; }
+  }
+  const managed = CFG.managed && CFG.managed.enabled;
+  if (managed && AUDITLOG === null) {
+    try {
+      const ar = await mfetch('/api/audit?limit=50');
+      if (ar.ok) AUDITLOG = (await ar.json()).events || [];
+    } catch (e) { /* activity is useful context, never a prerequisite */ }
+  }
+  return `<div data-tour="system-health"><h2>System health</h2><p class="lede">What the portal can verify about itself right now: its log store, its registry and its access setup. Settings change policy; this page only reports.</p></div>
+    ${diagnosticsCards()}`;
 }
 
 // ---- the Settings save bar -------------------------------------------
@@ -5957,22 +6225,11 @@ function sBarSync() {
 }));
 
 async function settings() {
-  if (!DIAG) {
-    try { DIAG = await (await fetch('/api/diagnostics')).json(); }
-    catch (e) { return `<h2>Settings</h2><div class="note">Could not read
-      diagnostics: ${esc(String(e.message || e))}</div>`; }
-  }
   const managed = CFG.managed && CFG.managed.enabled;
   if (managed && !SETTINGS) {
     const r = await mfetch('/api/settings');
     if (r.ok) SETTINGS = await r.json();
     else if (r.status === 401) { sessionLost(); return ''; }
-  }
-  if (managed && SETTAB === 'diagnostics' && AUDITLOG === null) {
-    try {
-      const ar = await mfetch('/api/audit?limit=50');
-      if (ar.ok) AUDITLOG = (await ar.json()).events || [];
-    } catch (e) { /* the card simply stays absent */ }
   }
   if (managed) await checkSettingsChanged();
   if (managed && (SETTAB === 'account' || SETTAB === 'alerting') && USERS === null
@@ -5982,8 +6239,9 @@ async function settings() {
       if (ur.ok) USERS = (await ur.json()).users || [];
     } catch (e) { /* the accounts card simply stays absent */ }
   }
-  if (!managed || !SETTINGS) return `<h2>Settings and diagnostics</h2>
-    ${diagnosticsCards()}`;
+  if (!managed || !SETTINGS) return `<h2>Settings</h2><p class="lede">This
+    deployment has no centrally managed settings. System health is under the
+    estate name beneath the logo.</p>${windowSettings()}`;
 
   // Named outright rather than looked up by a key that came from the URL.
   // SETTAB is allow-listed where it enters, in fromHash(), so it can only
@@ -5991,16 +6249,14 @@ async function settings() {
   // dispatch on here at all, and nothing to get wrong twice.
   let body;
   if (SETTAB === 'connection') body = connectionSettings();
-  else if (SETTAB === 'alerting') body = mailSettings() + alertingSettings();
+  else if (SETTAB === 'alerting') body = orgSettings() + mailSettings() + alertingSettings();
   else if (SETTAB === 'account') body = accountSettings();
   else if (SETTAB === 'start') body = gettingStarted();
-  else if (SETTAB === 'diagnostics') body = diagnosticsCards();
   else { SETTAB = 'fleet'; body = fleetSettings(); }
   return `<h2>Settings</h2>
   ${settingsChangedNote()}
   <p class="lede">Central settings are editable and reach the fleet at
-  runtime - a value saved here overrides the matching environment variable.
-  Diagnostics is the read-only view: what the portal verified about itself.</p>
+  runtime - a value saved here overrides the matching environment variable.</p>
   ${SETMSG ? `<div class="note">${esc(SETMSG)}</div>` : ''}
   <div class="tabs">${STABS.map(([id, lbl]) =>
     `<button data-settab="${id}" class="${SETTAB===id?'on':''}">${lbl}</button>`).join('')}</div>
@@ -6029,11 +6285,9 @@ function setup() {
 
   const g = S.groups || [];
   return `<h2>Sources</h2>
-  <p class="lede">What's reporting and what isn't, worked out from actual
-  findings - not from whether something is configured. Every silent source
-  carries a fold-out with exactly what it needs to start reporting.</p>
+  <p class="lede">Which detection sources are reporting and which are silent, judged from actual findings rather than configuration. Every silent source opens to show exactly what it needs to start reporting.</p>
 
-  <dl class="stats">
+  <dl class="stats" data-tour="source-overview">
     ${g.map(x => `<div><dt>${x.reporting}/${x.total}</dt><dd>${esc(x.group)}</dd></div>`).join('')}
   </dl>
 
@@ -6042,10 +6296,10 @@ function setup() {
   collector (Getting started walks through it) and it will appear here.</div>` : ''}
 
   ${g.map(x => `
-    <div class="tcard">
+    <div class="tcard source-group" data-tour="source-table">
     <div class="cardhead"><h3>${esc(x.group)}</h3>
       <span class="pill ${x.reporting ? 'p-ok' : 'p-mut'}">${x.reporting} of ${x.total}</span></div>
-    <table><tr><th>source</th><th>status</th><th>findings</th><th>devices</th><th>last seen</th></tr>
+    <table class="source-table"><tr><th>source</th><th>status</th><th>findings</th><th>devices</th><th>last seen</th></tr>
     ${x.sources.map(r => `<tr>
       <td>${esc(r.label)}<br><span class="mono" style="font-size:11px;color:var(--mut)">${esc(r.source)}</span>
         ${r.reporting ? '' : `<details class="how"><summary>how to set this up</summary>
@@ -6079,7 +6333,7 @@ function setup() {
       a legitimate answer, and one you can shorten:
       <button class="mini" data-nav="people">Edit the map on People</button>`;
   })()}</p>`
-  : `<details class="how" style="margin:0 0 14px"><summary>how to build the map</summary><div>
+  : `<details class="how map-help"><summary>how to build the map</summary><div>
   <ol style="padding-left:18px;line-height:2;margin:6px 0">
     <li><a href="/api/suggest-identities?fmt=csv" style="color:var(--pri)">Download
       a proposed map</a>. It matches local usernames against identities from
@@ -6134,7 +6388,7 @@ function dashboard() {
 
   const base = CFG.grafana_url, panels = CFG.grafana_panels || [];
   const q = 'orgId=1&theme=' + (document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light')
-    + '&from=now-7d&to=now&kiosk';
+    + '&from=now-' + hoursNow() + 'h&to=now&kiosk';
 
   if (!panels.length && CFG.grafana_dashboard_uid) {
     return `<h2>Grafana</h2>
@@ -6204,14 +6458,8 @@ async function fleet() {
     FLEET = await r.json();
   }
   const ds = FLEET.devices || [];
-  return `<h2>Fleet</h2>
-  <p class="lede">Every device holding a credential. (The Devices view is
-  different: it shows who has actually reported findings.) Revoke cuts off
-  that one device and nothing else, and it holds: a revoked serial is
-  refused at /enroll even by a valid enrollment token, until an admin allows
-  it back for a reimage or a replacement. Re-enrollments of a live device -
-  a reimaged laptop, a scanner that enrolls every run - keep their row and
-  are noted under "enrolled".</p>
+  return `<h2 data-tour="fleet">Fleet</h2>
+  <p class="lede">Every device holding a credential. Devices, under Discovery, is different: it shows which have actually reported findings. Revoke cuts off one device only, and it holds: a revoked serial is refused at enrollment even with a valid token, until an admin allows it back for a reimage or a replacement. A live device that enrolls again, such as a reimaged laptop or a scanner that enrolls every run, keeps its row and is noted under enrolled.</p>
   ${ds.length ? `<table><tr><th>device</th><th>platform</th><th>serial</th>
     <th>enrolled</th><th>last seen</th><th>agent</th><th>status</th><th></th></tr>
   ${ds.map(d => `<tr>
@@ -6255,11 +6503,7 @@ async function tokens() {
   const state = t => t.revoked_at ? ['revoked', 'p-mut']
     : t.expires_at <= nowIso ? ['expired', 'p-mut'] : ['active', 'p-ok'];
   return `<h2>Enrollment tokens</h2>
-  <p class="lede">An enrollment token goes into your MDM or RMM (a Jamf
-  parameter, the Intune script, an RMM variable). Each machine exchanges it
-  once for its own credential. The token itself can only enroll devices - it
-  can't submit findings - so a long expiry inside an MDM artifact is fine.
-  Revoke it here when a rollout is done or a token leaks.</p>
+  <p class="lede">An enrollment token goes into your MDM or RMM: a Jamf parameter, the Intune script, an RMM variable. Each machine exchanges it once for its own credential. The token can only enroll devices and cannot submit findings, so a long expiry inside an MDM artifact is fine. Revoke it here when a rollout is done or a token leaks.</p>
   ${MINTED ? (MINTED.error
     ? `<div class="note">${esc(MINTED.error)}
        <button class="mini" data-act="dismiss-minted">Dismiss</button></div>`
@@ -6691,10 +6935,10 @@ function bTierRows(tiers, eff, cur) {
         <input type="checkbox" id="bt-cov-${i}-${esc(tool)}"
           ${!t.covers || !t.covers.length || t.covers.includes(tool) ? 'checked' : ''}>
         <span class="mono">${esc(tool)}</span></label>`).join('')}</div></td></tr>`;
-  return `<table class="tiers">
+  return `<table class="tiers"><thead>
     <tr><th>Tier</th><th style="width:96px">Seats</th>
       <th style="width:140px">Price / seat</th>
-      <th style="width:110px">Monthly</th></tr>
+      <th style="width:110px">Monthly</th></tr></thead><tbody>
     ${rows.map((t, i) => {
       const line = (t.seats || 0) * (t.unit_price_monthly || 0);
       return `<tr>
@@ -6706,7 +6950,7 @@ function bTierRows(tiers, eff, cur) {
         value="${t.unit_price_monthly != null ? esc(String(t.unit_price_monthly)) : ''}"></td>
       <td class="linetot" id="bt-line-${i}">${line ? bMoney(line, cur) : ''}</td>
     </tr>${t.name ? covRow(t, i) : ''}`;
-    }).join('')}
+    }).join('')}</tbody>
   </table>`;
 }
 
@@ -6835,7 +7079,7 @@ function bwBodyTool() {
     };
     const obs = tools.filter(t => seen.has(t.id));
     const rest = tools.filter(t => !seen.has(t.id));
-    return `<select id="bw-tool" class="mfield" style="min-width:240px">
+    return `<select id="bw-tool" class="mfield bw-tool-picker" style="min-width:240px">
       ${obs.length ? `<optgroup label="Seen in your estate">${obs.map(opt).join('')}</optgroup>
         <optgroup label="Registry watchlist">${rest.map(opt).join('')}</optgroup>`
         : tools.map(opt).join('')}</select>`;
@@ -6959,7 +7203,7 @@ function bwBodySource() {
   ${w.source === 'api' ? `
     ${everything}
     <dl class="kv">
-      <dt>Provider</dt><dd><select id="bw-provider" class="mfield"
+      <dt>Provider</dt><dd><select id="bw-provider" class="mfield bw-provider-picker"
         style="min-width:300px">
         ${list.map(([id, p]) => `<option value="${esc(id)}"
           ${id === w.provider ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}
@@ -7097,7 +7341,7 @@ function budgetWizard() {
   return `<h2>${w.editing ? 'Edit ' + esc(w.tool_id) : 'Link a tool'}</h2>
   ${BMSG ? `<div class="note">${esc(BMSG)}</div>` : ''}
   <div class="ssow">${bwRail()}
-    <div class="ssmain">${body}
+    <div class="ssmain budget-wizard">${body}
       <div class="ssfoot">
         <button class="mini" data-act="b-cancel">Cancel</button>
         <span class="sp"></span>
@@ -7457,7 +7701,7 @@ function budgetReport() {
   const subs = BUDGET.subscriptions || [];
   const spendParts = bSpendParts(subs);
   const conv = bConverted(subs);
-  const hours = CFG.lookback_hours || 168;
+  const hours = hoursNow();
   const days = Math.round(hours / 24);
   const stamp = new Date().toISOString().replace('T', ' ').slice(0, 16);
   const who = e => BRNAMES ? esc(e) : '<span style="color:var(--mut)">withheld</span>';
@@ -7602,12 +7846,8 @@ async function budget() {
   const conv = bConverted(subs);
   const spend = conv ? bMoney(conv.total, bPrefCur())
     : spendParts.join(' + ') || '0';
-  return `<h2>Budget</h2>
-  <p class="lede">The AI tools the organisation pays for, against what the
-  estate is observed doing: seats nobody uses, users no seat covers, and
-  personal accounts running alongside paid ones. User lists come from a
-  vendor's admin API where one exists, or a CSV export where one does not -
-  the numbers work the same either way and each card says which it is.</p>
+  return `<h2 data-tour="budget">Budget</h2>
+  <p class="lede">What the organisation pays for AI tools, set against what is actually used: seats nobody uses, people without a seat, and personal accounts running alongside paid ones. User lists come from a vendor's admin API where one exists, or a CSV export where not; the numbers work the same either way, and each card says which.</p>
   ${BMSG ? `<div class="note">${esc(BMSG)}</div>` : ''}
   ${(() => { const n = conv ? '' : bConversionNote(subs);
      return n ? `<p class="src-note" style="margin-bottom:10px">${n}</p>` : ''; })()}
@@ -7892,6 +8132,10 @@ async function reloadDerived() {
 }
 
 async function managedAction(act, el) {
+  // Browser print, which is where "save as PDF" lives. Handled here, not in
+  // the budget branch below: the Overview and Evidence buttons carry this
+  // act too, and a handler only reachable from Budget left them inert.
+  if (act === 'evidence-print') { window.print(); return; }
   if (act.startsWith('b-')) return budgetAction(act, el);
   if (act === 'id-download') {
     window.location = '/api/suggest-identities?fmt=csv';
@@ -8688,6 +8932,9 @@ async function managedAction(act, el) {
     const r = await mfetch('/api/settings', {method: 'POST', body: JSON.stringify(body)});
     if (r.ok) {
       SETTINGS = await r.json(); SETMSG = 'Saved. It takes effect immediately.';
+      // The estate control heads every page; it should not wait for the
+      // next sign-in to learn the name.
+      if (key === 'org_name' && AUTH) { AUTH.org_name = val.trim(); showEstate(); }
       // The public URL gates the download buttons through CFG; refresh it
       // so saving in step 1 unlocks step 7 without a reload.
       if (key === 'receiver_public_url') {
@@ -8905,6 +9152,39 @@ async function managedAction(act, el) {
 // sections and back does not lose your place.
 const SECTAB = {};
 const sectionOf = v => NAV.find(s => s.items.some(([id]) => id === v));
+// Areas are independently expandable. This lets somebody compare a tool in
+// Discovery with its entry in Governance without bouncing the first group
+// closed every time they open the second one.
+let NAVOPEN = [];
+const NAV_PIN_KEY = 'navigation.pins';
+const NAVNAMES = {
+  overview:'Workspace overview', dashboard:'Grafana dashboard', personal:'Personal accounts',
+  register:'AI register', registry:'Tool registry', paste:'Paste guard',
+  iso:'Evidence centre', agentic:'Agentic AI', setup:'Detection sources',
+  coverage:'Coverage gaps', fleet:'Enrolled devices', tokens:'Enrollment tokens',
+};
+const navEntry = id => {
+  for (const sec of NAV) {
+    const found = sec.items.find(([item]) => item === id);
+    if (found) return {section: sec, id: found[0], label: NAVNAMES[found[0]] || found[1]};
+  }
+  return null;
+};
+// Stored as a JSON string: a preference value is a string on both the
+// portal and the receiver model, and an array would be refused with a 422
+// the client never reads - pins that looked saved and were gone on reload.
+const navPins = () => {
+  let raw = pref(NAV_PIN_KEY, '[]');
+  if (typeof raw === 'string') { try { raw = JSON.parse(raw); } catch (e) { raw = []; } }
+  const ids = Array.isArray(raw) ? raw : [];
+  return [...new Set(ids)].filter(id => navEntry(id));
+};
+async function navTogglePin(id) {
+  const pins = navPins();
+  const next = pins.includes(id) ? pins.filter(item => item !== id) : [...pins, id];
+  await prefSet(NAV_PIN_KEY, JSON.stringify(next));
+  drawNav();
+}
 
 // One reusable label, on the body: the sidebar scrolls, so anything drawn
 // past its edge would be clipped by it.
@@ -8929,37 +9209,124 @@ function navTip(btn) {
 }
 function hideNavTip() { if (NAVTIP) NAVTIP.classList.remove('on'); }
 
+// A collapsed rail should still be a working navigation system. The fly-out
+// keeps its children beside the rail so its width remains a deliberate
+// compact mode, not a dead-end with decorative icons.
+let NAVFLY = null, NAVFLYHIDE = null;
+const navCollapsed = () => document.getElementById('shell')?.classList.contains('collapsed');
+function navFlyCancelHide() { if (NAVFLYHIDE) clearTimeout(NAVFLYHIDE); NAVFLYHIDE = null; }
+function navFlyHideSoon() {
+  navFlyCancelHide();
+  NAVFLYHIDE = setTimeout(() => { if (NAVFLY) NAVFLY.hidden = true; }, 120);
+}
+function navFlyClose() { navFlyCancelHide(); if (NAVFLY) NAVFLY.hidden = true; }
+function navGo(sectionId, id) {
+  const sec = NAV.find(s => s.id === sectionId);
+  if (!sec) return;
+  view = id || SECTAB[sec.id] || sec.items[0][0];
+  const area = NAVAREAS.find(a => a.sections.includes(sec.id));
+  if (area && !area.direct && !NAVOPEN.includes(area.id)) NAVOPEN.push(area.id);
+  detail = null; EXTFROM = '';
+  document.body.classList.remove('nav-open');
+  history.replaceState(null, '', frag(view));
+  navFlyClose(); drawNav(); render();
+}
+function navFlyShow(btn) {
+  if (!navCollapsed()) return;
+  const area = NAVAREAS.find(a => a.id === btn.dataset.area);
+  if (!area) return;
+  navFlyCancelHide(); hideNavTip();
+  if (!NAVFLY) {
+    NAVFLY = document.createElement('div');
+    NAVFLY.id = 'navflyout'; NAVFLY.setAttribute('role', 'menu');
+    NAVFLY.onmouseenter = navFlyCancelHide;
+    NAVFLY.onmouseleave = navFlyHideSoon;
+    document.body.appendChild(NAVFLY);
+  }
+  const entries = area.sections.flatMap(sectionId => {
+    const sec = NAV.find(s => s.id === sectionId);
+    return sec ? sec.items.map(([id, label]) => ({sectionId, id, label:NAVNAMES[id] || label})) : [];
+  });
+  NAVFLY.innerHTML = `<span class="navfly-title">${esc(area.lbl)}</span>${entries.map(entry =>
+    `<button type="button" role="menuitem" data-fly-s="${entry.sectionId}" data-fly-v="${entry.id}"
+      class="${view === entry.id ? 'on' : ''}">${esc(entry.label)}</button>`).join('')}`;
+  const r = btn.getBoundingClientRect();
+  NAVFLY.hidden = false;
+  NAVFLY.style.left = (r.right + 8) + 'px';
+  NAVFLY.style.top = Math.max(8, Math.min(r.top, window.innerHeight - NAVFLY.offsetHeight - 8)) + 'px';
+  NAVFLY.querySelectorAll('[data-fly-v]').forEach(item => item.onclick = () =>
+    navGo(item.dataset.flyS, item.dataset.flyV));
+}
+
+function navChild(section, id, label, pinnedList, {pinned = false} = {}) {
+  const shown = NAVNAMES[id] || label;
+  const c = id === 'personal' ? (G.personal_accounts || []).length : null;
+  const isPinned = pinnedList.includes(id);
+  return `<div class="nav-child-row ${pinned ? 'nav-child-pinned' : ''}">
+    <button data-s="${section.id}" data-v="${id}" class="nav-child ${view === id ? 'on' : ''}"
+      aria-label="${esc(shown)}" data-lbl="${esc(shown)}"><span class="nav-dot" aria-hidden="true"></span>
+      <span class="lbl">${esc(shown)}</span>${c ? `<span class="count"
+        title="${c} personal account${c === 1 ? '' : 's'} seen in this window">${c}</span>` : ''}</button>
+    <button type="button" class="nav-pin ${isPinned ? 'pinned' : ''}" data-pin="${id}"
+      aria-label="${isPinned ? 'Unpin' : 'Pin'} ${esc(shown)}" title="${isPinned ? 'Unpin' : 'Pin'}">
+      ${isPinned ? '★' : '☆'}</button></div>`;
+}
+
 function drawNav() {
   const n = document.getElementById('nav');
   const cur = sectionOf(view);
-  n.innerHTML = NAV.map(sec => {
-    // Personal accounts outstanding. An unexplained number on a nav
-    // item reads as a notification of something unspecified.
-    const c = sec.id === 'inventory' ? (G.personal_accounts||[]).length : null;
-    return `<button data-s="${sec.id}" class="${cur && cur.id===sec.id ? 'on':''}"
-      aria-label="${sec.lbl}" data-lbl="${sec.lbl}">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-        stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${NAVICONS[sec.id]}</svg>
-      <span class="lbl">${sec.lbl}</span>` +
-      (c ? `<span class="count" title="${c} personal account${c === 1 ? '' : 's'} seen in this window">${c}</span>` : '') + `</button>`;
+  // Product areas are the stable mental model; their destinations expand in
+  // place. Desktop no longer repeats the same destinations as tabs above the
+  // page. The compact tabs remain available when the sidebar is off-canvas.
+  const activeArea = NAVAREAS.find(a => cur && a.sections.includes(cur.id));
+  if (!NAVOPEN.length && activeArea) NAVOPEN = [activeArea.id];
+  const pins = navPins();
+  const pinned = pins.length ? `<div class="nav-pinned"><span>Pinned</span>${pins.map(id => {
+    const entry = navEntry(id); return navChild(entry.section, entry.id, entry.label, pins, {pinned:true});
+  }).join('')}</div>` : '';
+  n.innerHTML = pinned + NAVAREAS.map(area => {
+    const current = activeArea && activeArea.id === area.id;
+    if (area.direct) return `<div class="nav-area-block">
+      <button class="nav-area-trigger nav-direct ${current ? 'on' : ''}"
+        data-s="system" data-v="${area.direct}" data-lbl="${esc(area.lbl)}" aria-label="${esc(area.lbl)}">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="1.9" stroke-linecap="round"
+          stroke-linejoin="round">${NAVICONS[area.icon]}</svg>
+        <span class="lbl">${esc(area.lbl)}</span></button></div>`;
+    const open = NAVOPEN.includes(area.id);
+    const children = area.sections.map(sid => {
+      const sec = NAV.find(s => s.id === sid);
+      return sec ? sec.items.map(([id, label]) => {
+        return navChild(sec, id, label, pins);
+      }).join('') : '';
+    }).join('');
+    return `<div class="nav-area-block ${open ? 'expanded' : ''}">
+      <button class="nav-area-trigger ${current ? 'current' : ''}" data-area="${area.id}"
+        data-lbl="${esc(area.lbl)}" aria-label="${esc(area.lbl)}" aria-expanded="${open}">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="1.9" stroke-linecap="round"
+          stroke-linejoin="round">${NAVICONS[area.icon]}</svg>
+        <span class="lbl">${esc(area.lbl)}</span><span class="nav-chevron" aria-hidden="true">›</span>
+      </button><div class="nav-area-items" ${open ? '' : 'hidden'}>${children}</div>
+    </div>`;
   }).join('');
   // Collapsed, the rail is icons alone. A native title works but arrives a
   // second late and in the operating system's styling, which on a rail
   // somebody is scanning is close enough to nothing.
   n.querySelectorAll('button').forEach(b => {
-    b.onmouseenter = () => navTip(b);
-    b.onmouseleave = hideNavTip;
-    b.onfocus = () => navTip(b);
-    b.onblur = hideNavTip;
+    b.onmouseenter = () => b.dataset.area && navCollapsed() ? navFlyShow(b) : navTip(b);
+    b.onmouseleave = () => b.dataset.area && navCollapsed() ? navFlyHideSoon() : hideNavTip();
+    b.onfocus = () => b.dataset.area && navCollapsed() ? navFlyShow(b) : navTip(b);
+    b.onblur = () => b.dataset.area && navCollapsed() ? navFlyHideSoon() : hideNavTip();
   });
-  n.querySelectorAll('button').forEach(b => b.onclick = () => {
-    const sec = NAV.find(s => s.id === b.dataset.s);
-    view = SECTAB[sec.id] || sec.items[0][0]; detail = null; EXTFROM = '';
-    // Replace rather than push: clicking through the nav should not fill the
-    // back button with every tab you glanced at.
-    history.replaceState(null, '', frag(view));
-    drawNav(); render();
+  n.querySelectorAll('[data-area]').forEach(b => b.onclick = () => {
+    if (navCollapsed()) { navFlyShow(b); return; }
+    NAVOPEN = NAVOPEN.includes(b.dataset.area)
+      ? NAVOPEN.filter(id => id !== b.dataset.area) : [...NAVOPEN, b.dataset.area];
+    drawNav();
   });
+  n.querySelectorAll('[data-v]').forEach(b => b.onclick = () => navGo(b.dataset.s, b.dataset.v));
+  n.querySelectorAll('[data-pin]').forEach(b => b.onclick = e => { e.stopPropagation(); navTogglePin(b.dataset.pin); });
   const fv = document.getElementById('footver');
   if (fv && CFG.version) fv.textContent = 'v' + CFG.version;
 }
@@ -8982,7 +9349,7 @@ function tabbar() {
 function overviewTools() {
   const hidden = overviewWidgets().hidden.length;
   return `${hidden ? `<button class="mini" data-act="ov-showall"
-    >show all (${hidden} hidden)</button>` : ''}
+    >Restore ${hidden} hidden ${hidden === 1 ? 'widget' : 'widgets'}</button>` : ''}
     <button class="mini" data-act="ov-edit">Edit</button>`;
 }
 
@@ -9011,8 +9378,8 @@ function loadBanner() {
          giving it <span class="mono">LOKI_URL</span> and its own
          credentials. Until then the counts below are zeros because
          nothing was read, not because nothing is happening.`
-      : `Every count below is missing rather than zero. Settings >
-         Diagnostics records when the last read succeeded and when the
+      : `Every count below is missing rather than zero. System health, from the estate control
+         beneath the logo, records when the last read succeeded and when the
          last one failed.`}</div>
   </div>`;
 }
@@ -9024,7 +9391,7 @@ function loadBanner() {
 let AGENTIC = null;
 async function agentic() {
   if (!AGENTIC) {
-    const r = await fetch('/api/agentic');
+    const r = await fetch('/api/agentic' + hq());
     if (!r.ok) return `<h2>Agentic AI</h2><p class="lede">${
       esc((await r.json().catch(() => ({}))).detail || r.statusText)}</p>`;
     AGENTIC = await r.json();
@@ -9250,6 +9617,7 @@ async function renderView() {
   const tb = tabbar() + loadBanner();
   // settings and register each read a second endpoint, so they are async.
   if (view === 'settings') { app.innerHTML = tb + await settings(); return; }
+  if (view === 'diagnostics') { app.innerHTML = await diagnostics(); return; }
   if (view === 'register') { app.innerHTML = tb + await register(); return; }
   if (view === 'paste') { app.innerHTML = tb + await paste(); return; }
   if (view === 'agentic') { app.innerHTML = tb + await agentic(); return; }
@@ -9277,11 +9645,69 @@ async function renderView() {
                          dashboard, personal, mcp})[view]();
 }
 
+// Presentation is applied after a view renders so every existing view keeps
+// its own data contract and action hooks. The heading treatment is furniture,
+// not a second rendering path: adding a field to a view still means changing
+// that view once, above, rather than keeping a redesign in sync beside it.
+function decorateView() {
+  if (['wizard', 'extsetup', 'budget-report'].includes(view)
+      || document.body.classList.contains('auth')) return;
+  const h = app.querySelector(':scope > h2');
+  if (!h || h.closest('.view-head')) return;
+  const lede = h.nextElementSibling && h.nextElementSibling.classList
+    && h.nextElementSibling.classList.contains('lede')
+    ? h.nextElementSibling : null;
+  const sec = sectionOf(view);
+  const areas = {home:'Workspace', inventory:'Discovery', governance:'Governance',
+    spend:'Financial governance', agentic:'Autonomous activity', health:'Coverage',
+    managed:'Fleet operations', system:'Administration'};
+  const head = document.createElement('div');
+  head.className = 'view-head';
+  const title = document.createElement('div');
+  title.className = 'view-title';
+  title.innerHTML = `<div class="view-kicker">${esc(sec ? areas[sec.id] || sec.lbl : 'Workspace')}</div>`;
+  h.parentNode.insertBefore(head, h);
+  head.appendChild(title);
+  title.appendChild(h);
+  if (lede) title.appendChild(lede);
+  // The window is a control, not a badge: every count on the page is for
+  // it, and the choice follows the person to every other page.
+  const hours = hoursNow();
+  // Print only: which estate, which window, when. A PDF with none of those
+  // is a screenshot, not a record.
+  const stamp = document.createElement('div');
+  stamp.className = 'print-head';
+  const orgName = ((AUTH && AUTH.org_name) || '').trim()
+    || (CFG && CFG.managed && CFG.managed.enabled ? 'Managed estate' : 'Standalone portal');
+  stamp.textContent = orgName + ' · last ' + fmtWindow(hours) + ' · exported '
+    + new Date().toLocaleString();
+  head.appendChild(stamp);
+  const meta = document.createElement('div');
+  meta.className = 'view-meta';
+  // The Overview carries the control; every other page shows the window
+  // it is reporting over and says where to change it. One control per
+  // page header read as a filter that each page owned, and it is not.
+  meta.innerHTML = (view === 'overview' ? windowSelect('meta-chip window-pick')
+      : `<span class="meta-chip window-label"
+          title="Every count on this page is for this window. Change it on the Overview, or under Settings › Display & alerting.">last ${esc(fmtWindow(hours))}</span>`)
+    + (view === 'overview'
+      ? `<button class="mini meta-export" type="button" data-act="evidence-print">Export PDF</button>`
+      : '');
+  // Section destinations live in the expandable sidebar on desktop. Any
+  // actual page actions that shared their old tab row belong beside the page
+  // title, where the reference design puts them.
+  const tabAside = app.querySelector(':scope > .tabrow .tabaside');
+  if (tabAside) while (tabAside.firstChild) meta.appendChild(tabAside.firstChild);
+  head.appendChild(meta);
+
+}
+
 // Every navigation lands here, and half the views above return early, so
 // the tour's own check hangs off the wrapper rather than the body - a call
 // per branch is a call somebody adding the twelfth view forgets.
 async function render() {
   await renderView();
+  decorateView();
   drawSetup();
   maybeTour();
 }
@@ -9468,6 +9894,12 @@ app.addEventListener('drop', e => {
   render();
 });
 
+// The reporting window, drawn into every view's header by decorateView.
+app.addEventListener('change', e => {
+  const el = e.target.closest('[data-window]');
+  if (el) setWindow(Number(el.value));
+});
+
 // The Settings sub-tabs, delegated like everything else in #app.
 app.addEventListener('click', e => {
   const el = e.target.closest('[data-settab]');
@@ -9548,8 +9980,91 @@ app.addEventListener('keydown', e => {
   const btn = app.querySelector('[data-act="do-login"],[data-act="do-setup"]');
   if (btn) btn.click();
 });
-q.oninput = e => { filter = e.target.value.toLowerCase(); detail = null; render(); };
+q.oninput = e => { filter = e.target.value.toLowerCase(); detail = null; render(); qResults(); };
+
+// The box filters the list on views that have one, and on every view it is
+// a finder: pages by name, tools, devices, people and MCP servers from the
+// current read. Before this it silently did nothing on the Overview, which
+// reads as broken rather than as "nothing to filter here".
+const FILTERED_VIEWS = ['overview', 'tools', 'people', 'devices', 'personal',
+                        'mcp', 'register', 'paste'];
+function qMatches() {
+  const f = filter.trim();
+  if (!f) return [];
+  const hit = v => String(v || '').toLowerCase().includes(f);
+  const out = [];
+  for (const sec of NAV) for (const [id, label] of sec.items) {
+    const shown = NAVNAMES[id] || label;
+    if (hit(shown)) out.push({kind: 'page', label: shown, go: () => navGo(sec.id, id)});
+  }
+  if (G) {
+    for (const id of Object.keys(G.tools || {}))
+      if (hit(id)) out.push({kind: 'tool', label: id, go: () => open_('tool', id)});
+    for (const [id, d] of ents(G.devices))
+      if (hit(id) || hit(d.device_name))
+        out.push({kind: 'device', label: d.device_name || id, go: () => open_('device', id)});
+    for (const id of Object.keys(G.identities || {}))
+      if (hit(id)) out.push({kind: 'person', label: id, keep: true,
+                             go: () => navGo('inventory', 'people')});
+    for (const m of (G.mcp_servers || []))
+      if (hit(m.server)) out.push({kind: 'mcp', label: m.server, go: () => open_('mcp', m.server)});
+  }
+  return out.slice(0, 8);
+}
+function qGo(i) {
+  const m = qMatches()[i];
+  if (!m) return;
+  // A person opens the People list filtered to them; everything else lands
+  // on its own page or drawer, so the filter would only hide things there.
+  if (!m.keep) { q.value = ''; filter = ''; }
+  const box = document.getElementById('qresults');
+  box.hidden = true;
+  m.go();
+  if (!m.keep) render();
+}
+function qResults() {
+  const box = document.getElementById('qresults');
+  if (!box) return;
+  if (!filter.trim()) { box.hidden = true; box.innerHTML = ''; return; }
+  const name = (navEntry(view) || {}).label || NAVNAMES[view] || 'This page';
+  const filtering = FILTERED_VIEWS.includes(view);
+  const found = qMatches();
+  box.innerHTML = `<div class="qr-head">${esc(filtering
+      ? 'Filtering ' + name : name + ' has no list to filter')}</div>`
+    + (found.length ? found.map((m, i) => `<button type="button" class="qr-item"
+        role="option" data-qgo="${i}"><span>${esc(m.label)}</span>
+        <span class="qr-kind">${esc(m.kind)}</span></button>`).join('')
+      : '<div class="qr-none">Nothing else matches</div>');
+  box.hidden = false;
+}
+document.getElementById('qresults').addEventListener('mousedown', e => {
+  const el = e.target.closest('[data-qgo]');
+  if (!el) return;
+  e.preventDefault();
+  qGo(Number(el.getAttribute('data-qgo')));
+});
+q.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); qGo(0); }
+  if (e.key === 'Escape') {
+    q.value = ''; filter = ''; render(); qResults(); q.blur();
+  }
+});
+q.addEventListener('focus', qResults);
+q.addEventListener('blur', () => setTimeout(() => {
+  const box = document.getElementById('qresults');
+  if (box) box.hidden = true;
+}, 150));
 document.getElementById('refresh').onclick = () => load(true);
+const mobileNav = document.getElementById('mobile-nav');
+if (mobileNav) mobileNav.onclick = () => document.body.classList.toggle('nav-open');
+// Slash-to-search is standard furniture in dense admin products. It does not
+// replace ordinary tab navigation and stands down while someone is typing.
+window.addEventListener('keydown', e => {
+  if (e.key === '/' && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) {
+    e.preventDefault(); q.focus(); q.select();
+  }
+  if (e.key === 'Escape') document.body.classList.remove('nav-open');
+});
 // Theme and sidebar width are the viewer's own habits, so they live in this
 // browser rather than in a setting every operator would share.
 function setTheme(t) {
@@ -9614,6 +10129,25 @@ document.getElementById('signout').onclick = async () => {
   showLogin('Signed out.');
 };
 
+// Keep account actions together in the account menu. The original sign-out
+// button remains the single implementation so authentication behaviour does
+// not fork between two controls.
+document.getElementById('signout-menu').onclick = () => {
+  umClose();
+  document.getElementById('signout').click();
+};
+
+// The estate context leads to an estate-level health view. It is deliberately
+// separate from Settings: changing policy and checking runtime health are
+// different operator jobs.
+document.getElementById('estate-status').onclick = () => {
+  view = 'diagnostics'; detail = null; EXTFROM = '';
+  history.replaceState(null, '', frag(view));
+  drawNav(); render();
+};
+
+document.getElementById('brand-home').onclick = () => navGo('home', 'overview');
+
 // The one place that knows what the sign-in screen needs. Falls back to a
 // signed-out shape if the receiver cannot be reached, because a sign-out
 // that leaves somebody looking at a stale dashboard is worse than one that
@@ -9647,7 +10181,7 @@ window.addEventListener('pageshow', async e => {
 // Bumping the version re-runs the tour for everybody: progress records
 // which version somebody has seen, not a bare "yes", so a rewritten tour
 // reaches people who took the old one.
-const TOUR_VERSION = '1';
+const TOUR_VERSION = '2';
 
 // Two tours, because a viewer and an admin are looking at different
 // products. Showing a read-only account the settings it cannot save is
@@ -9660,172 +10194,153 @@ const TOUR_VERSION = '1';
 const TOURS = {
   admin: [
     {title: 'Welcome to Shadow AI Guard',
-     body: 'This is every AI tool your estate is actually using - the '
-         + 'browser, laptops, your cloud tenant - and the accounts behind '
-         + 'it. Two minutes and you will know where to look for what.',
+     body: 'A quick walk through the portal. It takes about two minutes, '
+         + 'and you can leave at any point.',
      ok: 'Start'},
+    {view: 'overview', sel: '[data-area="discovery"]',
+     title: 'Finding your way around',
+     body: 'Pages are grouped in the sidebar. You can keep more than one '
+         + 'group open, and pin the pages you use most so they sit at the '
+         + 'top.'},
+    {view: 'overview', sel: '#who', when: () => !!(AUTH && AUTH.mode === 'login' && AUTH.username),
+     title: 'Your account',
+     body: 'Change your password or sign out from here. The theme switch '
+         + 'is next to it, and while setup is unfinished a bell shows what '
+         + 'is left.'},
     {view: 'overview', sel: '[data-tour="stats"]',
-     title: 'The numbers that matter',
-     body: 'Personal accounts first, because that is the one worth acting '
-         + 'on. Everything here reads the window in the corner - findings '
-         + 'age out of it, so a number falling can mean a device went '
-         + 'quiet rather than a problem going away.'},
+     title: 'The overview',
+     body: 'The headline numbers: personal accounts to review, people '
+         + 'affected, tools seen and how much of the fleet is reporting. '
+         + 'Everything is for the time window chosen at the top right, not '
+         + 'all time.'},
     {view: 'overview', sel: '[data-act="ov-edit"]',
-     title: 'Read it your way',
-     body: 'Edit lets you drag these cards, stack two into one column, '
-         + 'resize them, or hide what you never look at. It is your own '
-         + 'view and changes nothing for anyone else. A few cards offer a '
-         + 'second form where the data has more than one honest reading.'},
-    {view: 'overview', sel: '[data-s="inventory"]', click: true,
-     title: 'What was found',
-     body: 'Tools, people, devices and the accounts they are signed into. '
-         + 'Open Inventory and I will show you the page most of this '
-         + 'exists for.'},
+     title: 'Make the overview yours',
+     body: 'Edit lets you show, hide, reorder and resize the cards, or stack '
+         + 'two side by side. The layout is saved to your account, so it is '
+         + 'the same at your next sign-in.'},
+    {view: 'setup', sel: '[data-tour="source-overview"]',
+     title: 'Check what is reporting first',
+     body: 'This page shows which detection sources are sending data. Look '
+         + 'here before reading a low count as good news: a source that is '
+         + 'silent cannot see anything.'},
+    {view: 'devices', sel: '[data-tour="device-summary"]',
+     title: 'Devices',
+     body: 'Every device that has reported, with the tools, people and '
+         + 'accounts seen on it. Unattributed means nobody has been linked '
+         + 'to that device yet. The portal never guesses.'},
     {view: 'personal', sel: '[data-tour="personal"]',
-     title: 'The page this is all for',
-     body: 'An approved tool on a personal account is still unmanaged data '
-         + 'flow and an offboarding gap - so approval never changes '
-         + 'severity here. The account is the risk, not the tool.'},
-    {view: 'personal', sel: '[data-s="governance"]', click: true,
-     title: 'Deciding what is allowed',
-     body: 'Nothing is approved or refused until a person says so. Open '
-         + 'Governance for where those decisions live.'},
-    {view: 'register', sel: '[data-s="spend"]', click: true,
-     title: 'Before you trust a number',
-     body: 'The AI register is what you actually use, with what was '
-         + 'decided about each tool: owner, status, review date. A tool '
-         + 'missing from the registry is flagged rather than hidden. What '
-         + 'it all costs is next - open Budget.'},
-    {view: 'budget', sel: '[data-s="agentic"]', click: true,
-     title: 'What it costs',
-     body: 'Subscriptions set against what the estate is observed doing: '
-         + 'seats nobody uses, people on a tool no seat covers, personal '
-         + 'accounts running beside paid ones. Every page so far assumed a '
-         + 'person did something - open Agentic AI for the ones where '
-         + 'nobody did.'},
-    {view: 'agentic', sel: '[data-s="health"]', click: true,
-     title: 'The ones nobody is driving',
-     body: 'Things that start on a timer or a trigger, and what they can '
-         + 'reach once running. Read the second box in each chain: an empty '
-         + 'one is a credential with no person behind it, so revoking '
-         + 'somebody\'s sign-on does not stop it. All of it rests on '
-         + 'something still reporting - open Health.'},
-    {view: 'setup', sel: '[data-s="managed"]', click: true,
-     title: 'Is anything actually reporting?',
-     body: 'Which detection sources are reporting, which are set up but '
-         + 'silent, and which you have not enabled. A surface nobody '
-         + 'collects from looks exactly like a surface with nothing on '
-         + 'it. The devices themselves are next - open Fleet.'},
-    {view: 'fleet', sel: '[data-s="system"]', click: true,
-     title: 'Devices and their credentials',
-     body: 'Every device holding an enrollment credential, and the tokens '
-         + 'that invited them. Revoking cuts off one device and it holds: '
-         + 'the serial is refused even by a valid token until you allow '
-         + 'it back. Last stop - open Settings.'},
-    {view: 'settings', tab: 'fleet', sel: '#set-domains',
-     title: 'Corporate domains',
-     body: 'Every domain your people legitimately sign in with. Anything '
-         + 'else is a personal account and warns. Get this wrong and the '
-         + 'whole platform reports the wrong thing, so it is the first '
-         + 'field to fill in.'},
-    {view: 'settings', sel: '#who',
-     title: 'Your own account',
-     body: 'Your name in the corner opens your account, and changing your '
-         + 'own password lives there. Everything else on this screen is '
-         + 'about the deployment, or about other people\u2019s accounts.'},
-    {view: 'settings', sel: '#refresh',
-     title: 'One last thing',
-     body: 'Findings are cached, so this is how you force a fresh read. '
-         + 'You can take this tour again from Settings, under Getting '
-         + 'started.'},
+     title: 'Personal accounts',
+     body: 'Work being done through personal accounts, even on tools you '
+         + 'have approved. Record what you did about each one here; that '
+         + 'is what clears it from the overview.'},
+    {view: 'register', sel: '.register-overview',
+     title: 'The AI register',
+     body: 'Your decision on each tool: who owns it, whether it is '
+         + 'approved, and when to review it. Tools that have been seen but '
+         + 'have no decision yet are listed so they are not forgotten.'},
+    {view: 'iso', sel: '.evidence-summary',
+     title: 'Evidence centre',
+     body: 'What the portal can back up with records for the chosen '
+         + 'window, grouped by ISO 42001 theme. Export a PDF for a review, '
+         + 'or download the JSON to keep.'},
+    {view: 'budget', sel: '[data-tour="budget"]',
+     title: 'Budget',
+     body: 'Link each approved tool to its plan and seats, and this page '
+         + 'shows what you pay next to what is actually being used.'},
+    {view: 'agentic', sel: '.ag-verdict',
+     title: 'Agentic AI',
+     body: 'Things that run without a person at the keyboard: scheduled '
+         + 'jobs, MCP servers, tools started by a timer. Each row says '
+         + 'what the evidence is.'},
+    {view: 'fleet', sel: '[data-tour="fleet"]',
+     title: 'Enrolled devices',
+     body: 'Create an enrollment token, give it to a collector, and the '
+         + 'device appears here the first time it reports.'},
+    {view: 'settings', tab: 'start', sel: '[data-tour="getting-started"]',
+     title: 'Getting started',
+     body: 'The setup checklist and this tour both live here, so you can '
+         + 'come back to either later.'},
+    {view: 'diagnostics', sel: '[data-tour="system-health"]',
+     title: 'System health',
+     body: 'Click the name under the logo to get here. It shows whether '
+         + 'the portal can reach its log store and registry, and how fresh '
+         + 'the data is.'},
   ],
   viewer: [
     {title: 'Welcome to Shadow AI Guard',
-     body: 'This account reads every page and changes nothing - made for '
-         + 'the auditor and the exec. Same tour as an admin gets, with who '
-         + 'to ask where a page needs a change.',
+     body: 'A quick walk through the portal. This account can see '
+         + 'everything but change nothing, which suits an auditor or a '
+         + 'reviewer.',
      ok: 'Start'},
+    {view: 'overview', sel: '[data-area="discovery"]',
+     title: 'Finding your way around',
+     body: 'Pages are grouped in the sidebar. You can keep more than one '
+         + 'group open, and pin the pages you use most so they sit at the '
+         + 'top.'},
+    {view: 'overview', sel: '#who', when: () => !!(AUTH && AUTH.mode === 'login' && AUTH.username),
+     title: 'Your account',
+     body: 'Change your password or sign out from here. The theme switch '
+         + 'is next to it.'},
     {view: 'overview', sel: '[data-tour="stats"]',
-     title: 'The numbers that matter',
-     body: 'Personal accounts first, because that is the one worth acting '
-         + 'on. Everything here reads the window in the corner - findings '
-         + 'age out of it, so a number falling can mean a device went '
-         + 'quiet rather than a problem going away.'},
+     title: 'The overview',
+     body: 'The headline numbers: personal accounts to review, people '
+         + 'affected, tools seen and how much of the fleet is reporting. '
+         + 'Everything is for the time window chosen at the top right, not '
+         + 'all time.'},
     {view: 'overview', sel: '[data-act="ov-edit"]',
-     title: 'Read it your way',
-     body: 'Edit lets you drag these cards, stack two into one column, '
-         + 'resize them, or hide what you never look at. This one is '
-         + 'yours: it is a personal view kept with your account, and '
-         + 'read-only does not stop it.'},
-    {view: 'overview', sel: '[data-s="inventory"]', click: true,
-     title: 'What was found',
-     body: 'Tools, people, devices and the accounts they are signed into. '
-         + 'Open Inventory and I will show you the page most of this '
-         + 'exists for.'},
+     title: 'Make the overview yours',
+     body: 'Edit lets you show, hide, reorder and resize the cards, or stack '
+         + 'two side by side. The layout is saved to your account, so it is '
+         + 'the same at your next sign-in.'},
+    {view: 'setup', sel: '[data-tour="source-overview"]',
+     title: 'Check what is reporting first',
+     body: 'This page shows which detection sources are sending data. Look '
+         + 'here before reading a low count as good news: a source that is '
+         + 'silent cannot see anything.'},
+    {view: 'devices', sel: '[data-tour="device-summary"]',
+     title: 'Devices',
+     body: 'Every device that has reported, with the tools, people and '
+         + 'accounts seen on it. Unattributed means nobody has been linked '
+         + 'to that device yet. The portal never guesses.'},
     {view: 'personal', sel: '[data-tour="personal"]',
-     title: 'The page this is all for',
-     body: 'An approved tool on a personal account is still unmanaged data '
-         + 'flow and an offboarding gap - so approval never changes '
-         + 'severity here. The account is the risk, not the tool.'},
-    {view: 'personal', sel: '[data-s="governance"]', click: true,
-     title: 'What was decided, and by whom',
-     body: 'Approvals, owners and review dates - the evidence an audit '
-         + 'asks for, and all of it readable from this account. Recording '
-         + 'a decision is the admin\u2019s half. Open Governance.'},
-    {view: 'register', sel: '[data-s="spend"]', click: true,
-     title: 'Before you trust a number',
-     body: 'The AI register is what you actually use; a tool missing from '
-         + 'the registry is flagged rather than hidden. Reading it is the '
-         + 'half this account does. What it all costs is next - open '
-         + 'Budget.'},
-    {view: 'budget', sel: '[data-s="agentic"]', click: true,
-     title: 'What it costs',
-     body: 'Unused seats, people on a tool no seat covers, and personal '
-         + 'accounts running beside paid ones - figures worth quoting. '
-         + 'Every figure so far counts something a person did - open '
-         + 'Agentic AI for what runs when nobody is there.'},
-    {view: 'agentic', sel: '[data-s="health"]', click: true,
-     title: 'What runs when nobody is there',
-     body: 'Tools that start on a schedule rather than because somebody '
-         + 'opened them, and what each can reach. The question an auditor '
-         + 'asks is who authorised it: where that box is empty there is no '
-         + 'person to name and nothing to revoke. All of it rests on '
-         + 'something still reporting, which is the next page - open '
-         + 'Health.'},
-    {view: 'setup', sel: '[data-s="managed"]', click: true,
-     title: 'Is anything actually reporting?',
-     body: 'Which detection sources are reporting, which are silent, and '
-         + 'which were never enabled. A surface nobody collects from '
-         + 'looks exactly like one with nothing on it, so read this '
-         + 'before quoting a number that fell. Open Fleet.'},
-    {view: 'fleet', sel: '[data-s="system"]', click: true,
-     title: 'Devices and their credentials',
-     body: 'Every device holding an enrollment credential, and the tokens '
-         + 'that invited them. Revoking one is an admin\u2019s job; seeing '
-         + 'what is enrolled, and what was revoked and when, is not. Last '
-         + 'stop - open Settings.'},
-    {view: 'settings', tab: 'fleet', sel: '#set-domains',
-     title: 'Corporate domains - read it, do not take it on trust',
-     body: 'Anything not on this list is treated as a personal account. '
-         + 'Every figure on the Personal accounts page rests on it, so a '
-         + 'missing domain overstates the problem and a wrong one hides '
-         + 'it. You can read it here; an admin changes it - and if it '
-         + 'looks wrong, that is the conversation to have before quoting '
-         + 'any of these numbers.'},
-    {view: 'settings', sel: '#who',
-     title: 'The one thing here you can change',
-     body: 'Your name in the corner opens your account. Your own password '
-         + 'is the single thing on this whole screen a read-only account '
-         + 'can change - the rest is the deployment, and an admin\u2019s '
-         + 'to save.'},
-    {view: 'settings', sel: '#refresh',
-     title: 'That is the tour',
-     body: 'Findings are cached, and this forces a fresh read. Saving is '
-         + 'the only thing this account cannot do - every page works. You '
-         + 'can take this tour again from Settings, under Getting '
-         + 'started.'},
+     title: 'Personal accounts',
+     body: 'Work being done through personal accounts, even on approved '
+         + 'tools. Approving a tool does not clear these; an admin records '
+         + 'what was done about each one.'},
+    {view: 'register', sel: '.register-overview',
+     title: 'The AI register',
+     body: 'The owner, status and review date for each tool. Tools seen '
+         + 'with no decision yet stay listed so an admin can pick them up.'},
+    {view: 'iso', sel: '.evidence-summary',
+     title: 'Evidence centre',
+     body: 'What the portal can back up with records for the chosen '
+         + 'window, grouped by ISO 42001 theme. Export a PDF for a review, '
+         + 'or download the JSON to keep.'},
+    {view: 'budget', sel: '[data-tour="budget"]',
+     title: 'Budget',
+     body: 'What each approved tool costs next to how much it is used. '
+         + 'Linking a plan is an admin action.'},
+    {view: 'agentic', sel: '.ag-verdict',
+     title: 'Agentic AI',
+     body: 'Things that run without a person at the keyboard: scheduled '
+         + 'jobs, MCP servers, tools started by a timer. Each row says '
+         + 'what the evidence is.'},
+    {view: 'fleet', sel: '[data-tour="fleet"]',
+     title: 'Enrolled devices',
+     body: 'Which devices have been admitted and with which token. '
+         + 'Creating and revoking tokens is an admin action.'},
+    {view: 'settings', tab: 'start', sel: '[data-tour="getting-started"]',
+     title: 'Getting started',
+     body: 'The setup checklist and this tour both live here, so you can '
+         + 'come back to either later.'},
+    {view: 'diagnostics', sel: '[data-tour="system-health"]',
+     title: 'System health',
+     body: 'Click the name under the logo to get here. It shows whether '
+         + 'the portal can reach its log store and registry, and how fresh '
+         + 'the data is.'},
   ],
 };
+
 
 // Openings that replace the welcome. Each is a step like any other, so a
 // case that needs its own first card costs a copy block rather than a
@@ -9901,9 +10416,13 @@ async function tourStart(intro) {
   // An opening replaces the welcome rather than preceding it: the welcome
   // introduces the product, and every case with its own opening is one
   // where that introduction has already happened or is beside the point.
+  // A step may say when it applies: the account control only exists in
+  // login mode, and a step that dims the page to point at nothing teaches
+  // that the tour is broken.
+  const all = TOURS[role].filter(st => !st.when || st.when());
   const steps = intro
-    ? [intro].concat(TOURS[role].slice(1))
-    : TOURS[role];
+    ? [intro].concat(all.slice(1))
+    : all;
   TOUR = {steps: steps, i: 0};
   document.getElementById('tour').classList.add('on');
   await tourShow();
@@ -9932,10 +10451,10 @@ async function tourEnd(done) {
   TOUR = null;
   document.getElementById('tour').className = '';
   document.getElementById('tour-card').innerHTML = '';
-  // Recorded whether it was finished or skipped: somebody who closed it
-  // decided they did not want it, and reopening it every sign-in would be
-  // the tour arguing with them.
-  await tourRemember(done ? TOUR_VERSION : 'skipped');
+  // Remember both outcomes against this version. A person who closes this
+  // edition is not asked again at the next sign-in, but a changed tour can
+  // still be offered when its version is bumped.
+  await tourRemember(done ? TOUR_VERSION : TOUR_VERSION + ':skipped');
   // Only when it was left early. The last step says this in its own body,
   // and repeating it to somebody who read that line is telling them twice.
   if (!done) tourDoneShow();
@@ -9965,6 +10484,17 @@ async function tourGo(n) {
 
 async function tourShow() {
   const st = TOUR.steps[TOUR.i];
+  const layer = document.getElementById('tour');
+  // Fade the spotlight out only when the page underneath is about to
+  // change. On the same page the card and ring simply move: fading them
+  // here and then animating the card in again from nothing made every
+  // Next blink twice, which a white card on a light page made obvious.
+  const moving = !!(st.view && (st.view !== view || (st.tab && st.tab !== SETTAB)));
+  TOUR.moved = moving;
+  if (moving && layer.classList.contains('on') && !layer.classList.contains('plain')) {
+    layer.classList.add('moving');
+    await new Promise(r => setTimeout(r, 120));
+  }
   // The step owns where it happens, so Back works across views and a step
   // never describes a page somebody navigated away from. A step on Settings
   // owns the sub-tab too: #set-domains exists only on Fleet, so a tour taken
@@ -9985,14 +10515,22 @@ async function tourShow() {
   // keyboard reaching it too, not just the mouse - and a step that asks
   // for a click deliberately does not.
   tourRelease();
-  const el = st.sel ? document.querySelector(st.sel) : null;
+  // A page that cannot show its hook - Budget and Fleet render a managed-
+  // mode notice on a standalone portal - is still the page the step is
+  // about, so the step frames the view rather than centring an un-aimed
+  // card over a dimmed screen.
+  const el = (st.sel ? document.querySelector(st.sel) : null)
+    || (st.view && st.sel ? document.getElementById('app') : null);
   if (el && !st.click) { el.inert = true; TOUR.inert = el; }
   if (el && el.scrollIntoView) {
-    el.scrollIntoView({block: 'center', behavior: 'smooth'});
-    // Let the scroll settle before measuring, or the hole lands where the
-    // target used to be.
-    await new Promise(r => setTimeout(r, 240));
+    // Instant, not smooth: a smooth scroll was measured part-way through,
+    // so the hole landed where the target had been and then sat wrong.
+    // The page has just changed under the spotlight anyway; a jump is
+    // invisible behind the fade, a drift is not.
+    el.scrollIntoView({block: 'center', behavior: 'auto'});
   }
+  // Measure after the browser has laid the new page out.
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
   tourPaint(el, st);
   if (st.click && el) {
     // One shot, on the way down, so a nav button still does its own job.
@@ -10073,10 +10611,11 @@ function tourPaint(el, st) {
       <button class="${st.click ? '' : 'pri'}" data-tour-act="next">${
         esc(st.ok || (last ? 'Done' : 'Next'))}</button>
     </div>`;
-  // Restarted per step so the card animates in each time rather than once.
+  // The enter animation only after a page change, where the card was
+  // faded out and has somewhere to arrive from. It moves; opacity is the
+  // transition's job, so the two never fight.
   card.classList.remove('step-in');
-  void card.offsetWidth;
-  card.classList.add('step-in');
+  if (TOUR.moved) { void card.offsetWidth; card.classList.add('step-in'); }
 }
 
 document.getElementById('tour-card').addEventListener('click', e => {

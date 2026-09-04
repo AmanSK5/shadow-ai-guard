@@ -1537,7 +1537,19 @@ def auth_state(request: Request):
     setup_needed = False
     sso = False
     sso_forced = False
-    if not authenticated:
+    org_name = ""
+    if authenticated:
+        # The estate's name is wanted after sign-in too - it heads the
+        # sidebar - and the same public read supplies it. Best effort: a
+        # receiver that cannot be asked right now costs the name, not the
+        # session, which is already known to be live.
+        try:
+            out = managed.receiver_request(
+                RECEIVER_URL, "GET", "/admin/setup", "")
+            org_name = str(out.get("org_name") or "")
+        except managed.ReceiverError:
+            pass
+    else:
         try:
             out = managed.receiver_request(
                 RECEIVER_URL, "GET", "/admin/setup", "")
@@ -1545,6 +1557,7 @@ def auth_state(request: Request):
             # A login screen that cannot say whether an account exists should
             # say why, not guess a form.
             raise HTTPException(e.status, e.detail)
+        org_name = str(out.get("org_name") or "")
         setup_needed = bool(out.get("needed"))
         # Whether to offer the federated button beside the password form.
         # Absent on a receiver too old to report it, which reads as off -
@@ -1560,6 +1573,7 @@ def auth_state(request: Request):
             "username": hit[1],
             "role": hit[2] if authenticated else "",
             "setup_needed": setup_needed,
+            "org_name": org_name,
             "sso": sso,
             "sso_enforced": sso_forced}
 
@@ -1885,6 +1899,7 @@ class SettingsWrite(BaseModel):
     # setting took effect. The receiver revalidates (URL shapes included);
     # this model only mirrors the keys and bounds.
     model_config = {"extra": "forbid"}
+    org_name: str | None = Field(default=None, max_length=120)
     corp_domains: list[str] | None = Field(default=None, max_length=200)
     extension_id: str | None = Field(default=None, max_length=128)
     onboarding_done: bool | None = None
@@ -3025,9 +3040,18 @@ def logo(_=Depends(require_page_auth)):
     return FileResponse(STATIC / "logo.png", media_type="image/png")
 
 
+# The enterprise presentation layer is named explicitly for the same reason as
+# the logo: the page has one known asset, and no caller-controlled filesystem
+# path is ever resolved. It uses the page-auth boundary too, so classic-mode
+# credentials protect the stylesheet exactly as they protect the document.
+@app.get("/enterprise.css")
+def enterprise_css(_=Depends(require_page_auth)):
+    return FileResponse(STATIC / "enterprise.css", media_type="text/css")
+
+
 # There is no /static route, deliberately. The UI is one self-contained file
-# with its CSS and JS inline, served by / above, so a route that resolved a
-# caller-supplied path under a directory would exist only to serve nothing.
+# plus one explicitly named stylesheet, so a route that resolved a caller-
+# supplied path under a directory would exist only to expose files.
 #
 # It did exist briefly, guarded by a prefix check, and CodeQL was right to flag
 # it: comparing resolved paths with startswith is a weak guard - /srv/static-x
