@@ -635,8 +635,8 @@ a.libtn:hover{border-color:var(--pri)}
 }
 #tour-card.step-in { animation: tour-in .34s cubic-bezier(.2, .8, .3, 1); }
 @keyframes tour-in {
-  from { opacity: 0; transform: translateY(6px) scale(.985); }
-  to   { opacity: 1; transform: none; }
+  from { transform: translateY(6px) scale(.985); }
+  to   { transform: none; }
 }
 #tour-card h4 { margin: 0 0 6px; font-size: 15px; }
 #tour-card p { margin: 0 0 12px; font-size: 13px; line-height: 1.5;
@@ -1959,6 +1959,32 @@ const windowPref = () => {
 };
 const fmtWindow = h => h >= 24 && h % 24 === 0
   ? (h === 24 ? '24 hours' : Math.round(h / 24) + ' days') : h + ' hours';
+// The one select for the window, used by the Overview header and the
+// Settings card. Options are the fixed set plus the deployment default when
+// that is not among them, so the default can always be chosen back.
+function windowSelect(cls) {
+  const hours = hoursNow();
+  const dflt = Number((CFG && CFG.lookback_hours) || 168);
+  const choices = WINDOWS.some(w => w[0] === dflt) ? WINDOWS
+    : [[dflt, fmtWindow(dflt)]].concat(WINDOWS).sort((a, b) => a[0] - b[0]);
+  return `<label class="${cls}"
+      title="Every count is for this window. The deployment default is ${esc(fmtWindow(dflt))}; Grafana panels keep their own time range.">
+      <select data-window aria-label="Reporting window">${
+        choices.map(([h, l]) => `<option value="${h}"${h === hours ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label>`;
+}
+// A preference of the person, not a setting of the deployment, so it sits
+// with the other display choices and says so.
+function windowSettings() {
+  const dflt = Number((CFG && CFG.lookback_hours) || 168);
+  return `<div class="wcard" style="margin-bottom:10px"><h3>Reporting window</h3>
+  <dl class="kv">
+    <dt>Window</dt><dd>${windowSelect('mfield window-field')}
+    <div class="src-note fnote">Every page reports over this window, and the
+    choice follows your account. The deployment default is
+    ${esc(fmtWindow(dflt))}. The Overview header carries the same control for
+    quick changes; Grafana panels keep their own time range.</div></dd>
+  </dl></div>`;
+}
 async function setWindow(h) {
   const dflt = Number((CFG && CFG.lookback_hours) || 168);
   HOURS = h === dflt ? null : h;
@@ -6208,7 +6234,7 @@ async function settings() {
   }
   if (!managed || !SETTINGS) return `<h2>Settings</h2><p class="lede">This
     deployment has no centrally managed settings. System health is under the
-    estate name beneath the logo.</p>`;
+    estate name beneath the logo.</p>${windowSettings()}`;
 
   // Named outright rather than looked up by a key that came from the URL.
   // SETTAB is allow-listed where it enters, in fromHash(), so it can only
@@ -6216,7 +6242,7 @@ async function settings() {
   // dispatch on here at all, and nothing to get wrong twice.
   let body;
   if (SETTAB === 'connection') body = connectionSettings();
-  else if (SETTAB === 'alerting') body = orgSettings() + mailSettings() + alertingSettings();
+  else if (SETTAB === 'alerting') body = orgSettings() + windowSettings() + mailSettings() + alertingSettings();
   else if (SETTAB === 'account') body = accountSettings();
   else if (SETTAB === 'start') body = gettingStarted();
   else { SETTAB = 'fleet'; body = fleetSettings(); }
@@ -9640,9 +9666,6 @@ function decorateView() {
   // The window is a control, not a badge: every count on the page is for
   // it, and the choice follows the person to every other page.
   const hours = hoursNow();
-  const dflt = Number((CFG && CFG.lookback_hours) || 168);
-  const choices = WINDOWS.some(w => w[0] === dflt) ? WINDOWS
-    : [[dflt, fmtWindow(dflt)]].concat(WINDOWS).sort((a, b) => a[0] - b[0]);
   // Print only: which estate, which window, when. A PDF with none of those
   // is a screenshot, not a record.
   const stamp = document.createElement('div');
@@ -9654,10 +9677,12 @@ function decorateView() {
   head.appendChild(stamp);
   const meta = document.createElement('div');
   meta.className = 'view-meta';
-  meta.innerHTML = `<label class="meta-chip window-pick"
-      title="Every count on this page is for this window. The deployment default is ${esc(fmtWindow(dflt))}; Grafana panels keep their own time range.">
-      <select data-window aria-label="Reporting window">${
-        choices.map(([h, l]) => `<option value="${h}"${h === hours ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select></label>`
+  // The Overview carries the control; every other page shows the window
+  // it is reporting over and says where to change it. One control per
+  // page header read as a filter that each page owned, and it is not.
+  meta.innerHTML = (view === 'overview' ? windowSelect('meta-chip window-pick')
+      : `<span class="meta-chip window-label"
+          title="Every count on this page is for this window. Change it on the Overview, or under Settings › Display & alerting.">last ${esc(fmtWindow(hours))}</span>`)
     + (view === 'overview'
       ? `<button class="mini meta-export" type="button" data-act="evidence-print">Export PDF</button>`
       : '');
@@ -10453,9 +10478,13 @@ async function tourGo(n) {
 async function tourShow() {
   const st = TOUR.steps[TOUR.i];
   const layer = document.getElementById('tour');
-  // Let the current spotlight fade before anything moves. Skipped on the
-  // first step, where there is nothing to fade.
-  if (layer.classList.contains('on') && !layer.classList.contains('plain')) {
+  // Fade the spotlight out only when the page underneath is about to
+  // change. On the same page the card and ring simply move: fading them
+  // here and then animating the card in again from nothing made every
+  // Next blink twice, which a white card on a light page made obvious.
+  const moving = !!(st.view && (st.view !== view || (st.tab && st.tab !== SETTAB)));
+  TOUR.moved = moving;
+  if (moving && layer.classList.contains('on') && !layer.classList.contains('plain')) {
     layer.classList.add('moving');
     await new Promise(r => setTimeout(r, 120));
   }
@@ -10575,10 +10604,11 @@ function tourPaint(el, st) {
       <button class="${st.click ? '' : 'pri'}" data-tour-act="next">${
         esc(st.ok || (last ? 'Done' : 'Next'))}</button>
     </div>`;
-  // Restarted per step so the card animates in each time rather than once.
+  // The enter animation only after a page change, where the card was
+  // faded out and has somewhere to arrive from. It moves; opacity is the
+  // transition's job, so the two never fight.
   card.classList.remove('step-in');
-  void card.offsetWidth;
-  card.classList.add('step-in');
+  if (TOUR.moved) { void card.offsetWidth; card.classList.add('step-in'); }
 }
 
 document.getElementById('tour-card').addEventListener('click', e => {

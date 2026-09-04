@@ -238,3 +238,15 @@ def test_every_action_target_is_still_rendered():
     assert used, "no data-act steps parsed; this test is guarding nothing"
     for act in used:
         assert f'data-act="{act}"' in INDEX, f"nothing renders data-act={act}"
+
+
+def test_a_step_on_the_same_page_never_blinks():
+    """Fading the card out and then animating it in from nothing made every
+    Next blink twice. The fade happens only across a page change, and the
+    enter animation moves the card without touching its opacity."""
+    show = INDEX.split("async function tourShow()", 1)[1].split("\nfunction tourRelease()", 1)[0]
+    assert "TOUR.moved = moving;" in show
+    assert "if (moving && layer.classList.contains('on')" in show
+    assert "if (TOUR.moved) { void card.offsetWidth; card.classList.add('step-in'); }" in INDEX
+    keyframes = INDEX.split("@keyframes tour-in {", 1)[1].split("}\n}", 1)[0]
+    assert "opacity" not in keyframes

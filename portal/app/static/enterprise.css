@@ -783,3 +783,8 @@ body.auth .licard{width:100%}
 .budget-lines td:first-child{font-weight:650;padding-left:0}
 .budget-lines td.num{text-align:right;white-space:nowrap;color:var(--mut)}
 .budget-lines td:first-child .pill{margin-left:4px}
+
+/* ---- the window: a label on every page but the Overview ------------- */
+.window-label{font-weight:600;color:var(--fg)}
+.window-field{display:inline-flex;align-items:center;min-width:220px;padding:0 10px}
+.window-field select{font:inherit;font-size:11.5px;color:var(--fg);background:transparent;border:0;outline:0;width:100%;min-width:0;min-height:0;box-shadow:none;cursor:pointer}
