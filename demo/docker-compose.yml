@@ -149,7 +149,9 @@ services:
       TOKEN: "demo-token"
       # The estate itself: the owner account the setup code creates, its
       # sign-on address, and the settings that switch federated sign-in on
-      # against the stand-in provider. All fake, all in README.md.
+      # against the stand-in provider. The same session then links three
+      # Budget plans and enrolls three devices, so no page is empty. All
+      # fake, all in README.md.
       SETUP_CODE: "demo-setup-code"
       OWNER_USER: "gengar"
       OWNER_PASSWORD: "gengar-demo-portal"

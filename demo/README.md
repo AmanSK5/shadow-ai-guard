@@ -52,6 +52,15 @@ platform: the setup wizard (`#wizard`), central settings, the fleet view and
 enrollment tokens. The estate is named "Pallet Town Ltd"; change it under
 Settings > Display & alerting.
 
+Those pages are not empty. The seeder also links three plans under Budget
+(ChatGPT Business, Claude Team with a premium tier, Copilot Business) with
+member lists chosen so every state the page can show appears: seats nobody
+uses, people using a tool with no seat, a personal account running beside a
+paid one. And it mints one enrollment token and enrolls three devices
+through the real exchange, so Fleet has a roll. Re-running the seeder
+(`docker compose run --rm seeder`) refreshes all of it without touching
+the estate settings.
+
 After login it lands on a sources view showing which detection sources are
 reporting and what each silent one would need. In the demo most are not
 reporting - that's what a partly-configured deployment looks like, and the
