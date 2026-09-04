@@ -376,8 +376,29 @@ log = logging.getLogger("ai-guard")
 # exists boots print nothing. kubectl logs deploy/ai-guard-receiver | grep
 # setup_code is the whole retrieval story, and NOTES.txt says so.
 _SETUP_CODE = None
+
+
+def _mint_setup_code() -> str:
+    """A fresh random code - or, when SETUP_CODE is set, that one. A fixed
+    code is a password in a compose file: whoever reads the environment can
+    create the owner account. It exists so the demo stack can bootstrap its
+    own estate without a person copying a log line, and it says so on every
+    boot it is used, the way the authority override does."""
+    fixed = os.environ.get("SETUP_CODE", "").strip()
+    if fixed:
+        print(json.dumps({
+            "app": "ai-guard-receiver", "kind": "setup_code_override",
+            "warning": "the first-boot setup code is FIXED by SETUP_CODE. "
+                       "Anyone who can read this environment can create the "
+                       "owner account. This is for the demo stack; unset it "
+                       "everywhere else.",
+        }), flush=True)
+        return fixed
+    return _state.SETUP_PREFIX + secrets.token_urlsafe(24)
+
+
 if STATE is not None and not STATE.has_admin():
-    _SETUP_CODE = _state.SETUP_PREFIX + secrets.token_urlsafe(24)
+    _SETUP_CODE = _mint_setup_code()
     log.info(json.dumps({
         "app": "ai-guard-receiver", "kind": "setup_code",
         "setup_code": _SETUP_CODE,

@@ -236,3 +236,18 @@ def test_password_change_with_no_account_is_409(managed, monkeypatch):
     resp = client.post("/admin/password", headers=API_ADMIN,
                        json={"new": "recovered-long-password"})
     assert resp.status_code == 409
+
+
+def test_a_fixed_setup_code_is_only_ever_the_demo_stacks_and_says_so(monkeypatch, capsys):
+    """SETUP_CODE pins the first-boot code so the demo seeder can create the
+    owner account itself. Unset, every boot mints a random one; set, the
+    receiver uses it verbatim and prints a warning naming the risk."""
+    from app import main
+    monkeypatch.delenv("SETUP_CODE", raising=False)
+    minted = main._mint_setup_code()
+    assert minted.startswith("aigs_") and len(minted) > 20
+    assert "setup_code_override" not in capsys.readouterr().out
+    monkeypatch.setenv("SETUP_CODE", " demo-setup-code ")
+    assert main._mint_setup_code() == "demo-setup-code"
+    out = capsys.readouterr().out
+    assert "setup_code_override" in out and "FIXED" in out

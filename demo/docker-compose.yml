@@ -9,9 +9,10 @@
 #
 #   http://localhost:8091   the portal: devices, tools, people, and what is
 #                           reporting. Start here. It runs managed mode like
-#                           a real deployment, so it asks for the one-time
-#                           setup code the receiver printed:
-#                               docker compose logs receiver | grep setup_code
+#                           a real deployment; the seeder has already created
+#                           the owner account and switched single sign-on on,
+#                           so press "Sign in with Microsoft" and pick Gengar
+#                           (or use the password in demo/README.md).
 #   http://localhost:3000   Grafana (anonymous, no login), the "Shadow AI"
 #                           dashboard.
 #
@@ -78,11 +79,15 @@ services:
       DISPLAY_TZ: "UTC"
       # Managed mode, because it is the default everywhere else: enrollment,
       # the portal login and central settings, backed by one SQLite file on
-      # the named volume below. `down -v` wipes it, so every fresh start of
-      # the demo walks the real first-boot path: setup code, admin account,
-      # wizard.
+      # the named volume below. `down -v` wipes it; the seeder then walks the
+      # first-boot path for you - owner account, estate name, single sign-on.
       MANAGED_MODE: "true"
       STATE_DB_PATH: /var/lib/ai-guard/state.db
+      # The first-boot setup code, pinned so the seeder can claim it. DEMO
+      # ONLY: a fixed code is a password in this file, and the receiver says
+      # so in its log on every boot it is set. A real deployment reads the
+      # random one from the receiver's log instead.
+      SETUP_CODE: "demo-setup-code"
       # Federated sign-in talks to the stand-in provider below instead of
       # Microsoft. DEMO ONLY - it is the trust root for who gets signed in,
       # and the receiver prints a warning naming it on every boot. Delete
@@ -142,6 +147,15 @@ services:
     environment:
       RECEIVER: "http://receiver:8080"
       TOKEN: "demo-token"
+      # The estate itself: the owner account the setup code creates, its
+      # sign-on address, and the settings that switch federated sign-in on
+      # against the stand-in provider. All fake, all in README.md.
+      SETUP_CODE: "demo-setup-code"
+      OWNER_USER: "gengar"
+      OWNER_PASSWORD: "gengar-demo-portal"
+      OWNER_EMAIL: "gengar@example.com"
+      ORG_NAME: "Pallet Town Ltd"
+      PORTAL_URL: "http://localhost:8091"
     volumes:
       - ./seed.sh:/seed.sh:ro
     depends_on:
@@ -211,12 +225,12 @@ services:
     environment:
       LOKI_URL: "http://loki:3100"
       # Managed mode, same as a real deployment: admin actions proxy to the
-      # receiver and the portal gets a real login. The receiver prints a
-      # one-time setup code to its log on first boot - find it with
-      #     docker compose logs receiver | grep setup_code
-      # and create the admin account from the login screen. That unlocks the
-      # settings, the wizard (#wizard), fleet and enrollment tokens - the
-      # parts of the platform a no-auth demo could not show.
+      # receiver and the portal gets a real login. The seeder has created
+      # the owner account (gengar) and switched single sign-on on, so the
+      # login screen offers "Sign in with Microsoft" against the stand-in
+      # provider as well as the password in README.md. Signed in, you have
+      # the settings, the wizard (#wizard), fleet and enrollment tokens -
+      # the parts of the platform a no-auth demo could not show.
       RECEIVER_URL: "http://receiver:8080"
       REGISTRY_PATH: "/etc/ai-guard/registry.json"
       # Governance decisions. Optional everywhere, including here: comment

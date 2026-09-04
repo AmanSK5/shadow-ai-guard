@@ -68,3 +68,32 @@ post "{\"tool\":\"paste-guard\",\"surface\":\"browser\",\"source\":\"paste_guard
 
 echo ""
 echo "done. open http://localhost:3000 and view the Shadow AI dashboard."
+# --- the estate itself ---------------------------------------------------
+# A real deployment's operator does this by hand: read the setup code from
+# the receiver's log, create the owner account, name the estate, walk the
+# single sign-on wizard. The demo pins the code (SETUP_CODE on the receiver,
+# demo only) so this script can do the same over the same endpoints, and the
+# portal opens on a sign-in screen with the Microsoft button already there.
+# Safe to re-run: once the owner exists the setup door is closed (409) and
+# everything below is skipped.
+A="${RECEIVER:-http://receiver:8080}"
+if [ -n "${SETUP_CODE:-}" ]; then
+  echo "creating the owner account and switching single sign-on on"
+  sess=$(curl -s -X POST "$A/admin/setup" -H 'Content-Type: application/json' \
+    --data "{\"setup_code\":\"$SETUP_CODE\",\"username\":\"${OWNER_USER:-gengar}\",\"password\":\"${OWNER_PASSWORD:-gengar-demo-portal}\"}")
+  tok=$(printf '%s' "$sess" | sed -n 's/.*"token": *"\([^"]*\)".*/\1/p')
+  if [ -z "$tok" ]; then
+    echo "  skipped: $sess"
+  else
+    auth="Authorization: Bearer $tok"
+    users=$(curl -s "$A/admin/users" -H "$auth")
+    uid=$(printf '%s' "$users" | tr '{' '\n' | grep "\"username\": *\"${OWNER_USER:-gengar}\"" \
+      | sed -n 's/.*"id": *"\([0-9a-f]\{16\}\)".*/\1/p' | head -n 1)
+    printf '  sign-on address: '
+    curl -s -o /dev/null -w '%{http_code}\n' -X POST "$A/admin/users/$uid/email" -H "$auth" \
+      -H 'Content-Type: application/json' --data "{\"email\":\"${OWNER_EMAIL:-gengar@example.com}\"}"
+    printf '  estate name and single sign-on: '
+    curl -s -o /dev/null -w '%{http_code}\n' -X PUT "$A/admin/settings" -H "$auth" \
+      -H 'Content-Type: application/json' --data "{\"org_name\":\"${ORG_NAME:-Pallet Town Ltd}\",\"sso_tenant_id\":\"11111111-2222-3333-4444-555555555555\",\"sso_client_id\":\"66666666-7777-8888-9999-000000000000\",\"sso_client_secret\":\"demo-client-secret\",\"sso_redirect_uri\":\"${PORTAL_URL:-http://localhost:8091}/sso/callback\",\"sso_enabled\":\"1\"}"
+  fi
+fi

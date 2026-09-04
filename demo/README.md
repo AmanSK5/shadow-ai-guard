@@ -2,9 +2,10 @@
 
 See the platform work with synthetic data in about five minutes. No cluster,
 no real estate touched. Everything here is fake: demo users are named after
-Pokemon, findings are seeded locally. The only credential involved is the
-one the demo itself mints: the portal runs managed mode like a real
-deployment, so the first visit walks the real first-boot path.
+Pokemon, findings are seeded locally. The portal runs managed mode like a
+real deployment; the seeder walks the first-boot path for you - owner
+account, estate name, single sign-on - so the first visit is a sign-in
+screen with the Microsoft button already on it.
 
 The demo shows both halves of the platform: the detection pipeline landing
 in a Grafana dashboard, and the browser paste guard intercepting secrets
@@ -36,21 +37,20 @@ docker compose down -v
 
 ## The portal
 
-Open http://localhost:8091. It asks you to create the admin account - the
-receiver printed a one-time setup code to its log when it started:
+Open http://localhost:8091 and press **Sign in with Microsoft**. The
+stand-in identity provider offers three people; pick **Gengar**, whose
+address the seeder put on the owner account, and you are in. The password
+form works too: username `gengar`, password `gengar-demo-portal`.
 
-```bash
-docker compose logs receiver | grep setup_code
-```
-
-On Windows, swap `grep` for `findstr` - it is built into both PowerShell
-and cmd.
-
-Paste the code, pick a username and password, and you are in - the same
-first-boot flow as a real deployment, which is why the demo does not skip
-it. Being signed in unlocks the managed half of the platform: the setup
-wizard (the portal offers it, or go to `#wizard`), central settings, the
-fleet view and enrollment tokens.
+That account is the estate's owner and break-glass account - the one the
+setup code created - so it can do everything, including requiring single
+sign-on for everyone else. The seeder claimed the setup code for you
+(pinned to `demo-setup-code` on the receiver, demo only, and the receiver
+says so in its log); a real deployment reads the random one from the
+receiver's log instead. Being signed in unlocks the managed half of the
+platform: the setup wizard (`#wizard`), central settings, the fleet view and
+enrollment tokens. The estate is named "Pallet Town Ltd"; change it under
+Settings > Display & alerting.
 
 After login it lands on a sources view showing which detection sources are
 reporting and what each silent one would need. In the demo most are not
@@ -126,7 +126,15 @@ it - discovery, the authorization request with PKCE, the code exchange, and
 every claim check afterwards: issuer, audience, nonce, expiry, tenant. Only
 the host answering changes. So what you walk here is the real integration.
 
-In **Settings > Account > Single sign-on**, choose *Set it up* and use:
+The seeder has already switched it on, so the sign-in screen offers the
+Microsoft button from the first visit. The stand-in provider offers three
+people: `gengar@example.com` is on the owner account and signs in;
+`snorlax@example.com` works once you have created a second account with
+that address (Settings > Account); `nobody@example.com` exists to show the
+refusal a sign-in with no matching account gets.
+
+To walk the wizard yourself, switch single sign-on off under **Settings >
+Account > Single sign-on** and choose *Set it up* with:
 
 | Step | Value |
 | --- | --- |
@@ -134,13 +142,6 @@ In **Settings > Account > Single sign-on**, choose *Set it up* and use:
 | Application (client) ID | `66666666-7777-8888-9999-000000000000` |
 | Client secret | anything non-empty |
 | Where sign-ins return | leave the prefilled value |
-
-Before that, the wizard's first step asks for an email address on your own
-account. Use `gengar@example.com` - the stand-in provider offers three
-people to sign in as, and that is the one it matches. `snorlax@example.com`
-works too if you have created a second account with that address, and
-`nobody@example.com` exists to show the refusal a sign-in with no matching
-account gets.
 
 Then **Test sign-in**, pick an account, and the wizard's last step unlocks.
 
