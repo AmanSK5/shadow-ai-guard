@@ -1161,6 +1161,9 @@ def setup_needed():
     if STATE is None:
         raise HTTPException(404, "Not Found")
     return {"needed": not STATE.has_admin(),
+            # The estate's name, for the screen that has nobody to greet
+            # yet. A name, nothing else: see org_name in _STR_SETTINGS.
+            "org_name": STATE.get_setting("org_name") or "",
             "sso_enabled": _sso_conf()["enabled"],
             # Enforced means the password form has nothing to offer anybody
             # but one account, and a screen that still leads with it is
@@ -1933,6 +1936,11 @@ def _admin_actor(authorization: str) -> str:
 # in put_settings: (key, must_be_http_url, max_length). Secret keys are the
 # same shape to write but are never echoed by GET /admin/settings.
 _STR_SETTINGS = (
+    # What the estate is called: the control beneath the portal logo, the
+    # sign-in screen and the narrow top bar all say it. Public on purpose -
+    # it is served to the sign-in screen before anybody has authenticated,
+    # so it must never carry anything the estate would not put on a badge.
+    ("org_name", False, 120),
     ("receiver_public_url", True, 500),
     ("log_store_url", True, 500),
     ("log_store_push_url", True, 500),
@@ -2013,6 +2021,7 @@ class SettingsUpdate(BaseModel):
     # extra=forbid: an unknown key is a typo or a version mismatch, and
     # accepting it silently is how someone believes a setting is in effect.
     model_config = {"extra": "forbid"}
+    org_name: str | None = Field(default=None, max_length=120)
     corp_domains: list[str] | None = Field(default=None, max_length=200)
     extension_id: str | None = Field(default=None, max_length=128)
     onboarding_done: bool | None = None
@@ -2095,6 +2104,7 @@ def get_settings(authorization: str = Header(default="")):
             "value": bool(stored.get("onboarding_done")),
             "source": "db" if stored.get("onboarding_done") is not None else "unset",
         },
+        "org_name": plain("org_name"),
         "receiver_public_url": plain("receiver_public_url"),
         "log_store_url": plain("log_store_url"),
         "log_store_push_url": plain("log_store_push_url", LOKI_PUSH_URL),

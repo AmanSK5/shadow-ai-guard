@@ -94,7 +94,7 @@ dialog{border-radius:12px;border-color:var(--bd);box-shadow:var(--pop-shadow)}#s
   main{padding:21px 15px 55px}.view-head{flex-wrap:wrap}.view-meta{width:100%;margin-left:0;padding-top:0}.w6,.w4{flex-basis:100%}.posture-facts{display:none}.gcard>.stats{grid-template-columns:repeat(2,1fr)}.gcard>.stats>div{border-bottom:1px solid var(--bd)}.cards{grid-template-columns:1fr}
 }
 @media(max-width:560px){
-  .top-context,#freshness{display:none}.account-copy,.account-chevron{display:none}.topbar #who.account-button{padding:3px;gap:0}.search{min-width:0}.topbar{gap:7px}.topbar #signout{display:none!important}.view-head h2{font-size:21px}.tabs{gap:14px}.tabrow{overflow-x:auto;flex-wrap:nowrap}.tabaside{margin-left:auto}.overview-posture{align-items:flex-start}.gcard>.stats{grid-template-columns:1fr 1fr}.cards{display:block}table{min-width:620px}.tcard{overflow-x:auto}.drawer{padding-left:17px;padding-right:17px}
+  .top-context,#freshness{display:none}.topbar #who .account-copy,.topbar #who .account-chevron{display:none}.topbar #who.account-button{padding:3px;gap:0}.search{min-width:0}.topbar{gap:7px}.topbar #signout{display:none!important}.view-head h2{font-size:21px}.tabs{gap:14px}.tabrow{overflow-x:auto;flex-wrap:nowrap}.tabaside{margin-left:auto}.overview-posture{align-items:flex-start}.gcard>.stats{grid-template-columns:1fr 1fr}.cards{display:block}table{min-width:620px}.tcard{overflow-x:auto}.drawer{padding-left:17px;padding-right:17px}
 }
 
 /* --------------------------------------------------------------------------
@@ -602,7 +602,7 @@ main{max-width:none;width:100%;margin:0}
   z-index:2;display:grid!important;place-items:center;min-height:22px!important;width:22px!important;
   margin:0!important;padding:0!important;border:0!important;background:transparent!important;
   color:#64748c!important;font-size:12px!important;opacity:0;cursor:pointer}
-.nav-child-row:hover .nav-pin,.nav-pin:focus-visible,.nav-pin.on{opacity:1}.nav-pin.on{color:#f2bd5b!important}
+.nav-child-row:hover .nav-pin,.nav-pin:focus-visible,.nav-pin.pinned{opacity:1}.nav-pin.pinned{color:#f2bd5b!important}
 .nav-pin:hover{color:#f2bd5b!important;background:rgba(242,189,91,.1)!important;border-radius:5px}
 .collapsed .nav-pinned,.collapsed .nav-pin{display:none!important}
 

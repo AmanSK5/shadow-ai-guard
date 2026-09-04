@@ -1444,6 +1444,7 @@ function showLogin(msg) {
   // and that account is needed precisely when the provider is unreachable,
   // which is the worst moment to discover the form is gone.
   const forced = !create && AUTH && AUTH.sso && AUTH.sso_enforced;
+  const org = ((AUTH && AUTH.org_name) || '').trim();
   const passwordFields = `
     <p><input id="li-user" class="mfield" style="width:100%"
       placeholder="username" autocomplete="username"></p>
@@ -1464,8 +1465,9 @@ function showLogin(msg) {
          <code>kubectl logs deploy/&lt;release&gt;-ai-guard | grep setup_code</code>
          or <code>docker compose logs receiver</code>. The code works once;
          if you lose it, restart the receiver for a fresh one.`
-      : forced ? `Sign in with your work account.`
-      : `Sign in with your account.`}</p>
+      : forced ? (org ? `Sign in to ${esc(org)} with your work account.`
+                      : `Sign in with your work account.`)
+      : org ? `Sign in to ${esc(org)}.` : `Sign in with your account.`}</p>
     ${msg ? `<div class="note">${esc(msg)}</div>` : ''}
     ${forced ? `
       <p style="margin:0 0 10px">${ssoButton()}</p>
@@ -1814,7 +1816,11 @@ function showFreshness() {
 // comes from the same config the rest of the page gates on.
 function showEstate() {
   const managed = !!(CFG && CFG.managed && CFG.managed.enabled);
-  const name = managed ? 'Managed estate' : 'Standalone portal';
+  // The organisation's own name when an admin has set one (a central
+  // setting, served to the sign-in screen too), else what the portal is.
+  const org = ((AUTH && AUTH.org_name) || '').trim();
+  const kind = managed ? 'Managed estate' : 'Standalone portal';
+  const name = org || kind;
   const rep = S ? (S.reporting || 0) : 0, total = S ? (S.total || 0) : 0;
   const hours = CFG && CFG.lookback_hours ? CFG.lookback_hours + 'h' : 'the lookback window';
   let state, text, sub, title;
@@ -1832,12 +1838,15 @@ function showEstate() {
       + '. Open Detection sources to link one.';
   }
   const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-  set('estate-name', name); set('estate-avatar', managed ? 'M' : 'P');
+  set('estate-name', name);
+  set('estate-avatar', org ? org.replace(/^[^a-z0-9]+/i, '')[0] || 'M' : managed ? 'M' : 'P');
   set('topctx-name', name); set('topctx-sub', sub); set('trust-text', text);
   const es = document.getElementById('estate-sub');
   if (es) es.innerHTML = '<i class="estate-dot ' + state + '"></i> ' + esc(sub);
   const ts = document.getElementById('trust-state');
   if (ts) { ts.className = 'trust-state ' + state; ts.title = title; }
+  const ctl = document.getElementById('estate-status');
+  if (ctl) ctl.title = (org ? kind + ' · ' : '') + title + ' Opens System health.';
 }
 const app = document.getElementById('app'), q = document.getElementById('q');
 // The view lives in the URL fragment. A reload landing back on Setup loses
@@ -4682,7 +4691,14 @@ async function wizard() {
     </div></div>`;
 
   let body = '';
-  if (WIZSTEP === 1) body = `<h4>Where your machines reach the receiver</h4>
+  if (WIZSTEP === 1) body = `<h4>Name the estate</h4>
+  <p class="lede" style="margin-bottom:10px">Optional, and shown everywhere:
+  the control beneath the logo, the sign-in screen and the narrow top bar all
+  carry it. Editable later under Settings › Display &amp; alerting.</p>
+  <dl class="kv">
+    ${settingRow('org_name', 'Organisation name', 'Acme Ltd', '')}
+  </dl>
+  <h4 style="margin-top:18px">Where your machines reach the receiver</h4>
   <p class="lede" style="margin-bottom:10px">The URL your laptops and servers
   will send findings to. It gets baked into every download below, so it has
   to work from those machines - not just from inside the cluster. That means
@@ -5396,6 +5412,16 @@ function mailSettings() {
       style="margin-left:6px">Send the invites nobody got</button>`
     : 'Set email up and this becomes one button.'}</div>` : ''}
   </div>`;
+}
+
+// The estate's name. Its own card rather than a row among alerting URLs:
+// it is the one setting a person sees before they have signed in.
+function orgSettings() {
+  return `<div class="wcard" style="margin-bottom:10px"><h3>Organisation</h3>
+  <dl class="kv">
+    ${settingRow('org_name', 'Organisation name', 'Acme Ltd',
+      'Names the estate: the control beneath the logo, the top bar on narrow screens and the sign-in screen all say it. It is shown before anybody signs in, so keep it to a name. Empty means the portal says "Managed estate".')}
+  </dl></div>`;
 }
 
 function alertingSettings() {
@@ -6178,7 +6204,7 @@ async function settings() {
   // dispatch on here at all, and nothing to get wrong twice.
   let body;
   if (SETTAB === 'connection') body = connectionSettings();
-  else if (SETTAB === 'alerting') body = mailSettings() + alertingSettings();
+  else if (SETTAB === 'alerting') body = orgSettings() + mailSettings() + alertingSettings();
   else if (SETTAB === 'account') body = accountSettings();
   else if (SETTAB === 'start') body = gettingStarted();
   else { SETTAB = 'fleet'; body = fleetSettings(); }
@@ -6389,7 +6415,7 @@ async function fleet() {
     FLEET = await r.json();
   }
   const ds = FLEET.devices || [];
-  return `<h2>Fleet</h2>
+  return `<h2 data-tour="fleet">Fleet</h2>
   <p class="lede">Every device holding a credential. (The Devices view is
   different: it shows who has actually reported findings.) Revoke cuts off
   that one device and nothing else, and it holds: a revoked serial is
@@ -7787,7 +7813,7 @@ async function budget() {
   const conv = bConverted(subs);
   const spend = conv ? bMoney(conv.total, bPrefCur())
     : spendParts.join(' + ') || '0';
-  return `<h2>Budget</h2>
+  return `<h2 data-tour="budget">Budget</h2>
   <p class="lede">The AI tools the organisation pays for, against what the
   estate is observed doing: seats nobody uses, users no seat covers, and
   personal accounts running alongside paid ones. User lists come from a
@@ -8874,6 +8900,9 @@ async function managedAction(act, el) {
     const r = await mfetch('/api/settings', {method: 'POST', body: JSON.stringify(body)});
     if (r.ok) {
       SETTINGS = await r.json(); SETMSG = 'Saved. It takes effect immediately.';
+      // The estate control heads every page; it should not wait for the
+      // next sign-in to learn the name.
+      if (key === 'org_name' && AUTH) { AUTH.org_name = val.trim(); showEstate(); }
       // The public URL gates the download buttons through CFG; refresh it
       // so saving in step 1 unlocks step 7 without a reload.
       if (key === 'receiver_public_url') {
@@ -9206,7 +9235,7 @@ function navChild(section, id, label, pinnedList, {pinned = false} = {}) {
       aria-label="${esc(shown)}" data-lbl="${esc(shown)}"><span class="nav-dot" aria-hidden="true"></span>
       <span class="lbl">${esc(shown)}</span>${c ? `<span class="count"
         title="${c} personal account${c === 1 ? '' : 's'} seen in this window">${c}</span>` : ''}</button>
-    <button type="button" class="nav-pin ${isPinned ? 'on' : ''}" data-pin="${id}"
+    <button type="button" class="nav-pin ${isPinned ? 'pinned' : ''}" data-pin="${id}"
       aria-label="${isPinned ? 'Unpin' : 'Pin'} ${esc(shown)}" title="${isPinned ? 'Unpin' : 'Pin'}">
       ${isPinned ? '★' : '☆'}</button></div>`;
 }
@@ -10051,6 +10080,11 @@ const TOURS = {
          + 'open together, so you can compare Discovery with Governance. Pin '
          + 'frequent destinations; the compact rail keeps every area available '
          + 'through its fly-out.'},
+    {view: 'overview', sel: '#who', when: () => !!(AUTH && AUTH.mode === 'login' && AUTH.username),
+     title: 'Your account',
+     body: 'The account control at the top right holds change password and '
+         + 'sign out. Beside it sit the theme switch and, while setup is '
+         + 'still outstanding, a bell that lists what is left to do.'},
     {view: 'overview', sel: '[data-tour="stats"]',
      title: 'Workspace overview',
      body: 'This is the executive starting point: posture, open personal '
@@ -10082,6 +10116,21 @@ const TOURS = {
      body: 'Evidence centre gathers the records the platform can substantiate '
          + 'for the current window. Export PDF for a review-ready snapshot, or '
          + 'download JSON when the evidence needs to be inspected or retained.'},
+    {view: 'budget', sel: '[data-tour="budget"]',
+     title: 'Budget follows the register',
+     body: 'Spend sits with governance. Link a tool to its plan and seats, '
+         + 'and Budget reports what the approved estate costs beside what '
+         + 'discovery actually sees in use.'},
+    {view: 'agentic', sel: '.ag-verdict',
+     title: 'Operations watches what runs on its own',
+     body: 'Agentic AI lists MCP servers and unattended tool use, with the '
+         + 'evidence each claim rests on. It sits under Operations with '
+         + 'detection sources and coverage gaps.'},
+    {view: 'fleet', sel: '[data-tour="fleet"]',
+     title: 'Enrolment is an operations job',
+     body: 'Enrolled devices and Enrollment tokens are where managed mode '
+         + 'admits machines: mint a token, hand it to a collector, and the '
+         + 'device appears here when it first reports.'},
     {view: 'settings', tab: 'start', sel: '[data-tour="getting-started"]',
      title: 'Return here when needed',
      body: 'Settings › Getting started is the home for this tour and the '
@@ -10103,6 +10152,11 @@ const TOURS = {
      body: 'The sidebar groups pages by the work they support. Areas can stay '
          + 'open together, and you can pin frequent destinations. In compact '
          + 'mode, each icon opens a fly-out with its pages.'},
+    {view: 'overview', sel: '#who', when: () => !!(AUTH && AUTH.mode === 'login' && AUTH.username),
+     title: 'Your account',
+     body: 'The account control at the top right is where this account '
+         + 'changes its password and signs out. The theme switch sits beside '
+         + 'it.'},
     {view: 'overview', sel: '[data-tour="stats"]',
      title: 'Workspace overview',
      body: 'This is the executive starting point: posture, personal-account '
@@ -10132,6 +10186,20 @@ const TOURS = {
      body: 'Evidence centre is an operational index, not a compliance score. '
          + 'Export PDF for a review-ready snapshot or download JSON for detailed '
          + 'inspection and retention.'},
+    {view: 'budget', sel: '[data-tour="budget"]',
+     title: 'Budget in context',
+     body: 'Linked plans and seats put a cost beside observed use. This '
+         + 'account can read the picture; linking a plan is an admin action.'},
+    {view: 'agentic', sel: '.ag-verdict',
+     title: 'What runs on its own',
+     body: 'Agentic AI shows MCP servers and unattended tool use, and how '
+         + 'strong each claim is. It is read-only here, like the rest of '
+         + 'Operations.'},
+    {view: 'fleet', sel: '[data-tour="fleet"]',
+     title: 'Enrolled devices',
+     body: 'Managed mode records which machines were admitted and with which '
+         + 'token. This account can see the roll; minting and revoking tokens '
+         + 'stays with admins.'},
     {view: 'settings', tab: 'start', sel: '[data-tour="getting-started"]',
      title: 'Find this tour again',
      body: 'Settings › Getting started keeps the orientation and setup review '
@@ -10219,9 +10287,13 @@ async function tourStart(intro) {
   // An opening replaces the welcome rather than preceding it: the welcome
   // introduces the product, and every case with its own opening is one
   // where that introduction has already happened or is beside the point.
+  // A step may say when it applies: the account control only exists in
+  // login mode, and a step that dims the page to point at nothing teaches
+  // that the tour is broken.
+  const all = TOURS[role].filter(st => !st.when || st.when());
   const steps = intro
-    ? [intro].concat(TOURS[role].slice(1))
-    : TOURS[role];
+    ? [intro].concat(all.slice(1))
+    : all;
   TOUR = {steps: steps, i: 0};
   document.getElementById('tour').classList.add('on');
   await tourShow();
@@ -10303,7 +10375,12 @@ async function tourShow() {
   // keyboard reaching it too, not just the mouse - and a step that asks
   // for a click deliberately does not.
   tourRelease();
-  const el = st.sel ? document.querySelector(st.sel) : null;
+  // A page that cannot show its hook - Budget and Fleet render a managed-
+  // mode notice on a standalone portal - is still the page the step is
+  // about, so the step frames the view rather than centring an un-aimed
+  // card over a dimmed screen.
+  const el = (st.sel ? document.querySelector(st.sel) : null)
+    || (st.view && st.sel ? document.getElementById('app') : null);
   if (el && !st.click) { el.inert = true; TOUR.inert = el; }
   if (el && el.scrollIntoView) {
     el.scrollIntoView({block: 'center', behavior: 'smooth'});

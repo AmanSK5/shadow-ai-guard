@@ -72,4 +72,30 @@ def test_the_account_button_survives_a_phone_width():
     detail at the narrowest width - only its label is."""
     narrow = CSS.split("@media(max-width:560px){", 1)[1].split("\n}", 1)[0]
     assert "#whowrap" not in narrow
-    assert ".account-copy,.account-chevron{display:none}" in narrow
+    # Under an id, or the plain .account-copy{display:block} declared later
+    # in the file wins the tie and the label stays.
+    assert ".topbar #who .account-copy,.topbar #who .account-chevron{display:none}" in narrow
+
+
+def test_the_estate_control_takes_the_organisations_name():
+    """An admin names the estate once, under Settings and in the wizard;
+    the control beneath the logo, the narrow top bar and the sign-in card
+    all say it, and the fallback stays what the portal is."""
+    assert main.SettingsWrite.model_fields["org_name"].annotation == (str | None)
+    assert "const org = ((AUTH && AUTH.org_name) || '').trim();" in HTML
+    assert "const name = org || kind;" in HTML
+    assert "settingRow('org_name', 'Organisation name', 'Acme Ltd'," in HTML
+    assert "function orgSettings()" in HTML
+    assert "body = orgSettings() + mailSettings() + alertingSettings();" in HTML
+    assert "<h4>Name the estate</h4>" in HTML
+    assert "Sign in to ${esc(org)}." in HTML
+    assert "if (key === 'org_name' && AUTH) { AUTH.org_name = val.trim(); showEstate(); }" in HTML
+
+
+def test_the_pin_button_does_not_wear_the_current_page_marker():
+    """nav button.on:before is the bar that marks the page you are on. The
+    pin button is a nav button too, and while it said .on for 'pinned' it
+    grew the same bar beside its star."""
+    assert "class=\"nav-pin ${isPinned ? 'pinned' : ''}\"" in HTML
+    assert ".nav-pin.on" not in CSS
+    assert ".nav-pin.pinned" in CSS

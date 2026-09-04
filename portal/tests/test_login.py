@@ -142,7 +142,7 @@ def test_auth_state_in_classic_mode_names_the_mode_and_calls_nothing(monkeypatch
 def test_auth_state_offers_create_account_on_a_fresh_receiver(login_mode):
     out = main.auth_state(_request())
     assert out == {"mode": "login", "authenticated": False, "username": "",
-                   "role": "", "setup_needed": True, "sso": False,
+                   "role": "", "setup_needed": True, "org_name": "", "sso": False,
                    "sso_enforced": False}
     # It asked the receiver's unauthenticated probe, nothing else.
     assert [c["path"] for c in login_mode] == ["/admin/setup"]
@@ -393,3 +393,29 @@ def test_the_marker_does_not_come_from_window_opener():
     html = main._sso_page("Signed in", "x", go="/", who="a").body.decode()
     assert "if(window.opener){" not in html
     assert 'dataset.opener' not in html
+
+
+def test_auth_state_carries_the_estate_name_signed_out_and_in(login_mode, monkeypatch):
+    """The sign-in screen greets the organisation and the sidebar heads
+    every page with it, so both states of /api/auth report the name. After
+    sign-in the read is best effort: a receiver that cannot be asked costs
+    the name, never the session."""
+    calls = login_mode
+    real = main.managed.receiver_request
+    def named(base, method, path, token, body=None):
+        out = real(base, method, path, token, body)
+        if method == "GET" and path == "/admin/setup":
+            out = dict(out, org_name="Acme Ltd")
+        return out
+    monkeypatch.setattr(main.managed, "receiver_request", named)
+    assert main.auth_state(_request())["org_name"] == "Acme Ltd"
+    live = main.auth_state(_request(cookie_token="aigt_s"))
+    assert live["authenticated"] is True and live["org_name"] == "Acme Ltd"
+
+    def down(base, method, path, token, body=None):
+        if path == "/admin/setup":
+            raise managed.ReceiverError(502, "could not reach the receiver (X)")
+        return real(base, method, path, token, body)
+    monkeypatch.setattr(main.managed, "receiver_request", down)
+    still = main.auth_state(_request(cookie_token="aigt_s"))
+    assert still["authenticated"] is True and still["org_name"] == ""

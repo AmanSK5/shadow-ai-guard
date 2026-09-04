@@ -299,3 +299,21 @@ def test_the_delivery_urls_must_be_urls(managed):
         ok = client.put("/admin/settings", headers=ADMIN,
                         json={key: "https://files.corp.example/x"})
         assert ok.status_code == 200, key
+
+
+# -------------------------------------------------------------- org name --
+
+
+def test_the_estate_name_is_a_setting_and_is_served_before_sign_in(managed):
+    """The name heads the sidebar and greets the sign-in screen, so it rides
+    the one unauthenticated read that screen already makes. Cleared, the
+    portal falls back to calling the estate what it is."""
+    assert client.get("/admin/setup").json()["org_name"] == ""
+    resp = client.put("/admin/settings", headers=ADMIN, json={"org_name": "  Acme Ltd "})
+    assert resp.status_code == 200
+    assert resp.json()["settings"]["org_name"] == {"value": "Acme Ltd", "source": "db"}
+    assert client.get("/admin/setup").json()["org_name"] == "Acme Ltd"
+    client.put("/admin/settings", headers=ADMIN, json={"org_name": ""})
+    assert client.get("/admin/setup").json()["org_name"] == ""
+    too_long = client.put("/admin/settings", headers=ADMIN, json={"org_name": "x" * 121})
+    assert too_long.status_code == 422

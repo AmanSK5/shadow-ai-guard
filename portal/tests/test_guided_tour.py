@@ -73,7 +73,7 @@ def test_the_tour_covers_the_current_operating_path():
     cover the current executive, discovery, governance, evidence, settings
     and system-health journey for both roles."""
     expected = {"overview", "setup", "devices", "personal", "register",
-                "iso", "settings", "diagnostics"}
+                "iso", "budget", "agentic", "fleet", "settings", "diagnostics"}
     for role in ("admin", "viewer"):
         block = TOURS.split(role + ": [", 1)[1].split("\n  ],", 1)[0]
         reached = set(re.findall(r"view: '([a-z-]+)'", block))
@@ -186,3 +186,29 @@ def test_leaving_the_tour_early_says_where_it_lives():
     assert '<dialog id="tourdlg"' in INDEX
     assert "if (!done) tourDoneShow();" in INDEX
     assert "Settings &rsaquo; Getting started" in INDEX
+
+
+def test_the_tour_reaches_every_section_of_the_nav():
+    """The tour is the only description of the whole product, and a section
+    it never visits is one a new colleague does not know exists. Budget and
+    Fleet went missing from the first enterprise tour for exactly that
+    reason. Sections are the NAV list the work areas are built from; a
+    section counts as reached when one of its views is a step."""
+    nav = INDEX.split("const NAV = [", 1)[1].split("\n];", 1)[0]
+    sections = {}
+    for sec in re.finditer(r"\{id:'([a-z]+)'.*?items:\[(.*?)\]\}", nav, re.S):
+        sections[sec.group(1)] = set(re.findall(r"\['([a-z-]+)'", sec.group(2)))
+    assert len(sections) >= 8, sections
+    for role in ("admin", "viewer"):
+        block = TOURS.split(role + ": [", 1)[1].split("\n  ],", 1)[0]
+        reached = set(re.findall(r"view: '([a-z-]+)'", block))
+        missing = sorted(sid for sid, views in sections.items() if not views & reached)
+        assert not missing, f"{role} tour never reaches: {missing}"
+
+
+def test_a_step_that_only_applies_in_login_mode_says_so():
+    """The account control exists only when somebody signed in. A tour that
+    pointed at it on a no-login deployment dimmed the page to frame nothing;
+    the step now carries its own condition and tourStart filters on it."""
+    assert "sel: '#who', when: () => !!(AUTH && AUTH.mode === 'login' && AUTH.username)" in TOURS
+    assert "TOURS[role].filter(st => !st.when || st.when())" in INDEX
