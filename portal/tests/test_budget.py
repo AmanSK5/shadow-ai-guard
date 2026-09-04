@@ -298,3 +298,20 @@ def test_the_import_asks_which_plan_when_it_does_not_know():
     assert 'id="b-csv-plan"' in view
     assert "parsed.members.length && !askPlan" in view
     assert "e.target.id === 'b-csv-plan' && BCSV" in html
+
+
+def test_a_headerless_paste_keeps_the_role_and_seat_it_plainly_carries():
+    """"jane@corp.example,member,max 5" is the common paste. With no header
+    line the parser kept only the address and dropped the other two, which
+    reads as a broken import. It now names a column from its values - all
+    role words is the role, account states are a status and ignored, the
+    one column left is the seat tier - and only says a column is unread
+    when it genuinely cannot name it."""
+    html = (main.STATIC / "index.html").read_text()
+    fn = html.split("function parseUsersCsv(text) {", 1)[1].split("\n}\n", 1)[0]
+    assert "const isRole = /^(owner|admin|administrator|member|members|user|users|viewer|guest|billing|manager|editor)$/i;" in fn
+    assert "const isStatus = /^(active|inactive|invited|pending|suspended|deactivated|disabled|enabled)$/i;" in fn
+    assert "if (spare.length === 1) iTier = spare[0];" in fn
+    assert "guessed = iRole >= 0 || iTier >= 0;" in fn
+    assert "&& i !== iRole && i !== iTier && !ignored.includes(i)).length" in fn
+    assert "'no header row, columns named from their values'" in html

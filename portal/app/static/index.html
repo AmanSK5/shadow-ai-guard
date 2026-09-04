@@ -6824,7 +6824,8 @@ function parseUsersCsv(text) {
   // and jane@example.com's cell.
   const hasHeader = !head.some(h => B_EMAIL_RE.test(h));
   const col = names => head.findIndex(h => names.some(n => h.includes(n)));
-  let iEmail, iName = -1, iRole = -1, iTier = -1;
+  let iEmail, iName = -1, iRole = -1, iTier = -1, guessed = false;
+  const ignored = [];
   if (hasHeader) {
     iEmail = col(['email', 'e-mail', 'mail']);
     iName = col(['name', 'member', 'user']);
@@ -6833,14 +6834,37 @@ function parseUsersCsv(text) {
     if (iEmail < 0) return {members: [], skipped: lines.length};
   } else {
     // No header: the email column is wherever the first row keeps its
-    // address.
-    iEmail = Math.max(0, row(lines[0]).findIndex(c => B_EMAIL_RE.test(c)));
+    // address. The other columns are named from what they hold, because
+    // "jane@corp.example,member,max 5" is the common paste and dropping
+    // "member" and "max 5" from it reads as a broken import. A column
+    // whose every value is a role word is the role; one whose values are
+    // account states is a status and is ignored; when exactly one column
+    // is left, it is the seat tier. Anything less certain is left unread
+    // and said so, rather than guessed.
+    const rows = lines.map(row);
+    iEmail = Math.max(0, rows[0].findIndex(c => B_EMAIL_RE.test(c)));
+    const width = Math.max(...rows.map(r => r.length));
+    const isRole = /^(owner|admin|administrator|member|members|user|users|viewer|guest|billing|manager|editor)$/i;
+    const isStatus = /^(active|inactive|invited|pending|suspended|deactivated|disabled|enabled)$/i;
+    const spare = [];
+    for (let c = 0; c < width; c++) {
+      if (c === iEmail) continue;
+      const vals = rows.map(r => (r[c] || '').trim()).filter(Boolean);
+      if (!vals.length) continue;
+      if (iRole < 0 && vals.every(v => isRole.test(v))) iRole = c;
+      else if (vals.every(v => isStatus.test(v))) ignored.push(c);
+      else spare.push(c);
+    }
+    if (spare.length === 1) iTier = spare[0];
+    guessed = iRole >= 0 || iTier >= 0;
   }
   const members = []; let skipped = 0, extra = 0;
   const seen = new Set();
   lines.slice(hasHeader ? 1 : 0).forEach(l => {
     const cells = row(l);
-    if (!hasHeader) extra = Math.max(extra, cells.filter(c => c).length - 1);
+    // Columns beyond the ones the paste could name.
+    if (!hasHeader) extra = Math.max(extra, cells.filter((c, i) => c && i !== iEmail
+      && i !== iRole && i !== iTier && !ignored.includes(i)).length);
     const email = (cells[iEmail] || '').toLowerCase();
     if (!B_EMAIL_RE.test(email) || seen.has(email)) { skipped++; return; }
     seen.add(email);
@@ -6862,7 +6886,7 @@ function parseUsersCsv(text) {
           // a delimiter mismatch over a support thread is slower than the
           // page just saying what it decided.
           map: {delim: delim === '\t' ? 'tabs' : delim === ';' ? 'semicolons' : 'commas',
-                header: hasHeader,
+                header: hasHeader, guessed,
                 cols: {email: iEmail, name: iName, role: iRole, tier: iTier}}};
 }
 
@@ -7640,16 +7664,16 @@ function budgetImport() {
     <button class="mini" data-act="b-csv-cancel">Cancel</button>
     ${parsed && parsed.members.length && !askPlan ? `<button class="mini" data-act="b-csv-save">import ${parsed.members.length} members</button>` : ''}
   </div>
-  ${parsed ? `${parsed.headerless ? `<p class="src-note" style="color:var(--warn)">These
-    rows carry more columns than the addresses, but with no header line to
-    name them only the emails can be kept. Paste again with the header row
-    included (e.g. name, email, role, seat tier) and role and seat tier
-    come through.</p>` : ''}
+  ${parsed ? `${parsed.headerless ? `<p class="src-note" style="color:var(--warn)">Some
+    columns in these rows could not be named from their values, and with no
+    header line they are left out. Paste again with the header row included
+    (e.g. name, email, role, seat tier) and every column comes through.</p>` : ''}
     ${parsed.missing && parsed.missing.tier ? `<p class="src-note" style="color:var(--warn)">No
     seat/tier column recognised in the header, so seat tiers will import
     empty and the tier table cannot count these users against seats.</p>` : ''}
     ${parsed.map ? `<p class="src-note">Read as: ${parsed.map.delim},
-    ${parsed.map.header ? 'header row found' : 'no header row'};
+    ${parsed.map.header ? 'header row found' : parsed.map.guessed
+      ? 'no header row, columns named from their values' : 'no header row'};
     ${ents(parsed.map.cols).map(([f, i]) =>
       `${f === 'tier' ? 'seat tier' : f} ${i >= 0 ? ordinal(i + 1) + ' column' : 'not found'}`)
       .join(', ')}.</p>` : ''}
