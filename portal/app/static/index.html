@@ -10184,147 +10184,143 @@ const TOUR_VERSION = '2';
 const TOURS = {
   admin: [
     {title: 'Welcome to Shadow AI Guard',
-     body: 'This short orientation follows the enterprise workspace as it is '
-         + 'now organised: the executive picture first, then discovery, '
-         + 'governance, operations and administration.', ok: 'Start'},
+     body: 'A quick walk through the portal. It takes about two minutes, '
+         + 'and you can leave at any point.',
+     ok: 'Start'},
     {view: 'overview', sel: '[data-area="discovery"]',
-     title: 'Navigate by work area',
-     body: 'The sidebar groups pages by the work they support. Areas can stay '
-         + 'open together, so you can compare Discovery with Governance. Pin '
-         + 'frequent destinations; the compact rail keeps every area available '
-         + 'through its fly-out.'},
+     title: 'Finding your way around',
+     body: 'Pages are grouped in the sidebar. You can keep more than one '
+         + 'group open, and pin the pages you use most so they sit at the '
+         + 'top.'},
     {view: 'overview', sel: '#who', when: () => !!(AUTH && AUTH.mode === 'login' && AUTH.username),
      title: 'Your account',
-     body: 'The account control at the top right holds change password and '
-         + 'sign out. Beside it sit the theme switch and, while setup is '
-         + 'still outstanding, a bell that lists what is left to do.'},
+     body: 'Change your password or sign out from here. The theme switch '
+         + 'is next to it, and while setup is unfinished a bell shows what '
+         + 'is left.'},
     {view: 'overview', sel: '[data-tour="stats"]',
-     title: 'Workspace overview',
-     body: 'This is the executive starting point: posture, open personal '
-         + 'accounts, affected people, observed tools and detection coverage. '
-         + 'It always describes the selected reporting window, not an all-time '
-         + 'total.'},
+     title: 'The overview',
+     body: 'The headline numbers: personal accounts to review, people '
+         + 'affected, tools seen and how much of the fleet is reporting. '
+         + 'Everything is for the time window chosen at the top right, not '
+         + 'all time.'},
     {view: 'setup', sel: '[data-tour="source-overview"]',
-     title: 'Discovery starts with coverage',
-     body: 'Sources tells you what is actually reporting across each surface. '
-         + 'Read this before treating a low finding count as a clean estate: a '
-         + 'silent source cannot observe anything.'},
+     title: 'Check what is reporting first',
+     body: 'This page shows which detection sources are sending data. Look '
+         + 'here before reading a low count as good news: a source that is '
+         + 'silent cannot see anything.'},
     {view: 'devices', sel: '[data-tour="device-summary"]',
-     title: 'Turn findings into an estate',
-     body: 'Discovery connects observed tools, devices, people and accounts. '
-         + 'Devices use the most stable identifier available; unattributed is a '
-         + 'useful follow-up state, not a person guessed by the platform.'},
+     title: 'Devices',
+     body: 'Every device that has reported, with the tools, people and '
+         + 'accounts seen on it. Unattributed means nobody has been linked '
+         + 'to that device yet. The portal never guesses.'},
     {view: 'personal', sel: '[data-tour="personal"]',
-     title: 'Personal-account exposure',
-     body: 'A personal account can be a data-flow and offboarding risk even '
-         + 'when the tool itself is approved. Use this page to record the '
-         + 'follow-up rather than making that risk disappear from the headline.'},
+     title: 'Personal accounts',
+     body: 'Work being done through personal accounts, even on tools you '
+         + 'have approved. Record what you did about each one here; that '
+         + 'is what clears it from the overview.'},
     {view: 'register', sel: '.register-overview',
-     title: 'Governance records the decision',
-     body: 'The AI register is the decision layer: owner, status and review '
-         + 'date sit beside observed use. Tools not yet in the registry are '
-         + 'shown as a governance gap rather than silently excluded.'},
+     title: 'The AI register',
+     body: 'Your decision on each tool: who owns it, whether it is '
+         + 'approved, and when to review it. Tools that have been seen but '
+         + 'have no decision yet are listed so they are not forgotten.'},
     {view: 'iso', sel: '.evidence-summary',
-     title: 'Evidence is an operational index',
-     body: 'Evidence centre gathers the records the platform can substantiate '
-         + 'for the current window. Export PDF for a review-ready snapshot, or '
-         + 'download JSON when the evidence needs to be inspected or retained.'},
+     title: 'Evidence centre',
+     body: 'What the portal can back up with records for the chosen '
+         + 'window, grouped by ISO 42001 theme. Export a PDF for a review, '
+         + 'or download the JSON to keep.'},
     {view: 'budget', sel: '[data-tour="budget"]',
-     title: 'Budget follows the register',
-     body: 'Spend sits with governance. Link a tool to its plan and seats, '
-         + 'and Budget reports what the approved estate costs beside what '
-         + 'discovery actually sees in use.'},
+     title: 'Budget',
+     body: 'Link each approved tool to its plan and seats, and this page '
+         + 'shows what you pay next to what is actually being used.'},
     {view: 'agentic', sel: '.ag-verdict',
-     title: 'Operations watches what runs on its own',
-     body: 'Agentic AI lists MCP servers and unattended tool use, with the '
-         + 'evidence each claim rests on. It sits under Operations with '
-         + 'detection sources and coverage gaps.'},
+     title: 'Agentic AI',
+     body: 'Things that run without a person at the keyboard: scheduled '
+         + 'jobs, MCP servers, tools started by a timer. Each row says '
+         + 'what the evidence is.'},
     {view: 'fleet', sel: '[data-tour="fleet"]',
-     title: 'Enrolment is an operations job',
-     body: 'Enrolled devices and Enrollment tokens are where managed mode '
-         + 'admits machines: mint a token, hand it to a collector, and the '
-         + 'device appears here when it first reports.'},
+     title: 'Enrolled devices',
+     body: 'Create an enrollment token, give it to a collector, and the '
+         + 'device appears here the first time it reports.'},
     {view: 'settings', tab: 'start', sel: '[data-tour="getting-started"]',
-     title: 'Return here when needed',
-     body: 'Settings › Getting started is the home for this tour and the '
-         + 'deployment setup review. Settings changes policy; it is separate '
-         + 'from the read-only health of the running estate.'},
+     title: 'Getting started',
+     body: 'The setup checklist and this tour both live here, so you can '
+         + 'come back to either later.'},
     {view: 'diagnostics', sel: '[data-tour="system-health"]',
-     title: 'System health is estate context',
-     body: 'Open System health from the Managed estate control beneath the '
-         + 'logo. It confirms what the portal can verify about itself and its '
-         + 'dependencies, without mixing diagnostics into policy settings.'},
+     title: 'System health',
+     body: 'Click the name under the logo to get here. It shows whether '
+         + 'the portal can reach its log store and registry, and how fresh '
+         + 'the data is.'},
   ],
   viewer: [
     {title: 'Welcome to Shadow AI Guard',
-     body: 'This account can inspect the same estate evidence as an admin. '
-         + 'The difference is that policy and decisions stay read-only, making '
-         + 'this view suitable for an auditor or executive reviewer.', ok: 'Start'},
+     body: 'A quick walk through the portal. This account can see '
+         + 'everything but change nothing, which suits an auditor or a '
+         + 'reviewer.',
+     ok: 'Start'},
     {view: 'overview', sel: '[data-area="discovery"]',
-     title: 'Navigate by work area',
-     body: 'The sidebar groups pages by the work they support. Areas can stay '
-         + 'open together, and you can pin frequent destinations. In compact '
-         + 'mode, each icon opens a fly-out with its pages.'},
+     title: 'Finding your way around',
+     body: 'Pages are grouped in the sidebar. You can keep more than one '
+         + 'group open, and pin the pages you use most so they sit at the '
+         + 'top.'},
     {view: 'overview', sel: '#who', when: () => !!(AUTH && AUTH.mode === 'login' && AUTH.username),
      title: 'Your account',
-     body: 'The account control at the top right is where this account '
-         + 'changes its password and signs out. The theme switch sits beside '
-         + 'it.'},
+     body: 'Change your password or sign out from here. The theme switch '
+         + 'is next to it.'},
     {view: 'overview', sel: '[data-tour="stats"]',
-     title: 'Workspace overview',
-     body: 'This is the executive starting point: posture, personal-account '
-         + 'exposure, affected people, observed tools and detection coverage '
-         + 'for the selected reporting window.'},
+     title: 'The overview',
+     body: 'The headline numbers: personal accounts to review, people '
+         + 'affected, tools seen and how much of the fleet is reporting. '
+         + 'Everything is for the time window chosen at the top right, not '
+         + 'all time.'},
     {view: 'setup', sel: '[data-tour="source-overview"]',
-     title: 'Read coverage before counts',
-     body: 'Sources shows what is actually reporting across the estate. A low '
-         + 'finding count is not a clean conclusion when a source is silent.'},
+     title: 'Check what is reporting first',
+     body: 'This page shows which detection sources are sending data. Look '
+         + 'here before reading a low count as good news: a source that is '
+         + 'silent cannot see anything.'},
     {view: 'devices', sel: '[data-tour="device-summary"]',
-     title: 'Discovery joins the evidence',
-     body: 'Tools, devices, people and accounts are kept distinct and linked '
-         + 'where the evidence supports it. Unattributed means no person has '
-         + 'been asserted for that device.'},
+     title: 'Devices',
+     body: 'Every device that has reported, with the tools, people and '
+         + 'accounts seen on it. Unattributed means nobody has been linked '
+         + 'to that device yet. The portal never guesses.'},
     {view: 'personal', sel: '[data-tour="personal"]',
-     title: 'Personal-account exposure',
-     body: 'This is the page to review unmanaged sign-ins. Approval of a tool '
-         + 'does not remove a personal-account finding; the account is the '
-         + 'question to follow up.'},
+     title: 'Personal accounts',
+     body: 'Work being done through personal accounts, even on approved '
+         + 'tools. Approving a tool does not clear these; an admin records '
+         + 'what was done about each one.'},
     {view: 'register', sel: '.register-overview',
-     title: 'Read the governance record',
-     body: 'The AI register joins observed use to decisions, owners and review '
-         + 'dates. Missing decisions and unregistered tools remain visible as '
-         + 'review inputs for the accountable admin.'},
+     title: 'The AI register',
+     body: 'The owner, status and review date for each tool. Tools seen '
+         + 'with no decision yet stay listed so an admin can pick them up.'},
     {view: 'iso', sel: '.evidence-summary',
-     title: 'Evidence for review',
-     body: 'Evidence centre is an operational index, not a compliance score. '
-         + 'Export PDF for a review-ready snapshot or download JSON for detailed '
-         + 'inspection and retention.'},
+     title: 'Evidence centre',
+     body: 'What the portal can back up with records for the chosen '
+         + 'window, grouped by ISO 42001 theme. Export a PDF for a review, '
+         + 'or download the JSON to keep.'},
     {view: 'budget', sel: '[data-tour="budget"]',
-     title: 'Budget in context',
-     body: 'Linked plans and seats put a cost beside observed use. This '
-         + 'account can read the picture; linking a plan is an admin action.'},
+     title: 'Budget',
+     body: 'What each approved tool costs next to how much it is used. '
+         + 'Linking a plan is an admin action.'},
     {view: 'agentic', sel: '.ag-verdict',
-     title: 'What runs on its own',
-     body: 'Agentic AI shows MCP servers and unattended tool use, and how '
-         + 'strong each claim is. It is read-only here, like the rest of '
-         + 'Operations.'},
+     title: 'Agentic AI',
+     body: 'Things that run without a person at the keyboard: scheduled '
+         + 'jobs, MCP servers, tools started by a timer. Each row says '
+         + 'what the evidence is.'},
     {view: 'fleet', sel: '[data-tour="fleet"]',
      title: 'Enrolled devices',
-     body: 'Managed mode records which machines were admitted and with which '
-         + 'token. This account can see the roll; minting and revoking tokens '
-         + 'stays with admins.'},
+     body: 'Which devices have been admitted and with which token. '
+         + 'Creating and revoking tokens is an admin action.'},
     {view: 'settings', tab: 'start', sel: '[data-tour="getting-started"]',
-     title: 'Find this tour again',
-     body: 'Settings › Getting started keeps the orientation and setup review '
-         + 'in one predictable place. An administrator changes deployment '
-         + 'policy; this account can always see how that policy is presented.'},
+     title: 'Getting started',
+     body: 'The setup checklist and this tour both live here, so you can '
+         + 'come back to either later.'},
     {view: 'diagnostics', sel: '[data-tour="system-health"]',
-     title: 'System health stays separate',
-     body: 'The Managed estate control beneath the logo opens this read-only '
-         + 'health view. It shows what the portal can verify about its running '
-         + 'dependencies, independently of any policy settings.'},
+     title: 'System health',
+     body: 'Click the name under the logo to get here. It shows whether '
+         + 'the portal can reach its log store and registry, and how fresh '
+         + 'the data is.'},
   ],
 };
+
 
 // Openings that replace the welcome. Each is a step like any other, so a
 // case that needs its own first card costs a copy block rather than a
