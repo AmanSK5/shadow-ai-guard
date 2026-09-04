@@ -221,9 +221,11 @@ Then open:
 - **Grafana:** http://localhost:3000
 - **Paste Guard demo:** http://localhost:8090/demo/
 
-The demo runs managed mode like a real deployment, so it starts with the same
-setup code and wizard, and the seeder posts fake findings across every
-surface and OS so you do not land on an empty install.
+The demo runs managed mode like a real deployment. Its seeder walks the
+first-boot path for you - owner account, estate name, single sign-on against
+a stand-in identity provider - and posts fake findings, linked plans and
+enrolled devices across every surface and OS, so you land on a sign-in
+screen with the Microsoft button on it and nothing behind it is empty.
 
 ### Portal
 
