@@ -6281,7 +6281,7 @@ async function cliApprove() {
     <p class="mono" style="font-size:28px;letter-spacing:.12em;margin:0 0 14px">${esc(g.user_code || CLICODE)}</p>
     <dl class="kv">
       <dt>Purpose</dt><dd>${esc(g.purpose)}</dd>
-      <dt>Asked</dt><dd>${esc(when(g.requested_at))}</dd>
+      <dt>Asked</dt><dd>${when(g.requested_at)}</dd>
       <dt>Client</dt><dd>${esc(g.requester || 'not stated')}</dd>
       <dt>Grants</dt><dd>One upgrade token, 45 minutes, upgrade routes only.</dd>
     </dl>
@@ -6331,10 +6331,17 @@ function upgradeTracker() {
     : r.outcome === 'succeeded' ? '<span class="pill p-ok">succeeded</span>'
     : `<span class="pill p-warn">${esc(r.outcome || 'finished')}</span>`;
   const stat = s => s === 'done' ? 'p-ok' : s === 'failed' ? 'p-warn' : s === 'skipped' ? 'p-mut' : 'p-amb';
+  // A step is reported twice, once when it starts and once when it ends;
+  // one line per step, carrying whichever report came last.
+  const latest = [];
+  for (const s of (r.steps || [])) {
+    const i = latest.findIndex(x => x.step === s.step);
+    if (i < 0) latest.push(s); else latest[i] = s;
+  }
   return `<div id="upgrade-tracker" class="upgrade-run">
     <div class="upgrade-run-head"><b>Upgrade ${esc(r.from_version)} → ${esc(r.to_version)}</b> ${pill}
-      <span>${esc(r.route)} · started ${esc(when(r.started_at))} by ${esc(r.started_by_name || 'an owner')}</span></div>
-    <ol class="upgrade-steps">${(r.steps || []).map(s => `<li><span class="pill ${stat(s.status)}">${esc(s.status)}</span> ${esc(s.step)}${s.detail ? ` <span>· ${esc(s.detail)}</span>` : ''}</li>`).join('')
+      <span>${esc(r.route)} · started ${when(r.started_at)} by ${esc(r.started_by_name || 'an owner')}</span></div>
+    <ol class="upgrade-steps">${latest.map(s => `<li><span class="pill ${stat(s.status)}">${esc(s.status)}</span> ${esc(s.step)}${s.detail ? ` <span>· ${esc(s.detail)}</span>` : ''}</li>`).join('')
       || '<li><span class="pill p-amb">running</span> waiting for the first step</li>'}</ol>
     ${r.status !== 'running' && r.detail ? `<p class="src-note">${esc(r.detail)}</p>` : ''}
   </div>`;
