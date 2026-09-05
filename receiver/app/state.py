@@ -50,6 +50,19 @@ ENROLL_PREFIX = "aige_"
 DEVICE_PREFIX = "aigd_"
 SESSION_PREFIX = "aigt_"
 SETUP_PREFIX = "aigs_"
+# The command line's two credentials. A device code is what the command
+# polls with while an owner decides; an upgrade token is what it holds for
+# one run afterwards. Neither is a session and _admin_auth accepts neither:
+# the prefixes exist so a token can never be mistaken for the other kind.
+DEVICE_PREFIX = "aigd_"
+UPGRADE_PREFIX = "aigu_"
+# Eight symbols from an alphabet without 0/O and 1/I, shown as XXXX-XXXX:
+# read aloud or compared by eye, so nothing that looks alike is in it.
+USER_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+GRANT_TTL_SECONDS = 600
+GRANT_POLL_INTERVAL = 3
+UPGRADE_TOKEN_TTL_SECONDS = 45 * 60
+UPGRADE_STEP_CAP = 200
 
 # A device that authenticated this recently is alive, and a same-serial
 # enrollment must not displace it silently: that is the stolen token
@@ -250,6 +263,37 @@ CREATE TABLE IF NOT EXISTS user_preferences (
   value      TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   PRIMARY KEY (user_id, key)
+);
+CREATE TABLE IF NOT EXISTS cli_grants (
+  id               TEXT PRIMARY KEY,
+  purpose          TEXT NOT NULL,
+  device_hash      BLOB NOT NULL UNIQUE,
+  user_code        TEXT NOT NULL UNIQUE,
+  verifier_hash    TEXT NOT NULL,
+  requester        TEXT NOT NULL,
+  status           TEXT NOT NULL,
+  requested_at     TEXT NOT NULL,
+  expires_at       TEXT NOT NULL,
+  last_poll_at     TEXT,
+  decided_by       TEXT REFERENCES admin_users(id),
+  decided_at       TEXT,
+  token_hash       BLOB UNIQUE,
+  token_expires_at TEXT
+);
+CREATE TABLE IF NOT EXISTS upgrade_runs (
+  id           TEXT PRIMARY KEY,
+  grant_id     TEXT NOT NULL UNIQUE REFERENCES cli_grants(id),
+  started_by   TEXT NOT NULL,
+  started_at   TEXT NOT NULL,
+  finished_at  TEXT,
+  status       TEXT NOT NULL,
+  outcome      TEXT,
+  route        TEXT NOT NULL,
+  from_version TEXT NOT NULL,
+  to_version   TEXT NOT NULL,
+  plan         TEXT NOT NULL,
+  steps        TEXT NOT NULL,
+  detail       TEXT
 );
 """
 
@@ -855,6 +899,246 @@ class State:
                 (_hash(token), _now()),
             ).fetchone()
         return dict(row) if row else None
+
+
+    # ------------------------------------------------ the command line --
+    # Everything here is for `aiguardctl upgrade`, and it is deliberately not
+    # a session. An owner approves one grant in the portal; the command
+    # redeems it once for an upgrade token; the token is good for the
+    # upgrade routes and nothing else, for one run, for forty-five minutes.
+    # The receiver holds no rights over the deployment - the token lets the
+    # command tell the portal how an upgrade run by the operator's own
+    # credentials is going. See SECURITY.md, "Upgrading".
+
+    def create_grant(self, purpose: str, verifier_hash: str,
+                     requester: str) -> dict:
+        device = DEVICE_PREFIX + secrets.token_urlsafe(32)
+        gid = secrets.token_hex(8)
+        now = _now()
+        expires = (datetime.now(timezone.utc)
+                   + timedelta(seconds=GRANT_TTL_SECONDS)).isoformat()
+        with self._lock:
+            # Sweep what nobody redeemed, so the table does not keep every
+            # command anyone ever cancelled.
+            self._db.execute(
+                "DELETE FROM cli_grants WHERE status = 'pending'"
+                " AND expires_at <= ?", (now,))
+            for _ in range(20):
+                raw = "".join(secrets.choice(USER_CODE_ALPHABET)
+                              for _ in range(8))
+                code = raw[:4] + "-" + raw[4:]
+                clash = self._db.execute(
+                    "SELECT 1 FROM cli_grants WHERE user_code = ?",
+                    (code,)).fetchone()
+                if not clash:
+                    break
+            else:  # pragma: no cover - 2^40 codes, twenty draws
+                raise AuthError(503, "could not mint a user code")
+            self._db.execute(
+                "INSERT INTO cli_grants (id, purpose, device_hash, user_code,"
+                " verifier_hash, requester, status, requested_at, expires_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
+                (gid, purpose, _hash(device), code, verifier_hash,
+                 requester[:120], now, expires))
+            self._event("cli_grant_requested",
+                        {"grant": gid, "purpose": purpose})
+            self._db.commit()
+        return {"device_code": device, "user_code": code,
+                "expires_at": expires, "interval": GRANT_POLL_INTERVAL}
+
+    def grant_for_approval(self, user_code: str) -> dict | None:
+        """What the approval page shows an owner: the request, never the
+        codes that would let the page act as the command."""
+        with self._lock:
+            row = self._db.execute(
+                "SELECT id, purpose, requester, status, requested_at,"
+                " expires_at FROM cli_grants WHERE user_code = ?",
+                (user_code.upper(),)).fetchone()
+        if not row:
+            return None
+        out = dict(row)
+        if out["status"] == "pending" and out["expires_at"] <= _now():
+            out["status"] = "expired"
+        return out
+
+    def decide_grant(self, user_code: str, user_id: str,
+                     approve: bool) -> dict:
+        now = _now()
+        with self._lock:
+            row = self._db.execute(
+                "SELECT id, status, expires_at FROM cli_grants"
+                " WHERE user_code = ?", (user_code.upper(),)).fetchone()
+            if not row:
+                raise AuthError(404, "no request with that code")
+            if row["status"] != "pending":
+                raise AuthError(409, "that request was already %s"
+                                % row["status"])
+            if row["expires_at"] <= now:
+                self._db.execute("UPDATE cli_grants SET status = 'expired'"
+                                 " WHERE id = ?", (row["id"],))
+                self._db.commit()
+                raise AuthError(410, "that request has expired; run the "
+                                     "command again")
+            status = "approved" if approve else "denied"
+            self._db.execute(
+                "UPDATE cli_grants SET status = ?, decided_by = ?,"
+                " decided_at = ? WHERE id = ?",
+                (status, user_id, now, row["id"]))
+            self._event("cli_grant_" + status,
+                        {"grant": row["id"], "user": user_id})
+            self._db.commit()
+        return {"grant": row["id"], "status": status}
+
+    def redeem_grant(self, device_code: str, verifier: str) -> dict:
+        """The command's poll. Returns {"state": ...} and, once, the
+        token. The verifier is compared against the hash the command sent
+        when it asked, so a device code seen in transit cannot be redeemed
+        by anyone but the process that generated the verifier."""
+        import hashlib
+        now = _now()
+        with self._lock:
+            row = self._db.execute(
+                "SELECT id, status, expires_at, verifier_hash, last_poll_at,"
+                " decided_by FROM cli_grants WHERE device_hash = ?",
+                (_hash(device_code),)).fetchone()
+            if not row:
+                raise AuthError(404, "unknown device code")
+            if row["last_poll_at"]:
+                last = datetime.fromisoformat(row["last_poll_at"])
+                if (datetime.now(timezone.utc) - last).total_seconds() \
+                        < GRANT_POLL_INTERVAL:
+                    raise AuthError(429, "slow_down")
+            self._db.execute("UPDATE cli_grants SET last_poll_at = ?"
+                             " WHERE id = ?", (now, row["id"]))
+            if row["status"] == "pending" and row["expires_at"] <= now:
+                self._db.execute("UPDATE cli_grants SET status = 'expired'"
+                                 " WHERE id = ?", (row["id"],))
+                self._db.commit()
+                return {"state": "expired"}
+            if row["status"] == "pending":
+                self._db.commit()
+                return {"state": "pending"}
+            if row["status"] == "denied":
+                self._db.commit()
+                return {"state": "denied"}
+            if row["status"] != "approved":
+                self._db.commit()
+                raise AuthError(409, "that grant was already redeemed")
+            want = row["verifier_hash"]
+            got = hashlib.sha256(verifier.encode()).hexdigest()
+            if not secrets.compare_digest(want, got):
+                self._event("cli_grant_verifier_mismatch",
+                            {"grant": row["id"]})
+                self._db.commit()
+                raise AuthError(403, "verifier does not match")
+            token = UPGRADE_PREFIX + secrets.token_urlsafe(32)
+            texp = (datetime.now(timezone.utc)
+                    + timedelta(seconds=UPGRADE_TOKEN_TTL_SECONDS)).isoformat()
+            self._db.execute(
+                "UPDATE cli_grants SET status = 'issued', token_hash = ?,"
+                " token_expires_at = ? WHERE id = ?",
+                (_hash(token), texp, row["id"]))
+            self._event("cli_token_issued", {"grant": row["id"],
+                                             "user": row["decided_by"]})
+            self._db.commit()
+        return {"state": "ok", "token": token, "expires_at": texp}
+
+    def upgrade_grant(self, token: str) -> dict | None:
+        """The grant behind a live upgrade token, or None. Only tokens with
+        the upgrade prefix are looked up at all."""
+        if not token.startswith(UPGRADE_PREFIX):
+            return None
+        with self._lock:
+            row = self._db.execute(
+                "SELECT g.id, g.status, g.token_expires_at, g.decided_by,"
+                " u.username FROM cli_grants g"
+                " JOIN admin_users u ON u.id = g.decided_by"
+                " WHERE g.token_hash = ? AND g.status IN ('issued', 'running')"
+                " AND g.token_expires_at > ?",
+                (_hash(token), _now())).fetchone()
+        return dict(row) if row else None
+
+    def start_run(self, grant_id: str, route: str, from_version: str,
+                  to_version: str, plan: dict) -> dict:
+        now = _now()
+        rid = secrets.token_hex(6)
+        with self._lock:
+            g = self._db.execute(
+                "SELECT status, decided_by FROM cli_grants WHERE id = ?",
+                (grant_id,)).fetchone()
+            if not g or g["status"] != "issued":
+                raise AuthError(409, "this token has already opened a run")
+            self._db.execute(
+                "INSERT INTO upgrade_runs (id, grant_id, started_by,"
+                " started_at, status, route, from_version, to_version, plan,"
+                " steps) VALUES (?, ?, ?, ?, 'running', ?, ?, ?, ?, '[]')",
+                (rid, grant_id, g["decided_by"], now, route[:32],
+                 from_version[:64], to_version[:64],
+                 json.dumps(plan)[:8000]))
+            self._db.execute("UPDATE cli_grants SET status = 'running'"
+                             " WHERE id = ?", (grant_id,))
+            self._event("upgrade_started", {"run": rid, "user": g["decided_by"],
+                                            "route": route[:32],
+                                            "from": from_version[:64],
+                                            "to": to_version[:64]})
+            self._db.commit()
+        return self.current_run()
+
+    def add_step(self, run_id: str, grant_id: str, step: str, status: str,
+                 detail: str) -> dict:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT steps, status FROM upgrade_runs"
+                " WHERE id = ? AND grant_id = ?", (run_id, grant_id)).fetchone()
+            if not row:
+                raise AuthError(404, "no such run for this token")
+            if row["status"] != "running":
+                raise AuthError(409, "that run has finished")
+            steps = json.loads(row["steps"])
+            if len(steps) >= UPGRADE_STEP_CAP:
+                raise AuthError(413, "too many steps for one run")
+            steps.append({"at": _now(), "step": step[:80], "status": status,
+                          "detail": detail[:300]})
+            self._db.execute("UPDATE upgrade_runs SET steps = ? WHERE id = ?",
+                             (json.dumps(steps), run_id))
+            self._db.commit()
+        return self.current_run()
+
+    def finish_run(self, run_id: str, grant_id: str, outcome: str,
+                   detail: str) -> dict:
+        now = _now()
+        with self._lock:
+            row = self._db.execute(
+                "SELECT status, started_by FROM upgrade_runs"
+                " WHERE id = ? AND grant_id = ?", (run_id, grant_id)).fetchone()
+            if not row:
+                raise AuthError(404, "no such run for this token")
+            if row["status"] != "running":
+                raise AuthError(409, "that run has finished")
+            self._db.execute(
+                "UPDATE upgrade_runs SET status = 'finished', outcome = ?,"
+                " detail = ?, finished_at = ? WHERE id = ?",
+                (outcome, detail[:300], now, run_id))
+            # The token's work is done: nothing further may be written.
+            self._db.execute("UPDATE cli_grants SET status = 'consumed',"
+                             " token_hash = NULL WHERE id = ?", (grant_id,))
+            self._event("upgrade_finished", {"run": run_id, "outcome": outcome,
+                                             "user": row["started_by"]})
+            self._db.commit()
+        return self.current_run()
+
+    def current_run(self) -> dict | None:
+        with self._lock:
+            row = self._db.execute(
+                "SELECT r.*, u.username AS started_by_name FROM upgrade_runs r"
+                " LEFT JOIN admin_users u ON u.id = r.started_by"
+                " ORDER BY r.started_at DESC LIMIT 1").fetchone()
+        if not row:
+            return None
+        out = dict(row)
+        out["plan"] = json.loads(out["plan"] or "{}")
+        out["steps"] = json.loads(out["steps"] or "[]")
+        return out
 
     # ------------------------------------------------- account management --
     # More than one pair of eyes, without more than one level of trust being

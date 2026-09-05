@@ -600,7 +600,15 @@ _MANAGED = ("/enroll", "/admin")
 # until federated sign-in is fully configured, so an estate that has not
 # set it up does not advertise the endpoint.
 _ADMIN_OPEN = ("/admin/setup", "/admin/login",
-               "/admin/sso/start", "/admin/sso/callback")
+               "/admin/sso/start", "/admin/sso/callback",
+               # The command line asking to be approved, and polling for
+               # its token: the approval is the authentication, and both
+               # are throttled inside. See SECURITY.md, "Upgrading".
+               "/admin/cli/authorize", "/admin/cli/token")
+# The upgrade routes take either an admin credential or an upgrade token.
+# The gate lets the token's prefix through to the handler, which validates
+# it against the state DB; a token of the other kind is still refused here.
+_UPGRADE_PATHS = "/admin/upgrade/"
 
 
 def _admin_role(header: str) -> str | None:
@@ -692,7 +700,10 @@ async def authenticate_before_reading(request: Request, call_next):
             return JSONResponse({"detail": "Not Found"}, status_code=404)
         auth = request.headers.get("authorization", "")
         if path.startswith("/admin"):
-            if path not in _ADMIN_OPEN and not _admin_header_ok(auth):
+            upgrade_token = (path.startswith(_UPGRADE_PATHS)
+                             and auth.startswith("Bearer " + _state.UPGRADE_PREFIX))
+            if (path not in _ADMIN_OPEN and not upgrade_token
+                    and not _admin_header_ok(auth)):
                 return JSONResponse({"detail": "bad token"}, status_code=401)
         else:
             # /enroll authenticates against the DB inside the handler; here
@@ -1531,6 +1542,228 @@ def put_preferences(req: PreferencesWrite,
     except _state.AuthError as e:
         raise HTTPException(e.status, e.detail)
 
+
+
+# ------------------------------------------------------ the command line --
+# `aiguardctl upgrade` runs on the operator's machine with the operator's
+# own kubeconfig or Docker context. The receiver's part is to establish
+# that an owner asked for the upgrade, and to hold the progress so the
+# portal can show it - including while the portal itself restarts. Nothing
+# here reaches the cluster or the host. See SECURITY.md, "Upgrading".
+#
+# The two unauthenticated routes (asking for a grant, polling for the token)
+# are throttled the way login is: a global budget of misses in a window,
+# and one aggregated audit event when it is exceeded. The portal sits in
+# front of the receiver, so a per-address budget would only ever see the
+# portal's address; the budget is global by design.
+CLI_WINDOW_SECONDS = 300
+CLI_MAX_MISSES = 60
+_cli_misses: list = []
+_cli_lock = threading.Lock()
+_cli_throttled_logged = False
+
+
+def _cli_miss():
+    """Record a failed or premature poll; refuse the caller when the window
+    is full. Returns nothing; raises when the budget is spent."""
+    global _cli_throttled_logged
+    now = time.time()
+    with _cli_lock:
+        _cli_misses[:] = [t for t in _cli_misses
+                          if t > now - CLI_WINDOW_SECONDS]
+        _cli_misses.append(now)
+        if len(_cli_misses) > CLI_MAX_MISSES:
+            if not _cli_throttled_logged and STATE is not None:
+                _cli_throttled_logged = True
+                with STATE._lock:
+                    STATE._event("cli_throttled", {"window": CLI_WINDOW_SECONDS})
+                    STATE._db.commit()
+            raise HTTPException(429, "too many attempts; try again later")
+        if len(_cli_misses) <= CLI_MAX_MISSES // 2:
+            _cli_throttled_logged = False
+
+
+class CliAuthorizeRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+    purpose: str = Field(pattern=r"^upgrade$")
+    # SHA-256, hex, of a verifier the command keeps in memory.
+    verifier_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    client: str = Field(default="", max_length=80)
+
+
+class CliTokenRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+    device_code: str = Field(min_length=10, max_length=200)
+    verifier: str = Field(min_length=16, max_length=200)
+
+
+class CliDecision(BaseModel):
+    model_config = {"extra": "forbid"}
+    user_code: str = Field(pattern=r"^[A-Za-z0-9]{4}-?[A-Za-z0-9]{4}$")
+    approve: bool
+
+
+class UpgradeRunStart(BaseModel):
+    model_config = {"extra": "forbid"}
+    route: str = Field(pattern=r"^(helm|kubernetes|compose)$")
+    from_version: str = Field(min_length=1, max_length=64)
+    to_version: str = Field(min_length=1, max_length=64)
+    plan: dict = Field(default_factory=dict)
+
+
+class UpgradeStep(BaseModel):
+    model_config = {"extra": "forbid"}
+    step: str = Field(min_length=1, max_length=80)
+    status: str = Field(pattern=r"^(running|done|failed|skipped)$")
+    detail: str = Field(default="", max_length=300)
+
+
+class UpgradeFinish(BaseModel):
+    model_config = {"extra": "forbid"}
+    outcome: str = Field(pattern=r"^(succeeded|failed|aborted)$")
+    detail: str = Field(default="", max_length=300)
+
+
+def _norm_code(code: str) -> str:
+    c = code.upper().replace("-", "")
+    return c[:4] + "-" + c[4:]
+
+
+def _upgrade_auth(authorization: str) -> dict:
+    """The grant behind an upgrade token, or 401. Deliberately not
+    _admin_auth: the two credentials open different doors, and neither
+    function recognises the other's prefix."""
+    if STATE is None:
+        raise HTTPException(404, "Not Found")
+    token = authorization[len("Bearer "):] if authorization.startswith("Bearer ") else ""
+    g = STATE.upgrade_grant(token)
+    if g is None:
+        _cli_miss()
+        raise HTTPException(401, "bad or expired upgrade token")
+    return g
+
+
+@app.post("/admin/cli/authorize")
+def cli_authorize(req: CliAuthorizeRequest):
+    """A command asks to be approved. Unauthenticated: the approval is what
+    authenticates it, and until an owner approves the codes are worth
+    nothing to anyone."""
+    if STATE is None:
+        raise HTTPException(404, "Not Found")
+    _cli_miss()  # every request spends budget, so a flood of them is bounded
+    try:
+        out = STATE.create_grant(req.purpose, req.verifier_hash, req.client)
+    except _state.AuthError as e:
+        raise HTTPException(e.status, e.detail)
+    return dict(out, expires_in=_state.GRANT_TTL_SECONDS,
+                approve_path="/#cli-approve/" + out["user_code"])
+
+
+@app.get("/admin/cli/grants/{user_code}")
+def cli_grant(user_code: str, authorization: str = Header(default="")):
+    """What the approval page shows. Owners only, and it never returns the
+    device code: the page decides, it does not act as the command."""
+    if not re.fullmatch(r"[A-Za-z0-9]{4}-?[A-Za-z0-9]{4}", user_code):
+        raise HTTPException(422, "malformed code")
+    _admin_auth(authorization, write=True, owner=True)
+    g = STATE.grant_for_approval(_norm_code(user_code))
+    if g is None:
+        raise HTTPException(404, "no request with that code")
+    return g
+
+
+@app.post("/admin/cli/approve")
+def cli_approve(req: CliDecision, authorization: str = Header(default="")):
+    _admin_auth(authorization, write=True, owner=True)
+    who = _session_account(authorization)
+    try:
+        return STATE.decide_grant(_norm_code(req.user_code), who, req.approve)
+    except _state.AuthError as e:
+        raise HTTPException(e.status, e.detail)
+
+
+@app.post("/admin/cli/token")
+def cli_token(req: CliTokenRequest):
+    """The command's poll. 428 while the owner has not decided, 429 when it
+    polls faster than told, 403 denied, 410 expired, 200 once with the
+    token. Unknown codes spend the throttle budget."""
+    if STATE is None:
+        raise HTTPException(404, "Not Found")
+    try:
+        out = STATE.redeem_grant(req.device_code, req.verifier)
+    except _state.AuthError as e:
+        if e.status in (404, 403, 409):
+            _cli_miss()
+        raise HTTPException(e.status, e.detail)
+    state = out["state"]
+    if state == "pending":
+        raise HTTPException(428, "authorization_pending")
+    if state == "denied":
+        raise HTTPException(403, "denied by the owner")
+    if state == "expired":
+        raise HTTPException(410, "the request expired before it was approved")
+    return {"token": out["token"], "expires_at": out["expires_at"],
+            "expires_in": _state.UPGRADE_TOKEN_TTL_SECONDS}
+
+
+@app.get("/admin/upgrade/plan")
+def upgrade_plan(authorization: str = Header(default="")):
+    """What the receiver knows for the plan: its own version and who
+    approved. The portal adds the release feed and the deployment context.
+    An owner's or admin's session may read this too, for the portal's
+    display; the token is what the command uses."""
+    if STATE is None:
+        raise HTTPException(404, "Not Found")
+    if _admin_role(authorization) is not None:
+        approved = None
+    else:
+        g = _upgrade_auth(authorization)
+        approved = {"by": g["username"], "token_expires_at": g["token_expires_at"]}
+    return {"receiver_version": APP_VERSION, "approved": approved}
+
+
+@app.post("/admin/upgrade/runs")
+def upgrade_run_start(req: UpgradeRunStart,
+                      authorization: str = Header(default="")):
+    g = _upgrade_auth(authorization)
+    try:
+        return STATE.start_run(g["id"], req.route, req.from_version,
+                               req.to_version, req.plan)
+    except _state.AuthError as e:
+        raise HTTPException(e.status, e.detail)
+
+
+@app.post("/admin/upgrade/runs/{run_id}/steps")
+def upgrade_run_step(run_id: str, req: UpgradeStep,
+                     authorization: str = Header(default="")):
+    g = _upgrade_auth(authorization)
+    if not re.fullmatch(r"[0-9a-f]{12}", run_id):
+        raise HTTPException(422, "malformed run id")
+    try:
+        return STATE.add_step(run_id, g["id"], req.step, req.status, req.detail)
+    except _state.AuthError as e:
+        raise HTTPException(e.status, e.detail)
+
+
+@app.post("/admin/upgrade/runs/{run_id}/finish")
+def upgrade_run_finish(run_id: str, req: UpgradeFinish,
+                       authorization: str = Header(default="")):
+    g = _upgrade_auth(authorization)
+    if not re.fullmatch(r"[0-9a-f]{12}", run_id):
+        raise HTTPException(422, "malformed run id")
+    try:
+        return STATE.finish_run(run_id, g["id"], req.outcome, req.detail)
+    except _state.AuthError as e:
+        raise HTTPException(e.status, e.detail)
+
+
+@app.get("/admin/upgrade/runs/current")
+def upgrade_run_current(authorization: str = Header(default="")):
+    """The latest run, for the portal's tracker. Any signed-in account:
+    it is the same kind of fact as System health, and a viewer watching a
+    rollout is the point of having a tracker."""
+    _admin_auth(authorization)
+    return {"run": STATE.current_run()}
 
 
 # ----------------------------------------------------- federated sign-in --
