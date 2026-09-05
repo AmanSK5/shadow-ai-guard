@@ -315,3 +315,25 @@ def test_a_headerless_paste_keeps_the_role_and_seat_it_plainly_carries():
     assert "guessed = iRole >= 0 || iTier >= 0;" in fn
     assert "&& i !== iRole && i !== iTier && !ignored.includes(i)).length" in fn
     assert "'no header row, columns named from their values'" in html
+
+
+def test_a_subscription_record_is_collapsible_and_remembers_being_open():
+    """Each subscription is a native <details> record: collapsed by default,
+    keyboard-openable, its summary carrying commitment, allocation, observed
+    use and review count. Every action on the page ends in a render that
+    rebuilds the cards, so open state is kept per record for the session,
+    and a record just linked or imported into opens itself."""
+    html = (main.STATIC / "index.html").read_text()
+    card = html.split("function budgetCard(sub) {", 1)[1].split("\nfunction budgetImport()", 1)[0]
+    assert 'return `<details class="budget-card${reviewCount ? \' has-review\' : \'\'}" data-bkey="${esc(bKey(sub))}"${BOPEN.has(bKey(sub)) ? \' open\' : \'\'}>' in card
+    assert '<summary class="budget-card-summary">' in card
+    for act in ("b-sync", "b-edit", "b-import", "b-unlink", "b-madd"):
+        assert f'data-act="{act}"' in card, act
+    assert "let BOPEN = new Set();" in html
+    assert "app.addEventListener('toggle', e => {" in html
+    # three places open a record on purpose, plus the toggle listener itself
+    assert html.count("BOPEN.add(") == 4
+    css = (main.STATIC / "enterprise.css").read_text()
+    assert ".budget-card>summary{display:block;list-style:none;cursor:pointer}" in css
+    assert ".budget-card-summary:focus-visible{outline:2px solid var(--acc)" in css
+    assert "var(--ok)" not in css

@@ -250,6 +250,100 @@ DEPLOY_CHART = os.environ.get("DEPLOY_CHART_VERSION", "")
 DEPLOY_RELEASE = os.environ.get("DEPLOY_RELEASE", "")
 DEPLOY_NAMESPACE = os.environ.get("DEPLOY_NAMESPACE", "")
 
+# ------------------------------------------------------------- updates ---
+# Whether a newer release exists, the way a self-hosted product tells you
+# rather than does it for you: the portal reads the project's release feed
+# in the background, compares it with the version it was built as, and
+# System health shows the result with the exact commands for this
+# deployment's route. Nothing here upgrades anything - the process running
+# the upgrade would have to survive the portal restarting, and would need
+# rights a web application must not hold. UPDATE_CHECK=off keeps the
+# portal from making the outbound request at all, for estates that do not
+# allow one.
+UPDATE_CHECK = os.environ.get("UPDATE_CHECK", "on").strip().lower() not in (
+    "off", "0", "false", "no")
+UPDATE_FEED = os.environ.get(
+    "UPDATE_FEED",
+    "https://api.github.com/repos/AmanSK5/shadow-ai-guard/releases/latest")
+UPDATE_INTERVAL_SECONDS = 6 * 3600
+_update_state = {"checked_at": None, "latest": "", "name": "", "url": "",
+                 "published_at": "", "notes": "", "error": ""}
+
+
+def _parse_version(v: str):
+    """'v0.27.1' -> (0, 27, 1). None for anything that is not a release
+    number, such as the 'dev' a local build reports, so a comparison is
+    never made against something that is not a version."""
+    m = re.match(r"^v?(\d+)\.(\d+)(?:\.(\d+))?", (v or "").strip())
+    if not m:
+        return None
+    return tuple(int(x or 0) for x in m.groups())
+
+
+def _deploy_route() -> str:
+    """How this portal was deployed, as far as its environment says. The
+    chart stamps the release and namespace; a pod without them is on
+    Kubernetes by some other means; a container that is not a pod is
+    compose or plain docker; anything else is unknown."""
+    if DEPLOY_RELEASE or DEPLOY_CHART:
+        return "helm"
+    if os.environ.get("KUBERNETES_SERVICE_HOST"):
+        return "kubernetes"
+    if Path("/.dockerenv").exists():
+        return "compose"
+    return "unknown"
+
+
+def _check_update() -> None:
+    """One read of the release feed, recorded whatever happens: the page
+    says when it last looked and why it could not, rather than showing a
+    stale answer as a fresh one."""
+    req = urllib.request.Request(UPDATE_FEED, headers={
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "ai-guard-portal/%s" % APP_VERSION})
+    try:
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        tag = str(data.get("tag_name") or "")
+        if not _parse_version(tag):
+            raise ValueError("the feed's latest entry has no version tag")
+        _update_state.update({
+            "latest": tag, "name": str(data.get("name") or tag),
+            "url": str(data.get("html_url") or ""),
+            "published_at": str(data.get("published_at") or ""),
+            "notes": str(data.get("body") or "")[:6000], "error": ""})
+    except Exception as e:  # noqa: BLE001 - the page shows the reason
+        _update_state["error"] = "%s: %s" % (type(e).__name__, str(e)[:160])
+    _update_state["checked_at"] = time.time()
+
+
+def update_status() -> dict:
+    """What System health shows. 'available' is None until a comparison
+    can be made: a dev build has no version to compare, and a check that
+    has not run yet or failed has nothing to compare against."""
+    current = _parse_version(APP_VERSION)
+    latest = _parse_version(_update_state["latest"])
+    available = None
+    if current and latest:
+        available = latest > current
+    return {
+        "enabled": UPDATE_CHECK,
+        "current": APP_VERSION,
+        "comparable": current is not None,
+        "latest": _update_state["latest"],
+        "available": available,
+        "name": _update_state["name"],
+        "url": _update_state["url"],
+        "published_at": _update_state["published_at"],
+        "notes": _update_state["notes"],
+        "checked_at": _update_state["checked_at"],
+        "error": _update_state["error"],
+        "route": _deploy_route(),
+        "deployment": {"chart_version": DEPLOY_CHART,
+                       "release": DEPLOY_RELEASE,
+                       "namespace": DEPLOY_NAMESPACE},
+    }
+
 # Managed mode. RECEIVER_URL is where admin actions are proxied - the
 # receiver's internal address, because the browser's CSP keeps it on 'self'
 # and something has to make the call. Unset means the managed views say so
@@ -901,6 +995,10 @@ def config(request: Request, _=Depends(require_auth)):
         "identity_map_configured": bool(IDENTITY_MAP and Path(IDENTITY_MAP).exists()),
         "cache_ttl_seconds": CACHE_TTL,
         "version": APP_VERSION,
+        # Enough for the setup bell to say a newer release exists; System
+        # health carries the rest.
+        "update": {k: update_status()[k] for k in
+                   ("enabled", "available", "latest", "url")},
         "overview_widgets": _widgets(_remote_value(rs, "overview_widgets",
                                                    OVERVIEW_WIDGETS)),
         # The full catalogue, name and description, so the Settings page
@@ -1081,6 +1179,7 @@ def diagnostics(request: Request, _=Depends(require_auth)):
             "release": DEPLOY_RELEASE,
             "namespace": DEPLOY_NAMESPACE,
         },
+        "update": update_status(),
     }
 
 
@@ -2225,6 +2324,35 @@ def digest_text(g, s, hours):
         lines.append("• %d detection source%s silent"
                      % (len(silent), "" if len(silent) == 1 else "s"))
     return "\n".join(lines)
+
+
+@app.on_event("startup")
+async def _update_task():
+    if not UPDATE_CHECK:
+        return
+    import asyncio
+
+    async def loop():
+        while True:
+            try:
+                await asyncio.to_thread(_check_update)
+            except Exception as e:  # noqa: BLE001 - recorded, never fatal
+                _update_state["error"] = type(e).__name__
+            await asyncio.sleep(UPDATE_INTERVAL_SECONDS)
+
+    asyncio.get_event_loop().create_task(loop())
+
+
+@app.post("/api/update/check")
+def api_update_check(_=Depends(require_auth)):
+    """Look now rather than at the next six-hour tick. Any signed-in
+    account may ask: the answer is public information about this project,
+    and the only cost is one request to the feed."""
+    if not UPDATE_CHECK:
+        raise HTTPException(409, "the update check is switched off "
+                                 "(UPDATE_CHECK=off)")
+    _check_update()
+    return update_status()
 
 
 @app.on_event("startup")
