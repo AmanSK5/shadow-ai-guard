@@ -1433,6 +1433,10 @@ function ssoButton() {
 }
 
 function showLogin(msg) {
+  // Where this tab was going, kept for the federated sign-in's way back.
+  try {
+    if (location.hash.length > 1) sessionStorage.setItem(RETURN_KEY, location.hash);
+  } catch (e) { /* storage refused: the person follows the link again */ }
   // Same reason as the pane below: nothing from the last session belongs on
   // this screen, and an overlay is the one piece of it that would cover the
   // way back in rather than merely linger.
@@ -1958,6 +1962,20 @@ const fromHash = () => {
 // its sub-tab, so a navigation names the tab it is about to show rather
 // than a bare #settings that would describe a different one on a reload.
 const frag = v => '#' + v + (v === 'settings' ? '/' + SETTAB : '');
+// A link into the portal survives a password sign-in, which happens on the
+// page, but not a federated one: the provider's round trip ends on the
+// callback page, which sends the browser to the root. The destination is
+// parked in the tab while the sign-in screen is up and restored on the
+// next load that arrives without one. It is only ever a fragment, and
+// fromHash() allow-lists the view either way.
+const RETURN_KEY = 'aiguard.return';
+try {
+  const back = sessionStorage.getItem(RETURN_KEY);
+  if (back) sessionStorage.removeItem(RETURN_KEY);
+  if (back && !location.hash && /^#[a-z-]+(\/[A-Za-z0-9-]+)*$/.test(back)) {
+    history.replaceState(null, '', back);
+  }
+} catch (e) { /* storage refused: land on the default view */ }
 const BOOT = fromHash();
 if (BOOT.tab) SETTAB = BOOT.tab;
 // A bare #settings names no tab, but a tab is what gets drawn. Write the
@@ -8796,6 +8814,7 @@ async function managedAction(act, el) {
       // /api/auth also carries the account's role, which gates the
       // account-management card and labels the read-only state.
       try { AUTH = await (await fetch('/api/auth')).json(); } catch (e) { /* keep the basics */ }
+      try { sessionStorage.removeItem(RETURN_KEY); } catch (e) { /* nothing parked */ }
       chrome(true); load();
     } else {
       let d = r.statusText;

@@ -104,3 +104,19 @@ def test_the_portal_still_runs_nothing():
     for word in ("import subprocess", "os.system(", "os.exec", "import shlex",
                  '"helm ', '"kubectl ', '"docker '):
         assert word not in src, word
+
+
+def test_the_approval_link_survives_a_federated_sign_in():
+    """The command opens #cli-approve/CODE. A password sign-in happens on the
+    page and keeps the fragment; a federated one ends on the callback page,
+    which sends the browser to the root, and the owner would land on the
+    overview with no way back to the request but the terminal. The tab
+    parks the fragment while the sign-in screen is up and restores it on
+    the next load that arrives without one."""
+    login = INDEX.split("function showLogin(msg) {", 1)[1][:400]
+    assert "sessionStorage.setItem(RETURN_KEY, location.hash)" in login
+    boot = INDEX.split("const BOOT = fromHash();", 1)[0][-900:]
+    assert "sessionStorage.getItem(RETURN_KEY)" in boot
+    assert "sessionStorage.removeItem(RETURN_KEY)" in boot, "restored once, never again"
+    assert "!location.hash" in boot, "a load that names its own view keeps it"
+    assert "history.replaceState(null, '', back)" in boot
