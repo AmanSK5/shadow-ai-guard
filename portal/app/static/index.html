@@ -6294,16 +6294,18 @@ async function cliApprove() {
   return head + `<p class="lede">A command on somebody's machine is asking to run one upgrade of
     this estate with that person's own credentials. Approving lets it report
     progress here; it grants nothing on the cluster or host, and nothing else on this portal.</p>
-  <div class="wcard" style="max-width:560px">
-    <p class="kicker" style="margin:0 0 6px">Compare this code with your terminal</p>
-    <p class="mono" style="font-size:28px;letter-spacing:.12em;margin:0 0 14px">${esc(g.user_code || CLICODE)}</p>
-    <dl class="kv">
-      <dt>Purpose</dt><dd>${esc(g.purpose)}</dd>
+  <div class="wcard cli-grant">
+    <div class="cli-grant-code">
+      <p class="kicker">Compare this code with your terminal</p>
+      <p class="mono cli-grant-user-code">${esc(g.user_code || CLICODE)}</p>
+    </div>
+    <dl class="kv cli-grant-facts">
+      <dt>Purpose</dt><dd>Upgrade this deployment to the latest release, run from the machine that asked</dd>
       <dt>Asked</dt><dd>${when(g.requested_at)}</dd>
       <dt>Client</dt><dd>${esc(g.requester || 'not stated')}</dd>
-      <dt>Grants</dt><dd>One upgrade token, 45 minutes, upgrade routes only.</dd>
+      <dt>Grants</dt><dd>Reporting progress here for one upgrade, for the next 45 minutes. The token opens nothing else on this portal, and nothing on the cluster or host.</dd>
     </dl>
-    <div style="margin-top:14px;display:flex;gap:8px">
+    <div class="cli-grant-actions">
       <button class="mini" data-act="cli-approve">Approve</button>
       <button class="mini" data-act="cli-deny">Deny</button>
     </div>

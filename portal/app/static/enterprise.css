@@ -823,3 +823,14 @@ body.auth .licard{width:100%}
 .upgrade-steps{margin:10px 0 0;padding:0;list-style:none;display:grid;gap:5px}
 .upgrade-steps li{font-size:11.5px;display:flex;align-items:center;gap:8px}
 .upgrade-steps li>span:last-child:not(.pill){color:var(--mut);font-size:10.5px}
+
+/* The approval page: one card, the code beside the facts, actions under both. */
+.cli-grant { display: grid; grid-template-columns: minmax(260px, 1fr) 2fr; gap: 20px 40px; align-items: start; }
+.cli-grant .cli-grant-code .kicker { margin: 0 0 8px; }
+.cli-grant-user-code { font-size: 34px; letter-spacing: .14em; margin: 0; line-height: 1.2; }
+.cli-grant-facts { margin: 0; }
+.cli-grant-actions, .cli-grant > .src-note { grid-column: 1 / -1; }
+.cli-grant-actions { display: flex; gap: 8px; margin-top: 4px; }
+.cli-grant > .src-note { margin: 0; }
+@container (max-width: 720px) { .cli-grant { grid-template-columns: 1fr; } }
+@media (max-width: 720px) { .cli-grant { grid-template-columns: 1fr; } }
