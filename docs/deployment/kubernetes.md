@@ -270,6 +270,29 @@ counts, logs, and answers to the collector as a 503 - so findings retry
 and are not stored. `aiguard_loki_push_total` staying at zero while findings
 arrive is that failure.
 
+### Upgrading
+
+System health tells you when a newer release exists, with the `helm upgrade`
+command for your release and namespace filled in. Two ways to apply it:
+
+By hand, with `--reuse-values` so everything you set at install carries
+forward:
+
+    helm upgrade ai-guard oci://ghcr.io/amansk5/shadow-ai-guard/charts/ai-guard \
+      --namespace ai-guard --version <version> --reuse-values
+
+The scanner and discovery CronJobs are outside the chart; set their image
+tags to the same version.
+
+Or from your machine with `aiguardctl`, which does exactly that with your
+own kubeconfig, finds the CronJobs by their image, shows the plan, waits for
+an owner to approve in the portal, and reports progress to System health:
+
+    pipx install "git+https://github.com/AmanSK5/shadow-ai-guard@<version>#subdirectory=cli"
+    aiguardctl upgrade --portal https://ai-guard-portal.example.com
+
+Nothing in the cluster gains a right either way; see SECURITY.md, *Upgrading*.
+
 ### Authentication
 
 The portal names who runs what on which machine, so it refuses to start

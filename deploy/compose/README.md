@@ -293,6 +293,11 @@ After editing `registry/registry.yaml`:
     docker compose pull
     docker compose up -d
 
+Or, from a machine with this Docker context and access to the portal,
+`aiguardctl upgrade --portal <portal URL>`: it pulls and recreates only this
+project's receiver and portal services, after an owner approves in the
+portal, and reports each step to System health. See `cli/README.md`.
+
 If `IMAGE_TAG` is pinned, that is a no-op until you change it, which is the
 point of pinning it.
 

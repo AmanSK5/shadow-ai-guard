@@ -234,6 +234,10 @@ relationships between them.
 
 https://github.com/user-attachments/assets/bac90dff-1c83-4c71-9808-8125eda2cc75
 
+When a newer release is out, System health says so with the upgrade command
+for your route, and `aiguardctl upgrade` runs it from your machine with your
+own credentials while the portal shows the progress - see `cli/README.md`.
+
 ### Grafana
 
 Grafana is the deeper telemetry view: usage over time, personal versus work

@@ -815,3 +815,11 @@ body.auth .licard{width:100%}
 .health-card.health-wide .health-facts{grid-template-columns:repeat(4,minmax(0,1fr))}
 .health-card.health-wide .how pre{max-width:none}
 @media(max-width:900px){.health-card.health-wide .health-facts{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* ---- the upgrade tracker on System health ------------------------------ */
+.upgrade-run{margin-top:12px;padding:12px 14px;border:1px solid var(--bd);border-radius:8px;background:var(--sf2)}
+.upgrade-run-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px}
+.upgrade-run-head>span{color:var(--mut);font-size:10px;margin-left:auto}
+.upgrade-steps{margin:10px 0 0;padding:0;list-style:none;display:grid;gap:5px}
+.upgrade-steps li{font-size:11.5px;display:flex;align-items:center;gap:8px}
+.upgrade-steps li>span:last-child:not(.pill){color:var(--mut);font-size:10.5px}
