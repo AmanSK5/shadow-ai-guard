@@ -74,6 +74,8 @@ credentials, and it reveals nothing about your estate.
 | `LOKI_USERNAME` | no | basic auth user. Grafana Cloud and most hosted Loki want this rather than a token, and the receiver needs the same pair to write |
 | `LOKI_PASSWORD` | no | basic auth password, `_FILE` supported |
 | `LOOKBACK_HOURS` | no | default window, default 168 |
+| `UPDATE_CHECK` | no | `on` (default) reads the project's release feed every six hours and System health says when a newer release exists, with the commands for this deployment's route; `off` makes no outbound request |
+| `UPDATE_FEED` | no | where the check reads from; default is the GitHub releases API for this project |
 | `REGISTRY_PATH` | no | registry.yaml, for resolving domains to tool ids |
 | `IDENTITY_MAP` | no | CSV of `key,identity` attaching people to devices |
 | `GOVERNANCE_PATH` | no | YAML of approval decisions, owners and review dates. See [docs/governance.md](../docs/governance.md) |

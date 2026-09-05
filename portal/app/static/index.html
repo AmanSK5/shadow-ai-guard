@@ -1758,6 +1758,13 @@ function setupOutstanding() {
   if (owner && v('sso_enabled') !== '1') out.push({need: 'opt', tab: 'account',
     t: 'Single sign-on', w: 'People sign in with a portal password rather '
       + 'than their work account.'});
+  // A newer release is not setup, but it is the same shape of thing: known,
+  // outstanding, and a page away. Owners and admins see it; the portal
+  // never applies it.
+  if (CFG.update && CFG.update.available === true) out.push({need: 'opt',
+    view: 'diagnostics', t: 'Update available: ' + CFG.update.latest,
+    w: 'System health has the release notes and the commands for this '
+      + 'deployment.', act: 'See how'});
   return out;
 }
 
@@ -1796,7 +1803,9 @@ function drawSetup() {
         + ' <span class="pill ' + TAB[i.need][0] + '">' + TAB[i.need][1]
         + '</span></b><span>' + i.w + '</span>'
         + '<button class="mini" data-act="setup-go"'
-        + ' data-key="' + i.tab + '">Set it up</button></div>').join('')
+        + ' data-key="' + (i.tab || '') + '"'
+        + (i.view ? ' data-view="' + i.view + '"' : '')
+        + '>' + (i.act || 'Set it up') + '</button></div>').join('')
     + '<p class="src-note" style="margin-bottom:0">Shown because setup was '
       + 'skipped or left part-done. It never blocks anything.</p>';
 }
@@ -6151,6 +6160,52 @@ function diagnosticsCards() {
         <div><dt>Grafana</dt><dd>${yn(r.grafana_configured)}</dd></div>
         <div><dt>Overview widgets</dt><dd>${(r.overview_widgets||[]).length}</dd></div></dl>
     </section>
+
+    ${(() => {
+      // A newer release is a fact about the project, not about this estate,
+      // so it sits with the other things the portal can verify about
+      // itself. Said the way a self-hosted product says it: here is what
+      // exists, here is what you run - never run for you.
+      const u = DIAG.update || {};
+      const d = u.deployment || {};
+      const ver = (u.latest || '').replace(/^v/, '');
+      const state = !u.enabled ? ['p-mut', 'check off']
+        : u.error && !u.latest ? ['p-warn', 'could not check']
+        : !u.comparable ? ['p-mut', 'development build']
+        : u.available === true ? ['p-warn', 'update available']
+        : u.available === false ? ['p-ok', 'up to date'] : ['p-mut', 'not checked yet'];
+      const route = u.route === 'helm' ? 'Helm' : u.route === 'kubernetes' ? 'Kubernetes'
+        : u.route === 'compose' ? 'Docker Compose' : 'unknown';
+      const ns = d.namespace || '<namespace>', rel = d.release || '<release>';
+      const cmd = u.route === 'helm'
+        ? `helm upgrade ${rel} oci://ghcr.io/amansk5/shadow-ai-guard/charts/ai-guard \\
+  --namespace ${ns} --version ${ver || '<version>'} --reuse-values`
+        : u.route === 'kubernetes'
+        ? `kubectl -n ${ns} set image deployment/<receiver> receiver=ghcr.io/amansk5/shadow-ai-guard/receiver:${ver || '<version>'}
+kubectl -n ${ns} set image deployment/<portal> portal=ghcr.io/amansk5/shadow-ai-guard/portal:${ver || '<version>'}`
+        : `docker compose pull
+docker compose up -d`;
+      const cron = u.route === 'helm' || u.route === 'kubernetes'
+        ? `kubectl -n ${ns} set image cronjob/<scanner> scanner=ghcr.io/amansk5/shadow-ai-guard/scanner:${ver || '<version>'}
+kubectl -n ${ns} set image cronjob/<discovery> discovery=ghcr.io/amansk5/shadow-ai-guard/discovery:${ver || '<version>'}` : '';
+      return `<section class="health-card ${u.available === true ? 'needs-attention' : ''}" data-tour="updates"><div class="health-card-head"><div><span>Releases</span><h3>Updates</h3></div><span class="pill ${state[0]}">${state[1]}</span></div>
+      <dl class="health-facts"><div><dt>Running</dt><dd>${esc(u.current || '—')}</dd></div>
+        <div><dt>Latest release</dt><dd>${u.latest ? `<a href="${esc(u.url)}" target="_blank" rel="noopener">${esc(u.latest)}</a>${u.published_at ? ` <span>· ${esc(String(u.published_at).slice(0, 10))}</span>` : ''}` : '—'}</dd></div>
+        <div><dt>Deployed by</dt><dd>${esc(route)}${d.chart_version ? ` <span>· ${esc(d.chart_version)}</span>` : ''}</dd></div>
+        <div><dt>Last checked</dt><dd>${u.checked_at ? ago(u.checked_at) : (u.enabled ? 'not yet' : 'never')}</dd></div></dl>
+      ${u.error ? `<p class="health-note warning"><b>Last check failed</b> ${esc(u.error)}</p>` : ''}
+      ${!u.enabled ? `<p class="health-note">The check is switched off (<span class="mono">UPDATE_CHECK=off</span>), so this portal makes no outbound request. Releases are listed at <a href="https://github.com/AmanSK5/shadow-ai-guard/releases" target="_blank" rel="noopener">github.com</a>.</p>` : ''}
+      ${!u.comparable && u.enabled ? `<p class="health-note">This portal reports no release number, so the latest release is shown but not compared.</p>` : ''}
+      ${u.available === true ? `<p class="health-note warning"><b>${esc(u.name || u.latest)}</b> is out. Upgrading restarts the receiver and the portal; nothing stored is touched, and collectors keep reporting through it.</p>
+      <details class="how"><summary>How to upgrade on ${esc(route)}</summary><div>
+        <pre class="mono" style="white-space:pre-wrap">${esc(cmd)}</pre>
+        ${cron ? `<p class="src-note">If the scanner or discovery run as CronJobs, they are outside the chart: set their image tags too.</p><pre class="mono" style="white-space:pre-wrap">${esc(cron)}</pre>` : `<p class="src-note">If <span class="mono">IMAGE_TAG</span> is pinned in the compose environment, change it to ${esc(ver || 'the new version')} first; a pull is a no-op until you do.</p>`}
+        <p class="src-note">Afterwards this page should read ${esc(u.latest)} under Running, and Sources should show the same collectors reporting.</p>
+      </div></details>
+      ${u.notes ? `<details class="how"><summary>Release notes</summary><div><pre class="mono" style="white-space:pre-wrap;max-height:320px;overflow:auto">${esc(u.notes)}</pre></div></details>` : ''}` : ''}
+      ${u.enabled ? `<p class="src-note" style="margin-top:8px"><button class="mini" data-act="update-check">Check now</button></p>` : ''}
+    </section>`;
+    })()}
   </div>
 
   <section class="health-deployment"><div><span>Deployment context</span><h3>Provided by configuration</h3>
@@ -8201,6 +8256,17 @@ async function managedAction(act, el) {
   // act too, and a handler only reachable from Budget left them inert.
   if (act === 'evidence-print') { window.print(); return; }
   if (act.startsWith('b-')) return budgetAction(act, el);
+  if (act === 'update-check') {
+    el.disabled = true; el.textContent = 'Checking…';
+    try {
+      const r = await mfetch('/api/update/check', {method: 'POST'});
+      if (r.ok && DIAG) { DIAG.update = await r.json(); }
+    } catch (e) { /* the card shows the last recorded error */ }
+    // The bell reads the summary from CFG; refresh it so a fresh result
+    // is reflected there too.
+    try { const cr = await fetch('/api/config'); if (cr.ok) CFG = await cr.json(); } catch (e) {}
+    drawSetup(); render(); return;
+  }
   if (act === 'id-download') {
     window.location = '/api/suggest-identities?fmt=csv';
     return;
@@ -10182,6 +10248,13 @@ document.getElementById('setuppanel').addEventListener('click', e => {
   const el = e.target.closest('[data-act="setup-go"]');
   if (!el) return;
   SETUPOPEN = false;
+  // An item may point at a whole view (System health, for an update)
+  // rather than a Settings tab.
+  if (el.getAttribute('data-view')) {
+    view = el.getAttribute('data-view'); detail = null;
+    history.replaceState(null, '', frag(view));
+    drawNav(); render(); return;
+  }
   // 'settings', not 'setup' - setup() renders the Sources view, so this
   // sent people to Health while the fragment said settings. The fragment
   // was right and the view was wrong, which is why it looked like a
