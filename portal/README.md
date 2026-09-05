@@ -295,6 +295,16 @@ trail; `/api/audit` serves it.
 answer; the finding itself stays derived from the log store, so the record
 and the evidence can never disagree.
 
+**Upgrading.** System health says when a newer release exists and prints
+the commands for this deployment's route. To have them run for you, from
+your own machine and with your own credentials, install `aiguardctl` (see
+`cli/README.md`) and run `aiguardctl upgrade --portal <this portal>`; the
+portal opens an approval page an owner must confirm, then shows the run
+live under System health, including through its own restart. The portal
+forwards the command's requests to the receiver and holds no rights over the
+deployment itself. The design and threat model are in SECURITY.md under
+*Upgrading*.
+
 **Notifications.** A `webhook_url` saved in Settings makes the receiver
 post to Slack (or anything webhook-compatible) the moment discovery puts a
 new tool or MCP server in the review queue - once per discovery, never per

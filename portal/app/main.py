@@ -1931,6 +1931,163 @@ def _receiver(method: str, path: str, token: str, body: dict | None = None):
         raise HTTPException(e.status, e.detail)
 
 
+# ------------------------------------------------------ the command line --
+# `aiguardctl upgrade` reaches the receiver through the portal, because the
+# portal is what an operator's machine can see. Every route here forwards
+# and nothing here decides: the receiver owns the grants, the tokens and
+# the runs. The portal holds no credential the upgrade routes would accept
+# on their own, and no rights over the deployment. SECURITY.md, "Upgrading".
+
+
+class CliAuthorizeWrite(BaseModel):
+    model_config = {"extra": "forbid"}
+    purpose: str = Field(pattern=r"^upgrade$")
+    verifier_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    client: str = Field(default="", max_length=80)
+
+
+class CliTokenWrite(BaseModel):
+    model_config = {"extra": "forbid"}
+    device_code: str = Field(min_length=10, max_length=200)
+    verifier: str = Field(min_length=16, max_length=200)
+
+
+class CliDecisionWrite(BaseModel):
+    model_config = {"extra": "forbid"}
+    user_code: str = Field(pattern=r"^[A-Za-z0-9]{4}-?[A-Za-z0-9]{4}$")
+    approve: bool
+
+
+class UpgradeRunWrite(BaseModel):
+    model_config = {"extra": "forbid"}
+    route: str = Field(pattern=r"^(helm|kubernetes|compose)$")
+    from_version: str = Field(min_length=1, max_length=64)
+    to_version: str = Field(min_length=1, max_length=64)
+    plan: dict = Field(default_factory=dict)
+
+
+class UpgradeStepWrite(BaseModel):
+    model_config = {"extra": "forbid"}
+    step: str = Field(min_length=1, max_length=80)
+    status: str = Field(pattern=r"^(running|done|failed|skipped)$")
+    detail: str = Field(default="", max_length=300)
+
+
+class UpgradeFinishWrite(BaseModel):
+    model_config = {"extra": "forbid"}
+    outcome: str = Field(pattern=r"^(succeeded|failed|aborted)$")
+    detail: str = Field(default="", max_length=300)
+
+
+def _upgrade_bearer(request: Request) -> str:
+    """The upgrade token the command sends. Only that prefix is forwarded
+    to the upgrade routes; a session cookie is not a substitute, because
+    the receiver does not accept sessions there either."""
+    _login_mode_only()
+    auth = request.headers.get("authorization", "")
+    if not auth.startswith("Bearer aigu_"):
+        raise HTTPException(401, "an upgrade token is required")
+    return auth[len("Bearer "):]
+
+
+@app.post("/api/cli/authorize")
+def api_cli_authorize(req: CliAuthorizeWrite):
+    _login_mode_only()
+    return _receiver("POST", "/admin/cli/authorize", "", req.model_dump())
+
+
+@app.post("/api/cli/token")
+def api_cli_token(req: CliTokenWrite):
+    _login_mode_only()
+    return _receiver("POST", "/admin/cli/token", "", req.model_dump())
+
+
+@app.get("/api/cli/grants/{user_code}")
+def api_cli_grant(user_code: str, _=Depends(require_auth),
+                  token: str = Depends(_admin_forward)):
+    if not re.fullmatch(r"[A-Za-z0-9]{4}-?[A-Za-z0-9]{4}", user_code):
+        raise HTTPException(422, "malformed code")
+    return _receiver("GET", "/admin/cli/grants/" + user_code, token)
+
+
+@app.post("/api/cli/approve")
+def api_cli_approve(req: CliDecisionWrite, _=Depends(require_auth),
+                    token: str = Depends(_admin_forward)):
+    return _receiver("POST", "/admin/cli/approve", token, req.model_dump())
+
+
+@app.get("/api/upgrade/plan")
+def api_upgrade_plan(request: Request):
+    """What the command needs to plan: the receiver's answer plus what this
+    portal knows - its own version, the release feed, how it was deployed.
+    An upgrade token or a signed-in session may read it."""
+    _login_mode_only()
+    auth = request.headers.get("authorization", "")
+    if auth.startswith("Bearer aigu_"):
+        token = auth[len("Bearer "):]
+    else:
+        cookie = request.cookies.get(SESSION_COOKIE, "")
+        if not (cookie and _session_ok(cookie)):
+            raise HTTPException(401, "login required")
+        token = cookie
+    out = _receiver("GET", "/admin/upgrade/plan", token)
+    u = update_status()
+    return {"receiver_version": out.get("receiver_version"),
+            "approved": out.get("approved"),
+            "portal_version": APP_VERSION,
+            "latest": u["latest"], "latest_url": u["url"],
+            "route_hint": u["route"], "deployment": u["deployment"],
+            "image_repository": "ghcr.io/amansk5/shadow-ai-guard",
+            "chart": "oci://ghcr.io/amansk5/shadow-ai-guard/charts/ai-guard"}
+
+
+@app.post("/api/upgrade/runs")
+def api_upgrade_run_start(req: UpgradeRunWrite,
+                          token: str = Depends(_upgrade_bearer)):
+    return _receiver("POST", "/admin/upgrade/runs", token, req.model_dump())
+
+
+@app.post("/api/upgrade/runs/{run_id}/steps")
+def api_upgrade_run_step(run_id: str, req: UpgradeStepWrite,
+                         token: str = Depends(_upgrade_bearer)):
+    if not re.fullmatch(r"[0-9a-f]{12}", run_id):
+        raise HTTPException(422, "malformed run id")
+    return _receiver("POST", "/admin/upgrade/runs/%s/steps" % run_id, token,
+                     req.model_dump())
+
+
+@app.post("/api/upgrade/runs/{run_id}/finish")
+def api_upgrade_run_finish(run_id: str, req: UpgradeFinishWrite,
+                           token: str = Depends(_upgrade_bearer)):
+    if not re.fullmatch(r"[0-9a-f]{12}", run_id):
+        raise HTTPException(422, "malformed run id")
+    return _receiver("POST", "/admin/upgrade/runs/%s/finish" % run_id, token,
+                     req.model_dump())
+
+
+@app.get("/api/upgrade/runs/current")
+def api_upgrade_run_current(_=Depends(require_auth),
+                            token: str = Depends(_admin_forward)):
+    return _receiver("GET", "/admin/upgrade/runs/current", token)
+
+
+@app.get("/api/upgrade/verify")
+def api_upgrade_verify(request: Request, token: str = Depends(_upgrade_bearer)):
+    """What the command checks after the rollout: the versions now answering
+    and whether the detection sources are back. Reads the receiver with the
+    token, so it also proves the token is still honoured."""
+    out = _receiver("GET", "/admin/upgrade/plan", token)
+    reporting = None
+    try:
+        st = derive.status_from(_findings_cached(LOOKBACK_HOURS, request))
+        reporting = {"reporting": st["reporting"], "total": st["total"]}
+    except Exception:  # noqa: BLE001 - the command reports "unknown"
+        reporting = None
+    return {"portal_version": APP_VERSION,
+            "receiver_version": out.get("receiver_version"),
+            "sources": reporting}
+
+
 @app.get("/api/fleet")
 def fleet(_=Depends(require_auth), token: str = Depends(_admin_forward)):
     """The enrolled devices, from the receiver's registry - who exists,

@@ -125,14 +125,14 @@ The same thing without Helm, if you would rather see the pieces.
 Published to GHCR by CI, so nothing needs building:
 
 ```
-ghcr.io/amansk5/shadow-ai-guard/receiver:0.28.0
+ghcr.io/amansk5/shadow-ai-guard/receiver:0.29.0
 ```
 
 Built for `linux/amd64` and `linux/arm64` under one tag, so it resolves on
 Graviton, Apple Silicon and a Pi without anything extra:
 
 ```bash
-docker buildx imagetools inspect ghcr.io/amansk5/shadow-ai-guard/receiver:0.28.0
+docker buildx imagetools inspect ghcr.io/amansk5/shadow-ai-guard/receiver:0.29.0
 ```
 
 Pin a version. `latest` moves when a release is tagged, which means a pod
@@ -269,6 +269,29 @@ a numeric instance id rather than an email, and the access policy needs both
 counts, logs, and answers to the collector as a 503 - so findings retry
 and are not stored. `aiguard_loki_push_total` staying at zero while findings
 arrive is that failure.
+
+### Upgrading
+
+System health tells you when a newer release exists, with the `helm upgrade`
+command for your release and namespace filled in. Two ways to apply it:
+
+By hand, with `--reuse-values` so everything you set at install carries
+forward:
+
+    helm upgrade ai-guard oci://ghcr.io/amansk5/shadow-ai-guard/charts/ai-guard \
+      --namespace ai-guard --version <version> --reuse-values
+
+The scanner and discovery CronJobs are outside the chart; set their image
+tags to the same version.
+
+Or from your machine with `aiguardctl`, which does exactly that with your
+own kubeconfig, finds the CronJobs by their image, shows the plan, waits for
+an owner to approve in the portal, and reports progress to System health:
+
+    pipx install "git+https://github.com/AmanSK5/shadow-ai-guard@<version>#subdirectory=cli"
+    aiguardctl upgrade --portal https://ai-guard-portal.example.com
+
+Nothing in the cluster gains a right either way; see SECURITY.md, *Upgrading*.
 
 ### Authentication
 

@@ -300,6 +300,153 @@ way you review anything you push through MDM. They make exactly one kind of
 outbound request (POST findings, GET registry, both to the receiver), spawn
 no persistent processes, and write state only under their own directory.
 
+## Upgrading
+
+The portal tells you a newer release exists; it never applies one. That
+sentence is the whole design, and everything below exists to keep it true.
+
+### What holds what
+
+Nothing in the cluster or on the compose host gains a right it did not have.
+The portal keeps no kubeconfig, no Docker socket, no ServiceAccount beyond
+the one every pod has, and no code path that runs `helm`, `kubectl` or
+`docker`. The receiver is the same. An upgrade is performed by a small
+command, `aiguardctl upgrade`, run on the operator's own machine with the
+operator's own credentials - the kubeconfig context or Docker context they
+already use to administer the deployment. The platform supplies three
+things to that command: proof that an owner asked for this upgrade, the plan
+(what is running, what the target is, which route), and a place to write
+progress so the portal can show it live. The privilege stays with the
+person who already has it.
+
+This is a deliberate rejection of the obvious design, an in-cluster updater
+with rights to patch Deployments. Kubernetes RBAC can scope that down a long
+way - a namespaced Role, `resourceNames` on the exact objects - but a Helm
+upgrade cannot be scoped that way, because Helm manages every object in the
+release, and a workload holding write rights in a namespace shared with
+other teams is a reasonable thing to refuse. There is no in-cluster
+updater, no `ClusterRole`, no socket mount, and none is planned as a
+default. If one is ever offered it will be opt-in, image-only, scoped by
+`resourceNames`, and documented here first.
+
+### The command's authorisation
+
+`aiguardctl` never handles a password and never learns whether sign-in is
+federated. It borrows the portal's sign-in, the way `gh auth login` borrows
+GitHub's:
+
+1. The command asks the receiver, through the portal, for a grant. It
+   sends the SHA-256 of a verifier it generated and keeps in memory. The
+   receiver answers with a device code (returned only to the command) and
+   a short user code (shown in the terminal), both expiring in ten
+   minutes.
+2. The command opens the portal's approval page in the browser, at
+   `#cli-approve/<user code>`. The person signs in exactly as they always
+   do - the password form, or Microsoft Entra with the tenant's MFA and
+   conditional access, whichever the deployment enforces. The portal
+   already owns both paths; the command adds no third.
+3. The approval page is shown to an **owner** only. It names what is being
+   granted (one upgrade), when the request was made, and the user code, and
+   asks the owner to compare that code with the terminal before approving.
+   An admin reaching the page is told an owner has to approve. Approval and
+   denial are audit events naming the owner.
+4. The command has been polling with its device code at the interval the
+   receiver set. Once approved, it presents the verifier; the receiver
+   checks it against the stored hash and issues an upgrade token.
+
+The upgrade token is a distinct credential, prefix `aigu_`, not a session:
+
+- **Scope.** Accepted only by the upgrade routes - read the plan, open a
+  run, post steps, finish it, read the verification view. `_admin_auth`
+  does not recognise the prefix, so the token opens nothing else on the
+  receiver, and the portal forwards it only to those routes.
+- **Life.** Forty-five minutes, enough for a rollout to settle. One run per
+  token: opening a run consumes the grant, a second attempt is refused.
+- **At rest.** Hashed in the receiver's state database, like sessions; the
+  plaintext exists in the command's memory and nowhere else. It is never
+  written to a file, never printed, never included in progress reports.
+- **Binding.** The token is tied to its grant, the grant to the owner who
+  approved it and to the verifier hash, and the run to the token. A device
+  code without its verifier is worth nothing; a verifier without an
+  approved grant is worth nothing.
+
+The two unauthenticated routes, requesting a grant and polling for the
+token, sit behind the same kind of throttle the login route uses: a
+per-address and global budget of failed or premature polls in a window,
+`slow_down` when the interval is ignored, and one aggregated audit event
+when the budget is exceeded rather than a row per attempt. User codes are
+drawn from a 32-symbol alphabet, eight symbols, expire in ten minutes, and
+approval requires an authenticated owner, so guessing a code buys an
+attacker nothing they can use.
+
+### What the command may touch
+
+The command applies the plan with the operator's credentials, and it limits
+itself further than those credentials would allow:
+
+- On Kubernetes it acts only on objects carrying the chart's labels,
+  `app.kubernetes.io/name=ai-guard` and the release's
+  `app.kubernetes.io/instance`, and on CronJobs whose image repository is
+  this project's own. It refuses to guess when it finds more than one
+  release and is not told which. On a Helm-managed release it runs
+  `helm upgrade --reuse-values` against the published chart at the target
+  version; on a release without Helm it sets image tags on those objects
+  and nothing else.
+- On compose it acts only on services whose running image repository is
+  this project's own, pulling and recreating those services by name rather
+  than the whole project, in the project directory the containers' own
+  labels record.
+- It shows the plan and waits for confirmation. `--yes` exists for
+  automation, `--dry-run` prints the exact commands and runs none of them.
+- Every command it runs is printed before it runs. Progress reports carry
+  step names and outcomes, never command output, so nothing the tools print
+  - which can include resource names, values or errors with secrets in them
+  - leaves the operator's terminal.
+
+A release must be upgradeable with `--reuse-values` and no new mandatory
+input. Where a release needs a value it can derive - from the central
+settings the receiver already holds, from a Secret or ConfigMap already
+present, from the chart's own defaults - the release metadata says where,
+and the command derives it and shows it in the plan. The command asks a
+question only when the answer does not yet exist anywhere, and says why.
+
+### If something is compromised
+
+- **A portal session, even an owner's.** It can approve a grant, which
+  yields a token that speaks only to the upgrade routes of the receiver:
+  it can start a run and write progress lines. It cannot upgrade anything,
+  because nothing that holds it has cluster or host rights. The worst
+  outcome is a misleading progress display, which is visible in the audit
+  log with the approving account named.
+- **The portal process.** Same ceiling. The portal relays; it holds no
+  credential the upgrade routes would accept on their own, and no rights
+  over the deployment.
+- **The receiver process.** It could mint upgrade tokens to itself. They
+  are still only good for talking to itself about upgrades. It holds
+  nothing that reaches the cluster.
+- **The operator's machine.** This is the trust boundary, as it already
+  was: whoever holds the kubeconfig can do anything the kubeconfig allows,
+  with or without this command. The command adds no new secret to that
+  machine - the token lives in memory for the length of one run - and no
+  new standing capability.
+- **A stolen upgrade token.** Forty-five minutes of ability to post fake
+  progress, and a run already opened by the legitimate command cannot be
+  opened twice. It grants no read of estate data.
+- **The release feed.** The portal reads
+  `api.github.com/.../releases/latest` and shows what it says. A tampered
+  feed could name a wrong version; the command still pulls only from
+  `ghcr.io/amansk5/shadow-ai-guard` and the published chart, and shows the
+  plan before running. `UPDATE_CHECK=off` removes the read entirely.
+
+### The command itself
+
+`aiguardctl` is Python with no third-party dependencies, installed from a
+tagged release of this repository, so what runs is what the tag contains
+and can be read before it is installed. It is never fetched from the
+portal at run time, and there is no `curl | sh`. It shells out to the
+operator's own `helm`, `kubectl` and `docker`, found on their PATH, rather
+than embedding any of them.
+
 ## What this is not
 
 Detection is visibility, not enforcement: it observes, and a user with local

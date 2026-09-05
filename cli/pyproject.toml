@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aiguardctl"
+version = "0.29.0"
+description = "Upgrade a Shadow AI Guard deployment from your own machine, with your own credentials, while the portal shows the progress"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.10"
+authors = [{name = "Aman Karir"}]
+# No third-party dependencies, on purpose: what runs is what the tag
+# contains, and there is nothing pulled in at install time to audit.
+dependencies = []
+
+[project.scripts]
+aiguardctl = "aiguardctl.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["aiguardctl*"]

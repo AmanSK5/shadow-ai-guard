@@ -1433,6 +1433,10 @@ function ssoButton() {
 }
 
 function showLogin(msg) {
+  // Where this tab was going, kept for the federated sign-in's way back.
+  try {
+    if (location.hash.length > 1) sessionStorage.setItem(RETURN_KEY, location.hash);
+  } catch (e) { /* storage refused: the person follows the link again */ }
   // Same reason as the pane below: nothing from the last session belongs on
   // this screen, and an overlay is the one piece of it that would cover the
   // way back in rather than merely linger.
@@ -1913,7 +1917,9 @@ const NAVAREAS = [
 // 'wizard' is reachable by fragment but absent from the nav: it is a door
 // you walk through once, not a place to live.
 const VIEWS = NAV.flatMap(sec => sec.items.map(([id]) => id))
-  .concat(['wizard', 'extsetup', 'budget-report', 'diagnostics']);
+  .concat(['wizard', 'extsetup', 'budget-report', 'diagnostics', 'cli-approve']);
+// The code a command asked an owner to approve, from #cli-approve/XXXX-XXXX.
+let CLICODE = '';
 // Where a bare URL lands. Derived from the nav rather than spelled out, so
 // the front door is whatever the sidebar names first and there is no second
 // list to keep in step.
@@ -1928,6 +1934,14 @@ const HOME = NAV[0].items[0][0];
 // a handler that compares both values fixes them together.
 const fromHash = () => {
   const h = (location.hash || '').replace(/^#/, '');
+  // #cli-approve/XXXX-XXXX: the approval page the command line opens. The
+  // code is checked for shape here and shown, never acted on, until an
+  // owner presses a button.
+  if (h.startsWith('cli-approve/')) {
+    const code = h.split('/')[1] || '';
+    CLICODE = /^[A-Za-z0-9]{4}-?[A-Za-z0-9]{4}$/.test(code) ? code.toUpperCase() : '';
+    return {view: 'cli-approve', tab: null};
+  }
   // #settings/account addresses a sub-tab; the view is still settings.
   if (h.startsWith('settings/')) {
     // Checked against the known tabs exactly like the view below it. This
@@ -1948,6 +1962,20 @@ const fromHash = () => {
 // its sub-tab, so a navigation names the tab it is about to show rather
 // than a bare #settings that would describe a different one on a reload.
 const frag = v => '#' + v + (v === 'settings' ? '/' + SETTAB : '');
+// A link into the portal survives a password sign-in, which happens on the
+// page, but not a federated one: the provider's round trip ends on the
+// callback page, which sends the browser to the root. The destination is
+// parked in the tab while the sign-in screen is up and restored on the
+// next load that arrives without one. It is only ever a fragment, and
+// fromHash() allow-lists the view either way.
+const RETURN_KEY = 'aiguard.return';
+try {
+  const back = sessionStorage.getItem(RETURN_KEY);
+  if (back) sessionStorage.removeItem(RETURN_KEY);
+  if (back && !location.hash && /^#[a-z-]+(\/[A-Za-z0-9-]+)*$/.test(back)) {
+    history.replaceState(null, '', back);
+  }
+} catch (e) { /* storage refused: land on the default view */ }
 const BOOT = fromHash();
 if (BOOT.tab) SETTAB = BOOT.tab;
 // A bare #settings names no tab, but a tab is what gets drawn. Write the
@@ -6203,7 +6231,14 @@ kubectl -n ${ns} set image cronjob/<discovery> discovery=ghcr.io/amansk5/shadow-
         <p class="src-note">Afterwards this page should read ${esc(u.latest)} under Running, and Sources should show the same collectors reporting.</p>
       </div></details>
       ${u.notes ? `<details class="how"><summary>Release notes</summary><div><pre class="mono" style="white-space:pre-wrap;max-height:320px;overflow:auto">${esc(u.notes)}</pre></div></details>` : ''}` : ''}
+      ${CFG.managed && CFG.managed.enabled ? `<details class="how"><summary>Upgrade from your own machine</summary><div>
+        <p class="src-note">The command runs with your kubeconfig or Docker context and reports its progress here. The portal never upgrades anything itself; it approves the request (owners only) and shows the run. Install once from a tagged release, then:</p>
+        <pre class="mono" style="white-space:pre-wrap">pipx install "git+https://github.com/AmanSK5/shadow-ai-guard@${esc(u.latest || 'v0.29.0')}#subdirectory=cli"
+aiguardctl upgrade --portal ${esc(location.origin)}</pre>
+        <p class="src-note">Your browser opens this portal to approve the request; compare the code it shows with your terminal. <span class="mono">--dry-run</span> prints every command without running one.</p>
+      </div></details>` : ''}
       ${u.enabled ? `<p class="src-note" style="margin-top:8px"><button class="mini" data-act="update-check">Check now</button></p>` : ''}
+      ${CFG.managed && CFG.managed.enabled ? upgradeTracker() : ''}
     </section>`;
     })()}
   </div>
@@ -6230,7 +6265,120 @@ kubectl -n ${ns} set image cronjob/<discovery> discovery=ghcr.io/amansk5/shadow-
 // operator edits policy. It still uses the original diagnostics endpoint and
 // cards, so this is a change of information architecture rather than a new
 // operational dependency.
+// The approval page `aiguardctl upgrade` opens. An owner compares the code
+// with the terminal and decides; anyone else is told an owner has to. The
+// page never holds the device code, so it can approve but cannot act as
+// the command. See SECURITY.md, "Upgrading".
+let CLIGRANT = null, CLIDONE = '';
+// How long a pending code has left, from the receiver's own expiry.
+function cliLeft(at) {
+  const ms = Date.parse(at || '') - Date.now();
+  if (!(ms > 0)) return '';
+  const m = Math.max(1, Math.round(ms / 60000));
+  return ` <span>· ${m} min left</span>`;
+}
+async function cliApprove() {
+  const owner = AUTH && AUTH.role === 'owner';
+  const managed = CFG.managed && CFG.managed.enabled;
+  const head = `<h2>Approve a command</h2>`;
+  if (!managed || !(AUTH && AUTH.mode === 'login'))
+    return head + `<p class="lede">This deployment has no accounts, so there is nothing to approve here.</p>`;
+  if (!CLICODE) return head + `<p class="lede">That link carries no request code. Run the command again and follow the link it prints.</p>`;
+  if (!owner) return head + `<p class="lede">A request with code <b class="mono">${esc(CLICODE)}</b> is waiting.
+    Only an owner can approve a command to upgrade this estate; ask one to open this link.</p>`;
+  if (CLIDONE) return head + `<div class="note">${esc(CLIDONE)}</div>
+    <p class="lede">You can close this tab. The command will carry on in your terminal, and System health shows its progress.</p>
+    <p><button class="mini" data-nav="diagnostics">Open System health</button></p>`;
+  if (!CLIGRANT) {
+    const r = await mfetch('/api/cli/grants/' + encodeURIComponent(CLICODE));
+    if (r.status === 401) { sessionLost(); return ''; }
+    CLIGRANT = r.ok ? await r.json() : {error: await _refusal(r)};
+  }
+  const g = CLIGRANT;
+  if (g.error) return head + `<div class="note">${esc(g.error)}</div>
+    <p class="lede">Codes expire ten minutes after the command asks. Run it again for a fresh one.</p>`;
+  if (g.status !== 'pending') return head + `<div class="note">This request was already ${esc(g.status)}.</div>`;
+  return head + `<p class="lede">Somebody ran the upgrade command against this portal. It waits for an owner to say yes before it does anything.</p>
+  <section class="health-card health-wide needs-attention cli-grant">
+    <div class="health-card-head"><div><span>Command approval</span><h3>An upgrade is waiting for an owner's decision</h3></div><span class="pill p-amb">awaiting decision</span></div>
+    <div class="cli-grant-body">
+      <div class="cli-grant-code">
+        <p class="kicker">Request code</p>
+        <p class="mono cli-grant-user-code">${esc(g.user_code || CLICODE)}</p>
+        <p class="src-note">Must match the code printed in the terminal that ran the command.</p>
+      </div>
+      <dl class="health-facts cli-grant-facts">
+        <div><dt>Action</dt><dd>Upgrade this deployment to the latest release</dd></div>
+        <div><dt>Runs from</dt><dd>The requester's machine <span>· their own kubeconfig or Docker context</span></dd></div>
+        <div><dt>Asked</dt><dd>${when(g.requested_at)}${cliLeft(g.expires_at)}</dd></div>
+        <div><dt>Client</dt><dd>${esc(g.requester || 'not stated')}</dd></div>
+      </dl>
+    </div>
+    <p class="health-note"><b>Approving grants</b> one token, good for 45 minutes, that lets the command report this run's progress here. It opens nothing else on this portal, and nothing on the cluster or host. The upgrade itself runs with the requester's credentials and covers everything the chart or compose file deploys.</p>
+    <div class="cli-grant-actions">
+      <button class="mini pri" data-act="cli-approve">Approve</button>
+      <button class="mini" data-act="cli-deny">Deny</button>
+      <span class="src-note">If you did not just run <span class="mono">aiguardctl upgrade</span>, deny it. Both decisions are recorded with your name.</span>
+    </div>
+  </section>`;
+}
+
+// The live tracker on System health. Polls while a run is open and stops
+// when it finishes or the page is left. A portal restart mid-rollout shows
+// as exactly that, from the fetch failing, and polling carries on until it
+// answers again with the run's outcome.
+let UPRUN = null, UPTIMER = null, UPDOWN = false;
+async function upgradeFetch() {
+  try {
+    const r = await mfetch('/api/upgrade/runs/current');
+    if (r.status === 401) { sessionLost(); return; }
+    if (!r.ok) { UPDOWN = true; return; }
+    UPDOWN = false;
+    UPRUN = (await r.json()).run || null;
+  } catch (e) { UPDOWN = true; }
+}
+function upgradeWatch() {
+  clearInterval(UPTIMER);
+  if (view !== 'diagnostics' || !(CFG.managed && CFG.managed.enabled)) return;
+  const tick = async () => {
+    if (view !== 'diagnostics') { clearInterval(UPTIMER); return; }
+    const before = JSON.stringify([UPRUN && UPRUN.status, UPRUN && UPRUN.steps && UPRUN.steps.length, UPDOWN]);
+    await upgradeFetch();
+    const after = JSON.stringify([UPRUN && UPRUN.status, UPRUN && UPRUN.steps && UPRUN.steps.length, UPDOWN]);
+    if (before !== after) {
+      const el = document.getElementById('upgrade-tracker');
+      if (el) el.outerHTML = upgradeTracker();
+    }
+    if (!(UPRUN && UPRUN.status === 'running') && !UPDOWN) clearInterval(UPTIMER);
+  };
+  UPTIMER = setInterval(tick, 3000);
+}
+function upgradeTracker() {
+  const r = UPRUN;
+  if (UPDOWN) return `<div id="upgrade-tracker" class="health-note warning"><b>Portal restarting</b> - the page cannot reach it right now, which is expected mid-rollout. It keeps trying.</div>`;
+  if (!r) return `<div id="upgrade-tracker"></div>`;
+  const pill = r.status === 'running' ? '<span class="pill p-amb">running</span>'
+    : r.outcome === 'succeeded' ? '<span class="pill p-ok">succeeded</span>'
+    : `<span class="pill p-warn">${esc(r.outcome || 'finished')}</span>`;
+  const stat = s => s === 'done' ? 'p-ok' : s === 'failed' ? 'p-warn' : s === 'skipped' ? 'p-mut' : 'p-amb';
+  // A step is reported twice, once when it starts and once when it ends;
+  // one line per step, carrying whichever report came last.
+  const latest = [];
+  for (const s of (r.steps || [])) {
+    const i = latest.findIndex(x => x.step === s.step);
+    if (i < 0) latest.push(s); else latest[i] = s;
+  }
+  return `<div id="upgrade-tracker" class="upgrade-run">
+    <div class="upgrade-run-head"><b>Upgrade ${esc(r.from_version)} → ${esc(r.to_version)}</b> ${pill}
+      <span>${esc(r.route)} · started ${when(r.started_at)} by ${esc(r.started_by_name || 'an owner')}</span></div>
+    <ol class="upgrade-steps">${latest.map(s => `<li><span class="pill ${stat(s.status)}">${esc(s.status)}</span> ${esc(s.step)}${s.detail ? ` <span>· ${esc(s.detail)}</span>` : ''}</li>`).join('')
+      || '<li><span class="pill p-amb">running</span> waiting for the first step</li>'}</ol>
+    ${r.status !== 'running' && r.detail ? `<p class="src-note">${esc(r.detail)}</p>` : ''}
+  </div>`;
+}
+
 async function diagnostics() {
+  if (CFG.managed && CFG.managed.enabled) await upgradeFetch();
   if (!DIAG) {
     try { DIAG = await (await fetch('/api/diagnostics')).json(); }
     catch (e) { return `<h2>System health</h2><div class="note">Could not read
@@ -8256,6 +8404,15 @@ async function managedAction(act, el) {
   // act too, and a handler only reachable from Budget left them inert.
   if (act === 'evidence-print') { window.print(); return; }
   if (act.startsWith('b-')) return budgetAction(act, el);
+  if (act === 'cli-approve' || act === 'cli-deny') {
+    const r = await mfetch('/api/cli/approve', {method: 'POST',
+      body: JSON.stringify({user_code: CLICODE, approve: act === 'cli-approve'})});
+    if (r.status === 401) { sessionLost(); return; }
+    CLIDONE = r.ok ? (act === 'cli-approve' ? 'Approved. The command has its token and is carrying on.'
+                                            : 'Denied. The command has been told no.')
+                   : 'Not recorded: ' + await _refusal(r);
+    CLIGRANT = null; render(); return;
+  }
   if (act === 'update-check') {
     el.disabled = true; el.textContent = 'Checking…';
     try {
@@ -8669,6 +8826,7 @@ async function managedAction(act, el) {
       // /api/auth also carries the account's role, which gates the
       // account-management card and labels the read-only state.
       try { AUTH = await (await fetch('/api/auth')).json(); } catch (e) { /* keep the basics */ }
+      try { sessionStorage.removeItem(RETURN_KEY); } catch (e) { /* nothing parked */ }
       chrome(true); load();
     } else {
       let d = r.statusText;
@@ -9747,7 +9905,8 @@ async function renderView() {
   const tb = tabbar() + loadBanner();
   // settings and register each read a second endpoint, so they are async.
   if (view === 'settings') { app.innerHTML = tb + await settings(); return; }
-  if (view === 'diagnostics') { app.innerHTML = await diagnostics(); return; }
+  if (view === 'diagnostics') { app.innerHTML = await diagnostics(); upgradeWatch(); return; }
+  if (view === 'cli-approve') { app.innerHTML = await cliApprove(); return; }
   if (view === 'register') { app.innerHTML = tb + await register(); return; }
   if (view === 'paste') { app.innerHTML = tb + await paste(); return; }
   if (view === 'agentic') { app.innerHTML = tb + await agentic(); return; }
