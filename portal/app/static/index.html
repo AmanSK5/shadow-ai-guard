@@ -6188,7 +6188,7 @@ docker compose up -d`;
       const cron = u.route === 'helm' || u.route === 'kubernetes'
         ? `kubectl -n ${ns} set image cronjob/<scanner> scanner=ghcr.io/amansk5/shadow-ai-guard/scanner:${ver || '<version>'}
 kubectl -n ${ns} set image cronjob/<discovery> discovery=ghcr.io/amansk5/shadow-ai-guard/discovery:${ver || '<version>'}` : '';
-      return `<section class="health-card ${u.available === true ? 'needs-attention' : ''}" data-tour="updates"><div class="health-card-head"><div><span>Releases</span><h3>Updates</h3></div><span class="pill ${state[0]}">${state[1]}</span></div>
+      return `<section class="health-card health-wide ${u.available === true ? 'needs-attention' : ''}" data-tour="updates"><div class="health-card-head"><div><span>Releases</span><h3>Updates</h3></div><span class="pill ${state[0]}">${state[1]}</span></div>
       <dl class="health-facts"><div><dt>Running</dt><dd>${esc(u.current || '—')}</dd></div>
         <div><dt>Latest release</dt><dd>${u.latest ? `<a href="${esc(u.url)}" target="_blank" rel="noopener">${esc(u.latest)}</a>${u.published_at ? ` <span>· ${esc(String(u.published_at).slice(0, 10))}</span>` : ''}` : '—'}</dd></div>
         <div><dt>Deployed by</dt><dd>${esc(route)}${d.chart_version ? ` <span>· ${esc(d.chart_version)}</span>` : ''}</dd></div>
