@@ -824,13 +824,14 @@ body.auth .licard{width:100%}
 .upgrade-steps li{font-size:11.5px;display:flex;align-items:center;gap:8px}
 .upgrade-steps li>span:last-child:not(.pill){color:var(--mut);font-size:10.5px}
 
-/* The approval page: one card, the code beside the facts, actions under both. */
-.cli-grant { display: grid; grid-template-columns: minmax(260px, 1fr) 2fr; gap: 20px 40px; align-items: start; }
-.cli-grant .cli-grant-code .kicker { margin: 0 0 8px; }
-.cli-grant-user-code { font-size: 34px; letter-spacing: .14em; margin: 0; line-height: 1.2; }
-.cli-grant-facts { margin: 0; }
-.cli-grant-actions, .cli-grant > .src-note { grid-column: 1 / -1; }
-.cli-grant-actions { display: flex; gap: 8px; margin-top: 4px; }
-.cli-grant > .src-note { margin: 0; }
-@container (max-width: 720px) { .cli-grant { grid-template-columns: 1fr; } }
-@media (max-width: 720px) { .cli-grant { grid-template-columns: 1fr; } }
+/* The approval page: one health card, the code beside the facts, one note, actions under both. */
+.cli-grant-body{display:grid;grid-template-columns:minmax(220px,.8fr) 1.6fr;gap:12px 32px;align-items:start}
+.cli-grant-code{padding:12px 14px;border:1px solid var(--bd);border-radius:9px;background:var(--sf2)}
+.cli-grant-code .kicker{margin:0 0 6px}
+.cli-grant-user-code{margin:0 0 6px;font-size:30px;line-height:1.15;letter-spacing:.14em;color:var(--fg);font-weight:600}
+.cli-grant-code .src-note{margin:0}
+.health-card.health-wide .cli-grant-facts{grid-template-columns:repeat(2,minmax(0,1fr))}
+.cli-grant-facts>div:nth-child(-n+2){border-top:0;padding-top:0}
+.cli-grant-actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin-top:13px}
+.cli-grant-actions .src-note{margin:0;flex:1 1 320px}
+@media (max-width:760px){.cli-grant-body{grid-template-columns:1fr}}
