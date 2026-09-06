@@ -1396,6 +1396,23 @@ td{font-size:12px;padding-top:11px;padding-bottom:11px}
 .astra-widget-table td small{display:block;margin-top:2px;font-size:10px;color:var(--mut)}
 .astra-widget-table tr[data-nav]{cursor:pointer}
 .wcard .astra-widget-table .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;width:1%}
+.wcard .astra-widget-table th:last-child,.wcard .astra-widget-table td:last-child{text-align:right;width:1%;white-space:nowrap}
+.wcard .astra-widget-table th:first-child,.wcard .astra-widget-table td:first-child{width:auto}
+.astra-widget-table td small.astra-col-s{display:block}
+/* Columns and rows by the card's width: S keeps the identity and the verdict, M adds the
+   working figures, L adds the detail. Ten rows are drawn; S shows four, M six, L ten. */
+.astra-widget-table .astra-col-l{display:none}
+.astra-widget-table tbody tr:nth-child(n+7){display:none}
+@container (min-width:720px){
+  .astra-widget-table .astra-col-l{display:table-cell}
+  .astra-widget-table td small.astra-col-s{display:none}
+  .astra-widget-table tbody tr:nth-child(n+7){display:table-row}
+  .astra-widget-table tbody tr:nth-child(n+11){display:none}
+}
+@container (max-width:430px){
+  .astra-widget-table .astra-col-m{display:none}
+  .astra-widget-table tbody tr:nth-child(n+5){display:none}
+}
 .astra-widget-table th.num{text-align:right}
 .astra-silent-table td:last-child{color:var(--mut);font-size:11px;line-height:1.5}
 .astra-silent-table td:last-child i{font-style:normal;margin:0 6px;color:var(--bd)}
@@ -1544,3 +1561,4 @@ td{font-size:12px;padding-top:11px;padding-bottom:11px}
 .astra-compact .register-card,.astra-compact .budget-card,.astra-compact .health-card{border-radius:8px}
 .astra-compact .bars{gap:6px}
 .astra-compact .barrow{min-height:24px}
+.wcard .astra-silent-table th:last-child,.wcard .astra-silent-table td:last-child{text-align:left;width:auto;white-space:normal}

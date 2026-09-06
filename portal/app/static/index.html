@@ -2507,10 +2507,12 @@ const WIDGETS = {
              person behind it, so revoking a sign-on does not stop them.`
           : 'All of them run under an identity somebody can be asked about.'}</p>
         ${loose.length ? `<div class="astra-table-scroll"><table class="astra-inventory astra-widget-table">
-          <thead><tr><th>Device</th><th>Schedule</th><th>Answers to</th></tr></thead>
-          <tbody>${loose.slice(0, 5).map(a => `<tr>
-            <td><strong>${esc(label(a.device, G.devices[a.device] || {}))}</strong></td>
-            <td class="astra-muted">${esc(a.trigger || a.evidence || '')}</td>
+          <thead><tr><th>Device</th><th class="astra-col-l">Runs</th><th class="astra-col-m">Schedule</th><th class="astra-col-l">Reaches</th><th>Answers to</th></tr></thead>
+          <tbody>${loose.slice(0, 10).map(a => `<tr>
+            <td><strong>${esc(label(a.device, G.devices[a.device] || {}))}</strong>${a.os ? `<small class="astra-col-s">${esc(a.os)}</small>` : ''}</td>
+            <td class="astra-col-l">${a.tool ? esc(astraToolName(a.tool)) : a.process ? `<span class="mono">${esc(a.process)}</span>` : '<span class="astra-muted">—</span>'}</td>
+            <td class="astra-col-m astra-muted">${esc(a.trigger || a.evidence || '')}</td>
+            <td class="astra-col-l">${(a.reach || []).length ? (a.reach || []).slice(0, 3).map(x => `<span class="astra-surface">${esc(x)}</span>`).join('') + ((a.reach || []).length > 3 ? ` <span class="astra-muted">+${a.reach.length - 3}</span>` : '') : '<span class="astra-muted">nothing configured</span>'}</td>
             <td>${a.process
               ? '<span class="astra-badge risk">no tool we know</span>'
               : '<span class="astra-badge risk">' + esc(a.identity || 'unattributed') + '</span>'}</td>
@@ -2589,15 +2591,19 @@ const WIDGETS = {
       <div><dt>${subs.length}</dt><dd>tools linked</dd></div>
       <div><dt${unob ? ' class="attention"' : ''}>${unob}</dt><dd>paid seats never observed</dd></div>
     </dl>
-    <div class="astra-table-scroll"><table class="astra-inventory astra-widget-table">
-      <thead><tr><th>Subscription</th><th class="num">Monthly</th><th class="num">Seats in use</th><th>Review</th></tr></thead>
+    <div class="astra-table-scroll"><table class="astra-inventory astra-widget-table astra-spend-table">
+      <thead><tr><th>Subscription</th><th class="astra-col-l">Plan</th><th class="num astra-col-m">Monthly</th>
+        <th class="num astra-col-m">Seats in use</th><th class="num astra-col-l">Observed</th><th class="astra-col-l">Renews</th><th>Review</th></tr></thead>
       <tbody>${subs.map(sub => {
         const r = bReconcile(sub);
         const seats = (sub.seat_tiers || []).reduce((x, t) => x + (t.seats || 0), 0);
         return `<tr data-nav="budget">
-          <td><strong>${esc(astraToolName(sub.tool_id))}</strong>${sub.plan ? `<small>${esc(sub.plan)}</small>` : ''}</td>
-          <td class="num">${bMoney(bSubMonthly(sub), sub.currency)}</td>
-          <td class="num">${r.matched.length} of ${seats}</td>
+          <td><strong>${esc(astraToolName(sub.tool_id))}</strong>${sub.plan ? `<small class="astra-col-s">${esc(sub.plan)}</small>` : ''}</td>
+          <td class="astra-col-l">${esc(sub.plan || '—')}</td>
+          <td class="num astra-col-m">${bMoney(bSubMonthly(sub), sub.currency)}</td>
+          <td class="num astra-col-m">${r.matched.length} of ${seats}</td>
+          <td class="num astra-col-l">${r.matched.length + r.strangers.length}</td>
+          <td class="astra-col-l astra-muted">${sub.renewal_date ? esc(sub.renewal_date) : '—'}</td>
           <td>${r.unobserved.length ? `<span class="astra-badge attention">${r.unobserved.length} idle</span>` : ''}${r.strangers.length
             ? ` <span class="astra-badge governance">${r.strangers.length} unseated</span>` : ''}${!r.unobserved.length && !r.strangers.length ? '<span class="astra-muted">Nothing flagged</span>' : ''}</td></tr>`;
       }).join('')}</tbody></table></div>
@@ -2630,13 +2636,19 @@ const WIDGETS = {
   },
 
   recent_personal_accounts: () => {
-    const pa = (G.personal_accounts || []).slice(0, 6);
-    const body = pa.length ? `<div class="astra-table-scroll"><table class="astra-inventory astra-people-table">
-      <thead><tr><th>Person</th><th>Account</th><th>AI tool</th><th>Last seen</th></tr></thead>
+    // Ten rows are drawn; the card's width decides how many show and which
+    // columns (CSS, by container). The footer count is the whole window.
+    const pa = (G.personal_accounts || []).slice(0, 10);
+    const body = pa.length ? `<div class="astra-table-scroll"><table class="astra-inventory astra-widget-table astra-people-table">
+      <thead><tr><th>Person</th><th>Account</th><th class="astra-col-m">AI tool</th><th class="astra-col-l">Device</th>
+        <th class="astra-col-l">Surface</th><th class="astra-col-l">Source</th><th>Last seen</th></tr></thead>
       <tbody>${pa.map(r => `<tr>
-        <td>${esc(r.user || r.device_name || r.device)}</td>
+        <td><strong>${esc(r.user || r.device_name || r.device)}</strong></td>
         <td><span class="astra-badge risk">${esc(r.account_domain)}</span></td>
-        <td>${esc(astraToolInfo(r.tool).name || r.tool)}</td>
+        <td class="astra-col-m">${esc(astraToolInfo(r.tool).name || r.tool)}</td>
+        <td class="astra-col-l">${esc(r.device_name || r.device || '—')}</td>
+        <td class="astra-col-l">${(r.surfaces || []).map(x => `<span class="astra-surface">${esc(x)}</span>`).join('') || '<span class="astra-muted">—</span>'}</td>
+        <td class="astra-col-l">${(r.sources || []).map(x => astraSourceChip(x)).join('') || '<span class="astra-muted">—</span>'}</td>
         <td class="astra-muted">${esc((r.last_seen || '').slice(0, 10))}</td>
       </tr>`).join('')}</tbody></table></div>`
       : dataOk()
