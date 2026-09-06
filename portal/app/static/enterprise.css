@@ -1142,9 +1142,9 @@ td{padding:12px 14px}
 body{font-size:13px;line-height:1.5}
 .shell{grid-template-columns:224px minmax(0,1fr)}
 aside{background:var(--side);border-color:var(--side-line)}
-.brand{height:auto;min-height:0;padding:12px 14px 0}
-.brand img{width:194px;max-height:58px;object-fit:contain;margin-bottom:-4px}
-.tenant-switch{border-color:var(--side-line);background:transparent;margin-top:5px}
+.brand{height:auto;min-height:0;padding:16px 14px 14px}
+.brand img{width:194px;max-height:58px;object-fit:contain}
+.tenant-switch{border-color:var(--side-line);background:transparent;margin-top:14px}
 .tenant-avatar{color:var(--pri);background:var(--sf2);border:1px solid var(--side-line)}
 .tenant-copy b{font-size:12px}
 .tenant-copy span{font-size:10px}
