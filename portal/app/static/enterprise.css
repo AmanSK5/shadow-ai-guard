@@ -1142,8 +1142,8 @@ td{padding:12px 14px}
 body{font-size:13px;line-height:1.5}
 .shell{grid-template-columns:224px minmax(0,1fr)}
 aside{background:var(--side);border-color:var(--side-line)}
-.brand{height:78px;min-height:78px;padding:10px 14px}
-.brand img{width:194px;max-height:58px;object-fit:contain}
+.brand{height:60px;min-height:60px;padding:10px 14px 6px}
+.brand img{width:184px;max-height:42px;object-fit:contain}
 .tenant-switch{border-color:var(--side-line);background:transparent;margin-top:5px}
 .tenant-avatar{color:var(--pri);background:var(--sf2);border:1px solid var(--side-line)}
 .tenant-copy b{font-size:12px}
@@ -1317,15 +1317,6 @@ td{font-size:12px;padding-top:11px;padding-bottom:11px}
 .editing .astra-tool-filters{display:none}
 .editing .astra-panel-head{padding-top:45px}
 .editing .astra-source-heading .wform{display:none}
-.astra-compact main{padding-top:21px}
-.astra-compact .view-head{margin-bottom:18px}
-.astra-compact .grid,.astra-compact .gitem{gap:14px}
-.astra-compact .executive-metrics>div{padding:15px 19px}
-.astra-compact .executive-posture{padding-top:18px;padding-bottom:15px}
-.astra-compact .astra-action{padding-top:13px;padding-bottom:13px}
-.astra-compact .astra-panel-head{padding-top:14px;padding-bottom:14px}
-.astra-compact .astra-inventory td{padding-top:8px;padding-bottom:8px}
-.astra-compact .wcard:not(.astra-focus-card):not(.astra-tools-card):not(.astra-visibility-card):not(.astra-widget){padding:14px 18px}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 /* Supporting widgets share the panel grammar: head, body, footer. */
 .wcard .stats{gap:10px;margin:0 0 14px}
@@ -1414,12 +1405,6 @@ td{font-size:12px;padding-top:11px;padding-bottom:11px}
 .astra-notes li::before{content:"";position:absolute;left:0;top:7px;width:5px;height:5px;border-radius:50%;background:var(--mut)}
 .astra-notes li.attention{color:var(--fg)}
 .astra-notes li.attention::before{background:var(--warn)}
-.astra-compact .astra-widget>.astra-panel-head{padding-top:14px;padding-bottom:11px}
-.astra-compact .astra-tiles{margin-bottom:11px;gap:8px}
-.astra-compact .astra-tiles>div{padding:10px 12px}
-.astra-compact .wcard .astra-widget-table th,.astra-compact .wcard .astra-widget-table td{padding-top:7px;padding-bottom:7px}
-.astra-compact .astra-notes{margin-bottom:12px}
-.astra-compact .astra-coverage-overview{padding-bottom:14px}
 .editing .astra-widget>.astra-panel-head{padding-top:45px}
 .editing .astra-panel-head .astra-eyebrow{display:none}
 /* The tool inventory below table width: a list drawn from the same rows. */
@@ -1436,7 +1421,6 @@ td{font-size:12px;padding-top:11px;padding-bottom:11px}
 .astra-tool-nums i{font-style:normal;font-size:9px;color:var(--mut);letter-spacing:.3px}
 .astra-tool-flag{min-width:52px;flex-shrink:0;text-align:right}
 .astra-tool-flag .astra-badge{display:inline-block}
-.astra-compact .astra-tool-item{padding-top:8px;padding-bottom:8px}
 @container (max-width:760px){
   .astra-tools-card .astra-table-scroll{display:none}
   .astra-tools-card .astra-tool-list{display:block}
@@ -1500,3 +1484,63 @@ td{font-size:12px;padding-top:11px;padding-bottom:11px}
   .astra-tools-card h3{flex-basis:100%}
   .astra-queue-details>summary span{float:none;display:block;margin:5px 0 0 13px}
 }
+
+/* Compact density: the same pages at roughly four fifths of the room. Type
+   steps down a size, every panel loses a third of its padding, rows lose a
+   third of their height. Comfortable is the default; the choice is per account. */
+.astra-compact{font-size:12px}
+.astra-compact main{padding:18px 22px 40px}
+.astra-compact .view-head{margin-bottom:14px}
+.astra-compact .view-head h2{font-size:22px}
+.astra-compact .view-head .lede{font-size:11.5px;margin-top:5px}
+.astra-compact .view-meta .mini,.astra-compact .meta-chip{min-height:28px;font-size:10px}
+.astra-compact .grid,.astra-compact .gitem{gap:10px}
+.astra-compact .grid{margin-bottom:10px}
+.astra-compact .wcard,.astra-compact .tcard,.astra-compact .overview-executive{border-radius:8px}
+.astra-compact .astra-estate-line{margin-bottom:7px}
+.astra-compact .executive-posture{padding:14px 18px 12px}
+.astra-compact .executive-posture>strong{font-size:22px;margin-top:10px}
+.astra-compact .executive-posture>p{margin-top:6px;font-size:11.5px}
+.astra-compact .executive-actions{margin-top:14px;gap:6px}
+.astra-compact .executive-actions button.mini{min-height:29px;padding:5px 10px;font-size:10.5px}
+.astra-compact .astra-posture-note{padding-top:12px}
+.astra-compact .executive-metrics>div{padding:12px 16px}
+.astra-compact .executive-metrics dt{font-size:24px}
+.astra-compact .executive-metrics dd{margin-bottom:8px;font-size:10.5px}
+.astra-compact .executive-metrics small{margin-top:6px}
+.astra-compact .astra-panel-head{padding:12px 16px 10px}
+.astra-compact .astra-panel-head p{margin-top:3px}
+.astra-compact .astra-action{padding:10px 16px;gap:11px}
+.astra-compact .astra-action-icon{width:28px;height:28px}
+.astra-compact .astra-action-copy small{margin-top:6px}
+.astra-compact .astra-queue-details>summary{padding:9px 16px}
+.astra-compact .astra-panel-footer{padding:9px 16px}
+.astra-compact .wcard .astra-inventory th,.astra-compact .wcard .astra-inventory td{padding:6px 12px}
+.astra-compact .wcard .astra-inventory td{font-size:11px}
+.astra-compact .astra-tool-initial{width:24px;height:24px;font-size:11px}
+.astra-compact .astra-tool-button strong{font-size:11.5px}
+.astra-compact .astra-tool-item{padding:7px 16px}
+.astra-compact .tcard th{padding:8px 12px}
+.astra-compact .tcard td{padding:7px 12px;font-size:11px}
+.astra-compact .inventory-summary span{min-height:44px;padding:0 14px}
+.astra-compact .inventory-summary b{font-size:18px}
+.astra-compact #app>.stats{gap:8px;margin-bottom:12px}
+.astra-compact #app>.stats div{padding:11px 14px}
+.astra-compact #app>.stats dt{font-size:22px}
+.astra-compact .wcard:not(.astra-focus-card):not(.astra-tools-card):not(.astra-visibility-card):not(.astra-widget){padding:12px 14px}
+.astra-compact .wcard>h3{margin-bottom:8px}
+.astra-compact .astra-tiles{margin:0 16px 10px;gap:8px}
+.astra-compact .astra-tiles>div{padding:8px 11px}
+.astra-compact .astra-tiles dt{font-size:18px}
+.astra-compact .astra-widget-lede,.astra-compact .astra-notes,.astra-compact .astra-widget>.astra-empty{margin-left:16px;margin-right:16px;margin-bottom:10px}
+.astra-compact .wcard .astra-widget-table th,.astra-compact .wcard .astra-widget-table td{padding:6px 16px}
+.astra-compact .astra-coverage-overview{padding:0 16px 12px;gap:16px}
+.astra-compact .astra-ring{width:80px;height:80px}
+.astra-compact .astra-ring strong{font-size:19px}
+.astra-compact .astra-coverage-legend p{margin:7px 0}
+.astra-compact .astra-source-heading{padding:10px 16px 0}
+.astra-compact .astra-source-grid{padding:10px 16px;gap:8px 20px}
+.astra-compact .exposure-trend-card .exposure-chart{min-height:0}
+.astra-compact .register-card,.astra-compact .budget-card,.astra-compact .health-card{border-radius:8px}
+.astra-compact .bars{gap:6px}
+.astra-compact .barrow{min-height:24px}
