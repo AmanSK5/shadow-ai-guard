@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 """The register is what is in use. The registry is a watchlist.
 
 register_from returns the full join, observed and not, and the endpoint shows

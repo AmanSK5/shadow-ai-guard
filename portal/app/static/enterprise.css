@@ -1,3 +1,7 @@
+/* Copyright 2026 Aman Karir */
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard */
+
 /* Shadow AI Guard enterprise UI layer.
    The portal's renderers, routes, data contracts and action hooks remain the
    source of truth. This file changes visual hierarchy, not behaviour. */

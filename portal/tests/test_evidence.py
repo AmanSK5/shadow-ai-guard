@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 """Evidence snapshots: provenance, gaps, and a checksum that means something.
 
 Three things separate this from a screenshot, and each has a way of going

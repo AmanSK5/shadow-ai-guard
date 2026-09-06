@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 """Tests for the scanner entrypoint exit-code logic.
 
 Covers the bug where a partial reporting failure (some sent, some failed)

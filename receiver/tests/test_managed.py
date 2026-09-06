@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 """Managed mode: enrollment, device credentials, revocation, admin API.
 
 The module is imported classic (MANAGED_MODE unset), as in test_smoke, and

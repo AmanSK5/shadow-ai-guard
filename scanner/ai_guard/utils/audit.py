@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 """Local audit logging for ai-guard.
 
 Records who ran the tool, which scanners were invoked, and how many records

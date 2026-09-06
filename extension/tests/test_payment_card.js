@@ -1,3 +1,7 @@
+// Copyright 2026 Aman Karir
+// SPDX-License-Identifier: Apache-2.0
+// Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 // Payment card detector: real card formats only, not any run of digits.
 //
 // The detector fired on SVG path and polygon data. The old pattern allowed a

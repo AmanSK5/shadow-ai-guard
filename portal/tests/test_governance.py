@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 """Governance decisions, expiry, and what happens when a decision matches nothing.
 
 Three things these hold to, and each exists because the obvious implementation

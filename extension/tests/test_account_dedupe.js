@@ -1,3 +1,7 @@
+// Copyright 2026 Aman Karir
+// SPDX-License-Identifier: Apache-2.0
+// Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 // Personal-account dedupe must survive a service worker restart.
 //
 // The dedupe state was a module-level Map. Chrome stops an MV3 worker after

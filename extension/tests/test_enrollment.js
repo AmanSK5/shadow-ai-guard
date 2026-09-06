@@ -1,3 +1,7 @@
+// Copyright 2026 Aman Karir
+// SPDX-License-Identifier: Apache-2.0
+// Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 // Managed mode: the policy's authToken may be an enrollment token, and the
 // profile must exchange it once for its own credential and then behave like a
 // device - same contract as the endpoint collectors.

@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 apiVersion: v2
 name: ai-guard
 description: Receiver for shadow-ai-guard, the AI tool detection platform
@@ -15,6 +19,9 @@ version: 0.29.0
 # claimed. CI now fails a tag build if this and the tag disagree.
 appVersion: "0.29.0"
 home: https://github.com/AmanSK5/shadow-ai-guard
+maintainers:
+  - name: Aman Karir
+    url: https://github.com/AmanSK5
 sources:
   - https://github.com/AmanSK5/shadow-ai-guard
 keywords: [security, shadow-ai, detection]

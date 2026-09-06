@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 """Federated sign-in: what it refuses, and what it binds to.
 
 The flow itself is ordinary OpenID Connect. What is worth holding here is

@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 """Arranging the overview: what each person keeps, and what they cannot.
 
 A saved layout is a second copy of a list the deployment also owns, which

@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 """The extension artifact matrix: one policy story, four downloads.
 
 The paste guard is the extension, and its settings (mode, markings) are

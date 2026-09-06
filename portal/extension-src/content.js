@@ -1,3 +1,7 @@
+// Copyright 2026 Aman Karir
+// SPDX-License-Identifier: Apache-2.0
+// Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 // AI Guard - content script
 // Runs on each supported AI tool, resolves the signed-in account,
 // discards the local part immediately, and flags if the domain is not allowed.

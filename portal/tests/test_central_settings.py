@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 """Central settings and portal-recorded governance, portal side.
 
 The receiver stores and validates; these tests cover what the portal adds:

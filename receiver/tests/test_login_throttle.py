@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 """Failed-login throttling: /admin/login is necessarily open and scrypt is
 deliberately expensive, so without a cap an unauthenticated caller can spend
 receiver CPU freely and grow the audit log one row per attempt.

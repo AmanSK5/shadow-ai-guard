@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 """What is deployed, read with the operator's own tools. Only objects that
 carry this project's labels or run this project's images are ever named;
 everything else in the cluster or on the host is invisible to this command

@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 """Exception detail and credentials must not reach an HTTP response.
 
 CodeQL flagged the diagnostics return as information exposure through an

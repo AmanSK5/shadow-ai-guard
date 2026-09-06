@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 """aiguardctl without a cluster, a host or a portal: every external command
 and every HTTP call is replaced, so what is tested is what the command
 would run and what it would send - which is what SECURITY.md promises."""

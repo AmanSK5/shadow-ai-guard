@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 """Governance decisions: what an organisation decided about a tool.
 
 Separate from the registry on purpose. The registry answers "what is this tool

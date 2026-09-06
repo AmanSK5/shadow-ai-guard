@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 """The portal's half of `aiguardctl upgrade`: proxies that forward and decide
 nothing, an approval page owners see, and a tracker that survives the
 portal's own restart. SECURITY.md, "Upgrading"."""

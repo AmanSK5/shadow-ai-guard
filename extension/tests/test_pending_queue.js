@@ -1,3 +1,7 @@
+// Copyright 2026 Aman Karir
+// SPDX-License-Identifier: Apache-2.0
+// Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 // A paste-guard finding must survive the receiver being down.
 //
 // The guard warns or blocks locally whether or not anything is recorded, so a

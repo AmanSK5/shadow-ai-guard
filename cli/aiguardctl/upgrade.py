@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 """Plan, confirm, apply, report. The plan names every object the command
 will touch and every command it will run; nothing runs before the person
 has seen it. Progress reports carry step names and outcomes only - never

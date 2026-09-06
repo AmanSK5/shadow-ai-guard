@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 """The portal login: sessions from the receiver, carried as a cookie.
 
 Managed mode is login mode - the receiver owns the admin account, the portal

@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 """Paste guard events, and the two things that would make them wrong.
 
 The heartbeat shares this source. It is the same `source: paste_guard` with

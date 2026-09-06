@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 """The classifier's reply is untrusted input arriving from a trusted place.
 
 discover.py sends observed domains to a model, takes back JSON the model wrote,

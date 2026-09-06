@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 """Talking to the portal. Standard library only; JSON in, JSON out; the
 token lives in this process and is sent only as a bearer header to the
 portal's upgrade routes."""
