@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 """Borrowing the portal's sign-in. The command generates a verifier it keeps
 in memory, asks the receiver (through the portal) for a grant with the
 verifier's hash, opens the approval page for the person, and polls until an

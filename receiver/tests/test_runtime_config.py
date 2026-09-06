@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 """Runtime configuration: the log store, alerting and the secret setting.
 
 The property under test is DB-wins-when-set applied to where findings GO:

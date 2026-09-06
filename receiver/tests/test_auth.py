@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 """Admin accounts and sessions: the portal's login, backed by the receiver.
 
 Same testing shape as test_managed: the module is imported classic and

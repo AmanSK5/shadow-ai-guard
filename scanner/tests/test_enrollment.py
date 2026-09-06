@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 """Managed mode: RECEIVER_TOKEN may be an enrollment token.
 
 The prefix is the switch, as for the collectors and the extension. The run

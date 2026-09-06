@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 """Finding lifecycle, the audit read, and the discovery webhook.
 
 Three small features with one shape: the receiver stores the human's answer

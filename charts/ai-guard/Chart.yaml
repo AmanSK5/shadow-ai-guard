@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 apiVersion: v2
 name: ai-guard
 description: Receiver for shadow-ai-guard, the AI tool detection platform
@@ -6,7 +10,7 @@ type: application
 # independently of appVersion: a repo index uses this to decide whether an
 # upgrade exists, so a chart change that leaves it alone is a change nobody
 # is offered.
-version: 0.29.0
+version: 0.29.1
 # The application version this chart installs by default. values.yaml derives
 # image.tag from it, so this IS what gets pulled unless someone overrides it.
 #
@@ -15,6 +19,9 @@ version: 0.29.0
 # claimed. CI now fails a tag build if this and the tag disagree.
 appVersion: "0.29.0"
 home: https://github.com/AmanSK5/shadow-ai-guard
+maintainers:
+  - name: Aman Karir
+    url: https://github.com/AmanSK5
 sources:
   - https://github.com/AmanSK5/shadow-ai-guard
 keywords: [security, shadow-ai, detection]

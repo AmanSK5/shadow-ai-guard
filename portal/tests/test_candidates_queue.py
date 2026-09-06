@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 """The portal side of the discovery queue: forwarding, not deciding.
 
 The receiver owns the candidates and their validation; the portal's job is

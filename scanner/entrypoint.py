@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 """ai-guard scanner entrypoint for the daily CronJob.
 
 Differs from `ai-guard scan` on a laptop in three ways:

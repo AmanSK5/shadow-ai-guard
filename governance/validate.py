@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 """Validate a governance file against the schema.
 
 Run over the shipped example in CI, and by a deployer over their own file:

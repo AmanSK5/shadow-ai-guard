@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 """The onboarding wizard's plumbing: the two generated artifacts, the
 registry-tools endpoint, and the wiring that makes a fresh install
 deployable from one page. Same direct-call harness as the suite."""

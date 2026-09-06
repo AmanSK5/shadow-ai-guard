@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 """The budget proxies and the page that draws them. Same direct-call
 harness as the suite: the receiver owns storage and validation, so what
 the portal must hold is thinner and worth stating exactly - each route

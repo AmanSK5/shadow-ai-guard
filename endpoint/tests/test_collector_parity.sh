@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 # Cross-collector invariants, asserted statically.
 #
 # Why static rather than end-to-end: the Linux collector is the only one CI can

@@ -1,4 +1,8 @@
 #!/bin/sh
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 # Seeds synthetic shadow-AI findings into the demo receiver so the dashboard
 # has something to show. All data is fake: users are Pokemon, domains are
 # example / gmail, devices are made up. Safe to re-run.

@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 """Intune device attributes come from the devices resource, not the app lookup.
 
 The failure mode this guards against is specific and it answers 200.

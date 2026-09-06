@@ -475,12 +475,16 @@ deploy at that privilege level.
 
 <p align="right"><a href="#top">Back to top ↑</a></p>
 
-## License
+## License and credit
 
-Shadow AI Guard is free and open source under Apache-2.0. Others may
-legitimately charge for hosting, deployment, support or managed services, but
-the software itself can always be obtained from this repository for free.
-Before buying anything based on it, check what is actually being provided
-beyond the code.
+Copyright 2026 Aman Karir. Shadow AI Guard was designed and written by Aman
+Karir and is free and open source under Apache-2.0.
 
-See [TRADEMARKS.md](TRADEMARKS.md) for how the project name may be used.
+That licence permits commercial use, and others may legitimately charge for
+hosting, deployment, support or managed services built on it. It also
+requires that every copy, modified or not, keeps the copyright notice, the
+[NOTICE](NOTICE) file and the attribution in the source files. A service or
+product built on this code must credit it as the work of Aman Karir and may
+not present the software as its own; see [TRADEMARKS.md](TRADEMARKS.md) for
+the name, the logo and what a paid offering has to say. The software itself
+can always be obtained from this repository for free.

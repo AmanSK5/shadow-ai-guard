@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 """Managed mode: RECEIVER_TOKEN may be an enrollment token, and discovery -
 which only ever reads the registry - enrolls as a scanner first and reads it
 with its own credential. Mirrors scanner/receiver_reporter.py; the copy is

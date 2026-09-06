@@ -1,4 +1,8 @@
 #!/usr/bin/env sh
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 # Fail if any input names a deployment this project is run against.
 #
 # Two callers, because the two halves leak differently:

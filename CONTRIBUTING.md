@@ -140,7 +140,12 @@ whether to trust it, which puts weight on a few things:
   platform report something new about a person,
   `docs/deployment-privacy.md` says so in the same pull request.
 
-## Licence
+## Licence and credit
 
-Contributions are under Apache-2.0, the same as the rest of the project. See
+Contributions are under Apache-2.0, the same as the rest of the project. You
+keep the copyright in what you write; by contributing you license it to the
+project under Apache-2.0, and it ships under the project's name and NOTICE.
+The project itself is copyright Aman Karir, its creator and maintainer, and
+that credit, the NOTICE file and the attribution headers in the source files
+stay in place in every fork and derivative. See
 [TRADEMARKS.md](TRADEMARKS.md) for the separate question of the project name.

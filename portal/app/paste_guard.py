@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 """Paste guard events: what was stopped, on which tool, and how often.
 
 Placed in its own module rather than derive.py because of what it must not do.

@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 {{- if and .Values.managed.enabled (gt (int .Values.replicaCount) 1) }}
 {{- fail "managed mode is backed by SQLite, which has one writer: set replicaCount to 1 (a Postgres option is future work)" }}
 {{- end }}

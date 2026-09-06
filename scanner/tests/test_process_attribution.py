@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 """A process name is matched in every shape the platforms report it in.
 
 `is_allowed_process` was an exact lowercase set lookup against a list written

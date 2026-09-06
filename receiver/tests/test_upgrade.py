@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 """The command line's grant, token and upgrade-run routes. See SECURITY.md,
 "Upgrading": an owner approves one grant in the portal, the command redeems
 it once for a token that opens the upgrade routes and nothing else, and the

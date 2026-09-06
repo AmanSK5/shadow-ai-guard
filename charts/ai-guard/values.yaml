@@ -1,3 +1,7 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
 # Receiver image. Multi-arch (amd64, arm64).
 #
 # digest wins over tag when both are set. A tag can be moved to point at
