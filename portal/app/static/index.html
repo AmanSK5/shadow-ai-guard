@@ -2994,7 +2994,8 @@ function overview() {
         : ''}${isStacked ? `<button data-act="w-unstack" data-key="${esc(k)}"
         title="give this card a column of its own again"
         >Unstack</button>` : ''}<button data-act="w-hide" data-key="${esc(k)}"
-        >${off ? 'Show' : 'Hide'}</button></span>` : ''}${body}</div>`;
+        >${off ? 'Show' : 'Hide'}</button></span>` : ''}${body}${editing
+        ? `<div class="ov-stack-zone" aria-hidden="true">Stack beneath</div>` : ''}</div>`;
   };
 
   const colOf = (col, i) => {
@@ -10376,6 +10377,7 @@ app.addEventListener('dragstart', e => {
   if (!it) return;
   DRAGK = it.getAttribute('data-wk');
   it.classList.add('drag');
+  document.body.classList.add('dragging');
   if (e.dataTransfer) {
     e.dataTransfer.effectAllowed = 'move';
     // Firefox will not start a drag without data on the transfer.
@@ -10384,6 +10386,7 @@ app.addEventListener('dragstart', e => {
 });
 app.addEventListener('dragend', () => {
   DRAGK = null;
+  document.body.classList.remove('dragging');
   app.querySelectorAll('.gcard.drag, .gcard.over')
      .forEach(n => n.classList.remove('drag', 'over'));
 });
@@ -10392,10 +10395,15 @@ app.addEventListener('dragend', () => {
 // place it as a column of its own before or after. Edges are relative to
 // the whole column, not the card under the pointer, so dropping beside a
 // stack never lands inside it by accident.
-function dropZone(card, y) {
+// A plain drag moves: above the card's midpoint lands before its column,
+// below lands after. Stacking is deliberate - only a drop on the strip each
+// card shows along its bottom edge while a drag is in progress stacks into
+// that column, so a move never snaps into a stack by accident.
+function dropZone(card, y, target) {
+  if (target && target.closest && target.closest('.ov-stack-zone')) return 'into';
   const r = card.getBoundingClientRect();
   const rel = (y - r.top) / (r.height || 1);
-  return rel < 0.28 ? 'before' : rel > 0.72 ? 'after' : 'into';
+  return rel < 0.5 ? 'before' : 'after';
 }
 
 function colKeys(card) {
@@ -10412,7 +10420,7 @@ app.addEventListener('dragover', e => {
   app.querySelectorAll('.gcard.over, .gcard.into')
      .forEach(n => n.classList.remove('over', 'into', 'before', 'after'));
   if (it.getAttribute('data-wk') === DRAGK) return;
-  const zone = dropZone(it, e.clientY);
+  const zone = dropZone(it, e.clientY, e.target);
   it.classList.add(zone === 'into' ? 'into' : 'over', zone);
 });
 
@@ -10422,7 +10430,8 @@ app.addEventListener('drop', e => {
   if (!it) return;
   e.preventDefault();
   const to = it.getAttribute('data-wk'), from = DRAGK;
-  const zone = dropZone(it, e.clientY);
+  const zone = dropZone(it, e.clientY, e.target);
+  document.body.classList.remove('dragging');
   const col = colKeys(it);
   DRAGK = null;
   if (!to || to === from) return;
