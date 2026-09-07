@@ -1710,3 +1710,7 @@ td{font-size:12px;padding-top:11px;padding-bottom:11px}
 .ui-source-grid .covrow .dots{flex:1;display:flex;justify-content:flex-start;gap:4px;min-width:25px}
 .ui-source-grid .dots i{flex:1 1 0;height:8px;width:auto;border-radius:2px;background:var(--bd)}
 .ui-source-grid .dots i.on{background:linear-gradient(90deg,var(--pri),var(--chart))}
+/* The subscription cell is name over plan, so the row is two lines tall
+   and the price, seats and badges sit level with its middle rather than
+   floating at the top over a band of nothing. */
+.gcard[data-wk=budget_spend] .ui-widget-table td{vertical-align:middle}
