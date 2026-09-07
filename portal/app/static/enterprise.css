@@ -1714,3 +1714,14 @@ td{font-size:12px;padding-top:11px;padding-bottom:11px}
    and the price, seats and badges sit level with its middle rather than
    floating at the top over a band of nothing. */
 .gcard[data-wk=budget_spend] .ui-widget-table td{vertical-align:middle}
+/* Devices: the tools column carries the rows, so it takes the width the
+   single-chip columns were holding. */
+.device-inventory th:nth-child(1){width:19%}
+.device-inventory th:nth-child(2){width:13%}
+.device-inventory th:nth-child(3){width:40%}
+.device-inventory th:nth-child(4){width:15%}
+.device-inventory th:nth-child(5){width:13%}
+.ui-chip-more{color:var(--mut);background:transparent;border-style:dashed}
+.ui-compact .device-inventory td{height:44px}
+.ui-compact .device-inventory td strong{font-size:12px}
+.ui-compact .cell-tags .ui-tool-chip{margin:1px 3px 1px 0;padding:1px 6px}
