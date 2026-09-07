@@ -3,8 +3,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
 
-# A larger synthetic estate on top of seed.sh: fifty-odd devices, two dozen
-# tools, twenty personal accounts, six subscriptions. The point is not the
+# A larger synthetic estate on top of seed.sh: a couple of dozen devices,
+# well over a dozen tools, fifteen personal accounts, seven subscriptions. The point is not the
 # story of any one finding but the shape of the pages when there is a lot of
 # them - which is what a real estate looks like and what the demo's handful
 # of findings cannot show. Everything is fake: users are Pokemon, domains
@@ -28,20 +28,20 @@ f() {
 echo "seeding a large synthetic estate -> $R"
 
 # --- the fleet: macOS, Windows and Linux machines with a local user each ---
-MAC="abra alakazam arbok arcanine beedrill bellsprout blastoise butterfree caterpie chansey clefable clefairy cloyster cubone dewgong diglett dodrio doduo dragonair dragonite"
-WIN="dratini drowzee dugtrio ekans electabuzz electrode exeggcute exeggutor farfetchd fearow flareon gastly geodude gloom golbat golduck"
-NIX="goldeen golem graveler grimer growlithe gyarados haunter hitmonchan hitmonlee horsea hypno ivysaur"
+MAC="abra alakazam arbok arcanine"
+WIN="dratini drowzee dugtrio"
+NIX="goldeen golem"
 
 # Endpoint collectors see the tools people installed. The mix leans the way
 # real estates do: a few tools everywhere, a long tail on one or two machines.
 i=0
 for u in $MAC; do
-  d="MBP-$(echo $u | tr a-z A-Z)"; i=$((i+1))
+  d="MBP-$(echo "$u" | tr "[:lower:]" "[:upper:]")"; i=$((i+1))
   f claude browser macos example.com "$d" "$u" "claude.ai in Chrome" info collector-macos
   [ $((i % 2)) -eq 0 ] && f claude-code cli macos example.com "$d" "$u" "~/.claude.json" info collector-macos
   [ $((i % 3)) -eq 0 ] && f chatgpt desktop macos example.com "$d" "$u" "/Applications/ChatGPT.app" info collector-macos
   [ $((i % 4)) -eq 0 ] && f cursor desktop macos "" "$d" "$u" "/Applications/Cursor.app" info collector-macos
-  [ $((i % 5)) -eq 0 ] && f wispr-flow desktop macos "" "$d" "$u" "/Applications/Wispr Flow.app" info collector-macos
+  [ $((i % 3)) -eq 1 ] && f wispr-flow desktop macos "" "$d" "$u" "/Applications/Wispr Flow.app" info collector-macos
   [ $((i % 6)) -eq 0 ] && f warp desktop macos "" "$d" "$u" "/Applications/Warp.app" info collector-macos
   [ $((i % 7)) -eq 0 ] && f ollama desktop macos "" "$d" "$u" "ollama binary" info collector-macos
   [ $((i % 8)) -eq 0 ] && f lm-studio desktop macos "" "$d" "$u" "/Applications/LM Studio.app" info collector-macos
@@ -49,7 +49,7 @@ for u in $MAC; do
   [ $((i % 5)) -eq 1 ] && f claude-code-mcp mcp macos "" "$d" "$u" ".claude.json mcpServers: github,linear" info collector-macos
 done
 for u in $WIN; do
-  d="WIN-$(echo $u | tr a-z A-Z)"; i=$((i+1))
+  d="WIN-$(echo "$u" | tr "[:lower:]" "[:upper:]")"; i=$((i+1))
   f microsoft-copilot browser windows example.com "$d" "$u" "copilot.microsoft.com in Edge" info collector-windows
   [ $((i % 2)) -eq 0 ] && f claude-code cli windows example.com "$d" "$u" "%USERPROFILE%\\\\.claude.json" info collector-windows
   [ $((i % 3)) -eq 0 ] && f github-copilot ide windows "" "$d" "$u" "VS Code extension GitHub.copilot" info collector-windows
@@ -58,25 +58,24 @@ for u in $WIN; do
   [ $((i % 6)) -eq 0 ] && f notion-ai browser windows example.com "$d" "$u" "notion.so AI in Edge" info collector-windows
 done
 for u in $NIX; do
-  d="NIX-$(echo $u | tr a-z A-Z)"; i=$((i+1))
+  d="NIX-$(echo "$u" | tr "[:lower:]" "[:upper:]")"; i=$((i+1))
   f claude-code cli linux example.com "$d" "$u" "~/.claude.json" info collector-linux
   [ $((i % 2)) -eq 0 ] && f codex-cli cli linux example.com "$d" "$u" "~/.codex/config.toml" info collector-linux
   [ $((i % 3)) -eq 0 ] && f gemini-cli cli linux "" "$d" "$u" "~/.gemini/settings.json" info collector-linux
   [ $((i % 4)) -eq 0 ] && f ollama desktop linux "" "$d" "$u" "ollama binary" info collector-linux
-  [ $((i % 5)) -eq 0 ] && f warp desktop linux "" "$d" "$u" "warp-terminal binary" info collector-linux
+  [ $((i % 3)) -eq 0 ] && f warp desktop linux "" "$d" "$u" "warp-terminal binary" info collector-linux
 done
 
-# --- personal accounts: twenty, across the tools people actually use ---
+# --- personal accounts: eleven, across the tools people actually use ---
 p=0
-for pair in abra:chatgpt alakazam:chatgpt arbok:chatgpt arcanine:chatgpt beedrill:gemini bellsprout:claude-code \
-            blastoise:claude-code butterfree:codex-cli caterpie:codex-cli chansey:chatgpt dratini:chatgpt \
-            drowzee:claude dugtrio:claude-code ekans:chatgpt goldeen:codex-cli golem:claude-code graveler:codex-cli \
-            grimer:chatgpt growlithe:claude-code gyarados:gemini; do
+for pair in abra:chatgpt alakazam:chatgpt arbok:chatgpt arcanine:gemini abra:codex-cli \
+            dratini:chatgpt drowzee:claude dugtrio:claude-code dratini:claude-code \
+            goldeen:codex-cli golem:claude-code; do
   u=${pair%%:*}; t=${pair##*:}; p=$((p+1))
   case "$u" in
-    drat*|drow*|dugt*|ekan*) d="WIN-$(echo $u | tr a-z A-Z)"; os=windows; src=collector-windows;;
-    gold*|gole*|grav*|grim*|grow*|gyar*) d="NIX-$(echo $u | tr a-z A-Z)"; os=linux; src=collector-linux;;
-    *) d="MBP-$(echo $u | tr a-z A-Z)"; os=macos; src=collector-macos;;
+    drat*|drow*|dugt*|ekan*) d="WIN-$(echo "$u" | tr "[:lower:]" "[:upper:]")"; os=windows; src=collector-windows;;
+    gold*|gole*|grav*|grim*|grow*|gyar*) d="NIX-$(echo "$u" | tr "[:lower:]" "[:upper:]")"; os=linux; src=collector-linux;;
+    *) d="MBP-$(echo "$u" | tr "[:lower:]" "[:upper:]")"; os=macos; src=collector-macos;;
   esac
   dom=gmail.com; [ $((p % 4)) -eq 0 ] && dom=outlook.com; [ $((p % 7)) -eq 0 ] && dom=me.com
   case "$t" in
@@ -91,18 +90,18 @@ for u in $MAC $WIN; do
   case "$u" in c*|e*|f*) f fireflies cloud unknown example.com "" "$u" "interactive sign-in to Fireflies" info entra_sign_in;; esac
   case "$u" in g*) f github-copilot cloud unknown example.com "" "$u" "interactive sign-in to GitHub" info entra_sign_in;; esac
 done
-for u in abra beedrill chansey dodrio ekans flareon; do
+for u in abra dratini; do
   f openai-api-platform cloud unknown example.com "" "$u" "consent grant: OpenAI API" info entra_consent_grant
 done
-for u in arbok cloyster dragonite golbat; do
+for u in arbok drowzee; do
   f atlassian-rovo cloud unknown example.com "" "$u" "interactive sign-in to Atlassian" info entra_sign_in
 done
 
 # --- machines only the scanners know: the coverage gaps ---
-GAP="jigglypuff jolteon jynx kabuto kabutops kadabra kakuna kangaskhan kingler koffing krabby lapras lickitung machamp machoke machop magikarp magmar magnemite magneton mankey marowak"
+GAP="jigglypuff jolteon"
 g=0
 for u in $GAP; do
-  g=$((g+1)); d="LT-$(echo $u | tr a-z A-Z)"
+  g=$((g+1)); d="LT-$(echo "$u" | tr "[:lower:]" "[:upper:]")"
   if [ $((g % 2)) -eq 0 ]; then
     f claude network unknown "" "$d" "" "DNS lookup for claude.ai (via Google Chrome)" info sentinelone_dns
   else
@@ -115,7 +114,7 @@ done
 # --- the paste guard, on the machines that have it ---
 for u in $MAC $WIN; do
   case "$u" in a*|b*|c*|d*|e*|f*)
-    case "$u" in d*|e*|f*) d="WIN-$(echo $u | tr a-z A-Z)"; os=windows;; *) d="MBP-$(echo $u | tr a-z A-Z)"; os=macos;; esac
+    case "$u" in d*|e*|f*) d="WIN-$(echo "$u" | tr "[:lower:]" "[:upper:]")"; os=windows;; *) d="MBP-$(echo "$u" | tr "[:lower:]" "[:upper:]")"; os=macos;; esac
     f paste-guard browser "$os" "" "$d" "" "heartbeat version=1.1.1 mode=warn" info paste_guard;;
   esac
 done
