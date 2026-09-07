@@ -1676,3 +1676,10 @@ td{font-size:12px;padding-top:11px;padding-bottom:11px}
 .ui-visibility-card>.ui-latest td:first-child strong{text-transform:capitalize}
 .ui-silent-table td:last-child em{font-style:normal;color:var(--mut);opacity:.85;font-size:10px;margin-left:5px}
 .wcard.ui-paste-card .ui-widget-table th:last-child,.wcard.ui-paste-card .ui-widget-table td:last-child{text-align:left;width:auto;white-space:normal}
+/* The two cards that fill a row of their own by height must not claim a
+   whole stacked column, in the planner or on the page: in a stack the flex
+   rules above decide who grows. */
+.gitem.stack>.gcard[data-wk=review_queue],.gitem.stack>.gcard[data-wk=detection_coverage],.editing .gcard[data-wk=review_queue],.editing .gcard[data-wk=detection_coverage]{height:auto}
+/* On the canvas nothing stretches: a placeholder is its own height, and a
+   stack is the sum of its cards, so what you see is the arrangement. */
+.grid.ov-canvas{align-items:flex-start}
