@@ -694,6 +694,13 @@ jobs:
           # This proves provisioning parsed the file and registered it. It
           # does not prove the panels return data; that needs the datasource
           # to answer, which is a heavier check than a smoke test wants.
+          # Health answers before provisioning has registered the dashboard,
+          # so this asks a few times rather than once.
+          for _ in $(seq 1 30); do
+            curl -fsS 'http://127.0.0.1:3000/api/search?type=dash-db' \
+              | grep -q '"uid": *"ai-guard"' && break
+            sleep 2
+          done
           curl -fsS 'http://127.0.0.1:3000/api/search?type=dash-db' \
             | grep -q '"uid": *"ai-guard"' \
             || { echo "::error::the provisioned dashboard is not there"; exit 1; }
