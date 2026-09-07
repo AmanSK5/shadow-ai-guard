@@ -2315,6 +2315,14 @@ function uiToolInfo(id) {
 // the inventory pages read the way the Overview does. The id stays in the
 // title, and search still matches it.
 function uiToolName(id) { return uiToolInfo(id).name || id; }
+// "3h ago" from a timestamp, for the small print beside a source.
+function uiAgo(t) {
+  const m = Math.round((Date.now() - Date.parse(t)) / 60000);
+  if (!(m >= 0)) return '';
+  if (m < 90) return m + 'm ago';
+  const h = Math.round(m / 60);
+  return h < 36 ? h + 'h ago' : Math.round(h / 24) + 'd ago';
+}
 function uiToolChip(id, cls) {
   return `<span class="ui-tool-chip${cls ? ' ' + cls : ''}" title="${esc(id)}">${esc(uiToolName(id))}</span>`;
 }
@@ -2518,8 +2526,10 @@ const WIDGETS = {
       <p class="ui-empty">Not read yet. Open Agentic AI.</p>
       <div class="ui-panel-footer"><span></span><button class="mini" data-nav="agentic">Open Agentic AI ${uiIcon('arrow')}</button></div></div>`;
     const c = AGENTIC.counts || {};
-    const loose = (AGENTIC.agents || []).filter(
-      a => a.autonomous && !a.accountable);
+    // Every run that reported starting itself, the unaccountable ones
+    // first: the count above is all of them, so the table is too.
+    const loose = (AGENTIC.agents || []).filter(a => a.autonomous)
+      .sort((a, b) => (a.accountable ? 1 : 0) - (b.accountable ? 1 : 0));
     const body = !c.autonomous
       ? `<p class="ui-empty">Nothing reported starting itself.${
         c.unrecognised ? ` ${c.unrecognised} process${c.unrecognised === 1 ? '' : 'es'}
@@ -2538,11 +2548,12 @@ const WIDGETS = {
             <td class="ui-col-l">${(a.reach || []).length ? (a.reach || []).slice(0, 3).map(x => `<span class="ui-surface">${esc(x)}</span>`).join('') + ((a.reach || []).length > 3 ? ` <span class="ui-muted">+${a.reach.length - 3}</span>` : '') : '<span class="ui-muted">nothing configured</span>'}</td>
             <td>${a.process
               ? '<span class="ui-badge risk">no tool we know</span>'
+              : a.accountable ? '<span class="ui-badge good">' + esc(a.user || a.identity || 'a person') + '</span>'
               : '<span class="ui-badge risk">' + esc(a.identity || 'unattributed') + '</span>'}</td>
           </tr>`).join('')}</tbody></table></div>` : ''}`;
     return `<div class="wcard w6 ui-widget ui-agentic-card">${head(c.autonomous || 0)}
       ${body}
-      <div class="ui-panel-footer"><span>${c.unrecognised ? `${c.unrecognised} unrecognised process${c.unrecognised === 1 ? '' : 'es'} reached a model` : ''}</span>
+      <div class="ui-panel-footer"><span>${c.unrecognised ? `${c.unrecognised} unrecognised process${c.unrecognised === 1 ? '' : 'es'} reached a model` : ''}<i class="ui-shown"></i></span>
         <button class="mini" data-nav="agentic">Open Agentic AI ${uiIcon('arrow')}</button></div>
     </div>`;
   },
@@ -2631,7 +2642,7 @@ const WIDGETS = {
           <td>${r.unobserved.length ? `<span class="ui-badge attention">${r.unobserved.length} idle</span>` : ''}${r.strangers.length
             ? ` <span class="ui-badge governance">${r.strangers.length} unseated</span>` : ''}${!r.unobserved.length && !r.strangers.length ? '<span class="ui-muted">Nothing flagged</span>' : ''}</td></tr>`;
       }).join('')}</tbody></table></div>
-    <div class="ui-panel-footer"><span>${next ? `Next renewal: ${esc(uiToolName(next.tool_id))} ${when(next.renewal_date)}` : 'No renewal dates recorded'}
+    <div class="ui-panel-footer"><span>${next ? `Next renewal: ${esc(uiToolName(next.tool_id))} ${when(next.renewal_date)}` : 'No renewal dates recorded'}<i class="ui-shown"></i>
       ${uiMoreButton('budget_spend', shown, 'subscriptions')}</span>
       <button class="mini" data-nav="budget">Open Budget ${uiIcon('arrow')}</button></div></div>`;
   },
@@ -2654,7 +2665,7 @@ const WIDGETS = {
       ${!f.known ? '<p class="ui-empty">Findings are unavailable.</p>' : rows.length ? (bars
         ? '<div class="ui-tool-bars">' + barRows(rows.map(([k,t]) => [k,(t.devices||[]).length, uiToolName(k)]).slice(0, shown.rows.length), 'devices', 'tool') + '</div>'
         : uiToolsTable(shown.rows)) : '<p class="ui-empty">No tools match this view.</p>'}
-      <div class="ui-panel-footer"><span>${f.known ? `${rows.length} of ${f.toolIds.length} discovered tools` : 'No data available'}
+      <div class="ui-panel-footer"><span>${f.known ? `${rows.length} of ${f.toolIds.length} discovered tools` : 'No data available'}<i class="ui-shown"></i>
         ${uiMoreButton('top_tools', shown, 'tools')}</span>
         <button class="mini" data-nav="tools">Open discovered tools ${uiIcon('arrow')}</button></div>
       <p class="src-note ui-table-note">${bars ? 'Observed devices per tool. Cloud-only tools may have zero associated devices.'
@@ -2687,7 +2698,7 @@ const WIDGETS = {
         <p>Latest activity in accounts outside your corporate domains</p></div>
         <span class="ui-eyebrow">Last ${esc(fmtWindow(hoursNow()))}</span></div>
       ${body}
-      <div class="ui-panel-footer"><span>${pa.length ? `${shown.all} in this window` : ''}
+      <div class="ui-panel-footer"><span>${pa.length ? `${shown.all} in this window` : ''}<i class="ui-shown"></i>
         ${uiMoreButton('recent_personal_accounts', shown, 'accounts')}</span>
         <button class="mini" data-nav="personal">Open personal accounts ${uiIcon('arrow')}</button></div>
     </div>`;
@@ -2737,6 +2748,16 @@ const WIDGETS = {
         <span>${esc(g.group)}</span>${dots}
         <b>${g.reporting}/${g.total}</b></div>`;
     }).join('')}</div>
+    <div class="ui-source-heading ui-latest-heading"><h4>Latest report by surface</h4><span>findings · devices in this window</span></div>
+    <div class="ui-table-scroll ui-latest"><table class="ui-inventory ui-widget-table"><tbody>${(S.groups||[]).map(g => {
+      const srcs = (g.sources || []).filter(x => x.last_seen).sort((a, b) => a.last_seen < b.last_seen ? 1 : -1);
+      const last = srcs[0];
+      const findings = (g.sources || []).reduce((n, x) => n + (x.findings || 0), 0);
+      const devices = (g.sources || []).reduce((n, x) => n + (x.devices || 0), 0);
+      return `<tr><td><strong>${esc(g.group)}</strong></td>
+        <td>${last ? `${esc(last.label || last.source)} <span class="ui-muted">· ${esc(uiAgo(last.last_seen))}</span>` : '<span class="ui-muted">nothing yet</span>'}</td>
+        <td class="num">${findings}<span class="ui-muted"> · ${devices}</span></td></tr>`;
+    }).join('')}</tbody></table></div>
     <div class="ui-panel-footer"><span>Source catalogue, not configured integrations</span><button class="mini" data-nav="setup">Review sources ${uiIcon('arrow')}</button></div>
     <details class="ui-coverage-note"><summary>How to read coverage</summary><p class="src-note">Collector coverage uses devices observed by any source, not your entire company fleet. An unobserved source may be unconfigured or inapplicable. These are dedicated sources per surface; other sources can also produce findings for it.</p></details></div>`;
   },
@@ -2773,7 +2794,7 @@ const WIDGETS = {
         <tbody>${groups.map(g => `<tr>
           <td><strong>${esc(g.group)}</strong></td>
           <td class="num">${g.silent.length} of ${g.total}</td>
-          <td>${g.silent.map(r => `<span title="${esc(r.source)}">${esc(r.label || r.source)}</span>`).join('<i>·</i>')}</td>
+          <td>${g.silent.map(r => `<span title="${esc(r.source)}">${esc(r.label || r.source)}<em>${r.last_seen ? esc(uiAgo(r.last_seen)) : 'never'}</em></span>`).join('<i>·</i>')}</td>
         </tr>`).join('')}</tbody></table></div>`
         : '<p class="ui-empty">Every listed source is reporting.</p>'}
       <div class="ui-panel-footer"><span>Unconfigured or not applicable, not necessarily broken</span>
@@ -2803,12 +2824,21 @@ const WIDGETS = {
         <div><dt${over ? ' class="risk"' : ''}>${over}</dt><dd>warnings overridden</dd></div>
       </dl>
       <ul class="ui-notes">
-        ${warnMode && warned ? `<li class="attention">In block mode, ${warned} warned paste${warned === 1 ? '' : 's'} would have been stopped outright. The breakdown is on the Paste guard page.</li>` : ''}
+        ${warnMode && warned ? `<li class="attention">In block mode, ${warned} warned paste${warned === 1 ? '' : 's'} would have been stopped outright.</li>` : ''}
         <li>${live
           ? `Running on ${live} device${live === 1 ? '' : 's'}${versions > 1 ? ` across ${versions} versions` : ''}, so low numbers here genuinely mean few risky pastes.`
           : 'No device has checked in yet, so zero here means "not deployed", not "nobody pasted anything".'}</li>
       </ul>
-      <div class="ui-panel-footer"><span>${warned ? `${warned} warned in this window` : 'Nothing warned in this window'}</span>
+      ${(PG.rows || []).length ? `<div class="ui-table-scroll"><table class="ui-inventory ui-widget-table">
+        <thead><tr><th>Where pastes went</th><th class="num">Warned</th><th class="num ui-col-m">Overridden</th><th class="num ui-col-l">Blocked</th><th>Detectors</th></tr></thead>
+        <tbody>${(PG.rows || []).slice(0, 30).map(r => `<tr>
+          <td><strong>${esc(uiToolName(r.tool))}</strong></td>
+          <td class="num">${num(r.warned)}</td>
+          <td class="num ui-col-m">${r.overridden ? `<span class="ui-badge risk">${num(r.overridden)}</span>` : num(0)}</td>
+          <td class="num ui-col-l">${num(r.blocked)}</td>
+          <td>${(r.detectors || []).slice(0, 3).map(d => `<span class="ui-surface">${esc(d)}</span>`).join('')}</td>
+        </tr>`).join('')}</tbody></table></div>` : ''}
+      <div class="ui-panel-footer"><span>${warned ? `${warned} warned in this window` : 'Nothing warned in this window'}<i class="ui-shown"></i></span>
         <button class="mini" data-nav="paste">Open Paste guard ${uiIcon('arrow')}</button></div></div>`;
   },
 
@@ -10327,7 +10357,46 @@ async function render() {
   decorateView();
   drawSetup();
   maybeTour();
+  requestAnimationFrame(uiFit);
 }
+// A list card shows whole rows only. Its body has the height its row gives
+// it; any row that would not fit in full is hidden, and the footer says how
+// many are on show. Runs after every render and on resize, so a density
+// change, a neighbour growing, or a narrower window never leaves a row cut
+// through the middle. An opened card ("Show all") is left alone.
+function uiFit() {
+  const bodies = [...document.querySelectorAll('.ui-widget:not(.ui-open)>.ui-table-scroll, .ui-tools-card:not(.ui-open)>.ui-table-scroll, .ui-tools-card:not(.ui-open)>.ui-tool-list, .ui-tools-card:not(.ui-open)>.ui-tool-bars')]
+    .filter(b => b.offsetParent);
+  // First the basis: a body asks its row for the smaller of its content and
+  // its budget, so a short list never props a card open, and a long one
+  // never sets the row taller than the budget. It still grows when a
+  // neighbour is taller. Then, after that has settled, the row cut.
+  bodies.forEach(body => {
+    const budget = parseFloat(getComputedStyle(body).getPropertyValue('--ui-budget')) || 470;
+    const content = body.firstElementChild ? body.firstElementChild.getBoundingClientRect().height : 0;
+    body.style.flexBasis = Math.min(budget, Math.ceil(content)) + 'px';
+  });
+  requestAnimationFrame(() => uiCut(bodies));
+}
+function uiCut(bodies) {
+  bodies.forEach(body => {
+    const rows = [...body.querySelectorAll(':scope tbody>tr, :scope>li, :scope .bars>.barrow')];
+    if (!rows.length) return;
+    rows.forEach(r => { r.classList.remove('ui-cut'); });
+    const limit = body.getBoundingClientRect().bottom + 1;
+    let shown = 0;
+    rows.forEach(r => {
+      if (r.getBoundingClientRect().bottom > limit) r.classList.add('ui-cut'); else shown++;
+    });
+    const card = body.parentElement;
+    const note = card.querySelector('.ui-shown');
+    if (note) note.textContent = shown < rows.length ? `${shown} shown` : '';
+  });
+}
+let UI_FIT_TIMER = null;
+window.addEventListener('resize', () => {
+  clearTimeout(UI_FIT_TIMER); UI_FIT_TIMER = setTimeout(uiFit, 120);
+});
 // A detail opens in the inspector beside the list rather than replacing it.
 // Opening touches only the drawer, so the list keeps its scroll position;
 // a data-open inside the drawer (a device on a tool page) swaps the drawer

@@ -1568,12 +1568,12 @@ td{font-size:12px;padding-top:11px;padding-bottom:11px}
 /* A list's body has a budget as its basis and grows into whatever the row
    gives it; past the budget it scrolls inside the card. Opened, the card
    takes its full height and the row follows. */
-.ui-widget>.ui-table-scroll{flex:1 1 auto;min-height:0;overflow:auto}
-.ui-people-card>.ui-table-scroll{flex-basis:262px}
-.ui-spend-card>.ui-table-scroll{flex-basis:300px}
-.ui-agentic-card>.ui-table-scroll{flex-basis:200px}
+.ui-widget>.ui-table-scroll{flex:1 1 auto;min-height:0;overflow:hidden;--ui-budget:262}
+.ui-people-card>.ui-table-scroll{--ui-budget:262}
+.ui-spend-card>.ui-table-scroll{--ui-budget:300}
+.ui-agentic-card>.ui-table-scroll{--ui-budget:220}
 .ui-tools-card{display:flex;flex-direction:column}
-.ui-tools-card>.ui-table-scroll,.ui-tools-card>.ui-tool-list,.ui-tools-card>.ui-tool-bars{flex:1 1 470px;min-height:0;overflow:auto}
+.ui-tools-card>.ui-table-scroll,.ui-tools-card>.ui-tool-list,.ui-tools-card>.ui-tool-bars{flex:1 1 auto;min-height:0;overflow:hidden;--ui-budget:470}
 .ui-tools-card>.ui-panel-footer,.ui-tools-card>.ui-table-note{flex-shrink:0}
 .ui-open>.ui-table-scroll,.ui-tools-card.ui-open>.ui-table-scroll,.ui-tools-card.ui-open>.ui-tool-list,.ui-tools-card.ui-open>.ui-tool-bars{flex-basis:auto;overflow:visible}
 .ui-widget-table thead th,.ui-inventory thead th{position:sticky;top:0;z-index:1}
@@ -1662,3 +1662,17 @@ td{font-size:12px;padding-top:11px;padding-bottom:11px}
 .grid.ov-canvas>.gitem.w6{flex:0 0 calc(50% - 9px)}
 .grid.ov-canvas>.gitem.w12{flex:0 0 100%}
 .ui-compact .grid.ov-canvas>.gitem.w6{flex-basis:calc(50% - 5px)}
+
+/* Whole rows only: the fit pass hides what would not fit, and says so. */
+.ui-cut{display:none!important}
+.ui-shown:empty{display:none}
+.ui-shown{font-style:normal;color:var(--mut)}
+.ui-shown::before{content:"· "}
+.ui-paste-card>.ui-table-scroll{--ui-budget:180}
+/* Visibility: the latest report per surface, growing into the card. */
+.ui-latest-heading{padding-top:12px}
+.ui-visibility-card>.ui-latest{flex:1 1 auto;min-height:0;overflow:hidden;margin-top:6px}
+.ui-visibility-card>.ui-latest .ui-widget-table td{padding-top:7px;padding-bottom:7px}
+.ui-visibility-card>.ui-latest td:first-child strong{text-transform:capitalize}
+.ui-silent-table td:last-child em{font-style:normal;color:var(--mut);opacity:.85;font-size:10px;margin-left:5px}
+.wcard.ui-paste-card .ui-widget-table th:last-child,.wcard.ui-paste-card .ui-widget-table td:last-child{text-align:left;width:auto;white-space:normal}
