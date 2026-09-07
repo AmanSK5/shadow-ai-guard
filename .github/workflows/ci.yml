@@ -295,6 +295,14 @@ jobs:
       - run: pip install --require-hashes -r .github/requirements-ci.txt && pip install -e cli/ --no-deps
       - run: pytest cli/tests -q
 
+  portal-renderer-test:
+    # The Overview renderers run in Node against controlled data; the runner
+    # image ships Node, so no action is pulled for it.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: node --test portal/tests/astra_overview.test.cjs
+
   helm:
     # helm ships on the ubuntu-latest runner image, so the normal path needs
     # no download and no third-party action. The fallback pins a version and
@@ -775,7 +783,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    needs: [placeholder-guard, shellcheck, collector-delivery-state,
+    needs: [placeholder-guard, shellcheck, collector-delivery-state, portal-renderer-test,
             registry-validate, governance-validate,
             receiver-test, scanner-test, cli-test, portal-test, discovery-test,
             helm, demo-smoke, compose-smoke,
