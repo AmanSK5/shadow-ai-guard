@@ -2904,7 +2904,23 @@ function overviewWidgets() {
 // has an <h3> for the edit controls to sit beside; without one they float
 // in a strip attached to nothing, which reads as a control that has come
 // loose rather than one belonging to the card under it.
-const WIDGET_TITLES = {stat_row: 'Headline numbers'};
+const WIDGET_TITLES = {stat_row: 'Headline numbers', top_tools: 'Discovered AI tools',
+  review_queue: 'Where to focus', detection_coverage: 'Visibility across your estate',
+  recent_personal_accounts: 'Recent personal accounts', budget_spend: 'AI spend',
+  paste_guard: 'Paste guard', source_health: 'Silent sources',
+  activity_trend: 'Personal-account exposure', agentic: 'Running on its own'};
+// One line each, for the planner: what the card is for, so the arrangement
+// can be made from names rather than by reading every widget in full.
+const WIDGET_BLURB = {stat_row: 'Posture and the four headline counts',
+  top_tools: 'Every tool observed, with devices, identities and personal accounts',
+  review_queue: 'The follow-ups, and the decision and discovery queue',
+  detection_coverage: 'Collector coverage and which sources report',
+  recent_personal_accounts: 'Latest activity in accounts outside your domains',
+  budget_spend: 'Subscriptions against observed use',
+  paste_guard: 'The browser extension, on the devices it reached',
+  source_health: 'Catalogue sources that reported nothing',
+  activity_trend: 'Daily detections against reporting coverage',
+  agentic: 'AI that starts itself, and who answers for it', grafana: 'A Grafana panel'};
 
 const SIZES = ['w4', 'w6', 'w12'];
 const SIZE_LABEL = {w4: 'S', w6: 'M', w12: 'L'};
@@ -2966,9 +2982,13 @@ function overview() {
   const cols = [];
   draw.forEach(k => {
     if (!drawn.get(k)) return;
+    // While arranging, a hidden card is in the tray, not in a column.
+    if (editing && hidden.indexOf(k) >= 0) return;
     if (cols.length && stacked.indexOf(k) >= 0) cols[cols.length - 1].push(k);
     else cols.push([k]);
   });
+  const titleOf = k => { const w = by.get(k);
+    return w.kind === 'grafana' ? (w.ref || 'Grafana panel') : (WIDGET_TITLES[w.kind] || w.kind); };
 
   const cardOf = k => {
     const w = by.get(k), body = drawn.get(k);
@@ -2976,12 +2996,16 @@ function overview() {
     const can = WIDGET_SIZES[w.kind] || [ownSpan(k, body)];
     const span = can.indexOf(sizes[k]) >= 0 ? sizes[k] : ownSpan(k, body);
     const isStacked = stacked.indexOf(k) >= 0;
-    const titled = body.indexOf('<h3') >= 0;
+    const titled = editing || body.indexOf('<h3') >= 0;
+    // The planner draws a placeholder in the card's place: its name, what
+    // it is for, and its size. The arrangement is made from those; the
+    // data comes back when the arrangement is saved.
+    const shown = editing ? `<div class="ov-placeholder"><b>${esc(titleOf(k))}</b>
+      <span>${esc(WIDGET_BLURB[w.kind] || '')}</span>
+      <small>${esc(SIZE_NAME[span])}${isStacked ? ' · stacked beneath the card above' : ''}</small></div>` : body;
     return `<div class="gcard${titled ? '' : ' notitle'}" data-wk="${esc(k)}"
       ${editing ? 'draggable="true"' : ''}
       style="${off ? 'opacity:.45' : ''}">
-      ${editing && !titled ? `<h3 class="gname">${
-        esc(WIDGET_TITLES[w.kind] || w.kind)}</h3>` : ''}
       ${editing ? `<span class="gtools">${
         // A stacked card takes the column's width from the card at its
         // head, so offering it a width of its own would be a control that
@@ -2994,9 +3018,19 @@ function overview() {
         : ''}${isStacked ? `<button data-act="w-unstack" data-key="${esc(k)}"
         title="give this card a column of its own again"
         >Unstack</button>` : ''}<button data-act="w-hide" data-key="${esc(k)}"
-        >${off ? 'Show' : 'Hide'}</button></span>` : ''}${body}${editing
+        >${off ? 'Show' : 'Hide'}</button></span>` : ''}${shown}${editing
         ? `<div class="ov-stack-zone" aria-hidden="true">Stack beneath</div>` : ''}</div>`;
   };
+  // Cards not on the page, while arranging: named, draggable into place,
+  // or added at the end with a click.
+  const tray = !editing ? '' : (() => {
+    const off = draw.filter(k => hidden.indexOf(k) >= 0);
+    return `<div class="ov-tray"><span class="ov-tray-label">${off.length
+      ? 'Not on the page. Drag one into place, or add it at the end.'
+      : 'Every card is on the page.'}</span>${off.map(k =>
+      `<div class="gcard ov-chip" draggable="true" data-wk="${esc(k)}"><b>${esc(titleOf(k))}</b>
+        <button data-act="w-hide" data-key="${esc(k)}">Add</button></div>`).join('')}</div>`;
+  })();
 
   const colOf = (col, i) => {
     const head = col[0], body = drawn.get(head);
@@ -3011,9 +3045,10 @@ function overview() {
   return `<h2>Overview</h2><p class="lede">Your AI estate. The exposure, the coverage, the next action.</p>
   ${truncNote(G.findings_truncated)}
   ${editing ? `<div class="oedit">
-    <span>Drag a card between others to move it, or onto the middle of one
-    to stack them in a column - two short cards share the height of a tall
-    one that way. This is your own view and changes nothing for anyone
+    <span>Each card is shown as its name and size. Drag one to move it: the
+    line shows where it lands. Drop it on the strip beneath another card to
+    stack the two in one column. Cards not on the page wait in the tray
+    below. This is your own view and changes nothing for anyone
     else${
       AUTH && AUTH.role !== 'viewer'
         ? ' - the widgets a deployment offers are set under Settings' : ''}.</span>
@@ -3022,6 +3057,7 @@ function overview() {
     <button class="ghost" data-act="ov-cancel">Cancel</button>
     <button class="pri" data-act="ov-save">Save</button>
   </div>` : ''}
+  ${tray}
   <div class="grid${editing ? ' editing' : ''}">${cols.map(colOf).join('')}</div>`;
 }
 
@@ -10449,6 +10485,8 @@ app.addEventListener('drop', e => {
     if (heir >= 0) st.splice(heir, 1);
   }
   o.splice(o.indexOf(from), 1);
+  const wasHidden = OVEDIT.hidden.indexOf(from);
+  if (wasHidden >= 0) OVEDIT.hidden.splice(wasHidden, 1);
   const wasStacked = st.indexOf(from);
   if (wasStacked >= 0) st.splice(wasStacked, 1);
 

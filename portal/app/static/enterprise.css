@@ -1623,3 +1623,20 @@ td{font-size:12px;padding-top:11px;padding-bottom:11px}
 .gitem.stack>.gcard{flex:0 0 auto}
 .gitem.stack>.gcard:has(.ui-table-scroll),.gitem.stack>.gcard:has(.ui-tool-list),.gitem.stack>.gcard:has(.ui-tool-bars){flex:1 1 auto}
 .gitem.stack>.gcard:has(.ui-queue-details){flex:1 1 auto}
+
+/* The planner: while arranging, every card is a placeholder of one height,
+   so the whole arrangement fits on a screen and a drag is a short one. */
+.editing .gcard{min-height:0}
+.ov-placeholder{display:flex;flex-direction:column;justify-content:center;gap:4px;min-height:112px;padding:44px 18px 16px;border:1px solid var(--bd);border-radius:10px;background:var(--sf)}
+.ov-placeholder b{font-size:13px;font-weight:600;color:var(--fg)}
+.ov-placeholder span{font-size:11px;color:var(--mut);line-height:1.45}
+.ov-placeholder small{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.6px;margin-top:4px}
+.editing .gitem.stack>.gcard{flex:0 0 auto}
+.editing .gcard>.ov-stack-zone{border-radius:0 0 10px 10px}
+.ov-tray{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 16px;padding:12px 14px;border:1px dashed var(--bd);border-radius:10px;background:var(--sf2)}
+.ov-tray-label{flex-basis:100%;font-size:11px;color:var(--mut)}
+.ov-chip{display:inline-flex;align-items:center;gap:10px;padding:8px 8px 8px 12px;border:1px solid var(--bd);border-radius:8px;background:var(--sf);cursor:grab;outline:0!important;flex:0 0 auto}
+.ov-chip>*{flex:0 0 auto}
+.ov-chip b{font-size:12px;font-weight:600;color:var(--fg)}
+.ov-chip button{font:inherit;font-size:10.5px;padding:3px 9px;border:1px solid var(--bd);border-radius:5px;background:var(--sf2);color:var(--pri);cursor:pointer}
+.ov-chip>.ov-stack-zone{display:none!important}
