@@ -2276,10 +2276,13 @@ let UI_PERSONAL_TOOLS = false;
 // budget of rows and offers the rest; on an estate of any size an uncapped
 // list is the tallest thing on the page and every neighbour pays for it.
 const UI_EXPANDED = new Set();
-function uiRows(key, rows, cap) {
+// Every row is drawn (to a sane ceiling); the card shows a budget of them
+// and scrolls the rest inside itself, growing to whatever height its row
+// has to give. "Show all" opens the card to its full list instead.
+function uiRows(key, rows, budget) {
   const all = rows.length, open = UI_EXPANDED.has(key);
-  return {rows: open || all <= cap ? rows : rows.slice(0, cap), all,
-    hidden: open || all <= cap ? 0 : all - cap, open};
+  return {rows: rows.slice(0, 60), all, open,
+    hidden: open || all <= budget ? 0 : all - budget};
 }
 function uiMoreButton(key, r, noun) {
   if (!r.hidden && !r.open) return '';
@@ -2605,7 +2608,7 @@ const WIDGETS = {
       a + bReconcile(s).unobserved.length, 0);
     const conv = bConverted(subs);
     const shown = uiRows('budget_spend', subs, 6);
-    return `<div class="wcard w6 ui-widget ui-spend-card">${head}
+    return `<div class="wcard w6 ui-widget ui-spend-card${shown.open ? ' ui-open' : ''}">${head}
     <dl class="ui-tiles">
       <div><dt>${conv ? bMoney(conv.total, bPrefCur()) : bSpendParts(subs).join(' + ')}</dt>
         <dd>tracked per month${conv ? ` <span title="${esc(bSpendParts(subs).join(' + '))}">· ECB ${esc(conv.date)}</span>` : ''}</dd></div>
@@ -2642,7 +2645,7 @@ const WIDGETS = {
     }).sort((a,b)=>(b[1].devices||[]).length-(a[1].devices||[]).length);
     const bars = widgetForm('top_tools') === 'bar';
     const shown = uiRows('top_tools', rows, 10);
-    return `<div class="wcard ${bars ? 'w6' : 'w12'} ui-tools-card">
+    return `<div class="wcard ${bars ? 'w6' : 'w12'} ui-tools-card${shown.open ? ' ui-open' : ''}">
       <div class="ui-panel-head"><h3>${formToggle('top_tools')}Discovered AI tools <span class="count">${f.toolIds.length}</span></h3>
         <div class="ui-tool-filters" role="group" aria-label="Filter discovered tools">
           <button class="${!UI_PERSONAL_TOOLS ? 'on' : ''}" data-act="ui-tools-filter" data-filter="all" aria-pressed="${!UI_PERSONAL_TOOLS}">All tools</button>
@@ -2651,7 +2654,7 @@ const WIDGETS = {
       ${!f.known ? '<p class="ui-empty">Findings are unavailable.</p>' : rows.length ? (bars
         ? '<div class="ui-tool-bars">' + barRows(rows.map(([k,t]) => [k,(t.devices||[]).length, uiToolName(k)]).slice(0, shown.rows.length), 'devices', 'tool') + '</div>'
         : uiToolsTable(shown.rows)) : '<p class="ui-empty">No tools match this view.</p>'}
-      <div class="ui-panel-footer"><span>${f.known ? `${rows.length} of ${f.toolIds.length} discovered tools${shown.hidden ? `, ${shown.rows.length} shown` : ''}` : 'No data available'}
+      <div class="ui-panel-footer"><span>${f.known ? `${rows.length} of ${f.toolIds.length} discovered tools` : 'No data available'}
         ${uiMoreButton('top_tools', shown, 'tools')}</span>
         <button class="mini" data-nav="tools">Open discovered tools ${uiIcon('arrow')}</button></div>
       <p class="src-note ui-table-note">${bars ? 'Observed devices per tool. Cloud-only tools may have zero associated devices.'
@@ -2679,12 +2682,12 @@ const WIDGETS = {
       : dataOk()
         ? '<p class="ui-empty">None seen. That is a result, not an absence of one.</p>'
         : '<p class="ui-empty">Nothing to show: the findings could not be read.</p>';
-    return `<div class="wcard w6 ui-widget ui-people-card">
+    return `<div class="wcard w6 ui-widget ui-people-card${shown.open ? ' ui-open' : ''}">
       <div class="ui-panel-head"><div><h3>Recent personal accounts</h3>
         <p>Latest activity in accounts outside your corporate domains</p></div>
         <span class="ui-eyebrow">Last ${esc(fmtWindow(hoursNow()))}</span></div>
       ${body}
-      <div class="ui-panel-footer"><span>${pa.length ? `${shown.all} in this window${shown.hidden ? `, ${pa.length} shown` : ''}` : ''}
+      <div class="ui-panel-footer"><span>${pa.length ? `${shown.all} in this window` : ''}
         ${uiMoreButton('recent_personal_accounts', shown, 'accounts')}</span>
         <button class="mini" data-nav="personal">Open personal accounts ${uiIcon('arrow')}</button></div>
     </div>`;

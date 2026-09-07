@@ -1564,10 +1564,19 @@ td{font-size:12px;padding-top:11px;padding-bottom:11px}
 /* Cards are as tall as what they hold. On an estate of any size a stretched
    row is a void beside every short card; the row budgets above keep the tall
    ones honest instead. */
-.grid{align-items:flex-start}
-.gitem{align-self:flex-start}
-.gcard[data-wk=review_queue],.gcard[data-wk=detection_coverage]{height:auto}
-.gcard[data-wk=review_queue]>.wcard,.gcard[data-wk=detection_coverage]>.wcard{min-height:0}
+.ui-widget,.ui-tools-card{min-height:100%}
+/* A list's body has a budget as its basis and grows into whatever the row
+   gives it; past the budget it scrolls inside the card. Opened, the card
+   takes its full height and the row follows. */
+.ui-widget>.ui-table-scroll{flex:1 1 auto;min-height:0;overflow:auto}
+.ui-people-card>.ui-table-scroll{flex-basis:262px}
+.ui-spend-card>.ui-table-scroll{flex-basis:300px}
+.ui-agentic-card>.ui-table-scroll{flex-basis:200px}
+.ui-tools-card{display:flex;flex-direction:column}
+.ui-tools-card>.ui-table-scroll,.ui-tools-card>.ui-tool-list,.ui-tools-card>.ui-tool-bars{flex:1 1 470px;min-height:0;overflow:auto}
+.ui-tools-card>.ui-panel-footer,.ui-tools-card>.ui-table-note{flex-shrink:0}
+.ui-open>.ui-table-scroll,.ui-tools-card.ui-open>.ui-table-scroll,.ui-tools-card.ui-open>.ui-tool-list,.ui-tools-card.ui-open>.ui-tool-bars{flex-basis:auto;overflow:visible}
+.ui-widget-table thead th,.ui-inventory thead th{position:sticky;top:0;z-index:1}
 .ui-visibility-card>.ui-source-grid{flex:0 0 auto;align-content:start}
 .ui-focus-card>.ui-queue-details{flex:0 0 auto}
 .ui-people-table td:first-child,.ui-people-table td:nth-child(4){white-space:nowrap}
@@ -1589,3 +1598,10 @@ td{font-size:12px;padding-top:11px;padding-bottom:11px}
 .ui-cmd>code{flex:1;min-width:0;padding:0;border:0;background:transparent;font-size:11.5px;color:var(--pri);white-space:pre-wrap;overflow-wrap:anywhere}
 .ui-cmd>.ui-copy{flex-shrink:0;min-height:26px;padding:3px 10px;font-size:10.5px;background:var(--sf);color:var(--fg);border:1px solid var(--bd)}
 .ui-cmd>.ui-copy:hover{border-color:var(--pri);color:var(--pri)}
+/* The trend card fills its frame with the chart rather than with air; the
+   chart is drawn to a viewBox with no aspect lock, so it stretches. */
+.exposure-trend-card{display:flex;flex-direction:column;min-height:100%}
+.exposure-trend-card .exposure-chart{flex:0 0 auto;display:flex;flex-direction:column;min-height:0}
+.exposure-trend-card .tchart{flex:1 1 190px;min-height:140px;max-height:320px;position:relative}
+.exposure-trend-card .tchart svg{height:100%;min-height:140px;max-height:320px;display:block}
+.exposure-trend-card>.src-note{margin-top:10px}
