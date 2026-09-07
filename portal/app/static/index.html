@@ -2322,6 +2322,12 @@ function uiSourceLabel(id) {
 function uiSourceChip(id) {
   return `<span class="ui-tool-chip" title="${esc(id)}">${esc(uiSourceLabel(id))}</span>`;
 }
+// A command somebody will paste: monospace, one line, its own copy control.
+// The text rides in a data attribute, escaped like any other, so the button
+// copies exactly what is shown.
+function uiCommand(cmd) {
+  return `<div class="ui-cmd"><code>${esc(cmd)}</code><button class="mini ui-copy" data-act="ui-copy" data-copy="${esc(cmd)}" title="Copy to clipboard">Copy</button></div>`;
+}
 function uiIcon(name) {
   const paths = {
     accounts:'<circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3m1-16a3 3 0 0 1 0 6m2 4a5 5 0 0 1 3 5"/>',
@@ -6453,12 +6459,14 @@ kubectl -n ${ns} set image cronjob/<discovery> discovery=ghcr.io/amansk5/shadow-
         <p class="src-note">Afterwards this page should read ${esc(u.latest)} under Running, and Sources should show the same collectors reporting.</p>
       </div></details>
       ${u.notes ? `<details class="how"><summary>Release notes</summary><div><pre class="mono" style="white-space:pre-wrap;max-height:320px;overflow:auto">${esc(u.notes)}</pre></div></details>` : ''}` : ''}
-      ${CFG.managed && CFG.managed.enabled ? `<details class="how"><summary>Upgrade from your own machine</summary><div>
-        <p class="src-note">The command runs with your kubeconfig or Docker context and reports its progress here. The portal never upgrades anything itself; it approves the request (owners only) and shows the run. It needs Python 3.10 or newer and <span class="mono">pipx</span> on your machine (<span class="mono">brew install pipx</span> on a Mac, <span class="mono">pip install --user pipx</span> elsewhere). Install once from a tagged release, then run it:</p>
-        <pre class="mono" style="white-space:pre-wrap">pipx install -q "git+https://github.com/AmanSK5/shadow-ai-guard@${esc(u.latest || 'v0.30.0')}#subdirectory=cli"
-pipx ensurepath
-aiguardctl upgrade --portal ${esc(location.origin)}</pre>
-        <p class="src-note">If the shell says the command is not found after installing, <span class="mono">pipx ensurepath</span> has added it to your PATH and a new terminal picks it up. Your browser opens this portal to approve the request; compare the code it shows with your terminal. <span class="mono">--dry-run</span> prints every command without running one.</p>
+      ${CFG.managed && CFG.managed.enabled ? `<details class="how ui-how"><summary>Upgrade from your own machine</summary><div class="ui-steps">
+        <p>The command runs with your kubeconfig or Docker context and reports its progress here. The portal never upgrades anything itself; it approves the request (owners only) and shows the run.</p>
+        <ol class="ui-steplist">
+          <li><b>Have Python 3.10 or newer and pipx on your machine.</b><span>On a Mac, <code>brew install pipx</code>; elsewhere, <code>pip install --user pipx</code>.</span></li>
+          <li><b>Install the command once, from a tagged release.</b>${uiCommand(`pipx install -q "git+https://github.com/AmanSK5/shadow-ai-guard@${u.latest || 'v0.30.0'}#subdirectory=cli"`)}</li>
+          <li><b>Put it on your PATH.</b>${uiCommand('pipx ensurepath')}<span>A shell opened before this will not find the command until it is reopened.</span></li>
+          <li><b>Run it.</b>${uiCommand('aiguardctl upgrade --portal ' + location.origin)}<span>Your browser opens this portal to approve the request; compare the code it shows with your terminal. <code>--dry-run</code> prints every command without running one.</span></li>
+        </ol>
       </div></details>` : ''}
       ${u.enabled ? `<p class="src-note" style="margin-top:8px"><button class="mini" data-act="update-check">Check now</button></p>` : ''}
       ${CFG.managed && CFG.managed.enabled ? upgradeTracker() : ''}
@@ -8862,6 +8870,23 @@ async function managedAction(act, el) {
   if (act === 'ui-tools-filter') {
     UI_PERSONAL_TOOLS = el.getAttribute('data-filter') === 'personal';
     render(); return;
+  }
+  if (act === 'ui-copy') {
+    // The clipboard API wants a secure context and a real click; where it
+    // refuses, the older path still works, and failing that the command is
+    // left selected so one keystroke finishes the job.
+    const text = el.getAttribute('data-copy') || '';
+    const code = el.parentElement && el.parentElement.querySelector('code');
+    let ok = false;
+    try { await navigator.clipboard.writeText(text); ok = true; } catch (e) { /* fall through */ }
+    if (!ok && code) {
+      const range = document.createRange(); range.selectNodeContents(code);
+      const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    }
+    el.textContent = ok ? 'Copied' : 'Selected, press Ctrl+C';
+    setTimeout(() => { el.textContent = 'Copy'; }, 2200);
+    return;
   }
   if (act === 'ui-expand') {
     const k = el.getAttribute('data-key');

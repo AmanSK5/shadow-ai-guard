@@ -100,7 +100,7 @@ def test_the_page_carries_the_approval_view_and_the_tracker():
     assert 'data-act="cli-approve"' in INDEX and 'data-act="cli-deny"' in INDEX
     assert "function upgradeTracker()" in INDEX and "function upgradeWatch()" in INDEX
     assert "<b>Portal restarting</b>" in INDEX
-    assert "aiguardctl upgrade --portal ${esc(location.origin)}" in INDEX
+    assert "uiCommand('aiguardctl upgrade --portal ' + location.origin)" in INDEX
 
 
 def test_the_portal_still_runs_nothing():
