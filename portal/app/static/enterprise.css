@@ -1642,3 +1642,18 @@ td{font-size:12px;padding-top:11px;padding-bottom:11px}
 .ov-chip>.ov-stack-zone{display:none!important}
 .oedit.ov-previewing{border-left:3px solid var(--pri)}
 .oedit.ov-previewing b{color:var(--fg);margin-right:4px}
+
+/* The canvas while arranging: two columns on a dotted ground, and a target
+   at the end that is always there, so a drag never needs a card to land on. */
+.grid.ov-canvas{padding:14px;border-radius:12px;background-color:var(--sf2);background-image:radial-gradient(color-mix(in srgb,var(--mut) 28%,transparent) 1px,transparent 1px);background-size:18px 18px;min-height:220px;align-content:flex-start}
+.ov-drop-end{flex-basis:100%;display:flex;align-items:center;justify-content:center;min-height:64px;margin-top:4px;border:1px dashed var(--bd);border-radius:10px;color:var(--mut);font-size:11.5px}
+.ov-drop-end.empty{min-height:180px;font-size:12.5px}
+.ov-drop-end.over{border-color:var(--acc);border-style:solid;background:color-mix(in srgb,var(--acc) 10%,var(--sf));color:var(--acc)}
+.dragging .ov-drop-end{border-color:color-mix(in srgb,var(--acc) 60%,var(--bd))}
+/* Tray chips keep their own width and wrap; a half-width placeholder on the
+   canvas stays half, so the empty half beside it is visible while arranging. */
+.ov-tray>.ov-chip{flex:0 0 auto!important;width:auto;min-width:max-content}
+.ov-chip b{white-space:nowrap}
+.grid.ov-canvas>.gitem{flex-grow:0}
+.ov-tray>.ov-chip{container-type:normal}
+.ov-tray>.ov-chip{flex-direction:row!important}

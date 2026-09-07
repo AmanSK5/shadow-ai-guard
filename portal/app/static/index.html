@@ -2922,30 +2922,26 @@ const WIDGET_BLURB = {stat_row: 'Posture and the four headline counts',
   activity_trend: 'Daily detections against reporting coverage',
   agentic: 'AI that starts itself, and who answers for it', grafana: 'A Grafana panel'};
 
-const SIZES = ['w4', 'w6', 'w12'];
-const SIZE_LABEL = {w4: 'S', w6: 'M', w12: 'L'};
-const SIZE_NAME = {w4: 'small', w6: 'medium', w12: 'large'};
+// Two columns. A third width squashed every table into a strip, and the
+// only widgets that survived it were the ones with nothing to show.
+const SIZES = ['w6', 'w12'];
+const SIZE_LABEL = {w6: 'Half', w12: 'Full'};
+const SIZE_NAME = {w6: 'half width', w12: 'full width'};
 const WIDGET_SIZES = {
-  // Checked by rendering each of these three to a row at 328px and
-  // looking, not by reasoning about it - the first pass of this list was
-  // guesswork and most of it was wrong. A KPI row wraps to two columns,
-  // bars keep their labels, the line chart compresses to something
-  // sparkline-shaped but still readable, and stat cells stack.
-  stat_row: ['w4', 'w6', 'w12'],
-  top_tools: ['w4', 'w6', 'w12'],
-  activity_trend: ['w4', 'w6', 'w12'],
-  budget_spend: ['w4', 'w6', 'w12'],
-  detection_coverage: ['w4', 'w6', 'w12'],
-  source_health: ['w4', 'w6', 'w12'],
-  paste_guard: ['w4', 'w6', 'w12'],
-  // These two genuinely break at a third width, which is the whole point
-  // of the list: the review queue's Add to registry / Dismiss buttons
-  // overflow the card and Dismiss is clipped mid-word, and a four-column
-  // table of people wraps every date onto three lines.
+  // Half or full for every card. The stat row and the tool inventory make
+  // most sense full; both still tile at half so a person can pair them.
+  stat_row: ['w6', 'w12'],
+  top_tools: ['w6', 'w12'],
+  activity_trend: ['w6', 'w12'],
+  budget_spend: ['w6', 'w12'],
+  detection_coverage: ['w6', 'w12'],
+  source_health: ['w6', 'w12'],
+  paste_guard: ['w6', 'w12'],
   recent_personal_accounts: ['w6', 'w12'],
   review_queue: ['w6', 'w12'],
+  agentic: ['w6', 'w12'],
   // A cross-origin frame decides its own layout and cannot be checked
-  // from here, so it is not offered a width nobody has seen it at.
+  // from here, so it is offered the same two widths as everything else.
   grafana: ['w6', 'w12'],
 };
 
@@ -3057,6 +3053,7 @@ function overview() {
       AUTH && AUTH.role !== 'viewer'
         ? ' - the widgets a deployment offers are set under Settings' : ''}.</span>
     <span class="sp"></span>
+    <button class="ghost" data-act="ov-clear" title="Move every card to the tray and start from nothing">Clear canvas</button>
     <button class="ghost" data-act="ov-reset">Reset to default</button>
     <button class="ghost" data-act="ov-cancel">Cancel</button>
     <button class="ghost" data-act="ov-preview">Preview</button>
@@ -3070,7 +3067,9 @@ function overview() {
     <button class="pri" data-act="ov-save">Save</button>
   </div>` : ''}
   ${tray}
-  <div class="grid${editing ? ' editing' : ''}">${cols.map(colOf).join('')}</div>`;
+  <div class="grid${editing ? ' editing ov-canvas' : ''}">${cols.map(colOf).join('')}${editing
+    ? `<div class="ov-drop-end${cols.length ? '' : ' empty'}">${cols.length
+        ? 'Drop here to add at the end' : 'The canvas is empty. Drag cards in from the tray.'}</div>` : ''}</div>`;
 }
 
 function card(k, d) {
@@ -8958,6 +8957,12 @@ async function managedAction(act, el) {
   }
   if (act === 'ov-cancel') { OVEDIT = null; OVPREVIEW = false; render(); return; }
   if (act === 'ov-preview') { OVPREVIEW = true; render(); window.scrollTo(0, 0); return; }
+  if (act === 'ov-clear') {
+    // Everything to the tray, nothing stacked: the canvas is bare and the
+    // arrangement is made from the tray. Cancel still discards all of it.
+    OVEDIT.hidden = OVEDIT.order.slice(); OVEDIT.stacked = [];
+    render(); return;
+  }
   if (act === 'ov-plan') { OVPREVIEW = false; render(); window.scrollTo(0, 0); return; }
   if (act === 'ov-save') {
     await prefSet('overview.layout', JSON.stringify(
@@ -10464,6 +10469,13 @@ function colKeys(card) {
 
 app.addEventListener('dragover', e => {
   if (!OVEDIT || !DRAGK) return;
+  const end = e.target.closest && e.target.closest('.ov-drop-end');
+  if (end) {
+    e.preventDefault();
+    app.querySelectorAll('.gcard.over, .gcard.into')
+       .forEach(n => n.classList.remove('over', 'into', 'before', 'after'));
+    end.classList.add('over'); return;
+  }
   const it = e.target.closest && e.target.closest('.gcard');
   if (!it) return;
   e.preventDefault();
@@ -10476,6 +10488,28 @@ app.addEventListener('dragover', e => {
 
 app.addEventListener('drop', e => {
   if (!OVEDIT || !DRAGK) return;
+  const end = e.target.closest && e.target.closest('.ov-drop-end');
+  if (end) {
+    // At the end, in a column of its own, on the page.
+    e.preventDefault();
+    const from = DRAGK; DRAGK = null;
+    document.body.classList.remove('dragging');
+    const o = OVEDIT.order.slice(), st = OVEDIT.stacked.slice();
+    const fromCard = [...app.querySelectorAll('.gcard')]
+      .find(c => c.getAttribute('data-wk') === from && !c.classList.contains('ov-chip'));
+    const fromCol = fromCard ? colKeys(fromCard) : [from];
+    if (fromCol[0] === from && fromCol.length > 1) {
+      const heir = st.indexOf(fromCol[1]);
+      if (heir >= 0) st.splice(heir, 1);
+    }
+    o.splice(o.indexOf(from), 1); o.push(from);
+    const wasStacked = st.indexOf(from);
+    if (wasStacked >= 0) st.splice(wasStacked, 1);
+    const wasHidden = OVEDIT.hidden.indexOf(from);
+    if (wasHidden >= 0) OVEDIT.hidden.splice(wasHidden, 1);
+    OVEDIT.order = o; OVEDIT.stacked = st;
+    render(); return;
+  }
   const it = e.target.closest && e.target.closest('.gcard');
   if (!it) return;
   e.preventDefault();
