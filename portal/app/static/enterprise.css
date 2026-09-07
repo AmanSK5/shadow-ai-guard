@@ -1657,3 +1657,8 @@ td{font-size:12px;padding-top:11px;padding-bottom:11px}
 .grid.ov-canvas>.gitem{flex-grow:0}
 .ov-tray>.ov-chip{container-type:normal}
 .ov-tray>.ov-chip{flex-direction:row!important}
+/* On the canvas a half is exactly half: two of them make a row, and the
+   space a lone half leaves is exactly the space a second one would take. */
+.grid.ov-canvas>.gitem.w6{flex:0 0 calc(50% - 9px)}
+.grid.ov-canvas>.gitem.w12{flex:0 0 100%}
+.ui-compact .grid.ov-canvas>.gitem.w6{flex-basis:calc(50% - 5px)}
