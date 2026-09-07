@@ -288,10 +288,13 @@ Or from your machine with `aiguardctl`, which does exactly that with your
 own kubeconfig, finds the CronJobs by their image, shows the plan, waits for
 an owner to approve in the portal, and reports progress to System health:
 
-    pipx install "git+https://github.com/AmanSK5/shadow-ai-guard@<version>#subdirectory=cli"
+    pipx install -q "git+https://github.com/AmanSK5/shadow-ai-guard@<version>#subdirectory=cli"
+    pipx ensurepath
     aiguardctl upgrade --portal https://ai-guard-portal.example.com
 
-Nothing in the cluster gains a right either way; see SECURITY.md, *Upgrading*.
+It needs Python 3.10 or newer and `pipx` on the machine that runs it; a
+shell opened before `pipx ensurepath` needs reopening before the command is
+found. Nothing in the cluster gains a right either way; see SECURITY.md, *Upgrading*.
 
 ### Authentication
 

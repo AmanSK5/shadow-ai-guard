@@ -45,3 +45,8 @@ def request(portal: str, method: str, path: str, body: dict | None = None,
         raise ApiError(e.code, str(detail)) from None
     except urllib.error.URLError as e:
         raise ApiError(0, "could not reach %s: %s" % (portal, e.reason)) from None
+    except OSError as e:
+        # A read that timed out or a socket that closed under us: the portal
+        # restarting mid-rollout looks exactly like this. Same shape as
+        # unreachable, so callers retry rather than fall over.
+        raise ApiError(0, "no answer from %s: %s" % (portal, e)) from None

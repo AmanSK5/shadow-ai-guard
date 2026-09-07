@@ -164,6 +164,10 @@ services:
       PORTAL_URL: "http://localhost:8091"
     volumes:
       - ./seed.sh:/seed.sh:ro
+      # The larger estate, run by hand when the question is how the pages
+      # look with a fleet's worth of findings:
+      #   docker compose run --rm --entrypoint "/bin/sh /seed-large.sh" seeder
+      - ./seed-large.sh:/seed-large.sh:ro
     depends_on:
       receiver:
         condition: service_healthy

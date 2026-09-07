@@ -15,9 +15,15 @@ portal itself restarts. The design and its threat model are in
 
 ## Install
 
-From a tagged release of this repository, once:
+It needs Python 3.10 or newer and `pipx` (`brew install pipx` on a Mac,
+`pip install --user pipx` elsewhere). From a tagged release of this
+repository, once:
 
-    pipx install "git+https://github.com/AmanSK5/shadow-ai-guard@v0.29.0#subdirectory=cli"
+    pipx install -q "git+https://github.com/AmanSK5/shadow-ai-guard@v0.30.0#subdirectory=cli"
+    pipx ensurepath
+
+`pipx ensurepath` puts the command on your PATH; a shell opened before that
+will not find it until it is reopened.
 
 No third-party dependencies, so what runs is what the tag contains. It
 shells out to your own `helm`, `kubectl` and `docker`, found on your PATH.

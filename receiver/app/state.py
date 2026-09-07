@@ -575,6 +575,16 @@ class State:
             (_now(), kind, json.dumps(detail)),
         )
 
+    def _name(self, user_id) -> str:
+        """The username behind an id, for the audit trail's "who" column.
+        Callers hold the lock. An unknown id reads as blank, never as
+        somebody else."""
+        if not user_id:
+            return ""
+        row = self._db.execute(
+            "SELECT username FROM admin_users WHERE id = ?", (user_id,)).fetchone()
+        return row["username"] if row else ""
+
     # ------------------------------------------------- enrollment tokens --
 
     def mint_token(self, note: str, ttl_days: int = 180) -> dict:
@@ -945,7 +955,7 @@ class State:
                 (gid, purpose, _hash(device), code, verifier_hash,
                  requester[:120], now, expires))
             self._event("cli_grant_requested",
-                        {"grant": gid, "purpose": purpose})
+                        {"grant": gid, "purpose": purpose, "by": requester[:120]})
             self._db.commit()
         return {"device_code": device, "user_code": code,
                 "expires_at": expires, "interval": GRANT_POLL_INTERVAL}
@@ -989,7 +999,7 @@ class State:
                 " decided_at = ? WHERE id = ?",
                 (status, user_id, now, row["id"]))
             self._event("cli_grant_" + status,
-                        {"grant": row["id"], "user": user_id})
+                        {"grant": row["id"], "user": user_id, "by": self._name(user_id)})
             self._db.commit()
         return {"grant": row["id"], "status": status}
 
@@ -1043,7 +1053,8 @@ class State:
                 " token_expires_at = ? WHERE id = ?",
                 (_hash(token), texp, row["id"]))
             self._event("cli_token_issued", {"grant": row["id"],
-                                             "user": row["decided_by"]})
+                                             "user": row["decided_by"],
+                                             "by": self._name(row["decided_by"])})
             self._db.commit()
         return {"state": "ok", "token": token, "expires_at": texp}
 
@@ -1082,6 +1093,7 @@ class State:
             self._db.execute("UPDATE cli_grants SET status = 'running'"
                              " WHERE id = ?", (grant_id,))
             self._event("upgrade_started", {"run": rid, "user": g["decided_by"],
+                                            "by": self._name(g["decided_by"]),
                                             "route": route[:32],
                                             "from": from_version[:64],
                                             "to": to_version[:64]})
@@ -1127,7 +1139,8 @@ class State:
             self._db.execute("UPDATE cli_grants SET status = 'consumed',"
                              " token_hash = NULL WHERE id = ?", (grant_id,))
             self._event("upgrade_finished", {"run": run_id, "outcome": outcome,
-                                             "user": row["started_by"]})
+                                             "user": row["started_by"],
+                                             "by": self._name(row["started_by"])})
             self._db.commit()
         return self.current_run()
 
@@ -1142,6 +1155,18 @@ class State:
         out = dict(row)
         out["plan"] = json.loads(out["plan"] or "{}")
         out["steps"] = json.loads(out["steps"] or "[]")
+        # A run still "running" after its token could possibly be alive is
+        # one the command never finished - it crashed, or the terminal was
+        # closed. Reported as stale rather than left spinning; the row is
+        # not rewritten, because what happened is what happened.
+        if out.get("status") == "running":
+            try:
+                started = datetime.fromisoformat(out["started_at"])
+                if datetime.now(timezone.utc) - started > timedelta(
+                        seconds=UPGRADE_TOKEN_TTL_SECONDS):
+                    out["status"] = "stale"
+            except (TypeError, ValueError):
+                pass
         return out
 
     # ------------------------------------------------- account management --

@@ -2217,7 +2217,7 @@ function barRows(rows, unit, open) {
     return `<div class="barrow"${open ? ` data-open="${esc(open)}"
       data-key="${esc(name)}" tabindex="0"` : ''}
       data-ctip="${esc(name + ' · ' + r[1] + ' ' + unit)}">
-      <span class="bl" title="${esc(name)}">${esc(name)}</span>
+      <span class="bl" title="${esc(name)}">${esc(r[2] || name)}</span>
       <span class="bt"><span class="bf" style="width:${
         Math.max(2, Math.round(r[1] / max * 100))}%"></span></span>
       <b>${r[1]}</b></div>`;
@@ -2272,6 +2272,20 @@ function trendChart(days, a, b, aLabel, bLabel) {
 // the console layer presentation helpers: use the same graph, lifecycle and register reads
 // as the working views. No demo fixtures or network calls live in renderers.
 let UI_PERSONAL_TOOLS = false;
+// Widgets the person asked to see in full, this page view. A widget draws a
+// budget of rows and offers the rest; on an estate of any size an uncapped
+// list is the tallest thing on the page and every neighbour pays for it.
+const UI_EXPANDED = new Set();
+function uiRows(key, rows, cap) {
+  const all = rows.length, open = UI_EXPANDED.has(key);
+  return {rows: open || all <= cap ? rows : rows.slice(0, cap), all,
+    hidden: open || all <= cap ? 0 : all - cap, open};
+}
+function uiMoreButton(key, r, noun) {
+  if (!r.hidden && !r.open) return '';
+  return `<button class="mini ui-more" data-act="ui-expand" data-key="${esc(key)}">${
+    r.open ? 'Show fewer' : `Show all ${r.all} ${esc(noun)}`}</button>`;
+}
 function uiOverviewFacts() {
   const devices = ents(G.devices), personal = G.personal_accounts || [];
   const open = PSTAT
@@ -2584,6 +2598,7 @@ const WIDGETS = {
     const unob = subs.reduce((a, s) =>
       a + bReconcile(s).unobserved.length, 0);
     const conv = bConverted(subs);
+    const shown = uiRows('budget_spend', subs, 6);
     return `<div class="wcard w6 ui-widget ui-spend-card">${head}
     <dl class="ui-tiles">
       <div><dt>${conv ? bMoney(conv.total, bPrefCur()) : bSpendParts(subs).join(' + ')}</dt>
@@ -2594,7 +2609,7 @@ const WIDGETS = {
     <div class="ui-table-scroll"><table class="ui-inventory ui-widget-table ui-spend-table">
       <thead><tr><th>Subscription</th><th class="ui-col-l">Plan</th><th class="num ui-col-m">Monthly</th>
         <th class="num ui-col-m">Seats in use</th><th class="num ui-col-l">Observed</th><th class="ui-col-l">Renews</th><th>Review</th></tr></thead>
-      <tbody>${subs.map(sub => {
+      <tbody>${shown.rows.map(sub => {
         const r = bReconcile(sub);
         const seats = (sub.seat_tiers || []).reduce((x, t) => x + (t.seats || 0), 0);
         return `<tr data-nav="budget">
@@ -2607,7 +2622,8 @@ const WIDGETS = {
           <td>${r.unobserved.length ? `<span class="ui-badge attention">${r.unobserved.length} idle</span>` : ''}${r.strangers.length
             ? ` <span class="ui-badge governance">${r.strangers.length} unseated</span>` : ''}${!r.unobserved.length && !r.strangers.length ? '<span class="ui-muted">Nothing flagged</span>' : ''}</td></tr>`;
       }).join('')}</tbody></table></div>
-    <div class="ui-panel-footer"><span>${next ? `Next renewal: ${esc(uiToolName(next.tool_id))} ${when(next.renewal_date)}` : 'No renewal dates recorded'}</span>
+    <div class="ui-panel-footer"><span>${next ? `Next renewal: ${esc(uiToolName(next.tool_id))} ${when(next.renewal_date)}` : 'No renewal dates recorded'}
+      ${uiMoreButton('budget_spend', shown, 'subscriptions')}</span>
       <button class="mini" data-nav="budget">Open Budget ${uiIcon('arrow')}</button></div></div>`;
   },
 
@@ -2619,6 +2635,7 @@ const WIDGETS = {
         && (!UI_PERSONAL_TOOLS || f.open.some(r => r.tool === id));
     }).sort((a,b)=>(b[1].devices||[]).length-(a[1].devices||[]).length);
     const bars = widgetForm('top_tools') === 'bar';
+    const shown = uiRows('top_tools', rows, 10);
     return `<div class="wcard ${bars ? 'w6' : 'w12'} ui-tools-card">
       <div class="ui-panel-head"><h3>${formToggle('top_tools')}Discovered AI tools <span class="count">${f.toolIds.length}</span></h3>
         <div class="ui-tool-filters" role="group" aria-label="Filter discovered tools">
@@ -2626,9 +2643,10 @@ const WIDGETS = {
           <button class="${UI_PERSONAL_TOOLS ? 'on' : ''}" data-act="ui-tools-filter" data-filter="personal" aria-pressed="${UI_PERSONAL_TOOLS}">Personal accounts</button>
         </div></div>
       ${!f.known ? '<p class="ui-empty">Findings are unavailable.</p>' : rows.length ? (bars
-        ? '<div class="ui-tool-bars">' + barRows(rows.map(([k,t]) => [k,(t.devices||[]).length]), 'devices', 'tool') + '</div>'
-        : uiToolsTable(rows)) : '<p class="ui-empty">No tools match this view.</p>'}
-      <div class="ui-panel-footer"><span>${f.known ? `${rows.length} of ${f.toolIds.length} discovered tools` : 'No data available'}</span>
+        ? '<div class="ui-tool-bars">' + barRows(rows.map(([k,t]) => [k,(t.devices||[]).length, uiToolName(k)]).slice(0, shown.rows.length), 'devices', 'tool') + '</div>'
+        : uiToolsTable(shown.rows)) : '<p class="ui-empty">No tools match this view.</p>'}
+      <div class="ui-panel-footer"><span>${f.known ? `${rows.length} of ${f.toolIds.length} discovered tools${shown.hidden ? `, ${shown.rows.length} shown` : ''}` : 'No data available'}
+        ${uiMoreButton('top_tools', shown, 'tools')}</span>
         <button class="mini" data-nav="tools">Open discovered tools ${uiIcon('arrow')}</button></div>
       <p class="src-note ui-table-note">${bars ? 'Observed devices per tool. Cloud-only tools may have zero associated devices.'
         : 'One bar per day for the last ' + fmtWindow(hoursNow()) + ', written as a total when the window holds fewer than three days. Devices and cloud identities are counted separately.'}</p>
@@ -2638,7 +2656,8 @@ const WIDGETS = {
   recent_personal_accounts: () => {
     // Ten rows are drawn; the card's width decides how many show and which
     // columns (CSS, by container). The footer count is the whole window.
-    const pa = (G.personal_accounts || []).slice(0, 10);
+    const shown = uiRows('recent_personal_accounts', G.personal_accounts || [], 6);
+    const pa = shown.rows;
     const body = pa.length ? `<div class="ui-table-scroll"><table class="ui-inventory ui-widget-table ui-people-table">
       <thead><tr><th>Person</th><th>Account</th><th class="ui-col-m">AI tool</th><th class="ui-col-l">Device</th>
         <th class="ui-col-l">Surface</th><th class="ui-col-l">Source</th><th>Last seen</th></tr></thead>
@@ -2659,7 +2678,8 @@ const WIDGETS = {
         <p>Latest activity in accounts outside your corporate domains</p></div>
         <span class="ui-eyebrow">Last ${esc(fmtWindow(hoursNow()))}</span></div>
       ${body}
-      <div class="ui-panel-footer"><span>${pa.length ? `${(G.personal_accounts || []).length} in this window` : ''}</span>
+      <div class="ui-panel-footer"><span>${pa.length ? `${shown.all} in this window${shown.hidden ? `, ${pa.length} shown` : ''}` : ''}
+        ${uiMoreButton('recent_personal_accounts', shown, 'accounts')}</span>
         <button class="mini" data-nav="personal">Open personal accounts ${uiIcon('arrow')}</button></div>
     </div>`;
   },
@@ -6434,10 +6454,11 @@ kubectl -n ${ns} set image cronjob/<discovery> discovery=ghcr.io/amansk5/shadow-
       </div></details>
       ${u.notes ? `<details class="how"><summary>Release notes</summary><div><pre class="mono" style="white-space:pre-wrap;max-height:320px;overflow:auto">${esc(u.notes)}</pre></div></details>` : ''}` : ''}
       ${CFG.managed && CFG.managed.enabled ? `<details class="how"><summary>Upgrade from your own machine</summary><div>
-        <p class="src-note">The command runs with your kubeconfig or Docker context and reports its progress here. The portal never upgrades anything itself; it approves the request (owners only) and shows the run. Install once from a tagged release, then:</p>
-        <pre class="mono" style="white-space:pre-wrap">pipx install "git+https://github.com/AmanSK5/shadow-ai-guard@${esc(u.latest || 'v0.29.0')}#subdirectory=cli"
+        <p class="src-note">The command runs with your kubeconfig or Docker context and reports its progress here. The portal never upgrades anything itself; it approves the request (owners only) and shows the run. It needs Python 3.10 or newer and <span class="mono">pipx</span> on your machine (<span class="mono">brew install pipx</span> on a Mac, <span class="mono">pip install --user pipx</span> elsewhere). Install once from a tagged release, then run it:</p>
+        <pre class="mono" style="white-space:pre-wrap">pipx install -q "git+https://github.com/AmanSK5/shadow-ai-guard@${esc(u.latest || 'v0.30.0')}#subdirectory=cli"
+pipx ensurepath
 aiguardctl upgrade --portal ${esc(location.origin)}</pre>
-        <p class="src-note">Your browser opens this portal to approve the request; compare the code it shows with your terminal. <span class="mono">--dry-run</span> prints every command without running one.</p>
+        <p class="src-note">If the shell says the command is not found after installing, <span class="mono">pipx ensurepath</span> has added it to your PATH and a new terminal picks it up. Your browser opens this portal to approve the request; compare the code it shows with your terminal. <span class="mono">--dry-run</span> prints every command without running one.</p>
       </div></details>` : ''}
       ${u.enabled ? `<p class="src-note" style="margin-top:8px"><button class="mini" data-act="update-check">Check now</button></p>` : ''}
       ${CFG.managed && CFG.managed.enabled ? upgradeTracker() : ''}
@@ -6560,8 +6581,13 @@ function upgradeTracker() {
   if (UPDOWN) return `<div id="upgrade-tracker" class="health-note warning"><b>Portal restarting</b> - the page cannot reach it right now, which is expected mid-rollout. It keeps trying.</div>`;
   if (!r) return `<div id="upgrade-tracker"></div>`;
   const pill = r.status === 'running' ? '<span class="pill p-amb">running</span>'
+    : r.status === 'stale' ? '<span class="pill p-warn">not confirmed</span>'
     : r.outcome === 'succeeded' ? '<span class="pill p-ok">succeeded</span>'
+    : r.outcome === 'unverified' ? '<span class="pill p-amb">ran, not confirmed</span>'
     : `<span class="pill p-warn">${esc(r.outcome || 'finished')}</span>`;
+  const note = r.status === 'stale'
+    ? 'The command stopped reporting before it confirmed the result, so this run was never closed. Running, above, says what is actually deployed.'
+    : r.outcome === 'unverified' ? 'The commands ran, but the command could not confirm the result. Running, above, says what is actually deployed.' : '';
   const stat = s => s === 'done' ? 'p-ok' : s === 'failed' ? 'p-warn' : s === 'skipped' ? 'p-mut' : 'p-amb';
   // A step is reported twice, once when it starts and once when it ends;
   // one line per step, carrying whichever report came last.
@@ -6573,7 +6599,8 @@ function upgradeTracker() {
   return `<div id="upgrade-tracker" class="upgrade-run">
     <div class="upgrade-run-head"><b>Upgrade ${esc(r.from_version)} → ${esc(r.to_version)}</b> ${pill}
       <span>${esc(r.route)} · started ${when(r.started_at)} by ${esc(r.started_by_name || 'an owner')}</span></div>
-    <ol class="upgrade-steps">${latest.map(s => `<li><span class="pill ${stat(s.status)}">${esc(s.status)}</span> ${esc(s.step)}${s.detail ? ` <span>· ${esc(s.detail)}</span>` : ''}</li>`).join('')
+    ${note ? `<p class="health-note warning">${note}</p>` : ''}
+    <ol class="upgrade-steps">${latest.map(s => `<li><span class="pill ${stat(s.status)}">${esc(s.status)}</span> <span class="upgrade-step" title="${esc(s.step)}">${esc(s.step)}</span>${s.detail ? ` <span>· ${esc(s.detail)}</span>` : ''}</li>`).join('')
       || '<li><span class="pill p-amb">running</span> waiting for the first step</li>'}</ol>
     ${r.status !== 'running' && r.detail ? `<p class="src-note">${esc(r.detail)}</p>` : ''}
   </div>`;
@@ -8834,6 +8861,11 @@ async function managedAction(act, el) {
   }
   if (act === 'ui-tools-filter') {
     UI_PERSONAL_TOOLS = el.getAttribute('data-filter') === 'personal';
+    render(); return;
+  }
+  if (act === 'ui-expand') {
+    const k = el.getAttribute('data-key');
+    if (UI_EXPANDED.has(k)) UI_EXPANDED.delete(k); else UI_EXPANDED.add(k);
     render(); return;
   }
   if (act === 'ui-density') {

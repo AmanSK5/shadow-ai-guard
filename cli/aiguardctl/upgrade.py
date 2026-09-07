@@ -134,11 +134,18 @@ def verify(portal: str, token: str, target: str, say, request=api.request,
     deadline = time.time() + timeout
     say("  waiting for the portal to come back as %s" % want)
     while time.time() < deadline:
+        # Anything the network throws while the portal is coming back is
+        # a reason to wait, not to stop: the upgrade itself already ran.
         try:
             health = request(portal, "GET", "/healthz")
-            if str(health.get("version", "")).lstrip("v") == want:
-                return request(portal, "GET", "/api/upgrade/verify", token=token)
-        except api.ApiError:
-            pass
+        except (api.ApiError, OSError):
+            health = {}
+        if str(health.get("version", "")).lstrip("v") == want:
+            for _ in range(6):
+                try:
+                    return request(portal, "GET", "/api/upgrade/verify", token=token)
+                except (api.ApiError, OSError):
+                    sleep(5)
+            return None
         sleep(5)
     return None

@@ -1373,7 +1373,7 @@ td{font-size:12px;padding-top:11px;padding-bottom:11px}
 .inventory-summary b{font-size:22px;font-weight:580;letter-spacing:-.6px}
 /* Supporting widgets: head, body, footer; sized to content, never stretched
      into dead space; the same geometry in comfortable, compact and edit modes. */
-.ui-widget{padding:0;overflow:hidden;display:flex;flex-direction:column;min-height:100%}
+.ui-widget{padding:0;overflow:hidden;display:flex;flex-direction:column}
 .ui-widget>.ui-panel-head{padding-bottom:14px}
 .ui-widget>.ui-table-scroll,.ui-widget>.ui-notes,.ui-widget>.ui-empty{flex:1 0 auto}
 .ui-widget>.ui-panel-footer{margin-top:auto}
@@ -1404,16 +1404,12 @@ td{font-size:12px;padding-top:11px;padding-bottom:11px}
 /* Columns and rows by the card's width: S keeps the identity and the verdict, M adds the
    working figures, L adds the detail. Ten rows are drawn; S shows four, M six, L ten. */
 .ui-widget-table .ui-col-l{display:none}
-.ui-widget-table tbody tr:nth-child(n+7){display:none}
 @container (min-width:720px){
   .ui-widget-table .ui-col-l{display:table-cell}
   .ui-widget-table td small.ui-col-s{display:none}
-  .ui-widget-table tbody tr:nth-child(n+7){display:table-row}
-  .ui-widget-table tbody tr:nth-child(n+11){display:none}
 }
 @container (max-width:430px){
   .ui-widget-table .ui-col-m{display:none}
-  .ui-widget-table tbody tr:nth-child(n+5){display:none}
 }
 .ui-widget-table th.num{text-align:right}
 .ui-silent-table td:last-child{color:var(--mut);font-size:11px;line-height:1.5}
@@ -1564,3 +1560,17 @@ td{font-size:12px;padding-top:11px;padding-bottom:11px}
 .ui-compact .bars{gap:6px}
 .ui-compact .barrow{min-height:24px}
 .wcard .ui-silent-table th:last-child,.wcard .ui-silent-table td:last-child{text-align:left;width:auto;white-space:normal}
+
+/* Cards are as tall as what they hold. On an estate of any size a stretched
+   row is a void beside every short card; the row budgets above keep the tall
+   ones honest instead. */
+.grid{align-items:flex-start}
+.gitem{align-self:flex-start}
+.gcard[data-wk=review_queue],.gcard[data-wk=detection_coverage]{height:auto}
+.gcard[data-wk=review_queue]>.wcard,.gcard[data-wk=detection_coverage]>.wcard{min-height:0}
+.ui-visibility-card>.ui-source-grid{flex:0 0 auto;align-content:start}
+.ui-focus-card>.ui-queue-details{flex:0 0 auto}
+.ui-people-table td:first-child,.ui-people-table td:nth-child(4){white-space:nowrap}
+.ui-panel-footer>span{display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-width:0}
+.ui-panel-footer .ui-more{min-height:24px;padding:2px 8px;font-size:10px;color:var(--fg);border:1px solid var(--bd);background:var(--sf2)}
+.ui-panel-footer .ui-more:hover{border-color:var(--pri)}

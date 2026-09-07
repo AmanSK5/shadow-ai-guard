@@ -228,3 +228,46 @@ def test_polling_faster_than_told_is_slowed_down(managed, monkeypatch):
     verifier, grant = _ask()
     assert _poll(grant, verifier).status_code == 428
     assert _poll(grant, verifier).status_code == 429
+
+
+def _issued(managed):
+    owner = _owner()
+    verifier, grant = _ask()
+    client.post("/admin/cli/approve", headers=_hdr(owner),
+                json={"user_code": grant["user_code"], "approve": True})
+    return _poll(grant, verifier).json()["token"]
+
+
+def test_a_run_the_command_never_closed_reads_as_stale(managed):
+    """The command crashed after the commands ran, so nothing ever posted a
+    finish. Left alone the tracker spun forever. Once the token could not
+    possibly still be alive, the run is reported as stale - computed on
+    read, the row itself untouched."""
+    from datetime import datetime, timedelta, timezone
+    token = _issued(managed)
+    run = client.post("/admin/upgrade/runs", headers=_hdr(token), json={
+        "route": "helm", "from_version": "0.29.0", "to_version": "0.30.0"}).json()
+    assert managed.current_run()["status"] == "running"
+    past = (datetime.now(timezone.utc)
+            - timedelta(seconds=state_mod.UPGRADE_TOKEN_TTL_SECONDS + 60)).isoformat()
+    with managed._lock:
+        managed._db.execute("UPDATE upgrade_runs SET started_at = ? WHERE id = ?",
+                            (past, run["id"]))
+        managed._db.commit()
+    assert managed.current_run()["status"] == "stale"
+
+
+def test_the_audit_trail_names_who_approved_and_who_ran_it(managed):
+    """The trail showed "cli grant approved" with nobody in the who column:
+    the events carried a user id and the portal shows a name."""
+    import json
+    token = _issued(managed)
+    client.post("/admin/upgrade/runs", headers=_hdr(token), json={
+        "route": "helm", "from_version": "0.29.0", "to_version": "0.30.0"})
+    with managed._lock:
+        rows = managed._db.execute(
+            "SELECT kind, detail FROM events WHERE kind LIKE 'cli_%' OR kind LIKE 'upgrade_%'"
+        ).fetchall()
+    by = {row["kind"]: json.loads(row["detail"]).get("by") for row in rows}
+    assert by["cli_grant_requested"].startswith("aiguardctl")
+    assert by["cli_grant_approved"] == by["cli_token_issued"] == by["upgrade_started"] == "aman"
