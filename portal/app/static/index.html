@@ -10357,13 +10357,14 @@ async function render() {
   decorateView();
   drawSetup();
   maybeTour();
-  requestAnimationFrame(uiFit);
+  setTimeout(uiFit, 0);
 }
 // A list card shows whole rows only. Its body has the height its row gives
 // it; any row that would not fit in full is hidden, and the footer says how
 // many are on show. Runs after every render and on resize, so a density
 // change, a neighbour growing, or a narrower window never leaves a row cut
 // through the middle. An opened card ("Show all") is left alone.
+let UI_FIT_TIMER = null;
 function uiFit() {
   const bodies = [...document.querySelectorAll('.ui-widget:not(.ui-open)>.ui-table-scroll, .ui-tools-card:not(.ui-open)>.ui-table-scroll, .ui-tools-card:not(.ui-open)>.ui-tool-list, .ui-tools-card:not(.ui-open)>.ui-tool-bars')]
     .filter(b => b.offsetParent);
@@ -10371,18 +10372,30 @@ function uiFit() {
   // its budget, so a short list never props a card open, and a long one
   // never sets the row taller than the budget. It still grows when a
   // neighbour is taller. Then, after that has settled, the row cut.
+  // Measured with every row showing: a second pass (a resize) must not
+  // read a list already cut down by the first and shrink it further.
+  bodies.forEach(body => {
+    body.querySelectorAll('.ui-cut').forEach(r => r.classList.remove('ui-cut'));
+    body.style.flexBasis = '';
+  });
   bodies.forEach(body => {
     const budget = parseFloat(getComputedStyle(body).getPropertyValue('--ui-budget')) || 470;
-    const content = body.firstElementChild ? body.firstElementChild.getBoundingClientRect().height : 0;
-    body.style.flexBasis = Math.min(budget, Math.ceil(content)) + 'px';
+    body.style.flexBasis = Math.min(budget, Math.ceil(body.scrollHeight)) + 'px';
   });
-  requestAnimationFrame(() => uiCut(bodies));
+  // A timer, not an animation frame: frames do not run in a tab that is
+  // not visible, and a page that fits itself only once it is looked at
+  // shows its rows cut through the middle for the first paint.
+  setTimeout(() => uiCut(bodies), 0);
 }
+// Every replacement of the page's content is a new layout to fit: the
+// views redraw themselves as later reads arrive, not only through render().
+new MutationObserver(() => {
+  clearTimeout(UI_FIT_TIMER); UI_FIT_TIMER = setTimeout(uiFit, 40);
+}).observe(document.getElementById('app'), {childList: true});
 function uiCut(bodies) {
   bodies.forEach(body => {
     const rows = [...body.querySelectorAll(':scope tbody>tr, :scope>li, :scope .bars>.barrow')];
     if (!rows.length) return;
-    rows.forEach(r => { r.classList.remove('ui-cut'); });
     const limit = body.getBoundingClientRect().bottom + 1;
     let shown = 0;
     rows.forEach(r => {
@@ -10393,7 +10406,6 @@ function uiCut(bodies) {
     if (note) note.textContent = shown < rows.length ? `${shown} shown` : '';
   });
 }
-let UI_FIT_TIMER = null;
 window.addEventListener('resize', () => {
   clearTimeout(UI_FIT_TIMER); UI_FIT_TIMER = setTimeout(uiFit, 120);
 });
