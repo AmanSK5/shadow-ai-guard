@@ -1683,3 +1683,15 @@ td{font-size:12px;padding-top:11px;padding-bottom:11px}
 /* On the canvas nothing stretches: a placeholder is its own height, and a
    stack is the sum of its cards, so what you see is the arrangement. */
 .grid.ov-canvas{align-items:flex-start}
+/* A half card is half on the page too. The grid used to let a lone half
+   card grow across its row, so the arrangement someone drew - half, with
+   the other half open - came out full once they previewed it. */
+.grid>.gitem.w6{flex:0 0 calc(50% - 9px)}
+.grid>.gitem.w12{flex:0 0 100%}
+.ui-compact .grid>.gitem.w6{flex-basis:calc(50% - 5px)}
+@media(max-width:900px){.grid>.gitem.w6{flex-basis:100%}}
+/* The preview banner is one line: the sentence is short enough to share
+   it with the buttons, so it does not need the height the arranging
+   banner's explanation does. */
+.oedit.ov-previewing{padding:5px 12px 5px 14px;align-items:center}
+.oedit.ov-previewing>span:first-child{flex:1 1 auto}
