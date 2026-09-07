@@ -2269,10 +2269,10 @@ function trendChart(days, a, b, aLabel, bLabel) {
 }
 
 
-// Astra presentation helpers: use the same graph, lifecycle and register reads
+// the console layer presentation helpers: use the same graph, lifecycle and register reads
 // as the working views. No demo fixtures or network calls live in renderers.
-let ASTRA_PERSONAL_TOOLS = false;
-function astraOverviewFacts() {
+let UI_PERSONAL_TOOLS = false;
+function uiOverviewFacts() {
   const devices = ents(G.devices), personal = G.personal_accounts || [];
   const open = PSTAT
     ? personal.filter(r => (PSTAT[paKey(r)] || {}).status !== 'accepted') : personal;
@@ -2290,25 +2290,25 @@ function astraOverviewFacts() {
     people: new Set(personal.filter(r => r.user).map(r => r.user)).size,
     unnamed: new Set(personal.filter(r => !r.user && r.device).map(r => r.device)).size};
 }
-function astraToolInfo(id) {
+function uiToolInfo(id) {
   return ((REG && REG.rows) || []).find(r => r.id === id)
     || (REGTOOLS || []).find(r => r.id === id) || {name:id, vendor:''};
 }
 // Registry names for identifiers, and catalogue labels for source ids, so
 // the inventory pages read the way the Overview does. The id stays in the
 // title, and search still matches it.
-function astraToolName(id) { return astraToolInfo(id).name || id; }
-function astraToolChip(id, cls) {
-  return `<span class="astra-tool-chip${cls ? ' ' + cls : ''}" title="${esc(id)}">${esc(astraToolName(id))}</span>`;
+function uiToolName(id) { return uiToolInfo(id).name || id; }
+function uiToolChip(id, cls) {
+  return `<span class="ui-tool-chip${cls ? ' ' + cls : ''}" title="${esc(id)}">${esc(uiToolName(id))}</span>`;
 }
-function astraSourceLabel(id) {
+function uiSourceLabel(id) {
   const src = ((S && S.groups) || []).flatMap(g => g.sources || []).find(x => x.source === id);
   return src && src.label ? src.label : id;
 }
-function astraSourceChip(id) {
-  return `<span class="astra-tool-chip" title="${esc(id)}">${esc(astraSourceLabel(id))}</span>`;
+function uiSourceChip(id) {
+  return `<span class="ui-tool-chip" title="${esc(id)}">${esc(uiSourceLabel(id))}</span>`;
 }
-function astraIcon(name) {
+function uiIcon(name) {
   const paths = {
     accounts:'<circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3m1-16a3 3 0 0 1 0 6m2 4a5 5 0 0 1 3 5"/>',
     coverage:'<rect x="3" y="3" width="18" height="13" rx="2"/><path d="M12 16v5m-5 0h10"/>',
@@ -2316,18 +2316,18 @@ function astraIcon(name) {
     shield:NAVICONS.governance,
     arrow:'<path d="M4 12h16m-6-6 6 6-6 6"/>'
   };
-  return `<svg class="astra-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+  return `<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
     stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.arrow}</svg>`;
 }
-function astraFocusRows(f) {
-  if (!f.known) return '<p class="astra-empty">Findings are unavailable. Check System health before interpreting these counts.</p>';
+function uiFocusRows(f) {
+  if (!f.known) return '<p class="ui-empty">Findings are unavailable. Check System health before interpreting these counts.</p>';
   const action = (route, icon, mood, title, text, badge, note) => `
-    <button class="astra-action" data-nav="${route}">
-      <span class="astra-action-icon ${mood}">${astraIcon(icon)}</span>
-      <span class="astra-action-copy"><strong>${title}</strong><span>${text}</span>
-        <small><b class="astra-badge ${mood}">${badge}</b>${note}</small></span>${astraIcon('arrow')}</button>`;
+    <button class="ui-action" data-nav="${route}">
+      <span class="ui-action-icon ${mood}">${uiIcon(icon)}</span>
+      <span class="ui-action-copy"><strong>${title}</strong><span>${text}</span>
+        <small><b class="ui-badge ${mood}">${badge}</b>${note}</small></span>${uiIcon('arrow')}</button>`;
   const names = [...new Set(f.open.map(r => r.tool))].slice(0,4)
-    .map(id => esc(astraToolInfo(id).name || id)).join(' · ');
+    .map(id => esc(uiToolInfo(id).name || id)).join(' · ');
   return action('personal','accounts',f.open.length ? 'risk' : 'good',
     f.open.length ? 'Review personal AI accounts' : 'Personal accounts reviewed',
     f.open.length ? 'Follow up on activity in accounts outside your corporate domains.' : 'No open personal-account findings in this window.',
@@ -2342,58 +2342,58 @@ function astraFocusRows(f) {
       f.overdue === null ? 'Not read' : f.overdue ? `${f.overdue} overdue review${f.overdue === 1 ? '' : 's'}`
         : `${f.recorded.length} decisions`, 'Confirm ownership and permitted use');
 }
-function astraToolsTable(rows) {
-  const f = astraOverviewFacts(), series = (G.trends || {}).tools || {};
-  return `<div class="astra-table-scroll" tabindex="0" role="region" aria-label="Discovered tools table">
-    <table class="astra-inventory"><thead><tr><th>AI tool</th><th>Observed surfaces</th>
+function uiToolsTable(rows) {
+  const f = uiOverviewFacts(), series = (G.trends || {}).tools || {};
+  return `<div class="ui-table-scroll" tabindex="0" role="region" aria-label="Discovered tools table">
+    <table class="ui-inventory"><thead><tr><th>AI tool</th><th>Observed surfaces</th>
       <th class="num" aria-sort="descending">Devices ↓</th><th class="num">Cloud identities</th>
       <th>Personal accounts</th><th>Activity</th><th><span class="sr-only">Details</span></th></tr></thead>
     <tbody>${rows.map(([id,t]) => {
-      const info = astraToolInfo(id), name = info.name || id;
+      const info = uiToolInfo(id), name = info.name || id;
       const n = f.open.filter(r => r.tool === id).length;
       return `<tr data-open="tool" data-key="${esc(id)}">
-        <td><button class="astra-tool-button" data-open="tool" data-key="${esc(id)}"
-          aria-label="View ${esc(name)} details"><span class="astra-tool-initial" aria-hidden="true">${esc(name.slice(0,1).toUpperCase())}</span>
+        <td><button class="ui-tool-button" data-open="tool" data-key="${esc(id)}"
+          aria-label="View ${esc(name)} details"><span class="ui-tool-initial" aria-hidden="true">${esc(name.slice(0,1).toUpperCase())}</span>
           <span><strong>${esc(name)}</strong><small>${esc(info.vendor || id)}</small></span></button></td>
-        <td>${(t.surfaces || []).map(x => `<span class="astra-surface">${esc(x)}</span>`).join('')}</td>
+        <td>${(t.surfaces || []).map(x => `<span class="ui-surface">${esc(x)}</span>`).join('')}</td>
         <td class="num">${(t.devices || []).length}</td><td class="num">${(t.identities || []).length}</td>
-        <td>${n ? `<span class="astra-badge risk">${n} open</span>` : '<span class="astra-muted">None observed</span>'}</td>
-        <td>${astraActivity(series[id], name)}</td>
-        <td><button class="astra-row-open" data-open="tool" data-key="${esc(id)}" aria-label="Inspect ${esc(name)}">${astraIcon('arrow')}</button></td>
+        <td>${n ? `<span class="ui-badge risk">${n} open</span>` : '<span class="ui-muted">None observed</span>'}</td>
+        <td>${uiActivity(series[id], name)}</td>
+        <td><button class="ui-row-open" data-open="tool" data-key="${esc(id)}" aria-label="Inspect ${esc(name)}">${uiIcon('arrow')}</button></td>
       </tr>`;
     }).join('')}</tbody></table></div>
-    ${astraToolsList(rows)}`;
+    ${uiToolsList(rows)}`;
 }
 // The same inventory as a list, for a card narrower than the table can
 // be. Which one shows is the container's width, in CSS; both are drawn
 // from the same rows so a size change never re-fetches or re-sorts.
-function astraToolsList(rows) {
-  const f = astraOverviewFacts(), series = (G.trends || {}).tools || {};
-  return `<ul class="astra-tool-list" aria-label="Discovered tools">${rows.map(([id,t]) => {
-    const info = astraToolInfo(id), name = info.name || id;
+function uiToolsList(rows) {
+  const f = uiOverviewFacts(), series = (G.trends || {}).tools || {};
+  return `<ul class="ui-tool-list" aria-label="Discovered tools">${rows.map(([id,t]) => {
+    const info = uiToolInfo(id), name = info.name || id;
     const n = f.open.filter(r => r.tool === id).length;
     const days = series[id] || [], total = days.reduce((a, b) => a + b, 0);
-    return `<li><button class="astra-tool-item" data-open="tool" data-key="${esc(id)}" aria-label="View ${esc(name)} details">
-      <span class="astra-tool-initial" aria-hidden="true">${esc(name.slice(0,1).toUpperCase())}</span>
-      <span class="astra-tool-main"><strong>${esc(name)}</strong>
+    return `<li><button class="ui-tool-item" data-open="tool" data-key="${esc(id)}" aria-label="View ${esc(name)} details">
+      <span class="ui-tool-initial" aria-hidden="true">${esc(name.slice(0,1).toUpperCase())}</span>
+      <span class="ui-tool-main"><strong>${esc(name)}</strong>
         <small>${esc(info.vendor || id)}${(t.surfaces || []).length ? ' · ' + esc((t.surfaces || []).join(', ')) : ''}${total ? ` · ${total} in ${esc(fmtWindow(hoursNow()))}` : ''}</small></span>
-      <span class="astra-tool-nums"><b>${(t.devices || []).length}</b><i>devices</i></span>
-      <span class="astra-tool-nums astra-tool-cloud"><b>${(t.identities || []).length}</b><i>cloud</i></span>
-      <span class="astra-tool-flag">${n ? `<span class="astra-badge risk">${n} open</span>` : ''}</span>
-      ${astraIcon('arrow')}</button></li>`;
+      <span class="ui-tool-nums"><b>${(t.devices || []).length}</b><i>devices</i></span>
+      <span class="ui-tool-nums ui-tool-cloud"><b>${(t.identities || []).length}</b><i>cloud</i></span>
+      <span class="ui-tool-flag">${n ? `<span class="ui-badge risk">${n} open</span>` : ''}</span>
+      ${uiIcon('arrow')}</button></li>`;
   }).join('')}</ul>`;
 }
 // Findings per day as a sparkline once the window holds enough days to
 // make a shape; below that a single bar reads as a glitch, so the total
 // for the window is written out instead.
-function astraActivity(series, name) {
+function uiActivity(series, name) {
   const days = series || [], total = days.reduce((a, b) => a + b, 0);
   const tip = esc(name + ': findings over the last ' + fmtWindow(hoursNow()));
   if (days.length >= 3 && days.some(v => v)) return `<span data-ctip="${tip}">${spark(days)}</span>`;
-  return total ? `<span data-ctip="${tip}"><b class="astra-activity-count">${total}</b><span class="astra-muted"> in ${esc(fmtWindow(hoursNow()))}</span></span>`
-    : '<span class="astra-muted">None in window</span>';
+  return total ? `<span data-ctip="${tip}"><b class="ui-activity-count">${total}</b><span class="ui-muted"> in ${esc(fmtWindow(hoursNow()))}</span></span>`
+    : '<span class="ui-muted">None in window</span>';
 }
-function astraReviewQueueDetail() {
+function uiReviewQueueDetail() {
     // The queue that replaces a weekly review pipeline: observed tools no
     // one has decided about. Recording the decision IS the acknowledgment,
     // so an empty queue means exactly what it says. Not-in-registry rows
@@ -2489,43 +2489,43 @@ const WIDGETS = {
   // The count is the headline; the rows are the ones with nothing to revoke,
   // because a scheduled job under a real account is not the finding.
   agentic: () => {
-    const head = (n) => `<div class="astra-panel-head"><div><h3>Running on its own${n === undefined ? '' : ` <span class="count">${n}</span>`}</h3>
-      <p>AI that starts itself, and who answers for it</p></div><span class="astra-eyebrow">Agentic</span></div>`;
-    if (!AGENTIC) return `<div class="wcard w6 astra-widget astra-agentic-card">${head()}
-      <p class="astra-empty">Not read yet. Open Agentic AI.</p>
-      <div class="astra-panel-footer"><span></span><button class="mini" data-nav="agentic">Open Agentic AI ${astraIcon('arrow')}</button></div></div>`;
+    const head = (n) => `<div class="ui-panel-head"><div><h3>Running on its own${n === undefined ? '' : ` <span class="count">${n}</span>`}</h3>
+      <p>AI that starts itself, and who answers for it</p></div><span class="ui-eyebrow">Agentic</span></div>`;
+    if (!AGENTIC) return `<div class="wcard w6 ui-widget ui-agentic-card">${head()}
+      <p class="ui-empty">Not read yet. Open Agentic AI.</p>
+      <div class="ui-panel-footer"><span></span><button class="mini" data-nav="agentic">Open Agentic AI ${uiIcon('arrow')}</button></div></div>`;
     const c = AGENTIC.counts || {};
     const loose = (AGENTIC.agents || []).filter(
       a => a.autonomous && !a.accountable);
     const body = !c.autonomous
-      ? `<p class="astra-empty">Nothing reported starting itself.${
+      ? `<p class="ui-empty">Nothing reported starting itself.${
         c.unrecognised ? ` ${c.unrecognised} process${c.unrecognised === 1 ? '' : 'es'}
         reached a model unrecognised, which is a different question.` : ''} That is either
         true or the collectors have not been updated to look. System health says which.</p>`
-      : `<p class="astra-widget-lede">${c.unaccountable
+      : `<p class="ui-widget-lede">${c.unaccountable
           ? `<b>${c.unaccountable}</b> of ${c.autonomous} answer to nobody: a credential with no
              person behind it, so revoking a sign-on does not stop them.`
           : 'All of them run under an identity somebody can be asked about.'}</p>
-        ${loose.length ? `<div class="astra-table-scroll"><table class="astra-inventory astra-widget-table">
-          <thead><tr><th>Device</th><th class="astra-col-l">Runs</th><th class="astra-col-m">Schedule</th><th class="astra-col-l">Reaches</th><th>Answers to</th></tr></thead>
+        ${loose.length ? `<div class="ui-table-scroll"><table class="ui-inventory ui-widget-table">
+          <thead><tr><th>Device</th><th class="ui-col-l">Runs</th><th class="ui-col-m">Schedule</th><th class="ui-col-l">Reaches</th><th>Answers to</th></tr></thead>
           <tbody>${loose.slice(0, 10).map(a => `<tr>
-            <td><strong>${esc(label(a.device, G.devices[a.device] || {}))}</strong>${a.os ? `<small class="astra-col-s">${esc(a.os)}</small>` : ''}</td>
-            <td class="astra-col-l">${a.tool ? esc(astraToolName(a.tool)) : a.process ? `<span class="mono">${esc(a.process)}</span>` : '<span class="astra-muted">—</span>'}</td>
-            <td class="astra-col-m astra-muted">${esc(a.trigger || a.evidence || '')}</td>
-            <td class="astra-col-l">${(a.reach || []).length ? (a.reach || []).slice(0, 3).map(x => `<span class="astra-surface">${esc(x)}</span>`).join('') + ((a.reach || []).length > 3 ? ` <span class="astra-muted">+${a.reach.length - 3}</span>` : '') : '<span class="astra-muted">nothing configured</span>'}</td>
+            <td><strong>${esc(label(a.device, G.devices[a.device] || {}))}</strong>${a.os ? `<small class="ui-col-s">${esc(a.os)}</small>` : ''}</td>
+            <td class="ui-col-l">${a.tool ? esc(uiToolName(a.tool)) : a.process ? `<span class="mono">${esc(a.process)}</span>` : '<span class="ui-muted">—</span>'}</td>
+            <td class="ui-col-m ui-muted">${esc(a.trigger || a.evidence || '')}</td>
+            <td class="ui-col-l">${(a.reach || []).length ? (a.reach || []).slice(0, 3).map(x => `<span class="ui-surface">${esc(x)}</span>`).join('') + ((a.reach || []).length > 3 ? ` <span class="ui-muted">+${a.reach.length - 3}</span>` : '') : '<span class="ui-muted">nothing configured</span>'}</td>
             <td>${a.process
-              ? '<span class="astra-badge risk">no tool we know</span>'
-              : '<span class="astra-badge risk">' + esc(a.identity || 'unattributed') + '</span>'}</td>
+              ? '<span class="ui-badge risk">no tool we know</span>'
+              : '<span class="ui-badge risk">' + esc(a.identity || 'unattributed') + '</span>'}</td>
           </tr>`).join('')}</tbody></table></div>` : ''}`;
-    return `<div class="wcard w6 astra-widget astra-agentic-card">${head(c.autonomous || 0)}
+    return `<div class="wcard w6 ui-widget ui-agentic-card">${head(c.autonomous || 0)}
       ${body}
-      <div class="astra-panel-footer"><span>${c.unrecognised ? `${c.unrecognised} unrecognised process${c.unrecognised === 1 ? '' : 'es'} reached a model` : ''}</span>
-        <button class="mini" data-nav="agentic">Open Agentic AI ${astraIcon('arrow')}</button></div>
+      <div class="ui-panel-footer"><span>${c.unrecognised ? `${c.unrecognised} unrecognised process${c.unrecognised === 1 ? '' : 'es'} reached a model` : ''}</span>
+        <button class="mini" data-nav="agentic">Open Agentic AI ${uiIcon('arrow')}</button></div>
     </div>`;
   },
 
   stat_row: () => {
-    const f = astraOverviewFacts(), open = f.open, gaps = f.gaps;
+    const f = uiOverviewFacts(), open = f.open, gaps = f.gaps;
     const freshH = Math.min(hoursNow(), 168), week = Date.now()/1000 - freshH*3600;
     const fresh = f.personal.filter(r => r.first_seen && Date.parse(r.first_seen)/1000 > week).length;
     const tr = G.trends || {};
@@ -2533,11 +2533,11 @@ const WIDGETS = {
     const silent = !S || !S.reporting;
     const mood = !f.known ? 'silent' : silent ? 'silent' : attention ? 'needs-attention' : 'healthy';
     const value = n => f.known ? n : '—';
-    return `<div class="astra-estate-line"><span>Your estate at a glance</span>
+    return `<div class="ui-estate-line"><span>Your estate at a glance</span>
       <span>${f.known ? `${f.devices.length} observed devices · last ${esc(fmtWindow(hoursNow()))}` : 'Findings unavailable'}</span></div>
     <div class="overview-executive w12 ${mood}" data-tour="stats">
       <section class="executive-posture">
-        <span>${astraIcon('shield')}Overall posture</span>
+        <span>${uiIcon('shield')}Overall posture</span>
         <strong>${!f.known ? 'Data unavailable' : silent ? 'Nothing reporting' : attention ? 'Needs attention' : 'Monitoring healthy'}</strong>
         <p>${!f.known ? 'The findings could not be read. Open System health to check the connection.' : silent
           ? 'No detection source reported in this window. These counts are missing data, not a clean result.'
@@ -2546,7 +2546,7 @@ const WIDGETS = {
           ${open.length && f.known ? '<button class="mini" data-nav="personal">Review accounts</button>' : ''}
           <button class="mini" data-nav="coverage">Verify coverage</button>
         </div>
-        <small class="astra-posture-note">${f.known
+        <small class="ui-posture-note">${f.known
           ? `${f.people} people named in personal-account findings${f.unnamed ? ` · ${f.unnamed} unnamed devices` : ''}`
           : 'Do not interpret unavailable data as a clean result.'}</small>
       </section>
@@ -2556,9 +2556,9 @@ const WIDGETS = {
             open.length !== f.personal.length ? ` · ${f.personal.length - open.length} accepted` : ''}` : 'Findings unavailable'}</small></div>
         <div><dt>${value(f.toolIds.length)}</dt><dd>AI tools observed</dd>
           <small>Across endpoint, browser and cloud sources</small></div>
-        <div><dt>${f.known && f.coverage !== null ? f.coverage + '<span class="astra-percent">%</span>' : '—'}</dt>
+        <div><dt>${f.known && f.coverage !== null ? f.coverage + '<span class="ui-percent">%</span>' : '—'}</dt>
           <dd>Collector coverage</dd><small>${f.known ? `${f.collectors} of ${f.devices.length} observed devices` : 'Findings unavailable'}</small></div>
-        <div><dt>${f.known && f.recorded ? f.recorded.length + '<span class="astra-denominator">/ ' + f.toolIds.length + '</span>' : '—'}</dt>
+        <div><dt>${f.known && f.recorded ? f.recorded.length + '<span class="ui-denominator">/ ' + f.toolIds.length + '</span>' : '—'}</dt>
           <dd>Register decisions</dd><small>${!f.known || !f.recorded ? 'Register data unavailable'
             : `${f.undecided} tools without a recorded decision`}</small></div>
       </dl>
@@ -2571,66 +2571,66 @@ const WIDGETS = {
     // zeros on a deployment that never linked a tool would be noise.
     if (!BUDGET) return '';
     const subs = BUDGET.subscriptions || [];
-    const head = `<div class="astra-panel-head"><div><h3>AI spend</h3><p>Tracked subscriptions against observed use</p></div>
-      <span class="astra-eyebrow">Budget</span></div>`;
+    const head = `<div class="ui-panel-head"><div><h3>AI spend</h3><p>Tracked subscriptions against observed use</p></div>
+      <span class="ui-eyebrow">Budget</span></div>`;
     if (!subs.length) {
-      return `<div class="wcard w6 astra-widget astra-spend-card">${head}
-      <p class="astra-empty">Nothing linked yet. The Budget view records what
+      return `<div class="wcard w6 ui-widget ui-spend-card">${head}
+      <p class="ui-empty">Nothing linked yet. The Budget view records what
       each AI tool costs and joins it against observed use.</p>
-      <div class="astra-panel-footer"><span></span><button class="mini" data-nav="budget">Open Budget ${astraIcon('arrow')}</button></div></div>`;
+      <div class="ui-panel-footer"><span></span><button class="mini" data-nav="budget">Open Budget ${uiIcon('arrow')}</button></div></div>`;
     }
     const next = subs.filter(s => s.renewal_date)
       .sort((a, b) => a.renewal_date.localeCompare(b.renewal_date))[0];
     const unob = subs.reduce((a, s) =>
       a + bReconcile(s).unobserved.length, 0);
     const conv = bConverted(subs);
-    return `<div class="wcard w6 astra-widget astra-spend-card">${head}
-    <dl class="astra-tiles">
+    return `<div class="wcard w6 ui-widget ui-spend-card">${head}
+    <dl class="ui-tiles">
       <div><dt>${conv ? bMoney(conv.total, bPrefCur()) : bSpendParts(subs).join(' + ')}</dt>
         <dd>tracked per month${conv ? ` <span title="${esc(bSpendParts(subs).join(' + '))}">· ECB ${esc(conv.date)}</span>` : ''}</dd></div>
       <div><dt>${subs.length}</dt><dd>tools linked</dd></div>
       <div><dt${unob ? ' class="attention"' : ''}>${unob}</dt><dd>paid seats never observed</dd></div>
     </dl>
-    <div class="astra-table-scroll"><table class="astra-inventory astra-widget-table astra-spend-table">
-      <thead><tr><th>Subscription</th><th class="astra-col-l">Plan</th><th class="num astra-col-m">Monthly</th>
-        <th class="num astra-col-m">Seats in use</th><th class="num astra-col-l">Observed</th><th class="astra-col-l">Renews</th><th>Review</th></tr></thead>
+    <div class="ui-table-scroll"><table class="ui-inventory ui-widget-table ui-spend-table">
+      <thead><tr><th>Subscription</th><th class="ui-col-l">Plan</th><th class="num ui-col-m">Monthly</th>
+        <th class="num ui-col-m">Seats in use</th><th class="num ui-col-l">Observed</th><th class="ui-col-l">Renews</th><th>Review</th></tr></thead>
       <tbody>${subs.map(sub => {
         const r = bReconcile(sub);
         const seats = (sub.seat_tiers || []).reduce((x, t) => x + (t.seats || 0), 0);
         return `<tr data-nav="budget">
-          <td><strong>${esc(astraToolName(sub.tool_id))}</strong>${sub.plan ? `<small class="astra-col-s">${esc(sub.plan)}</small>` : ''}</td>
-          <td class="astra-col-l">${esc(sub.plan || '—')}</td>
-          <td class="num astra-col-m">${bMoney(bSubMonthly(sub), sub.currency)}</td>
-          <td class="num astra-col-m">${r.matched.length} of ${seats}</td>
-          <td class="num astra-col-l">${r.matched.length + r.strangers.length}</td>
-          <td class="astra-col-l astra-muted">${sub.renewal_date ? esc(sub.renewal_date) : '—'}</td>
-          <td>${r.unobserved.length ? `<span class="astra-badge attention">${r.unobserved.length} idle</span>` : ''}${r.strangers.length
-            ? ` <span class="astra-badge governance">${r.strangers.length} unseated</span>` : ''}${!r.unobserved.length && !r.strangers.length ? '<span class="astra-muted">Nothing flagged</span>' : ''}</td></tr>`;
+          <td><strong>${esc(uiToolName(sub.tool_id))}</strong>${sub.plan ? `<small class="ui-col-s">${esc(sub.plan)}</small>` : ''}</td>
+          <td class="ui-col-l">${esc(sub.plan || '—')}</td>
+          <td class="num ui-col-m">${bMoney(bSubMonthly(sub), sub.currency)}</td>
+          <td class="num ui-col-m">${r.matched.length} of ${seats}</td>
+          <td class="num ui-col-l">${r.matched.length + r.strangers.length}</td>
+          <td class="ui-col-l ui-muted">${sub.renewal_date ? esc(sub.renewal_date) : '—'}</td>
+          <td>${r.unobserved.length ? `<span class="ui-badge attention">${r.unobserved.length} idle</span>` : ''}${r.strangers.length
+            ? ` <span class="ui-badge governance">${r.strangers.length} unseated</span>` : ''}${!r.unobserved.length && !r.strangers.length ? '<span class="ui-muted">Nothing flagged</span>' : ''}</td></tr>`;
       }).join('')}</tbody></table></div>
-    <div class="astra-panel-footer"><span>${next ? `Next renewal: ${esc(astraToolName(next.tool_id))} ${when(next.renewal_date)}` : 'No renewal dates recorded'}</span>
-      <button class="mini" data-nav="budget">Open Budget ${astraIcon('arrow')}</button></div></div>`;
+    <div class="ui-panel-footer"><span>${next ? `Next renewal: ${esc(uiToolName(next.tool_id))} ${when(next.renewal_date)}` : 'No renewal dates recorded'}</span>
+      <button class="mini" data-nav="budget">Open Budget ${uiIcon('arrow')}</button></div></div>`;
   },
 
   top_tools: () => {
-    const f = astraOverviewFacts();
+    const f = uiOverviewFacts();
     const rows = ents(G.tools).filter(([id]) => {
-      const info = astraToolInfo(id);
+      const info = uiToolInfo(id);
       return (match(id) || match(info.name || '') || match(info.vendor || ''))
-        && (!ASTRA_PERSONAL_TOOLS || f.open.some(r => r.tool === id));
+        && (!UI_PERSONAL_TOOLS || f.open.some(r => r.tool === id));
     }).sort((a,b)=>(b[1].devices||[]).length-(a[1].devices||[]).length);
     const bars = widgetForm('top_tools') === 'bar';
-    return `<div class="wcard ${bars ? 'w6' : 'w12'} astra-tools-card">
-      <div class="astra-panel-head"><h3>${formToggle('top_tools')}Discovered AI tools <span class="count">${f.toolIds.length}</span></h3>
-        <div class="astra-tool-filters" role="group" aria-label="Filter discovered tools">
-          <button class="${!ASTRA_PERSONAL_TOOLS ? 'on' : ''}" data-act="astra-tools-filter" data-filter="all" aria-pressed="${!ASTRA_PERSONAL_TOOLS}">All tools</button>
-          <button class="${ASTRA_PERSONAL_TOOLS ? 'on' : ''}" data-act="astra-tools-filter" data-filter="personal" aria-pressed="${ASTRA_PERSONAL_TOOLS}">Personal accounts</button>
+    return `<div class="wcard ${bars ? 'w6' : 'w12'} ui-tools-card">
+      <div class="ui-panel-head"><h3>${formToggle('top_tools')}Discovered AI tools <span class="count">${f.toolIds.length}</span></h3>
+        <div class="ui-tool-filters" role="group" aria-label="Filter discovered tools">
+          <button class="${!UI_PERSONAL_TOOLS ? 'on' : ''}" data-act="ui-tools-filter" data-filter="all" aria-pressed="${!UI_PERSONAL_TOOLS}">All tools</button>
+          <button class="${UI_PERSONAL_TOOLS ? 'on' : ''}" data-act="ui-tools-filter" data-filter="personal" aria-pressed="${UI_PERSONAL_TOOLS}">Personal accounts</button>
         </div></div>
-      ${!f.known ? '<p class="astra-empty">Findings are unavailable.</p>' : rows.length ? (bars
-        ? '<div class="astra-tool-bars">' + barRows(rows.map(([k,t]) => [k,(t.devices||[]).length]), 'devices', 'tool') + '</div>'
-        : astraToolsTable(rows)) : '<p class="astra-empty">No tools match this view.</p>'}
-      <div class="astra-panel-footer"><span>${f.known ? `${rows.length} of ${f.toolIds.length} discovered tools` : 'No data available'}</span>
-        <button class="mini" data-nav="tools">Open discovered tools ${astraIcon('arrow')}</button></div>
-      <p class="src-note astra-table-note">${bars ? 'Observed devices per tool. Cloud-only tools may have zero associated devices.'
+      ${!f.known ? '<p class="ui-empty">Findings are unavailable.</p>' : rows.length ? (bars
+        ? '<div class="ui-tool-bars">' + barRows(rows.map(([k,t]) => [k,(t.devices||[]).length]), 'devices', 'tool') + '</div>'
+        : uiToolsTable(rows)) : '<p class="ui-empty">No tools match this view.</p>'}
+      <div class="ui-panel-footer"><span>${f.known ? `${rows.length} of ${f.toolIds.length} discovered tools` : 'No data available'}</span>
+        <button class="mini" data-nav="tools">Open discovered tools ${uiIcon('arrow')}</button></div>
+      <p class="src-note ui-table-note">${bars ? 'Observed devices per tool. Cloud-only tools may have zero associated devices.'
         : 'One bar per day for the last ' + fmtWindow(hoursNow()) + ', written as a total when the window holds fewer than three days. Devices and cloud identities are counted separately.'}</p>
     </div>`;
   },
@@ -2639,28 +2639,28 @@ const WIDGETS = {
     // Ten rows are drawn; the card's width decides how many show and which
     // columns (CSS, by container). The footer count is the whole window.
     const pa = (G.personal_accounts || []).slice(0, 10);
-    const body = pa.length ? `<div class="astra-table-scroll"><table class="astra-inventory astra-widget-table astra-people-table">
-      <thead><tr><th>Person</th><th>Account</th><th class="astra-col-m">AI tool</th><th class="astra-col-l">Device</th>
-        <th class="astra-col-l">Surface</th><th class="astra-col-l">Source</th><th>Last seen</th></tr></thead>
+    const body = pa.length ? `<div class="ui-table-scroll"><table class="ui-inventory ui-widget-table ui-people-table">
+      <thead><tr><th>Person</th><th>Account</th><th class="ui-col-m">AI tool</th><th class="ui-col-l">Device</th>
+        <th class="ui-col-l">Surface</th><th class="ui-col-l">Source</th><th>Last seen</th></tr></thead>
       <tbody>${pa.map(r => `<tr>
         <td><strong>${esc(r.user || r.device_name || r.device)}</strong></td>
-        <td><span class="astra-badge risk">${esc(r.account_domain)}</span></td>
-        <td class="astra-col-m">${esc(astraToolInfo(r.tool).name || r.tool)}</td>
-        <td class="astra-col-l">${esc(r.device_name || r.device || '—')}</td>
-        <td class="astra-col-l">${(r.surfaces || []).map(x => `<span class="astra-surface">${esc(x)}</span>`).join('') || '<span class="astra-muted">—</span>'}</td>
-        <td class="astra-col-l">${(r.sources || []).map(x => astraSourceChip(x)).join('') || '<span class="astra-muted">—</span>'}</td>
-        <td class="astra-muted">${esc((r.last_seen || '').slice(0, 10))}</td>
+        <td><span class="ui-badge risk">${esc(r.account_domain)}</span></td>
+        <td class="ui-col-m">${esc(uiToolInfo(r.tool).name || r.tool)}</td>
+        <td class="ui-col-l">${esc(r.device_name || r.device || '—')}</td>
+        <td class="ui-col-l">${(r.surfaces || []).map(x => `<span class="ui-surface">${esc(x)}</span>`).join('') || '<span class="ui-muted">—</span>'}</td>
+        <td class="ui-col-l">${(r.sources || []).map(x => uiSourceChip(x)).join('') || '<span class="ui-muted">—</span>'}</td>
+        <td class="ui-muted">${esc((r.last_seen || '').slice(0, 10))}</td>
       </tr>`).join('')}</tbody></table></div>`
       : dataOk()
-        ? '<p class="astra-empty">None seen. That is a result, not an absence of one.</p>'
-        : '<p class="astra-empty">Nothing to show: the findings could not be read.</p>';
-    return `<div class="wcard w6 astra-widget astra-people-card">
-      <div class="astra-panel-head"><div><h3>Recent personal accounts</h3>
+        ? '<p class="ui-empty">None seen. That is a result, not an absence of one.</p>'
+        : '<p class="ui-empty">Nothing to show: the findings could not be read.</p>';
+    return `<div class="wcard w6 ui-widget ui-people-card">
+      <div class="ui-panel-head"><div><h3>Recent personal accounts</h3>
         <p>Latest activity in accounts outside your corporate domains</p></div>
-        <span class="astra-eyebrow">Last ${esc(fmtWindow(hoursNow()))}</span></div>
+        <span class="ui-eyebrow">Last ${esc(fmtWindow(hoursNow()))}</span></div>
       ${body}
-      <div class="astra-panel-footer"><span>${pa.length ? `${(G.personal_accounts || []).length} in this window` : ''}</span>
-        <button class="mini" data-nav="personal">Open personal accounts ${astraIcon('arrow')}</button></div>
+      <div class="ui-panel-footer"><span>${pa.length ? `${(G.personal_accounts || []).length} in this window` : ''}</span>
+        <button class="mini" data-nav="personal">Open personal accounts ${uiIcon('arrow')}</button></div>
     </div>`;
   },
 
@@ -2669,24 +2669,24 @@ const WIDGETS = {
     // One square per source, filled when it reports: 1/5 should look like
     // four dark squares, not a bar length to squint at.
     const meter = widgetForm('detection_coverage') === 'meter';
-    const f = astraOverviewFacts();
-    return `<div class="wcard w6 astra-visibility-card">
-    <div class="astra-panel-head"><div><h3>Visibility across your estate</h3><p>Collector signals across observed devices</p></div>${astraIcon('shield')}</div>
-    <div class="astra-coverage-overview">
-      <div class="astra-ring-block">
-        <div class="astra-ring" role="img" aria-label="${f.known && f.coverage !== null ? `${f.collectors} of ${f.devices.length} devices have a collector signal` : 'Collector coverage unavailable'}">
-          <svg viewBox="0 0 112 112" aria-hidden="true"><circle class="astra-ring-track" cx="56" cy="56" r="48"/>
-            <circle class="astra-ring-value" cx="56" cy="56" r="48" pathLength="100" stroke-dasharray="${f.known && f.devices.length ? f.collectors / f.devices.length * 100 : 0} 100"/></svg>
+    const f = uiOverviewFacts();
+    return `<div class="wcard w6 ui-visibility-card">
+    <div class="ui-panel-head"><div><h3>Visibility across your estate</h3><p>Collector signals across observed devices</p></div>${uiIcon('shield')}</div>
+    <div class="ui-coverage-overview">
+      <div class="ui-ring-block">
+        <div class="ui-ring" role="img" aria-label="${f.known && f.coverage !== null ? `${f.collectors} of ${f.devices.length} devices have a collector signal` : 'Collector coverage unavailable'}">
+          <svg viewBox="0 0 112 112" aria-hidden="true"><circle class="ui-ring-track" cx="56" cy="56" r="48"/>
+            <circle class="ui-ring-value" cx="56" cy="56" r="48" pathLength="100" stroke-dasharray="${f.known && f.devices.length ? f.collectors / f.devices.length * 100 : 0} 100"/></svg>
           <div><strong>${f.known && f.coverage !== null ? f.coverage + '<span>%</span>' : '—'}</strong></div>
         </div>
-        <small class="astra-ring-caption">Collector coverage</small>
+        <small class="ui-ring-caption">Collector coverage</small>
       </div>
-      <div class="astra-coverage-legend"><p><i></i>Collector observed <b>${f.known ? f.collectors : '—'}</b></p>
+      <div class="ui-coverage-legend"><p><i></i>Collector observed <b>${f.known ? f.collectors : '—'}</b></p>
         <p><i class="gap"></i>No collector signal <b>${f.known ? f.devices.length - f.collectors : '—'}</b></p>
         <small>Of devices seen by any source in this window.</small></div>
     </div>
-    <div class="astra-source-heading"><h4>Detection sources</h4><span>${S.reporting || 0}/${(S.groups || []).reduce((n,g) => n + g.total, 0)} reporting</span>${formToggle('detection_coverage')}</div>
-    <div class="astra-source-grid">
+    <div class="ui-source-heading"><h4>Detection sources</h4><span>${S.reporting || 0}/${(S.groups || []).reduce((n,g) => n + g.total, 0)} reporting</span>${formToggle('detection_coverage')}</div>
+    <div class="ui-source-grid">
     ${meter ? (S.groups||[]).map(g => `<div class="meterrow"
         data-ctip="${esc(g.group + ' · ' + g.reporting + ' of ' + g.total
                          + ' dedicated sources reporting')}">
@@ -2708,8 +2708,8 @@ const WIDGETS = {
         <span>${esc(g.group)}</span>${dots}
         <b>${g.reporting}/${g.total}</b></div>`;
     }).join('')}</div>
-    <div class="astra-panel-footer"><span>Source catalogue, not configured integrations</span><button class="mini" data-nav="setup">Review sources ${astraIcon('arrow')}</button></div>
-    <details class="astra-coverage-note"><summary>How to read coverage</summary><p class="src-note">Collector coverage uses devices observed by any source, not your entire company fleet. An unobserved source may be unconfigured or inapplicable. These are dedicated sources per surface; other sources can also produce findings for it.</p></details></div>`;
+    <div class="ui-panel-footer"><span>Source catalogue, not configured integrations</span><button class="mini" data-nav="setup">Review sources ${uiIcon('arrow')}</button></div>
+    <details class="ui-coverage-note"><summary>How to read coverage</summary><p class="src-note">Collector coverage uses devices observed by any source, not your entire company fleet. An unobserved source may be unconfigured or inapplicable. These are dedicated sources per surface; other sources can also produce findings for it.</p></details></div>`;
   },
 
   // The change dimension, which the estate has had all along and shown
@@ -2736,19 +2736,19 @@ const WIDGETS = {
     const groups = (S.groups || []).map(g => ({group: g.group, total: g.total,
       silent: (g.sources || []).filter(r => !r.reporting)})).filter(g => g.silent.length);
     const silent = groups.reduce((n, g) => n + g.silent.length, 0);
-    return `<div class="wcard w4 astra-widget astra-silent-card">
-      <div class="astra-panel-head"><div><h3>Silent sources <span class="count">${silent}</span></h3>
+    return `<div class="wcard w4 ui-widget ui-silent-card">
+      <div class="ui-panel-head"><div><h3>Silent sources <span class="count">${silent}</span></h3>
         <p>In the catalogue, nothing reported in this window</p></div></div>
-      ${silent ? `<div class="astra-table-scroll"><table class="astra-inventory astra-widget-table astra-silent-table">
+      ${silent ? `<div class="ui-table-scroll"><table class="ui-inventory ui-widget-table ui-silent-table">
         <thead><tr><th>Surface</th><th class="num">Silent</th><th>Sources</th></tr></thead>
         <tbody>${groups.map(g => `<tr>
           <td><strong>${esc(g.group)}</strong></td>
           <td class="num">${g.silent.length} of ${g.total}</td>
           <td>${g.silent.map(r => `<span title="${esc(r.source)}">${esc(r.label || r.source)}</span>`).join('<i>·</i>')}</td>
         </tr>`).join('')}</tbody></table></div>`
-        : '<p class="astra-empty">Every listed source is reporting.</p>'}
-      <div class="astra-panel-footer"><span>Unconfigured or not applicable, not necessarily broken</span>
-        <button class="mini" data-nav="setup">Review sources ${astraIcon('arrow')}</button></div>
+        : '<p class="ui-empty">Every listed source is reporting.</p>'}
+      <div class="ui-panel-footer"><span>Unconfigured or not applicable, not necessarily broken</span>
+        <button class="mini" data-nav="setup">Review sources ${uiIcon('arrow')}</button></div>
     </div>`;
   },
 
@@ -2761,40 +2761,40 @@ const WIDGETS = {
     // Two numbers, not four. The overview is a glance: is the guard running,
     // and did somebody ignore it. Warned and blocked are the detail behind
     // that, and they have a page.
-    const head = `<div class="astra-panel-head"><div><h3>Paste guard</h3><p>Browser extension, on the devices it reached</p></div></div>`;
-    if (!PG) return `<div class="wcard w4 astra-widget astra-paste-card">${head}
-      <p class="astra-empty">No paste guard data.</p></div>`;
+    const head = `<div class="ui-panel-head"><div><h3>Paste guard</h3><p>Browser extension, on the devices it reached</p></div></div>`;
+    if (!PG) return `<div class="wcard w4 ui-widget ui-paste-card">${head}
+      <p class="ui-empty">No paste guard data.</p></div>`;
     const over = PG.overridden || 0, live = PG.guard_devices || 0;
     const warned = PG.warned || 0;
     const versions = (PG.guard_versions || []).length;
     const warnMode = (PG.guard_modes || []).some(m => m.mode === 'warn');
-    return `<div class="wcard w4 astra-widget astra-paste-card">${head}
-      <dl class="astra-tiles astra-tiles-2">
+    return `<div class="wcard w4 ui-widget ui-paste-card">${head}
+      <dl class="ui-tiles ui-tiles-2">
         <div><dt${live ? '' : ' class="risk"'}>${live}</dt><dd>devices running the guard</dd></div>
         <div><dt${over ? ' class="risk"' : ''}>${over}</dt><dd>warnings overridden</dd></div>
       </dl>
-      <ul class="astra-notes">
+      <ul class="ui-notes">
         ${warnMode && warned ? `<li class="attention">In block mode, ${warned} warned paste${warned === 1 ? '' : 's'} would have been stopped outright. The breakdown is on the Paste guard page.</li>` : ''}
         <li>${live
           ? `Running on ${live} device${live === 1 ? '' : 's'}${versions > 1 ? ` across ${versions} versions` : ''}, so low numbers here genuinely mean few risky pastes.`
           : 'No device has checked in yet, so zero here means "not deployed", not "nobody pasted anything".'}</li>
       </ul>
-      <div class="astra-panel-footer"><span>${warned ? `${warned} warned in this window` : 'Nothing warned in this window'}</span>
-        <button class="mini" data-nav="paste">Open Paste guard ${astraIcon('arrow')}</button></div></div>`;
+      <div class="ui-panel-footer"><span>${warned ? `${warned} warned in this window` : 'Nothing warned in this window'}</span>
+        <button class="mini" data-nav="paste">Open Paste guard ${uiIcon('arrow')}</button></div></div>`;
   },
 
   review_queue: () => {
-    const f = astraOverviewFacts();
+    const f = uiOverviewFacts();
     const candidates = (CAND || []).filter(c => !c.resolved && !c.dismissed_at);
-    return `<div class="wcard w6 astra-focus-card"><div class="astra-panel-head">
+    return `<div class="wcard w6 ui-focus-card"><div class="ui-panel-head">
       <div><h3>Where to focus</h3><p>Follow-ups across your AI estate</p></div>
-      <span class="astra-eyebrow">Action queue</span></div>
-      ${astraFocusRows(f)}
-      <details class="astra-queue-details">
+      <span class="ui-eyebrow">Action queue</span></div>
+      ${uiFocusRows(f)}
+      <details class="ui-queue-details">
         <summary>Decision & discovery queue <span>${candidates.length
           ? `${candidates.length} new discover${candidates.length === 1 ? 'y' : 'ies'}`
           : f.undecided === null ? 'Register not read' : `${f.undecided} awaiting a decision`}</span></summary>
-        ${astraReviewQueueDetail()}
+        ${uiReviewQueueDetail()}
       </details></div>`;
   },
 
@@ -3026,8 +3026,8 @@ function devices() {
     <tbody>${rows.map(([k,d]) => `<tr data-open="device" data-key="${esc(k)}">
       <td><strong>${esc(label(k,d))}</strong><br><span class="mono row-key">${esc(k)}</span></td>
       <td>${d.person ? `<span class="pill p-ok">${esc(d.person)}</span>` : '<span class="muted-value">Unattributed</span>'}</td>
-      <td><div class="cell-tags">${(d.tools||[]).map(t=>astraToolChip(t)).join('') || '<span class="muted-value">None observed</span>'}</div></td>
-      <td><div class="cell-tags">${(d.personal_accounts||[]).map(a=>`<span class="astra-badge risk">${esc(a)}</span>`).join('') || '<span class="muted-value">None</span>'}</div></td>
+      <td><div class="cell-tags">${(d.tools||[]).map(t=>uiToolChip(t)).join('') || '<span class="muted-value">None observed</span>'}</div></td>
+      <td><div class="cell-tags">${(d.personal_accounts||[]).map(a=>`<span class="ui-badge risk">${esc(a)}</span>`).join('') || '<span class="muted-value">None</span>'}</div></td>
       <td><div class="cell-tags">${(d.local_users||[]).map(u=>`<span class="pill p-mut">${esc(u)}</span>`).join('') || '<span class="muted-value">—</span>'}</div></td>
     </tr>`).join('')}</tbody>
   </table></div>`;
@@ -3167,11 +3167,11 @@ async function people() {
   const unattributed = ents(G.devices).filter(([,d]) => !d.person).length;
   return `<h2>People</h2><p class="lede">People named by cloud sources, which see accounts rather than machines. A device shows against a person only where the identity map links them.</p>
   ${identityMapPanel(unattributed)}
-  <div class="tcard"><table class="astra-page-table"><thead><tr><th>Identity</th><th>AI tools</th><th>Devices</th></tr></thead>
+  <div class="tcard"><table class="ui-page-table"><thead><tr><th>Identity</th><th>AI tools</th><th>Devices</th></tr></thead>
   ${rows.map(([k,i]) => `<tr><td><strong>${esc(k)}</strong>${(i.aliases||[]).length
     ? `<br><span class="src-note" style="font-style:normal">also seen as
        ${(i.aliases).map(a => esc(a)).join(', ')}</span>` : ''}</td>
-    <td><div class="cell-tags">${(i.tools||[]).map(t=>astraToolChip(t)).join('')}</div></td>
+    <td><div class="cell-tags">${(i.tools||[]).map(t=>uiToolChip(t)).join('')}</div></td>
     <td><div class="cell-tags">${(i.devices||[]).map(d=>`<span class="pill p-acc">${esc(d)}</span>`).join('') || '<span class="muted-value">Unmapped</span>'}</div></td></tr>`).join('')}
   </table></div>`;
 }
@@ -3212,11 +3212,11 @@ function tools() {
       return rank(b) - rank(a) || (b[1].devices||[]).length - (a[1].devices||[]).length;
     });
   return `<h2>Tools</h2><p class="lede">The same tool in a browser, a desktop app and a CLI is three different exposures, so surfaces are listed separately. Tools that need a look sort first: <span class="pill p-warn">attention</span> when several factors stack up, <span class="pill p-amb">watch</span> for one. Open a tool to see which. Editors that bundle AI, such as Cursor or Windsurf, show as <span class="pill p-mut">installed only</span> until something shows a model actually ran. "Identities from sources" counts people a source named directly; the AI register also counts people linked through a device, so the two can differ.</p>
-  <div class="tcard"><table class="astra-page-table"><thead><tr><th>AI tool</th><th>Status</th><th>Devices</th>
+  <div class="tcard"><table class="ui-page-table"><thead><tr><th>AI tool</th><th>Status</th><th>Devices</th>
     <th title="People a SOURCE named on this tool. A cloud sign-in carries a person; an endpoint finding carries a machine, and the person behind it comes from the identity map - so this is lower than the register's user count for tools found on endpoints.">Identities from sources</th>
     <th>By surface</th></tr></thead>
   <tbody>${rows.map(([k,t,a]) => `<tr data-open="tool" data-key="${esc(k)}" style="cursor:pointer">
-    <td><strong>${esc(astraToolName(k))}</strong><span class="astra-id">${esc(astraToolInfo(k).vendor ? astraToolInfo(k).vendor + ' · ' : '')}${esc(k)}</span></td><td>${attnPill(a)}${t.usage === 'installed'
+    <td><strong>${esc(uiToolName(k))}</strong><span class="ui-id">${esc(uiToolInfo(k).vendor ? uiToolInfo(k).vendor + ' · ' : '')}${esc(k)}</span></td><td>${attnPill(a)}${t.usage === 'installed'
       ? `<span class="pill p-mut" title="Found installed, but nothing has shown a model actually running - no account, no sign-in, and no traffic to the completion backend. Editors that bundle AI (Cursor, Windsurf/Devin Desktop) are useful all day without it.">installed only</span>`
       : ''}</td>
     <td>${(t.devices||[]).length}${(t.devices_active||[]).length < (t.devices||[]).length
@@ -3232,7 +3232,7 @@ function tools() {
   <div class="cardhead"><h3>Bridge targets</h3></div>
   <p class="lede">Where an AI tool reached. Not a tool inventory: these are
   destinations of an integration, not something someone installed.</p>
-  <table class="astra-page-table"><thead><tr><th>Resource</th><th>Devices</th></tr></thead>
+  <table class="ui-page-table"><thead><tr><th>Resource</th><th>Devices</th></tr></thead>
   ${ents(G.bridges).sort((a,b)=>b[1].devices.length-a[1].devices.length)
     .map(([k,b])=>`<tr><td>${esc(k)}</td><td>${b.devices.length}</td></tr>`).join('')}
   </table></div>` : ''}`;
@@ -3241,9 +3241,9 @@ function tools() {
 function coverage() {
   const gaps = ents(G.devices).filter(([,d]) => d.scanner_seen && !d.collector_seen);
   return `<h2>Coverage</h2><p class="lede">Machines an inventory or telemetry source knows about, but no endpoint collector has reported from. Usually the collector is not installed there yet.</p>
-  ${gaps.length ? `<div class="tcard"><table class="astra-page-table"><thead><tr><th>Device</th><th>Seen by</th><th>AI tools seen</th></tr></thead>
+  ${gaps.length ? `<div class="tcard"><table class="ui-page-table"><thead><tr><th>Device</th><th>Seen by</th><th>AI tools seen</th></tr></thead>
   ${gaps.map(([k,d])=>`<tr><td><strong>${esc(label(k,d))}</strong></td>
-    <td><div class="cell-tags">${(d.sources||[]).map(x => astraSourceChip(x)).join('')}</div></td>
+    <td><div class="cell-tags">${(d.sources||[]).map(x => uiSourceChip(x)).join('')}</div></td>
     <td>${(d.tools||[]).length}</td></tr>`).join('')}</table></div>`
   : dataOk()
     ? '<p class="lede">Every device with a scanner finding also has a collector reporting.</p>'
@@ -3314,15 +3314,15 @@ function mcp() {
     <div><dt>${tools.length}</dt><dd>configuring tools</dd></div>
   </dl>
 
-  ${rows.length ? `<div class="tcard"><table class="astra-page-table">
+  ${rows.length ? `<div class="tcard"><table class="ui-page-table">
   <thead><tr><th>Server</th><th>Devices</th><th>Configured by</th>
   <th>First seen</th><th>Last seen</th></tr></thead>
   ${rows.map(r => `<tr data-open="mcp" data-key="${esc(r.server)}" style="cursor:pointer">
     <td><strong>${esc(r.server)}</strong></td>
     <td>${(r.devices||[]).length}</td>
-    <td><div class="cell-tags">${(r.tools||[]).map(t=>astraToolChip(t)).join('')}</div></td>
-    <td class="astra-muted">${esc((r.first_seen||'').slice(0,10) || '—')}</td>
-    <td class="astra-muted">${esc((r.last_seen||'').slice(0,10) || '—')}</td>
+    <td><div class="cell-tags">${(r.tools||[]).map(t=>uiToolChip(t)).join('')}</div></td>
+    <td class="ui-muted">${esc((r.first_seen||'').slice(0,10) || '—')}</td>
+    <td class="ui-muted">${esc((r.last_seen||'').slice(0,10) || '—')}</td>
   </tr>`).join('')}</table>
   <p class="src-note" style="margin-bottom:8px">Click a server to see which machines it's configured on.
   Widest reach is listed first.</p></div>`
@@ -3398,23 +3398,23 @@ function personal() {
   return `<h2>Personal accounts</h2>
   <p class="lede" data-tour="personal">AI tools signed in with personal accounts. Even on an approved tool, that means company data going somewhere you do not manage, with access that outlives offboarding. Personal means the account domain is not in your corporate domains list. Treat each one as a lead to follow up, not a verdict${lifecycle ? `, and record where it got to: acknowledged keeps it visible, accepted needs a reason and takes it out of the open count` : ''}.</p>
   ${summary}
-  ${rows.length ? `<div class="tcard"><table class="astra-page-table">
+  ${rows.length ? `<div class="tcard"><table class="ui-page-table">
   <thead><tr><th>Person</th><th>Account</th><th>AI tool</th><th>Device</th>
   <th>Surface</th><th>First seen</th><th>Last seen</th><th>Source</th>
   ${lifecycle ? '<th>Status</th>' : ''}</tr></thead>
-  <tbody>${rows.map(r => `<tr${paStatus(r) ? ' class="astra-settled"' : ''}>
+  <tbody>${rows.map(r => `<tr${paStatus(r) ? ' class="ui-settled"' : ''}>
     <td>${r.user
       ? esc(r.user) + (r.user_via === 'device'
         ? ' <span class="pill p-mut" title="This source reported no account name. The person is the one the identity map attaches to this machine.">via device</span>' : '')
       : '<span class="pill p-mut">no identity</span>'}</td>
-    <td><span class="astra-badge risk">${esc(r.account_domain)}</span></td>
-    <td>${astraToolChip(r.tool)}</td>
+    <td><span class="ui-badge risk">${esc(r.account_domain)}</span></td>
+    <td>${uiToolChip(r.tool)}</td>
     <td>${esc(r.device_name || r.device || '—')}</td>
-    <td>${(r.surfaces||[]).map(x=>`<span class="astra-surface">${esc(x)}</span>`).join('')}</td>
-    <td class="astra-muted">${esc((r.first_seen||'').slice(0,10) || '—')}</td>
-    <td class="astra-muted">${esc((r.last_seen||'').slice(0,10) || '—')}</td>
-    <td>${(r.sources||[]).map(x => astraSourceChip(x)).join('') || '<span class="astra-muted">—</span>'}</td>
-    ${lifecycle ? `<td class="nw astra-row-actions">${paChip(paStatus(r))} ${paActions(r)}</td>` : ''}
+    <td>${(r.surfaces||[]).map(x=>`<span class="ui-surface">${esc(x)}</span>`).join('')}</td>
+    <td class="ui-muted">${esc((r.first_seen||'').slice(0,10) || '—')}</td>
+    <td class="ui-muted">${esc((r.last_seen||'').slice(0,10) || '—')}</td>
+    <td>${(r.sources||[]).map(x => uiSourceChip(x)).join('') || '<span class="ui-muted">—</span>'}</td>
+    ${lifecycle ? `<td class="nw ui-row-actions">${paChip(paStatus(r))} ${paActions(r)}</td>` : ''}
   </tr>`).join('')}</tbody></table></div>`
   : `<p class="lede">None seen in the last ${hoursNow()} hours.
   Worth trusting only if the sources on the Setup page are reporting.</p>`}`;
@@ -4237,7 +4237,7 @@ async function paste() {
   <th class="n">Blocked</th><th class="n">Devices</th><th>Detectors</th>
   <th>Last seen</th></tr></thead>
   ${rows.map(r => `<tr>
-    <td>${astraToolChip(r.tool)}</td>
+    <td>${uiToolChip(r.tool)}</td>
     <td class="n">${num(r.warned)}</td>
     <td class="n">${r.overridden
       ? `<span class="pill p-warn">${r.overridden}</span>` : num(0)}</td>
@@ -8832,11 +8832,11 @@ async function managedAction(act, el) {
     if (r.ok) USERS = null;
     render(); return;
   }
-  if (act === 'astra-tools-filter') {
-    ASTRA_PERSONAL_TOOLS = el.getAttribute('data-filter') === 'personal';
+  if (act === 'ui-tools-filter') {
+    UI_PERSONAL_TOOLS = el.getAttribute('data-filter') === 'personal';
     render(); return;
   }
-  if (act === 'astra-density') {
+  if (act === 'ui-density') {
     await prefSet('display.compact', pref('display.compact', '0') === '1' ? '0' : '1');
     render(); return;
   }
@@ -9848,7 +9848,7 @@ function overviewTools() {
   const hidden = overviewWidgets().hidden.length;
   return `${hidden ? `<button class="mini" data-act="ov-showall"
     >Restore ${hidden} hidden ${hidden === 1 ? 'widget' : 'widgets'}</button>` : ''}
-    <button class="mini astra-density" data-act="astra-density" aria-pressed="${pref('display.compact', '0') === '1'}">${pref('display.compact', '0') === '1' ? 'Comfortable view' : 'Compact view'}</button>
+    <button class="mini ui-density" data-act="ui-density" aria-pressed="${pref('display.compact', '0') === '1'}">${pref('display.compact', '0') === '1' ? 'Comfortable view' : 'Compact view'}</button>
     <button class="mini" data-act="ov-edit">Edit widgets</button>`;
 }
 
@@ -10206,7 +10206,7 @@ function decorateView() {
 // the tour's own check hangs off the wrapper rather than the body - a call
 // per branch is a call somebody adding the twelfth view forgets.
 async function render() {
-  document.body.classList.toggle('astra-compact', pref('display.compact', '0') === '1');
+  document.body.classList.toggle('ui-compact', pref('display.compact', '0') === '1');
   await renderView();
   decorateView();
   drawSetup();

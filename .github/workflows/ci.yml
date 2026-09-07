@@ -301,7 +301,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: node --test portal/tests/astra_overview.test.cjs
+      - run: node --test portal/tests/overview_renderers.test.cjs
 
   helm:
     # helm ships on the ubuntu-latest runner image, so the normal path needs

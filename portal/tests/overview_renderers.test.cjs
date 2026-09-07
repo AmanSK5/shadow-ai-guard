@@ -1,4 +1,4 @@
-// Run with: node --test portal/tests/astra_overview.test.cjs
+// Run with: node --test portal/tests/overview_renderers.test.cjs
 // Exercise the actual browser renderers with controlled API-shaped data.
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const html = fs.readFileSync(path.join(__dirname, '../app/static/index.html'), 'utf8');
-const helpers = html.slice(html.indexOf('let ASTRA_PERSONAL_TOOLS = false;'), html.indexOf('const WIDGETS = {'));
+const helpers = html.slice(html.indexOf('let UI_PERSONAL_TOOLS = false;'), html.indexOf('const WIDGETS = {'));
 const widgets = html.slice(html.indexOf('const WIDGETS = {'), html.indexOf('// The truncation banner'));
 const escape = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function context(overrides={}) {
@@ -24,18 +24,18 @@ function context(overrides={}) {
 }
 test('accepted findings leave the open count, acknowledged findings do not',()=>{
   const c=context({G:{devices:{},tools:{a:{}},personal_accounts:[{key:'accepted',tool:'a'},{key:'ack',tool:'a'}]},PSTAT:{accepted:{status:'accepted'},ack:{status:'acknowledged'}}});
-  const f=c.astraOverviewFacts();
+  const f=c.uiOverviewFacts();
   assert.equal(f.personal.length,2);assert.equal(f.open.length,1);assert.equal(f.open[0].key,'ack');
 });
 test('collector coverage counts actual signals, including a source-less observed device',()=>{
   const c=context({G:{devices:{a:{collector_seen:true},b:{scanner_seen:true},c:{}},tools:{},personal_accounts:[]}});
-  const f=c.astraOverviewFacts();
+  const f=c.uiOverviewFacts();
   assert.equal(f.collectors,1);assert.equal(f.coverage,33);assert.equal(f.gaps.length,1);
   assert.match(c.widgets.detection_coverage(),/No collector signal <b>2<\/b>/);
 });
 test('no observed devices gives unavailable coverage rather than an invented percentage',()=>{
   const c=context({G:{devices:{},tools:{},personal_accounts:[]},S:{reporting:0,groups:[]}});
-  assert.equal(c.astraOverviewFacts().coverage,null);
+  assert.equal(c.uiOverviewFacts().coverage,null);
   const out=c.widgets.stat_row();assert.match(out,/Nothing reporting/);assert.doesNotMatch(out,/Monitoring healthy/);
   assert.match(c.widgets.detection_coverage(),/Collector coverage unavailable/);
 });
@@ -48,13 +48,13 @@ test('a failed findings read never presents retained counts as current data',()=
 });
 test('unavailable register data is separate from zero decisions',()=>{
   const c=context({REG:null});
-  assert.equal(c.astraOverviewFacts().recorded,null);
+  assert.equal(c.uiOverviewFacts().recorded,null);
   assert.match(c.widgets.stat_row(),/Register data unavailable/);
-  assert.match(c.astraFocusRows(c.astraOverviewFacts()),/Register data is unavailable/);
+  assert.match(c.uiFocusRows(c.uiOverviewFacts()),/Register data is unavailable/);
 });
 test('only explicit decisions for discovered tools contribute to the register metric',()=>{
   const c=context({G:{devices:{},tools:{a:{},b:{},c:{}},personal_accounts:[]},REG:{rows:[{id:'a',status_source:'governance',status:'refused'},{id:'b',status_source:'portal',status:'reviewing',days_overdue:2},{id:'c',status_source:'registry'},{id:'unobserved',status_source:'portal'}]}});
-  const f=c.astraOverviewFacts();assert.equal(f.recorded.length,2);assert.equal(f.undecided,1);assert.equal(f.overdue,1);
+  const f=c.uiOverviewFacts();assert.equal(f.recorded.length,2);assert.equal(f.undecided,1);assert.equal(f.overdue,1);
 });
 test('cloud-only tools retain zero devices alongside their separate identity count',()=>{
   const c=context();const out=c.widgets.top_tools();
@@ -67,7 +67,7 @@ test('the table contains every matching tool instead of truncating away cloud-on
   const out=c.widgets.top_tools();assert.match(out,/9 of 9 discovered tools/);assert.match(out,/data-key="t8"/);
 });
 test('the personal filter uses open lifecycle findings, not all historic personal rows',()=>{
-  const c=context({PSTAT:{a:{status:'accepted'}}});vm.runInContext('ASTRA_PERSONAL_TOOLS = true;',c);
+  const c=context({PSTAT:{a:{status:'accepted'}}});vm.runInContext('UI_PERSONAL_TOOLS = true;',c);
   const out=c.widgets.top_tools();assert.match(out,/No tools match this view/);assert.match(out,/0 of 1 discovered tools/);
 });
 test('tool metadata and finding identifiers are escaped before becoming markup',()=>{
