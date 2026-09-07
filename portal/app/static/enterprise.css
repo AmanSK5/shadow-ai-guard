@@ -1640,3 +1640,5 @@ td{font-size:12px;padding-top:11px;padding-bottom:11px}
 .ov-chip b{font-size:12px;font-weight:600;color:var(--fg)}
 .ov-chip button{font:inherit;font-size:10.5px;padding:3px 9px;border:1px solid var(--bd);border-radius:5px;background:var(--sf2);color:var(--pri);cursor:pointer}
 .ov-chip>.ov-stack-zone{display:none!important}
+.oedit.ov-previewing{border-left:3px solid var(--pri)}
+.oedit.ov-previewing b{color:var(--fg);margin-right:4px}

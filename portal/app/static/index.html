@@ -2951,14 +2951,18 @@ const WIDGET_SIZES = {
 
 // The working copy while arranging. Null means not arranging.
 let OVEDIT = null;
+// Looking at the draft with real data, before saving it.
+let OVPREVIEW = false;
 
 function overview() {
   const live = overviewWidgets();
-  const editing = !!OVEDIT;
-  const order = editing ? OVEDIT.order : live.all.map(wKey);
-  const hidden = editing ? OVEDIT.hidden : live.hidden;
-  const sizes = editing ? OVEDIT.sizes : live.sizes;
-  const stacked = editing ? OVEDIT.stacked : live.stacked;
+  // A draft in hand is "drafting"; the planner shows it as placeholders,
+  // the preview shows it with the real cards. Both read the same draft.
+  const drafting = !!OVEDIT, editing = drafting && !OVPREVIEW;
+  const order = drafting ? OVEDIT.order : live.all.map(wKey);
+  const hidden = drafting ? OVEDIT.hidden : live.hidden;
+  const sizes = drafting ? OVEDIT.sizes : live.sizes;
+  const stacked = drafting ? OVEDIT.stacked : live.stacked;
   const by = new Map(live.all.map(w => [wKey(w), w]));
   const draw = order.filter(k => by.has(k) && (editing || hidden.indexOf(k) < 0));
 
@@ -3054,6 +3058,14 @@ function overview() {
         ? ' - the widgets a deployment offers are set under Settings' : ''}.</span>
     <span class="sp"></span>
     <button class="ghost" data-act="ov-reset">Reset to default</button>
+    <button class="ghost" data-act="ov-cancel">Cancel</button>
+    <button class="ghost" data-act="ov-preview">Preview</button>
+    <button class="pri" data-act="ov-save">Save</button>
+  </div>` : drafting ? `<div class="oedit ov-previewing">
+    <span><b>Previewing your arrangement.</b> This is how the page will read with
+    today's data. Nothing is saved until you say so.</span>
+    <span class="sp"></span>
+    <button class="ghost" data-act="ov-plan">Back to arranging</button>
     <button class="ghost" data-act="ov-cancel">Cancel</button>
     <button class="pri" data-act="ov-save">Save</button>
   </div>` : ''}
@@ -8944,12 +8956,14 @@ async function managedAction(act, el) {
               stacked: live.stacked.slice()};
     render(); return;
   }
-  if (act === 'ov-cancel') { OVEDIT = null; render(); return; }
+  if (act === 'ov-cancel') { OVEDIT = null; OVPREVIEW = false; render(); return; }
+  if (act === 'ov-preview') { OVPREVIEW = true; render(); window.scrollTo(0, 0); return; }
+  if (act === 'ov-plan') { OVPREVIEW = false; render(); window.scrollTo(0, 0); return; }
   if (act === 'ov-save') {
     await prefSet('overview.layout', JSON.stringify(
       {order: OVEDIT.order, hidden: OVEDIT.hidden, sizes: OVEDIT.sizes,
        stacked: OVEDIT.stacked}));
-    OVEDIT = null; render(); return;
+    OVEDIT = null; OVPREVIEW = false; render(); return;
   }
   if (act === 'ov-reset') {
     // Deleting the key rather than saving today's default: the default is
