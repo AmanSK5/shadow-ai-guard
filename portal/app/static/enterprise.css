@@ -1695,3 +1695,18 @@ td{font-size:12px;padding-top:11px;padding-bottom:11px}
    banner's explanation does. */
 .oedit.ov-previewing{padding:5px 12px 5px 14px;align-items:center}
 .oedit.ov-previewing>span:first-child{flex:1 1 auto}
+/* The fit pass owns the footer button: it is in the markup whenever the
+   card has rows and shows only when some are hidden. */
+.ui-panel-footer .ui-more.ui-idle{display:none}
+/* The bar list starts where the head ends and keeps its bottom padding,
+   so the first bar is not adrift under the filters and the last one is
+   not on the divider. */
+.ui-tool-bars{padding:0 20px 15px}
+.ui-tool-bars .bars{margin-top:0}
+.ui-compact .ui-tool-bars{padding:0 16px 12px}
+/* Dots are a stepped meter: one segment per dedicated source, across the
+   same track the meter uses, so the two forms read against each other
+   instead of five slivers huddled beside the count. */
+.ui-source-grid .covrow .dots{flex:1;display:flex;justify-content:flex-start;gap:4px;min-width:25px}
+.ui-source-grid .dots i{flex:1 1 0;height:8px;width:auto;border-radius:2px;background:var(--bd)}
+.ui-source-grid .dots i.on{background:linear-gradient(90deg,var(--pri),var(--chart))}

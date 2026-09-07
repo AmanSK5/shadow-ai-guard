@@ -2284,9 +2284,13 @@ function uiRows(key, rows, budget) {
   return {rows: rows.slice(0, 60), all, open,
     hidden: open || all <= budget ? 0 : all - budget};
 }
+// The button is always in the footer and the fit pass decides whether it
+// shows: a card beside a taller neighbour has room for every row, so a
+// "Show all 7" over seven visible rows did nothing, while a card cut
+// short in a stack had rows hidden and no way to ask for them.
 function uiMoreButton(key, r, noun) {
-  if (!r.hidden && !r.open) return '';
-  return `<button class="mini ui-more" data-act="ui-expand" data-key="${esc(key)}">${
+  if (!r.all) return '';
+  return `<button class="mini ui-more${!r.hidden && !r.open ? ' ui-idle' : ''}" data-act="ui-expand" data-key="${esc(key)}" data-all="${r.all}">${
     r.open ? 'Show fewer' : `Show all ${r.all} ${esc(noun)}`}</button>`;
 }
 function uiOverviewFacts() {
@@ -10396,7 +10400,10 @@ function uiCut(bodies) {
   bodies.forEach(body => {
     const rows = [...body.querySelectorAll(':scope tbody>tr, :scope>li, :scope .bars>.barrow')];
     if (!rows.length) return;
-    const limit = body.getBoundingClientRect().bottom + 1;
+    // The content box, not the border box: a row that ends inside the
+    // bottom padding sat on the divider.
+    const limit = body.getBoundingClientRect().bottom
+      - (parseFloat(getComputedStyle(body).paddingBottom) || 0) + 1;
     let shown = 0;
     rows.forEach(r => {
       if (r.getBoundingClientRect().bottom > limit) r.classList.add('ui-cut'); else shown++;
@@ -10404,6 +10411,9 @@ function uiCut(bodies) {
     const card = body.parentElement;
     const note = card.querySelector('.ui-shown');
     if (note) note.textContent = shown < rows.length ? `${shown} shown` : '';
+    const more = card.querySelector('.ui-more');
+    if (more) more.classList.toggle('ui-idle',
+      shown === rows.length && rows.length >= Number(more.dataset.all || 0));
   });
 }
 window.addEventListener('resize', () => {
