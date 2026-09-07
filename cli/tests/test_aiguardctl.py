@@ -193,3 +193,42 @@ def test_the_command_has_no_third_party_dependencies():
                 mod = line.split()[1].split(".")[0]
                 assert mod in {"json", "urllib", "hashlib", "secrets", "time", "webbrowser", "shutil",
                                "subprocess", "argparse", "sys", "__future__"}, line
+
+
+def test_verify_waits_through_a_restart_and_a_timed_out_read():
+    """The portal restarts mid-rollout by design. A read that times out while
+    it comes back used to escape as a traceback after the commands had already
+    run, leaving the run open on System health."""
+    calls = {"n": 0}
+
+    def request(portal, method, path, body=None, token=""):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise TimeoutError("The read operation timed out")
+        if calls["n"] == 2:
+            raise api.ApiError(0, "could not reach")
+        if path == "/healthz":
+            return {"version": "0.30.0"}
+        if calls["n"] == 4:
+            raise TimeoutError("still restarting")
+        return {"portal_version": "0.30.0", "receiver_version": "0.30.0"}
+
+    said = []
+    out = upgrade.verify("http://p", "aigu_t", "v0.30.0", said.append,
+                         request=request, sleep=lambda s: None, timeout=60)
+    assert out == {"portal_version": "0.30.0", "receiver_version": "0.30.0"}
+    assert calls["n"] == 5
+
+
+def test_a_timed_out_read_is_an_api_error_not_a_crash(monkeypatch):
+    import urllib.request
+
+    def boom(req, timeout=0):
+        raise TimeoutError("The read operation timed out")
+    monkeypatch.setattr(urllib.request, "urlopen", boom)
+    try:
+        api.request("http://p", "GET", "/healthz")
+    except api.ApiError as e:
+        assert e.status == 0 and "no answer" in e.detail
+    else:
+        raise AssertionError("expected ApiError")

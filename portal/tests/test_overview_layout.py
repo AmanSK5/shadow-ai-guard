@@ -108,19 +108,14 @@ def test_every_offered_size_is_a_real_grid_width():
         assert set(sizes) <= {"w4", "w6", "w12"}, kind
 
 
-def test_the_widgets_kept_off_the_smallest_size_are_the_ones_that_break():
-    """Established by rendering each of them at 328px and looking. The
-    review queue's Add to registry / Dismiss buttons overflow the card
-    with Dismiss clipped mid-word, and a four-column table of people
-    wraps every date onto three lines. Everything else holds, including
-    the KPI row, which simply wraps to two columns."""
-    narrow = {k for k, v in _sizes().items() if "w4" in v}
-    assert "recent_personal_accounts" not in narrow
-    assert "review_queue" not in narrow
-    assert "grafana" not in narrow, "a cross-origin frame cannot be checked"
-    assert narrow == {"stat_row", "top_tools", "activity_trend",
-                      "budget_spend", "detection_coverage", "source_health",
-                      "paste_guard"}
+def test_every_card_is_offered_half_or_full_and_nothing_narrower():
+    """A third width squashed every table into a strip; the only cards that
+    survived it had nothing to show. The canvas is two columns now: every
+    card is offered exactly half or full, and the small width is not a
+    thing anybody can choose, however old their saved layout is."""
+    for kind, sizes in _sizes().items():
+        assert sizes == ["w6", "w12"], kind
+    assert "const SIZES = ['w6', 'w12'];" in INDEX
 
 
 def test_a_saved_size_the_widget_no_longer_offers_falls_back():
@@ -255,9 +250,11 @@ def test_a_titleless_card_is_named_while_arranging():
     Without one they float in a strip attached to nothing, which reads as
     a control that has come loose rather than one belonging to the card
     under it."""
-    assert "const WIDGET_TITLES = {stat_row: 'Headline numbers'};" in INDEX
-    assert "editing && !titled" in DRAW
-    assert "body.indexOf('<h3') >= 0" in DRAW
+    assert "const WIDGET_TITLES = {stat_row: 'Headline numbers'," in INDEX
+    # While arranging every card is a named placeholder, so the strip always
+    # has a title beneath it; outside arranging the h3 test still decides.
+    assert "const titled = editing || body.indexOf('<h3') >= 0" in DRAW
+    assert "<div class=\"ov-placeholder\"><b>${esc(titleOf(k))}</b>" in DRAW
 
 
 def test_the_strip_clears_the_outline_above_and_the_content_below():

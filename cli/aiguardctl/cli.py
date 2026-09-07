@@ -64,13 +64,29 @@ def cmd_upgrade(a) -> int:
                  + [s["service"] for s in found.get("services", [])]}},
         token=token)
     rep = upgrade.Reporter(portal, token, run["id"], say)
-    ok = upgrade.apply(found, target, rep)
-    if not ok:
-        rep.finish("failed", "a command exited non-zero; see the terminal")
-        return 1
-    result = upgrade.verify(portal, token, target, say)
+    # Whatever happens from here, the run is closed with an outcome: a run
+    # left "running" on System health after the terminal is gone is the one
+    # thing an owner cannot tell apart from an upgrade still in progress.
+    try:
+        ok = upgrade.apply(found, target, rep)
+        if not ok:
+            rep.finish("failed", "a command exited non-zero; see the terminal")
+            return 1
+        result = upgrade.verify(portal, token, target, say)
+    except KeyboardInterrupt:
+        rep.finish("aborted", "interrupted at the terminal")
+        say("Interrupted. The commands that already ran are not undone; "
+            "System health shows how far it got.")
+        return 130
+    except Exception as e:  # noqa: BLE001 - closed with a reason, then re-raised
+        rep.finish("failed", ("the command stopped: %s" % e)[:300])
+        raise
     if result is None:
-        rep.finish("failed", "the portal did not come back as %s in time" % target)
+        rep.finish("unverified", "the commands ran, but the portal did not confirm "
+                   "%s within the wait; check System health" % target)
+        say("The upgrade commands ran, but the portal did not confirm %s in time. "
+            "Open System health: if it shows %s, the upgrade is done and only the "
+            "confirmation was missed." % (target, target))
         return 1
     srcs = result.get("sources") or {}
     detail = "portal %s, receiver %s" % (result.get("portal_version"), result.get("receiver_version"))

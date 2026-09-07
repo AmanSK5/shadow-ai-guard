@@ -1979,7 +1979,7 @@ class UpgradeStepWrite(BaseModel):
 
 class UpgradeFinishWrite(BaseModel):
     model_config = {"extra": "forbid"}
-    outcome: str = Field(pattern=r"^(succeeded|failed|aborted)$")
+    outcome: str = Field(pattern=r"^(succeeded|failed|aborted|unverified)$")
     detail: str = Field(default="", max_length=300)
 
 

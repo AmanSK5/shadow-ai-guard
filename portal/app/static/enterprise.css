@@ -1373,7 +1373,7 @@ td{font-size:12px;padding-top:11px;padding-bottom:11px}
 .inventory-summary b{font-size:22px;font-weight:580;letter-spacing:-.6px}
 /* Supporting widgets: head, body, footer; sized to content, never stretched
      into dead space; the same geometry in comfortable, compact and edit modes. */
-.ui-widget{padding:0;overflow:hidden;display:flex;flex-direction:column;min-height:100%}
+.ui-widget{padding:0;overflow:hidden;display:flex;flex-direction:column}
 .ui-widget>.ui-panel-head{padding-bottom:14px}
 .ui-widget>.ui-table-scroll,.ui-widget>.ui-notes,.ui-widget>.ui-empty{flex:1 0 auto}
 .ui-widget>.ui-panel-footer{margin-top:auto}
@@ -1404,16 +1404,12 @@ td{font-size:12px;padding-top:11px;padding-bottom:11px}
 /* Columns and rows by the card's width: S keeps the identity and the verdict, M adds the
    working figures, L adds the detail. Ten rows are drawn; S shows four, M six, L ten. */
 .ui-widget-table .ui-col-l{display:none}
-.ui-widget-table tbody tr:nth-child(n+7){display:none}
 @container (min-width:720px){
   .ui-widget-table .ui-col-l{display:table-cell}
   .ui-widget-table td small.ui-col-s{display:none}
-  .ui-widget-table tbody tr:nth-child(n+7){display:table-row}
-  .ui-widget-table tbody tr:nth-child(n+11){display:none}
 }
 @container (max-width:430px){
   .ui-widget-table .ui-col-m{display:none}
-  .ui-widget-table tbody tr:nth-child(n+5){display:none}
 }
 .ui-widget-table th.num{text-align:right}
 .ui-silent-table td:last-child{color:var(--mut);font-size:11px;line-height:1.5}
@@ -1564,3 +1560,168 @@ td{font-size:12px;padding-top:11px;padding-bottom:11px}
 .ui-compact .bars{gap:6px}
 .ui-compact .barrow{min-height:24px}
 .wcard .ui-silent-table th:last-child,.wcard .ui-silent-table td:last-child{text-align:left;width:auto;white-space:normal}
+
+/* Cards are as tall as what they hold. On an estate of any size a stretched
+   row is a void beside every short card; the row budgets above keep the tall
+   ones honest instead. */
+.ui-widget,.ui-tools-card{min-height:100%}
+/* A list's body has a budget as its basis and grows into whatever the row
+   gives it; past the budget it scrolls inside the card. Opened, the card
+   takes its full height and the row follows. */
+.ui-widget>.ui-table-scroll{flex:1 1 auto;min-height:0;overflow:hidden;--ui-budget:262}
+.ui-people-card>.ui-table-scroll{--ui-budget:262}
+.ui-spend-card>.ui-table-scroll{--ui-budget:300}
+.ui-agentic-card>.ui-table-scroll{--ui-budget:220}
+.ui-tools-card{display:flex;flex-direction:column}
+.ui-tools-card>.ui-table-scroll,.ui-tools-card>.ui-tool-list,.ui-tools-card>.ui-tool-bars{flex:1 1 auto;min-height:0;overflow:hidden;--ui-budget:470}
+.ui-tools-card>.ui-panel-footer,.ui-tools-card>.ui-table-note{flex-shrink:0}
+.ui-open>.ui-table-scroll,.ui-tools-card.ui-open>.ui-table-scroll,.ui-tools-card.ui-open>.ui-tool-list,.ui-tools-card.ui-open>.ui-tool-bars{flex-basis:auto;overflow:visible}
+.ui-widget-table thead th,.ui-inventory thead th{position:sticky;top:0;z-index:1}
+.ui-visibility-card>.ui-source-grid{flex:0 0 auto;align-content:start}
+.ui-focus-card>.ui-queue-details{flex:0 0 auto}
+.ui-people-table td:first-child,.ui-people-table td:nth-child(4){white-space:nowrap}
+.ui-panel-footer>span{display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-width:0}
+.ui-panel-footer .ui-more{min-height:24px;padding:2px 8px;font-size:10px;color:var(--fg);border:1px solid var(--bd);background:var(--sf2)}
+.ui-panel-footer .ui-more:hover{border-color:var(--pri)}
+
+/* Instructions somebody follows: numbered, full width, each command on its
+   own line with a copy control, inline commands set apart from the prose. */
+.health-card details.how.ui-how{max-width:none}
+.ui-steps>p{margin:8px 0 12px;font-size:12px;line-height:1.55;color:var(--mut);font-style:normal}
+.ui-steplist{margin:0;padding:0;list-style:none;counter-reset:step;display:flex;flex-direction:column;gap:12px}
+.ui-steplist>li{position:relative;padding-left:32px;font-size:12px;line-height:1.55;color:var(--mut);counter-increment:step}
+.ui-steplist>li::before{content:counter(step);position:absolute;left:0;top:1px;width:22px;height:22px;border-radius:6px;display:grid;place-items:center;background:var(--sf2);border:1px solid var(--bd);color:var(--fg);font-size:10.5px;font-weight:600}
+.ui-steplist>li>b{display:block;color:var(--fg);font-weight:600;margin:2px 0 4px}
+.ui-steplist>li>span{display:block;margin-top:6px}
+.ui-steplist code,.ui-steps code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;padding:1px 6px;border-radius:4px;background:var(--sf2);border:1px solid var(--bd);color:var(--pri);white-space:nowrap}
+.ui-cmd{display:flex;align-items:center;gap:12px;margin:4px 0;padding:8px 10px 8px 12px;border:1px solid var(--bd);border-radius:6px;background:var(--sf2)}
+.ui-cmd>code{flex:1;min-width:0;padding:0;border:0;background:transparent;font-size:11.5px;color:var(--pri);white-space:pre-wrap;overflow-wrap:anywhere}
+.ui-cmd>.ui-copy{flex-shrink:0;min-height:26px;padding:3px 10px;font-size:10.5px;background:var(--sf);color:var(--fg);border:1px solid var(--bd)}
+.ui-cmd>.ui-copy:hover{border-color:var(--pri);color:var(--pri)}
+/* The trend card fills its frame with the chart rather than with air; the
+   chart is drawn to a viewBox with no aspect lock, so it stretches. */
+.exposure-trend-card{display:flex;flex-direction:column;min-height:100%}
+.exposure-trend-card .exposure-chart{flex:0 0 auto;display:flex;flex-direction:column;min-height:0}
+.exposure-trend-card .tchart{flex:1 1 190px;min-height:140px;max-height:320px;position:relative}
+.exposure-trend-card .tchart svg{height:100%;min-height:140px;max-height:320px;display:block}
+.exposure-trend-card>.src-note{margin-top:10px}
+
+/* Arranging: the stack strip appears on every card while a drag is in
+   progress and is the only place a drop stacks. Everywhere else the drop
+   line says where the card will move to. */
+.ov-stack-zone{display:none}
+.dragging .editing .gcard>.ov-stack-zone,.dragging .gcard>.ov-stack-zone{display:flex;align-items:center;justify-content:center;position:absolute;left:0;right:0;bottom:0;height:34px;z-index:4;border:1px dashed var(--acc);border-radius:0 0 10px 10px;background:color-mix(in srgb,var(--acc) 10%,var(--sf));color:var(--acc);font-size:10.5px;font-weight:600;letter-spacing:.3px;pointer-events:auto}
+.dragging .gcard.drag>.ov-stack-zone{display:none}
+.dragging .gcard.into>.ov-stack-zone{background:color-mix(in srgb,var(--acc) 22%,var(--sf));border-style:solid}
+.editing .gcard.into{outline:1px dashed var(--bd)}
+.editing .gcard.into>.wcard,.editing .gcard.into>.stats{background:var(--sf)}
+.editing .gcard.over::after{height:3px}
+
+/* In a stack, only a card that can use height grows into the column: a list
+   shows more rows, everything else keeps its natural size and the room left
+   over sits at the end of the column, not inside a card. */
+.gitem.stack>.gcard{flex:0 0 auto}
+.gitem.stack>.gcard:has(.ui-table-scroll),.gitem.stack>.gcard:has(.ui-tool-list),.gitem.stack>.gcard:has(.ui-tool-bars){flex:1 1 auto}
+.gitem.stack>.gcard:has(.ui-queue-details){flex:1 1 auto}
+
+/* The planner: while arranging, every card is a placeholder of one height,
+   so the whole arrangement fits on a screen and a drag is a short one. */
+.editing .gcard{min-height:0}
+.ov-placeholder{display:flex;flex-direction:column;justify-content:center;gap:4px;min-height:112px;padding:44px 18px 16px;border:1px solid var(--bd);border-radius:10px;background:var(--sf)}
+.ov-placeholder b{font-size:13px;font-weight:600;color:var(--fg)}
+.ov-placeholder span{font-size:11px;color:var(--mut);line-height:1.45}
+.ov-placeholder small{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.6px;margin-top:4px}
+.editing .gitem.stack>.gcard{flex:0 0 auto}
+.editing .gcard>.ov-stack-zone{border-radius:0 0 10px 10px}
+.ov-tray{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 16px;padding:12px 14px;border:1px dashed var(--bd);border-radius:10px;background:var(--sf2)}
+.ov-tray-label{flex-basis:100%;font-size:11px;color:var(--mut)}
+.ov-chip{display:inline-flex;align-items:center;gap:10px;padding:8px 8px 8px 12px;border:1px solid var(--bd);border-radius:8px;background:var(--sf);cursor:grab;outline:0!important;flex:0 0 auto}
+.ov-chip>*{flex:0 0 auto}
+.ov-chip b{font-size:12px;font-weight:600;color:var(--fg)}
+.ov-chip button{font:inherit;font-size:10.5px;padding:3px 9px;border:1px solid var(--bd);border-radius:5px;background:var(--sf2);color:var(--pri);cursor:pointer}
+.ov-chip>.ov-stack-zone{display:none!important}
+.oedit.ov-previewing{border-left:3px solid var(--pri)}
+.oedit.ov-previewing b{color:var(--fg);margin-right:4px}
+
+/* The canvas while arranging: two columns on a dotted ground, and a target
+   at the end that is always there, so a drag never needs a card to land on. */
+.grid.ov-canvas{padding:14px;border-radius:12px;background-color:var(--sf2);background-image:radial-gradient(color-mix(in srgb,var(--mut) 28%,transparent) 1px,transparent 1px);background-size:18px 18px;min-height:220px;align-content:flex-start}
+.ov-drop-end{flex-basis:100%;display:flex;align-items:center;justify-content:center;min-height:64px;margin-top:4px;border:1px dashed var(--bd);border-radius:10px;color:var(--mut);font-size:11.5px}
+.ov-drop-end.empty{min-height:180px;font-size:12.5px}
+.ov-drop-end.over{border-color:var(--acc);border-style:solid;background:color-mix(in srgb,var(--acc) 10%,var(--sf));color:var(--acc)}
+.dragging .ov-drop-end{border-color:color-mix(in srgb,var(--acc) 60%,var(--bd))}
+/* Tray chips keep their own width and wrap; a half-width placeholder on the
+   canvas stays half, so the empty half beside it is visible while arranging. */
+.ov-tray>.ov-chip{flex:0 0 auto!important;width:auto;min-width:max-content}
+.ov-chip b{white-space:nowrap}
+.grid.ov-canvas>.gitem{flex-grow:0}
+.ov-tray>.ov-chip{container-type:normal}
+.ov-tray>.ov-chip{flex-direction:row!important}
+/* On the canvas a half is exactly half: two of them make a row, and the
+   space a lone half leaves is exactly the space a second one would take. */
+.grid.ov-canvas>.gitem.w6{flex:0 0 calc(50% - 9px)}
+.grid.ov-canvas>.gitem.w12{flex:0 0 100%}
+.ui-compact .grid.ov-canvas>.gitem.w6{flex-basis:calc(50% - 5px)}
+
+/* Whole rows only: the fit pass hides what would not fit, and says so. */
+.ui-cut{display:none!important}
+.ui-shown:empty{display:none}
+.ui-shown{font-style:normal;color:var(--mut)}
+.ui-shown::before{content:"· "}
+.ui-paste-card>.ui-table-scroll{--ui-budget:180}
+/* Visibility: the latest report per surface, growing into the card. */
+.ui-latest-heading{padding-top:12px}
+.ui-visibility-card>.ui-latest{flex:1 1 auto;min-height:0;overflow:hidden;margin-top:6px}
+.ui-visibility-card>.ui-latest .ui-widget-table td{padding-top:7px;padding-bottom:7px}
+.ui-visibility-card>.ui-latest td:first-child strong{text-transform:capitalize}
+.ui-silent-table td:last-child em{font-style:normal;color:var(--mut);opacity:.85;font-size:10px;margin-left:5px}
+.wcard.ui-paste-card .ui-widget-table th:last-child,.wcard.ui-paste-card .ui-widget-table td:last-child{text-align:left;width:auto;white-space:normal}
+/* The two cards that fill a row of their own by height must not claim a
+   whole stacked column, in the planner or on the page: in a stack the flex
+   rules above decide who grows. */
+.gitem.stack>.gcard[data-wk=review_queue],.gitem.stack>.gcard[data-wk=detection_coverage],.editing .gcard[data-wk=review_queue],.editing .gcard[data-wk=detection_coverage]{height:auto}
+/* On the canvas nothing stretches: a placeholder is its own height, and a
+   stack is the sum of its cards, so what you see is the arrangement. */
+.grid.ov-canvas{align-items:flex-start}
+/* A half card is half on the page too. The grid used to let a lone half
+   card grow across its row, so the arrangement someone drew - half, with
+   the other half open - came out full once they previewed it. */
+.grid>.gitem.w6{flex:0 0 calc(50% - 9px)}
+.grid>.gitem.w12{flex:0 0 100%}
+.ui-compact .grid>.gitem.w6{flex-basis:calc(50% - 5px)}
+@media(max-width:900px){.grid>.gitem.w6{flex-basis:100%}}
+/* The preview banner is one line: the sentence is short enough to share
+   it with the buttons, so it does not need the height the arranging
+   banner's explanation does. */
+.oedit.ov-previewing{padding:5px 12px 5px 14px;align-items:center}
+.oedit.ov-previewing>span:first-child{flex:1 1 auto}
+/* The fit pass owns the footer button: it is in the markup whenever the
+   card has rows and shows only when some are hidden. */
+.ui-panel-footer .ui-more.ui-idle{display:none}
+/* The bar list starts where the head ends and keeps its bottom padding,
+   so the first bar is not adrift under the filters and the last one is
+   not on the divider. */
+.ui-tool-bars{padding:0 20px 15px}
+.ui-tool-bars .bars{margin-top:0}
+.ui-compact .ui-tool-bars{padding:0 16px 12px}
+/* Dots are a stepped meter: one segment per dedicated source, across the
+   same track the meter uses, so the two forms read against each other
+   instead of five slivers huddled beside the count. */
+.ui-source-grid .covrow .dots{flex:1;display:flex;justify-content:flex-start;gap:4px;min-width:25px}
+.ui-source-grid .dots i{flex:1 1 0;height:8px;width:auto;border-radius:2px;background:var(--bd)}
+.ui-source-grid .dots i.on{background:linear-gradient(90deg,var(--pri),var(--chart))}
+/* The subscription cell is name over plan, so the row is two lines tall
+   and the price, seats and badges sit level with its middle rather than
+   floating at the top over a band of nothing. */
+.gcard[data-wk=budget_spend] .ui-widget-table td{vertical-align:middle}
+/* Devices: the tools column carries the rows, so it takes the width the
+   single-chip columns were holding. */
+.device-inventory th:nth-child(1){width:19%}
+.device-inventory th:nth-child(2){width:13%}
+.device-inventory th:nth-child(3){width:40%}
+.device-inventory th:nth-child(4){width:15%}
+.device-inventory th:nth-child(5){width:13%}
+.ui-chip-more{color:var(--mut);background:transparent;border-style:dashed}
+.ui-compact .device-inventory td{height:44px}
+.ui-compact .device-inventory td strong{font-size:12px}
+.ui-compact .cell-tags .ui-tool-chip{margin:1px 3px 1px 0;padding:1px 6px}

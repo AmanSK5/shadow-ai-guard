@@ -2217,7 +2217,7 @@ function barRows(rows, unit, open) {
     return `<div class="barrow"${open ? ` data-open="${esc(open)}"
       data-key="${esc(name)}" tabindex="0"` : ''}
       data-ctip="${esc(name + ' · ' + r[1] + ' ' + unit)}">
-      <span class="bl" title="${esc(name)}">${esc(name)}</span>
+      <span class="bl" title="${esc(name)}">${esc(r[2] || name)}</span>
       <span class="bt"><span class="bf" style="width:${
         Math.max(2, Math.round(r[1] / max * 100))}%"></span></span>
       <b>${r[1]}</b></div>`;
@@ -2272,6 +2272,27 @@ function trendChart(days, a, b, aLabel, bLabel) {
 // the console layer presentation helpers: use the same graph, lifecycle and register reads
 // as the working views. No demo fixtures or network calls live in renderers.
 let UI_PERSONAL_TOOLS = false;
+// Widgets the person asked to see in full, this page view. A widget draws a
+// budget of rows and offers the rest; on an estate of any size an uncapped
+// list is the tallest thing on the page and every neighbour pays for it.
+const UI_EXPANDED = new Set();
+// Every row is drawn (to a sane ceiling); the card shows a budget of them
+// and scrolls the rest inside itself, growing to whatever height its row
+// has to give. "Show all" opens the card to its full list instead.
+function uiRows(key, rows, budget) {
+  const all = rows.length, open = UI_EXPANDED.has(key);
+  return {rows: rows.slice(0, 60), all, open,
+    hidden: open || all <= budget ? 0 : all - budget};
+}
+// The button is always in the footer and the fit pass decides whether it
+// shows: a card beside a taller neighbour has room for every row, so a
+// "Show all 7" over seven visible rows did nothing, while a card cut
+// short in a stack had rows hidden and no way to ask for them.
+function uiMoreButton(key, r, noun) {
+  if (!r.all) return '';
+  return `<button class="mini ui-more${!r.hidden && !r.open ? ' ui-idle' : ''}" data-act="ui-expand" data-key="${esc(key)}" data-all="${r.all}">${
+    r.open ? 'Show fewer' : `Show all ${r.all} ${esc(noun)}`}</button>`;
+}
 function uiOverviewFacts() {
   const devices = ents(G.devices), personal = G.personal_accounts || [];
   const open = PSTAT
@@ -2298,8 +2319,26 @@ function uiToolInfo(id) {
 // the inventory pages read the way the Overview does. The id stays in the
 // title, and search still matches it.
 function uiToolName(id) { return uiToolInfo(id).name || id; }
+// "3h ago" from a timestamp, for the small print beside a source.
+function uiAgo(t) {
+  const m = Math.round((Date.now() - Date.parse(t)) / 60000);
+  if (!(m >= 0)) return '';
+  if (m < 90) return m + 'm ago';
+  const h = Math.round(m / 60);
+  return h < 36 ? h + 'h ago' : Math.round(h / 24) + 'd ago';
+}
 function uiToolChip(id, cls) {
   return `<span class="ui-tool-chip${cls ? ' ' + cls : ''}" title="${esc(id)}">${esc(uiToolName(id))}</span>`;
+}
+// A run of tool chips capped for a table cell: the busiest device in a
+// large estate had ten tools and a row four lines tall. The tail says how
+// many more; the row opens to the device, which lists all of them.
+function uiChipRun(ids, cap, empty) {
+  if (!ids.length) return empty;
+  const shown = ids.length > cap ? ids.slice(0, cap - 1) : ids;
+  const rest = ids.length - shown.length;
+  return shown.map(t => uiToolChip(t)).join('')
+    + (rest ? `<span class="ui-tool-chip ui-chip-more" title="${esc(ids.slice(shown.length).map(uiToolName).join(', '))}">+${rest} more</span>` : '');
 }
 function uiSourceLabel(id) {
   const src = ((S && S.groups) || []).flatMap(g => g.sources || []).find(x => x.source === id);
@@ -2307,6 +2346,12 @@ function uiSourceLabel(id) {
 }
 function uiSourceChip(id) {
   return `<span class="ui-tool-chip" title="${esc(id)}">${esc(uiSourceLabel(id))}</span>`;
+}
+// A command somebody will paste: monospace, one line, its own copy control.
+// The text rides in a data attribute, escaped like any other, so the button
+// copies exactly what is shown.
+function uiCommand(cmd) {
+  return `<div class="ui-cmd"><code>${esc(cmd)}</code><button class="mini ui-copy" data-act="ui-copy" data-copy="${esc(cmd)}" title="Copy to clipboard">Copy</button></div>`;
 }
 function uiIcon(name) {
   const paths = {
@@ -2495,8 +2540,10 @@ const WIDGETS = {
       <p class="ui-empty">Not read yet. Open Agentic AI.</p>
       <div class="ui-panel-footer"><span></span><button class="mini" data-nav="agentic">Open Agentic AI ${uiIcon('arrow')}</button></div></div>`;
     const c = AGENTIC.counts || {};
-    const loose = (AGENTIC.agents || []).filter(
-      a => a.autonomous && !a.accountable);
+    // Every run that reported starting itself, the unaccountable ones
+    // first: the count above is all of them, so the table is too.
+    const loose = (AGENTIC.agents || []).filter(a => a.autonomous)
+      .sort((a, b) => (a.accountable ? 1 : 0) - (b.accountable ? 1 : 0));
     const body = !c.autonomous
       ? `<p class="ui-empty">Nothing reported starting itself.${
         c.unrecognised ? ` ${c.unrecognised} process${c.unrecognised === 1 ? '' : 'es'}
@@ -2515,11 +2562,12 @@ const WIDGETS = {
             <td class="ui-col-l">${(a.reach || []).length ? (a.reach || []).slice(0, 3).map(x => `<span class="ui-surface">${esc(x)}</span>`).join('') + ((a.reach || []).length > 3 ? ` <span class="ui-muted">+${a.reach.length - 3}</span>` : '') : '<span class="ui-muted">nothing configured</span>'}</td>
             <td>${a.process
               ? '<span class="ui-badge risk">no tool we know</span>'
+              : a.accountable ? '<span class="ui-badge good">' + esc(a.user || a.identity || 'a person') + '</span>'
               : '<span class="ui-badge risk">' + esc(a.identity || 'unattributed') + '</span>'}</td>
           </tr>`).join('')}</tbody></table></div>` : ''}`;
     return `<div class="wcard w6 ui-widget ui-agentic-card">${head(c.autonomous || 0)}
       ${body}
-      <div class="ui-panel-footer"><span>${c.unrecognised ? `${c.unrecognised} unrecognised process${c.unrecognised === 1 ? '' : 'es'} reached a model` : ''}</span>
+      <div class="ui-panel-footer"><span>${c.unrecognised ? `${c.unrecognised} unrecognised process${c.unrecognised === 1 ? '' : 'es'} reached a model` : ''}<i class="ui-shown"></i></span>
         <button class="mini" data-nav="agentic">Open Agentic AI ${uiIcon('arrow')}</button></div>
     </div>`;
   },
@@ -2584,7 +2632,8 @@ const WIDGETS = {
     const unob = subs.reduce((a, s) =>
       a + bReconcile(s).unobserved.length, 0);
     const conv = bConverted(subs);
-    return `<div class="wcard w6 ui-widget ui-spend-card">${head}
+    const shown = uiRows('budget_spend', subs, 6);
+    return `<div class="wcard w6 ui-widget ui-spend-card${shown.open ? ' ui-open' : ''}">${head}
     <dl class="ui-tiles">
       <div><dt>${conv ? bMoney(conv.total, bPrefCur()) : bSpendParts(subs).join(' + ')}</dt>
         <dd>tracked per month${conv ? ` <span title="${esc(bSpendParts(subs).join(' + '))}">· ECB ${esc(conv.date)}</span>` : ''}</dd></div>
@@ -2594,7 +2643,7 @@ const WIDGETS = {
     <div class="ui-table-scroll"><table class="ui-inventory ui-widget-table ui-spend-table">
       <thead><tr><th>Subscription</th><th class="ui-col-l">Plan</th><th class="num ui-col-m">Monthly</th>
         <th class="num ui-col-m">Seats in use</th><th class="num ui-col-l">Observed</th><th class="ui-col-l">Renews</th><th>Review</th></tr></thead>
-      <tbody>${subs.map(sub => {
+      <tbody>${shown.rows.map(sub => {
         const r = bReconcile(sub);
         const seats = (sub.seat_tiers || []).reduce((x, t) => x + (t.seats || 0), 0);
         return `<tr data-nav="budget">
@@ -2607,7 +2656,8 @@ const WIDGETS = {
           <td>${r.unobserved.length ? `<span class="ui-badge attention">${r.unobserved.length} idle</span>` : ''}${r.strangers.length
             ? ` <span class="ui-badge governance">${r.strangers.length} unseated</span>` : ''}${!r.unobserved.length && !r.strangers.length ? '<span class="ui-muted">Nothing flagged</span>' : ''}</td></tr>`;
       }).join('')}</tbody></table></div>
-    <div class="ui-panel-footer"><span>${next ? `Next renewal: ${esc(uiToolName(next.tool_id))} ${when(next.renewal_date)}` : 'No renewal dates recorded'}</span>
+    <div class="ui-panel-footer"><span>${next ? `Next renewal: ${esc(uiToolName(next.tool_id))} ${when(next.renewal_date)}` : 'No renewal dates recorded'}<i class="ui-shown"></i>
+      ${uiMoreButton('budget_spend', shown, 'subscriptions')}</span>
       <button class="mini" data-nav="budget">Open Budget ${uiIcon('arrow')}</button></div></div>`;
   },
 
@@ -2619,16 +2669,18 @@ const WIDGETS = {
         && (!UI_PERSONAL_TOOLS || f.open.some(r => r.tool === id));
     }).sort((a,b)=>(b[1].devices||[]).length-(a[1].devices||[]).length);
     const bars = widgetForm('top_tools') === 'bar';
-    return `<div class="wcard ${bars ? 'w6' : 'w12'} ui-tools-card">
+    const shown = uiRows('top_tools', rows, 10);
+    return `<div class="wcard ${bars ? 'w6' : 'w12'} ui-tools-card${shown.open ? ' ui-open' : ''}">
       <div class="ui-panel-head"><h3>${formToggle('top_tools')}Discovered AI tools <span class="count">${f.toolIds.length}</span></h3>
         <div class="ui-tool-filters" role="group" aria-label="Filter discovered tools">
           <button class="${!UI_PERSONAL_TOOLS ? 'on' : ''}" data-act="ui-tools-filter" data-filter="all" aria-pressed="${!UI_PERSONAL_TOOLS}">All tools</button>
           <button class="${UI_PERSONAL_TOOLS ? 'on' : ''}" data-act="ui-tools-filter" data-filter="personal" aria-pressed="${UI_PERSONAL_TOOLS}">Personal accounts</button>
         </div></div>
       ${!f.known ? '<p class="ui-empty">Findings are unavailable.</p>' : rows.length ? (bars
-        ? '<div class="ui-tool-bars">' + barRows(rows.map(([k,t]) => [k,(t.devices||[]).length]), 'devices', 'tool') + '</div>'
-        : uiToolsTable(rows)) : '<p class="ui-empty">No tools match this view.</p>'}
-      <div class="ui-panel-footer"><span>${f.known ? `${rows.length} of ${f.toolIds.length} discovered tools` : 'No data available'}</span>
+        ? '<div class="ui-tool-bars">' + barRows(rows.map(([k,t]) => [k,(t.devices||[]).length, uiToolName(k)]).slice(0, shown.rows.length), 'devices', 'tool') + '</div>'
+        : uiToolsTable(shown.rows)) : '<p class="ui-empty">No tools match this view.</p>'}
+      <div class="ui-panel-footer"><span>${f.known ? `${rows.length} of ${f.toolIds.length} discovered tools` : 'No data available'}<i class="ui-shown"></i>
+        ${uiMoreButton('top_tools', shown, 'tools')}</span>
         <button class="mini" data-nav="tools">Open discovered tools ${uiIcon('arrow')}</button></div>
       <p class="src-note ui-table-note">${bars ? 'Observed devices per tool. Cloud-only tools may have zero associated devices.'
         : 'One bar per day for the last ' + fmtWindow(hoursNow()) + ', written as a total when the window holds fewer than three days. Devices and cloud identities are counted separately.'}</p>
@@ -2638,7 +2690,8 @@ const WIDGETS = {
   recent_personal_accounts: () => {
     // Ten rows are drawn; the card's width decides how many show and which
     // columns (CSS, by container). The footer count is the whole window.
-    const pa = (G.personal_accounts || []).slice(0, 10);
+    const shown = uiRows('recent_personal_accounts', G.personal_accounts || [], 6);
+    const pa = shown.rows;
     const body = pa.length ? `<div class="ui-table-scroll"><table class="ui-inventory ui-widget-table ui-people-table">
       <thead><tr><th>Person</th><th>Account</th><th class="ui-col-m">AI tool</th><th class="ui-col-l">Device</th>
         <th class="ui-col-l">Surface</th><th class="ui-col-l">Source</th><th>Last seen</th></tr></thead>
@@ -2654,12 +2707,13 @@ const WIDGETS = {
       : dataOk()
         ? '<p class="ui-empty">None seen. That is a result, not an absence of one.</p>'
         : '<p class="ui-empty">Nothing to show: the findings could not be read.</p>';
-    return `<div class="wcard w6 ui-widget ui-people-card">
+    return `<div class="wcard w6 ui-widget ui-people-card${shown.open ? ' ui-open' : ''}">
       <div class="ui-panel-head"><div><h3>Recent personal accounts</h3>
         <p>Latest activity in accounts outside your corporate domains</p></div>
         <span class="ui-eyebrow">Last ${esc(fmtWindow(hoursNow()))}</span></div>
       ${body}
-      <div class="ui-panel-footer"><span>${pa.length ? `${(G.personal_accounts || []).length} in this window` : ''}</span>
+      <div class="ui-panel-footer"><span>${pa.length ? `${shown.all} in this window` : ''}<i class="ui-shown"></i>
+        ${uiMoreButton('recent_personal_accounts', shown, 'accounts')}</span>
         <button class="mini" data-nav="personal">Open personal accounts ${uiIcon('arrow')}</button></div>
     </div>`;
   },
@@ -2708,6 +2762,16 @@ const WIDGETS = {
         <span>${esc(g.group)}</span>${dots}
         <b>${g.reporting}/${g.total}</b></div>`;
     }).join('')}</div>
+    <div class="ui-source-heading ui-latest-heading"><h4>Latest report by surface</h4><span>findings · devices in this window</span></div>
+    <div class="ui-table-scroll ui-latest"><table class="ui-inventory ui-widget-table"><tbody>${(S.groups||[]).map(g => {
+      const srcs = (g.sources || []).filter(x => x.last_seen).sort((a, b) => a.last_seen < b.last_seen ? 1 : -1);
+      const last = srcs[0];
+      const findings = (g.sources || []).reduce((n, x) => n + (x.findings || 0), 0);
+      const devices = (g.sources || []).reduce((n, x) => n + (x.devices || 0), 0);
+      return `<tr><td><strong>${esc(g.group)}</strong></td>
+        <td>${last ? `${esc(last.label || last.source)} <span class="ui-muted">· ${esc(uiAgo(last.last_seen))}</span>` : '<span class="ui-muted">nothing yet</span>'}</td>
+        <td class="num">${findings}<span class="ui-muted"> · ${devices}</span></td></tr>`;
+    }).join('')}</tbody></table></div>
     <div class="ui-panel-footer"><span>Source catalogue, not configured integrations</span><button class="mini" data-nav="setup">Review sources ${uiIcon('arrow')}</button></div>
     <details class="ui-coverage-note"><summary>How to read coverage</summary><p class="src-note">Collector coverage uses devices observed by any source, not your entire company fleet. An unobserved source may be unconfigured or inapplicable. These are dedicated sources per surface; other sources can also produce findings for it.</p></details></div>`;
   },
@@ -2744,7 +2808,7 @@ const WIDGETS = {
         <tbody>${groups.map(g => `<tr>
           <td><strong>${esc(g.group)}</strong></td>
           <td class="num">${g.silent.length} of ${g.total}</td>
-          <td>${g.silent.map(r => `<span title="${esc(r.source)}">${esc(r.label || r.source)}</span>`).join('<i>·</i>')}</td>
+          <td>${g.silent.map(r => `<span title="${esc(r.source)}">${esc(r.label || r.source)}<em>${r.last_seen ? esc(uiAgo(r.last_seen)) : 'never'}</em></span>`).join('<i>·</i>')}</td>
         </tr>`).join('')}</tbody></table></div>`
         : '<p class="ui-empty">Every listed source is reporting.</p>'}
       <div class="ui-panel-footer"><span>Unconfigured or not applicable, not necessarily broken</span>
@@ -2774,12 +2838,21 @@ const WIDGETS = {
         <div><dt${over ? ' class="risk"' : ''}>${over}</dt><dd>warnings overridden</dd></div>
       </dl>
       <ul class="ui-notes">
-        ${warnMode && warned ? `<li class="attention">In block mode, ${warned} warned paste${warned === 1 ? '' : 's'} would have been stopped outright. The breakdown is on the Paste guard page.</li>` : ''}
+        ${warnMode && warned ? `<li class="attention">In block mode, ${warned} warned paste${warned === 1 ? '' : 's'} would have been stopped outright.</li>` : ''}
         <li>${live
           ? `Running on ${live} device${live === 1 ? '' : 's'}${versions > 1 ? ` across ${versions} versions` : ''}, so low numbers here genuinely mean few risky pastes.`
           : 'No device has checked in yet, so zero here means "not deployed", not "nobody pasted anything".'}</li>
       </ul>
-      <div class="ui-panel-footer"><span>${warned ? `${warned} warned in this window` : 'Nothing warned in this window'}</span>
+      ${(PG.rows || []).length ? `<div class="ui-table-scroll"><table class="ui-inventory ui-widget-table">
+        <thead><tr><th>Where pastes went</th><th class="num">Warned</th><th class="num ui-col-m">Overridden</th><th class="num ui-col-l">Blocked</th><th>Detectors</th></tr></thead>
+        <tbody>${(PG.rows || []).slice(0, 30).map(r => `<tr>
+          <td><strong>${esc(uiToolName(r.tool))}</strong></td>
+          <td class="num">${num(r.warned)}</td>
+          <td class="num ui-col-m">${r.overridden ? `<span class="ui-badge risk">${num(r.overridden)}</span>` : num(0)}</td>
+          <td class="num ui-col-l">${num(r.blocked)}</td>
+          <td>${(r.detectors || []).slice(0, 3).map(d => `<span class="ui-surface">${esc(d)}</span>`).join('')}</td>
+        </tr>`).join('')}</tbody></table></div>` : ''}
+      <div class="ui-panel-footer"><span>${warned ? `${warned} warned in this window` : 'Nothing warned in this window'}<i class="ui-shown"></i></span>
         <button class="mini" data-nav="paste">Open Paste guard ${uiIcon('arrow')}</button></div></div>`;
   },
 
@@ -2875,45 +2948,61 @@ function overviewWidgets() {
 // has an <h3> for the edit controls to sit beside; without one they float
 // in a strip attached to nothing, which reads as a control that has come
 // loose rather than one belonging to the card under it.
-const WIDGET_TITLES = {stat_row: 'Headline numbers'};
+const WIDGET_TITLES = {stat_row: 'Headline numbers', top_tools: 'Discovered AI tools',
+  review_queue: 'Where to focus', detection_coverage: 'Visibility across your estate',
+  recent_personal_accounts: 'Recent personal accounts', budget_spend: 'AI spend',
+  paste_guard: 'Paste guard', source_health: 'Silent sources',
+  activity_trend: 'Personal-account exposure', agentic: 'Running on its own'};
+// One line each, for the planner: what the card is for, so the arrangement
+// can be made from names rather than by reading every widget in full.
+const WIDGET_BLURB = {stat_row: 'Posture and the four headline counts',
+  top_tools: 'Every tool observed, with devices, identities and personal accounts',
+  review_queue: 'The follow-ups, and the decision and discovery queue',
+  detection_coverage: 'Collector coverage and which sources report',
+  recent_personal_accounts: 'Latest activity in accounts outside your domains',
+  budget_spend: 'Subscriptions against observed use',
+  paste_guard: 'The browser extension, on the devices it reached',
+  source_health: 'Catalogue sources that reported nothing',
+  activity_trend: 'Daily detections against reporting coverage',
+  agentic: 'AI that starts itself, and who answers for it', grafana: 'A Grafana panel'};
 
-const SIZES = ['w4', 'w6', 'w12'];
-const SIZE_LABEL = {w4: 'S', w6: 'M', w12: 'L'};
-const SIZE_NAME = {w4: 'small', w6: 'medium', w12: 'large'};
+// Two columns. A third width squashed every table into a strip, and the
+// only widgets that survived it were the ones with nothing to show.
+const SIZES = ['w6', 'w12'];
+const SIZE_LABEL = {w6: 'Half', w12: 'Full'};
+const SIZE_NAME = {w6: 'half width', w12: 'full width'};
 const WIDGET_SIZES = {
-  // Checked by rendering each of these three to a row at 328px and
-  // looking, not by reasoning about it - the first pass of this list was
-  // guesswork and most of it was wrong. A KPI row wraps to two columns,
-  // bars keep their labels, the line chart compresses to something
-  // sparkline-shaped but still readable, and stat cells stack.
-  stat_row: ['w4', 'w6', 'w12'],
-  top_tools: ['w4', 'w6', 'w12'],
-  activity_trend: ['w4', 'w6', 'w12'],
-  budget_spend: ['w4', 'w6', 'w12'],
-  detection_coverage: ['w4', 'w6', 'w12'],
-  source_health: ['w4', 'w6', 'w12'],
-  paste_guard: ['w4', 'w6', 'w12'],
-  // These two genuinely break at a third width, which is the whole point
-  // of the list: the review queue's Add to registry / Dismiss buttons
-  // overflow the card and Dismiss is clipped mid-word, and a four-column
-  // table of people wraps every date onto three lines.
+  // Half or full for every card. The stat row and the tool inventory make
+  // most sense full; both still tile at half so a person can pair them.
+  stat_row: ['w6', 'w12'],
+  top_tools: ['w6', 'w12'],
+  activity_trend: ['w6', 'w12'],
+  budget_spend: ['w6', 'w12'],
+  detection_coverage: ['w6', 'w12'],
+  source_health: ['w6', 'w12'],
+  paste_guard: ['w6', 'w12'],
   recent_personal_accounts: ['w6', 'w12'],
   review_queue: ['w6', 'w12'],
+  agentic: ['w6', 'w12'],
   // A cross-origin frame decides its own layout and cannot be checked
-  // from here, so it is not offered a width nobody has seen it at.
+  // from here, so it is offered the same two widths as everything else.
   grafana: ['w6', 'w12'],
 };
 
 // The working copy while arranging. Null means not arranging.
 let OVEDIT = null;
+// Looking at the draft with real data, before saving it.
+let OVPREVIEW = false;
 
 function overview() {
   const live = overviewWidgets();
-  const editing = !!OVEDIT;
-  const order = editing ? OVEDIT.order : live.all.map(wKey);
-  const hidden = editing ? OVEDIT.hidden : live.hidden;
-  const sizes = editing ? OVEDIT.sizes : live.sizes;
-  const stacked = editing ? OVEDIT.stacked : live.stacked;
+  // A draft in hand is "drafting"; the planner shows it as placeholders,
+  // the preview shows it with the real cards. Both read the same draft.
+  const drafting = !!OVEDIT, editing = drafting && !OVPREVIEW;
+  const order = drafting ? OVEDIT.order : live.all.map(wKey);
+  const hidden = drafting ? OVEDIT.hidden : live.hidden;
+  const sizes = drafting ? OVEDIT.sizes : live.sizes;
+  const stacked = drafting ? OVEDIT.stacked : live.stacked;
   const by = new Map(live.all.map(w => [wKey(w), w]));
   const draw = order.filter(k => by.has(k) && (editing || hidden.indexOf(k) < 0));
 
@@ -2937,9 +3026,13 @@ function overview() {
   const cols = [];
   draw.forEach(k => {
     if (!drawn.get(k)) return;
+    // While arranging, a hidden card is in the tray, not in a column.
+    if (editing && hidden.indexOf(k) >= 0) return;
     if (cols.length && stacked.indexOf(k) >= 0) cols[cols.length - 1].push(k);
     else cols.push([k]);
   });
+  const titleOf = k => { const w = by.get(k);
+    return w.kind === 'grafana' ? (w.ref || 'Grafana panel') : (WIDGET_TITLES[w.kind] || w.kind); };
 
   const cardOf = k => {
     const w = by.get(k), body = drawn.get(k);
@@ -2947,12 +3040,16 @@ function overview() {
     const can = WIDGET_SIZES[w.kind] || [ownSpan(k, body)];
     const span = can.indexOf(sizes[k]) >= 0 ? sizes[k] : ownSpan(k, body);
     const isStacked = stacked.indexOf(k) >= 0;
-    const titled = body.indexOf('<h3') >= 0;
+    const titled = editing || body.indexOf('<h3') >= 0;
+    // The planner draws a placeholder in the card's place: its name, what
+    // it is for, and its size. The arrangement is made from those; the
+    // data comes back when the arrangement is saved.
+    const shown = editing ? `<div class="ov-placeholder"><b>${esc(titleOf(k))}</b>
+      <span>${esc(WIDGET_BLURB[w.kind] || '')}</span>
+      <small>${esc(SIZE_NAME[span])}${isStacked ? ' · stacked beneath the card above' : ''}</small></div>` : body;
     return `<div class="gcard${titled ? '' : ' notitle'}" data-wk="${esc(k)}"
       ${editing ? 'draggable="true"' : ''}
       style="${off ? 'opacity:.45' : ''}">
-      ${editing && !titled ? `<h3 class="gname">${
-        esc(WIDGET_TITLES[w.kind] || w.kind)}</h3>` : ''}
       ${editing ? `<span class="gtools">${
         // A stacked card takes the column's width from the card at its
         // head, so offering it a width of its own would be a control that
@@ -2965,8 +3062,19 @@ function overview() {
         : ''}${isStacked ? `<button data-act="w-unstack" data-key="${esc(k)}"
         title="give this card a column of its own again"
         >Unstack</button>` : ''}<button data-act="w-hide" data-key="${esc(k)}"
-        >${off ? 'Show' : 'Hide'}</button></span>` : ''}${body}</div>`;
+        >${off ? 'Show' : 'Hide'}</button></span>` : ''}${shown}${editing
+        ? `<div class="ov-stack-zone" aria-hidden="true">Stack beneath</div>` : ''}</div>`;
   };
+  // Cards not on the page, while arranging: named, draggable into place,
+  // or added at the end with a click.
+  const tray = !editing ? '' : (() => {
+    const off = draw.filter(k => hidden.indexOf(k) >= 0);
+    return `<div class="ov-tray"><span class="ov-tray-label">${off.length
+      ? 'Not on the page. Drag one into place, or add it at the end.'
+      : 'Every card is on the page.'}</span>${off.map(k =>
+      `<div class="gcard ov-chip" draggable="true" data-wk="${esc(k)}"><b>${esc(titleOf(k))}</b>
+        <button data-act="w-hide" data-key="${esc(k)}">Add</button></div>`).join('')}</div>`;
+  })();
 
   const colOf = (col, i) => {
     const head = col[0], body = drawn.get(head);
@@ -2981,18 +3089,31 @@ function overview() {
   return `<h2>Overview</h2><p class="lede">Your AI estate. The exposure, the coverage, the next action.</p>
   ${truncNote(G.findings_truncated)}
   ${editing ? `<div class="oedit">
-    <span>Drag a card between others to move it, or onto the middle of one
-    to stack them in a column - two short cards share the height of a tall
-    one that way. This is your own view and changes nothing for anyone
+    <span>Each card is shown as its name and size. Drag one to move it: the
+    line shows where it lands. Drop it on the strip beneath another card to
+    stack the two in one column. Cards not on the page wait in the tray
+    below. This is your own view and changes nothing for anyone
     else${
       AUTH && AUTH.role !== 'viewer'
         ? ' - the widgets a deployment offers are set under Settings' : ''}.</span>
     <span class="sp"></span>
+    <button class="ghost" data-act="ov-clear" title="Move every card to the tray and start from nothing">Clear canvas</button>
     <button class="ghost" data-act="ov-reset">Reset to default</button>
+    <button class="ghost" data-act="ov-cancel">Cancel</button>
+    <button class="ghost" data-act="ov-preview">Preview</button>
+    <button class="pri" data-act="ov-save">Save</button>
+  </div>` : drafting ? `<div class="oedit ov-previewing">
+    <span><b>Previewing your arrangement.</b> This is how the page will read with
+    today's data. Nothing is saved until you say so.</span>
+    <span class="sp"></span>
+    <button class="ghost" data-act="ov-plan">Back to arranging</button>
     <button class="ghost" data-act="ov-cancel">Cancel</button>
     <button class="pri" data-act="ov-save">Save</button>
   </div>` : ''}
-  <div class="grid${editing ? ' editing' : ''}">${cols.map(colOf).join('')}</div>`;
+  ${tray}
+  <div class="grid${editing ? ' editing ov-canvas' : ''}">${cols.map(colOf).join('')}${editing
+    ? `<div class="ov-drop-end${cols.length ? '' : ' empty'}">${cols.length
+        ? 'Drop here to add at the end' : 'The canvas is empty. Drag cards in from the tray.'}</div>` : ''}</div>`;
 }
 
 function card(k, d) {
@@ -3024,9 +3145,9 @@ function devices() {
     <thead><tr><th>Device</th><th>Person</th><th>AI tools</th>
       <th>Personal accounts</th><th>Local users</th></tr></thead>
     <tbody>${rows.map(([k,d]) => `<tr data-open="device" data-key="${esc(k)}">
-      <td><strong>${esc(label(k,d))}</strong><br><span class="mono row-key">${esc(k)}</span></td>
+      <td><strong>${esc(label(k,d))}</strong>${label(k,d) === k ? '' : `<br><span class="mono row-key">${esc(k)}</span>`}</td>
       <td>${d.person ? `<span class="pill p-ok">${esc(d.person)}</span>` : '<span class="muted-value">Unattributed</span>'}</td>
-      <td><div class="cell-tags">${(d.tools||[]).map(t=>uiToolChip(t)).join('') || '<span class="muted-value">None observed</span>'}</div></td>
+      <td><div class="cell-tags">${uiChipRun(d.tools||[], 6, '<span class="muted-value">None observed</span>')}</div></td>
       <td><div class="cell-tags">${(d.personal_accounts||[]).map(a=>`<span class="ui-badge risk">${esc(a)}</span>`).join('') || '<span class="muted-value">None</span>'}</div></td>
       <td><div class="cell-tags">${(d.local_users||[]).map(u=>`<span class="pill p-mut">${esc(u)}</span>`).join('') || '<span class="muted-value">—</span>'}</div></td>
     </tr>`).join('')}</tbody>
@@ -6433,11 +6554,14 @@ kubectl -n ${ns} set image cronjob/<discovery> discovery=ghcr.io/amansk5/shadow-
         <p class="src-note">Afterwards this page should read ${esc(u.latest)} under Running, and Sources should show the same collectors reporting.</p>
       </div></details>
       ${u.notes ? `<details class="how"><summary>Release notes</summary><div><pre class="mono" style="white-space:pre-wrap;max-height:320px;overflow:auto">${esc(u.notes)}</pre></div></details>` : ''}` : ''}
-      ${CFG.managed && CFG.managed.enabled ? `<details class="how"><summary>Upgrade from your own machine</summary><div>
-        <p class="src-note">The command runs with your kubeconfig or Docker context and reports its progress here. The portal never upgrades anything itself; it approves the request (owners only) and shows the run. Install once from a tagged release, then:</p>
-        <pre class="mono" style="white-space:pre-wrap">pipx install "git+https://github.com/AmanSK5/shadow-ai-guard@${esc(u.latest || 'v0.29.0')}#subdirectory=cli"
-aiguardctl upgrade --portal ${esc(location.origin)}</pre>
-        <p class="src-note">Your browser opens this portal to approve the request; compare the code it shows with your terminal. <span class="mono">--dry-run</span> prints every command without running one.</p>
+      ${CFG.managed && CFG.managed.enabled ? `<details class="how ui-how"><summary>Upgrade from your own machine</summary><div class="ui-steps">
+        <p>The command runs with your kubeconfig or Docker context and reports its progress here. The portal never upgrades anything itself; it approves the request (owners only) and shows the run.</p>
+        <ol class="ui-steplist">
+          <li><b>Have Python 3.10 or newer and pipx on your machine.</b><span>On a Mac, <code>brew install pipx</code>; elsewhere, <code>pip install --user pipx</code>.</span></li>
+          <li><b>Install the command once, from a tagged release.</b>${uiCommand(`pipx install -q "git+https://github.com/AmanSK5/shadow-ai-guard@${u.latest || 'v0.31.0'}#subdirectory=cli"`)}</li>
+          <li><b>Put it on your PATH.</b>${uiCommand('pipx ensurepath')}<span>A shell opened before this will not find the command until it is reopened.</span></li>
+          <li><b>Run it.</b>${uiCommand('aiguardctl upgrade --portal ' + location.origin)}<span>Your browser opens this portal to approve the request; compare the code it shows with your terminal. <code>--dry-run</code> prints every command without running one.</span></li>
+        </ol>
       </div></details>` : ''}
       ${u.enabled ? `<p class="src-note" style="margin-top:8px"><button class="mini" data-act="update-check">Check now</button></p>` : ''}
       ${CFG.managed && CFG.managed.enabled ? upgradeTracker() : ''}
@@ -6560,8 +6684,13 @@ function upgradeTracker() {
   if (UPDOWN) return `<div id="upgrade-tracker" class="health-note warning"><b>Portal restarting</b> - the page cannot reach it right now, which is expected mid-rollout. It keeps trying.</div>`;
   if (!r) return `<div id="upgrade-tracker"></div>`;
   const pill = r.status === 'running' ? '<span class="pill p-amb">running</span>'
+    : r.status === 'stale' ? '<span class="pill p-warn">not confirmed</span>'
     : r.outcome === 'succeeded' ? '<span class="pill p-ok">succeeded</span>'
+    : r.outcome === 'unverified' ? '<span class="pill p-amb">ran, not confirmed</span>'
     : `<span class="pill p-warn">${esc(r.outcome || 'finished')}</span>`;
+  const note = r.status === 'stale'
+    ? 'The command stopped reporting before it confirmed the result, so this run was never closed. Running, above, says what is actually deployed.'
+    : r.outcome === 'unverified' ? 'The commands ran, but the command could not confirm the result. Running, above, says what is actually deployed.' : '';
   const stat = s => s === 'done' ? 'p-ok' : s === 'failed' ? 'p-warn' : s === 'skipped' ? 'p-mut' : 'p-amb';
   // A step is reported twice, once when it starts and once when it ends;
   // one line per step, carrying whichever report came last.
@@ -6573,7 +6702,8 @@ function upgradeTracker() {
   return `<div id="upgrade-tracker" class="upgrade-run">
     <div class="upgrade-run-head"><b>Upgrade ${esc(r.from_version)} → ${esc(r.to_version)}</b> ${pill}
       <span>${esc(r.route)} · started ${when(r.started_at)} by ${esc(r.started_by_name || 'an owner')}</span></div>
-    <ol class="upgrade-steps">${latest.map(s => `<li><span class="pill ${stat(s.status)}">${esc(s.status)}</span> ${esc(s.step)}${s.detail ? ` <span>· ${esc(s.detail)}</span>` : ''}</li>`).join('')
+    ${note ? `<p class="health-note warning">${note}</p>` : ''}
+    <ol class="upgrade-steps">${latest.map(s => `<li><span class="pill ${stat(s.status)}">${esc(s.status)}</span> <span class="upgrade-step" title="${esc(s.step)}">${esc(s.step)}</span>${s.detail ? ` <span>· ${esc(s.detail)}</span>` : ''}</li>`).join('')
       || '<li><span class="pill p-amb">running</span> waiting for the first step</li>'}</ol>
     ${r.status !== 'running' && r.detail ? `<p class="src-note">${esc(r.detail)}</p>` : ''}
   </div>`;
@@ -8836,6 +8966,28 @@ async function managedAction(act, el) {
     UI_PERSONAL_TOOLS = el.getAttribute('data-filter') === 'personal';
     render(); return;
   }
+  if (act === 'ui-copy') {
+    // The clipboard API wants a secure context and a real click; where it
+    // refuses, the older path still works, and failing that the command is
+    // left selected so one keystroke finishes the job.
+    const text = el.getAttribute('data-copy') || '';
+    const code = el.parentElement && el.parentElement.querySelector('code');
+    let ok = false;
+    try { await navigator.clipboard.writeText(text); ok = true; } catch (e) { /* fall through */ }
+    if (!ok && code) {
+      const range = document.createRange(); range.selectNodeContents(code);
+      const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+      try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    }
+    el.textContent = ok ? 'Copied' : 'Selected, press Ctrl+C';
+    setTimeout(() => { el.textContent = 'Copy'; }, 2200);
+    return;
+  }
+  if (act === 'ui-expand') {
+    const k = el.getAttribute('data-key');
+    if (UI_EXPANDED.has(k)) UI_EXPANDED.delete(k); else UI_EXPANDED.add(k);
+    render(); return;
+  }
   if (act === 'ui-density') {
     await prefSet('display.compact', pref('display.compact', '0') === '1' ? '0' : '1');
     render(); return;
@@ -8847,12 +8999,20 @@ async function managedAction(act, el) {
               stacked: live.stacked.slice()};
     render(); return;
   }
-  if (act === 'ov-cancel') { OVEDIT = null; render(); return; }
+  if (act === 'ov-cancel') { OVEDIT = null; OVPREVIEW = false; render(); return; }
+  if (act === 'ov-preview') { OVPREVIEW = true; render(); window.scrollTo(0, 0); return; }
+  if (act === 'ov-clear') {
+    // Everything to the tray, nothing stacked: the canvas is bare and the
+    // arrangement is made from the tray. Cancel still discards all of it.
+    OVEDIT.hidden = OVEDIT.order.slice(); OVEDIT.stacked = [];
+    render(); return;
+  }
+  if (act === 'ov-plan') { OVPREVIEW = false; render(); window.scrollTo(0, 0); return; }
   if (act === 'ov-save') {
     await prefSet('overview.layout', JSON.stringify(
       {order: OVEDIT.order, hidden: OVEDIT.hidden, sizes: OVEDIT.sizes,
        stacked: OVEDIT.stacked}));
-    OVEDIT = null; render(); return;
+    OVEDIT = null; OVPREVIEW = false; render(); return;
   }
   if (act === 'ov-reset') {
     // Deleting the key rather than saving today's default: the default is
@@ -10211,7 +10371,64 @@ async function render() {
   decorateView();
   drawSetup();
   maybeTour();
+  setTimeout(uiFit, 0);
 }
+// A list card shows whole rows only. Its body has the height its row gives
+// it; any row that would not fit in full is hidden, and the footer says how
+// many are on show. Runs after every render and on resize, so a density
+// change, a neighbour growing, or a narrower window never leaves a row cut
+// through the middle. An opened card ("Show all") is left alone.
+let UI_FIT_TIMER = null;
+function uiFit() {
+  const bodies = [...document.querySelectorAll('.ui-widget:not(.ui-open)>.ui-table-scroll, .ui-tools-card:not(.ui-open)>.ui-table-scroll, .ui-tools-card:not(.ui-open)>.ui-tool-list, .ui-tools-card:not(.ui-open)>.ui-tool-bars')]
+    .filter(b => b.offsetParent);
+  // First the basis: a body asks its row for the smaller of its content and
+  // its budget, so a short list never props a card open, and a long one
+  // never sets the row taller than the budget. It still grows when a
+  // neighbour is taller. Then, after that has settled, the row cut.
+  // Measured with every row showing: a second pass (a resize) must not
+  // read a list already cut down by the first and shrink it further.
+  bodies.forEach(body => {
+    body.querySelectorAll('.ui-cut').forEach(r => r.classList.remove('ui-cut'));
+    body.style.flexBasis = '';
+  });
+  bodies.forEach(body => {
+    const budget = parseFloat(getComputedStyle(body).getPropertyValue('--ui-budget')) || 470;
+    body.style.flexBasis = Math.min(budget, Math.ceil(body.scrollHeight)) + 'px';
+  });
+  // A timer, not an animation frame: frames do not run in a tab that is
+  // not visible, and a page that fits itself only once it is looked at
+  // shows its rows cut through the middle for the first paint.
+  setTimeout(() => uiCut(bodies), 0);
+}
+// Every replacement of the page's content is a new layout to fit: the
+// views redraw themselves as later reads arrive, not only through render().
+new MutationObserver(() => {
+  clearTimeout(UI_FIT_TIMER); UI_FIT_TIMER = setTimeout(uiFit, 40);
+}).observe(document.getElementById('app'), {childList: true});
+function uiCut(bodies) {
+  bodies.forEach(body => {
+    const rows = [...body.querySelectorAll(':scope tbody>tr, :scope>li, :scope .bars>.barrow')];
+    if (!rows.length) return;
+    // The content box, not the border box: a row that ends inside the
+    // bottom padding sat on the divider.
+    const limit = body.getBoundingClientRect().bottom
+      - (parseFloat(getComputedStyle(body).paddingBottom) || 0) + 1;
+    let shown = 0;
+    rows.forEach(r => {
+      if (r.getBoundingClientRect().bottom > limit) r.classList.add('ui-cut'); else shown++;
+    });
+    const card = body.parentElement;
+    const note = card.querySelector('.ui-shown');
+    if (note) note.textContent = shown < rows.length ? `${shown} shown` : '';
+    const more = card.querySelector('.ui-more');
+    if (more) more.classList.toggle('ui-idle',
+      shown === rows.length && rows.length >= Number(more.dataset.all || 0));
+  });
+}
+window.addEventListener('resize', () => {
+  clearTimeout(UI_FIT_TIMER); UI_FIT_TIMER = setTimeout(uiFit, 120);
+});
 // A detail opens in the inspector beside the list rather than replacing it.
 // Opening touches only the drawer, so the list keeps its scroll position;
 // a data-open inside the drawer (a device on a tool page) swaps the drawer
@@ -10316,6 +10533,7 @@ app.addEventListener('dragstart', e => {
   if (!it) return;
   DRAGK = it.getAttribute('data-wk');
   it.classList.add('drag');
+  document.body.classList.add('dragging');
   if (e.dataTransfer) {
     e.dataTransfer.effectAllowed = 'move';
     // Firefox will not start a drag without data on the transfer.
@@ -10324,6 +10542,7 @@ app.addEventListener('dragstart', e => {
 });
 app.addEventListener('dragend', () => {
   DRAGK = null;
+  document.body.classList.remove('dragging');
   app.querySelectorAll('.gcard.drag, .gcard.over')
      .forEach(n => n.classList.remove('drag', 'over'));
 });
@@ -10332,10 +10551,15 @@ app.addEventListener('dragend', () => {
 // place it as a column of its own before or after. Edges are relative to
 // the whole column, not the card under the pointer, so dropping beside a
 // stack never lands inside it by accident.
-function dropZone(card, y) {
+// A plain drag moves: above the card's midpoint lands before its column,
+// below lands after. Stacking is deliberate - only a drop on the strip each
+// card shows along its bottom edge while a drag is in progress stacks into
+// that column, so a move never snaps into a stack by accident.
+function dropZone(card, y, target) {
+  if (target && target.closest && target.closest('.ov-stack-zone')) return 'into';
   const r = card.getBoundingClientRect();
   const rel = (y - r.top) / (r.height || 1);
-  return rel < 0.28 ? 'before' : rel > 0.72 ? 'after' : 'into';
+  return rel < 0.5 ? 'before' : 'after';
 }
 
 function colKeys(card) {
@@ -10346,23 +10570,53 @@ function colKeys(card) {
 
 app.addEventListener('dragover', e => {
   if (!OVEDIT || !DRAGK) return;
+  const end = e.target.closest && e.target.closest('.ov-drop-end');
+  if (end) {
+    e.preventDefault();
+    app.querySelectorAll('.gcard.over, .gcard.into')
+       .forEach(n => n.classList.remove('over', 'into', 'before', 'after'));
+    end.classList.add('over'); return;
+  }
   const it = e.target.closest && e.target.closest('.gcard');
   if (!it) return;
   e.preventDefault();
   app.querySelectorAll('.gcard.over, .gcard.into')
      .forEach(n => n.classList.remove('over', 'into', 'before', 'after'));
   if (it.getAttribute('data-wk') === DRAGK) return;
-  const zone = dropZone(it, e.clientY);
+  const zone = dropZone(it, e.clientY, e.target);
   it.classList.add(zone === 'into' ? 'into' : 'over', zone);
 });
 
 app.addEventListener('drop', e => {
   if (!OVEDIT || !DRAGK) return;
+  const end = e.target.closest && e.target.closest('.ov-drop-end');
+  if (end) {
+    // At the end, in a column of its own, on the page.
+    e.preventDefault();
+    const from = DRAGK; DRAGK = null;
+    document.body.classList.remove('dragging');
+    const o = OVEDIT.order.slice(), st = OVEDIT.stacked.slice();
+    const fromCard = [...app.querySelectorAll('.gcard')]
+      .find(c => c.getAttribute('data-wk') === from && !c.classList.contains('ov-chip'));
+    const fromCol = fromCard ? colKeys(fromCard) : [from];
+    if (fromCol[0] === from && fromCol.length > 1) {
+      const heir = st.indexOf(fromCol[1]);
+      if (heir >= 0) st.splice(heir, 1);
+    }
+    o.splice(o.indexOf(from), 1); o.push(from);
+    const wasStacked = st.indexOf(from);
+    if (wasStacked >= 0) st.splice(wasStacked, 1);
+    const wasHidden = OVEDIT.hidden.indexOf(from);
+    if (wasHidden >= 0) OVEDIT.hidden.splice(wasHidden, 1);
+    OVEDIT.order = o; OVEDIT.stacked = st;
+    render(); return;
+  }
   const it = e.target.closest && e.target.closest('.gcard');
   if (!it) return;
   e.preventDefault();
   const to = it.getAttribute('data-wk'), from = DRAGK;
-  const zone = dropZone(it, e.clientY);
+  const zone = dropZone(it, e.clientY, e.target);
+  document.body.classList.remove('dragging');
   const col = colKeys(it);
   DRAGK = null;
   if (!to || to === from) return;
@@ -10380,6 +10634,8 @@ app.addEventListener('drop', e => {
     if (heir >= 0) st.splice(heir, 1);
   }
   o.splice(o.indexOf(from), 1);
+  const wasHidden = OVEDIT.hidden.indexOf(from);
+  if (wasHidden >= 0) OVEDIT.hidden.splice(wasHidden, 1);
   const wasStacked = st.indexOf(from);
   if (wasStacked >= 0) st.splice(wasStacked, 1);
 
