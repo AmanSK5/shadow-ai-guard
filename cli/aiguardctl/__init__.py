@@ -10,4 +10,4 @@ context and reports each step back so the portal can show it. Nothing in
 the platform gains a right over the deployment. See SECURITY.md,
 "Upgrading", in the project repository.
 """
-__version__ = "0.29.0"
+__version__ = "0.30.0"

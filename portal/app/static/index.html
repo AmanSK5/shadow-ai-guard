@@ -6,7 +6,8 @@
 -->
 
 <meta charset="utf-8">
-<title>ai-guard portal</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shadow AI Guard</title>
 <style>
 /* Light is the default and dark is the [data-theme=dark] overlay. The
    variable names are load-bearing: views reference them inline, so both
@@ -989,7 +990,8 @@ a.libtn:hover{border-color:var(--pri)}
       <div class="search">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.8-3.8"/></svg>
         <input id="q" placeholder="Search this view, or jump to a page, tool or device…"
-          autocomplete="off" aria-autocomplete="list" aria-controls="qresults">
+          autocomplete="off" aria-label="Search tools, devices and pages"
+          aria-autocomplete="list" aria-controls="qresults">
         <span class="search-key" aria-hidden="true">/</span>
         <div id="qresults" role="listbox" hidden></div>
       </div>
@@ -1017,7 +1019,7 @@ a.libtn:hover{border-color:var(--pri)}
       </span>
       <span id="whowrap" class="account-wrap">
         <button id="who" class="account-button" style="display:none"
-          aria-haspopup="true" aria-expanded="false">
+          aria-label="Account menu" aria-haspopup="true" aria-expanded="false">
           <span class="account-avatar" id="who-avatar" aria-hidden="true"></span>
           <span class="account-copy"><b id="who-name"></b><span id="who-role"></span></span>
           <span class="account-chevron" aria-hidden="true">⌄</span>
@@ -2266,267 +2268,132 @@ function trendChart(days, a, b, aLabel, bLabel) {
   </div>`;
 }
 
-const WIDGETS = {
 
-  // What runs with no person behind it, small enough to sit on an overview.
-  // The count is the headline; the rows are the ones with nothing to revoke,
-  // because a scheduled job under a real account is not the finding.
-  agentic: () => {
-    if (!AGENTIC) return `<div class="wcard w6"><h3>Running on its own</h3>
-      <p class="lede">Not read yet - open Agentic AI.</p></div>`;
-    const c = AGENTIC.counts || {};
-    const loose = (AGENTIC.agents || []).filter(
-      a => a.autonomous && !a.accountable);
-    return `<div class="wcard w6"><h3>Running on its own
-      <span class="count">${c.autonomous || 0}</span></h3>
-      ${!c.autonomous ? `<p class="lede">Nothing reported starting itself.${
-        c.unrecognised ? ` ${c.unrecognised} process${c.unrecognised === 1 ? '' : 'es'}
-        reached a model unrecognised, which is a different question.` : ''} That is either
-        true or the collectors have not been updated to look - Health says which.</p>`
-      : `<p class="lede">${c.unaccountable
-          ? `<b>${c.unaccountable}</b> of them answer to nobody: a credential with no
-             person behind it, so revoking a sign-on does not stop them.`
-          : 'All of them run under an identity somebody can be asked about.'}</p>
-        ${loose.length ? `<table>${loose.slice(0, 5).map(a => `<tr>
-          <td>${esc(label(a.device, G.devices[a.device] || {}))}
-            <div style="color:var(--mut);font-size:12px">${esc(a.trigger || a.evidence || '')}</div></td>
-          <td style="color:var(--mut)">${a.process
-            ? '<span class="pill p-warn">no tool we know</span>'
-            : '<span class="pill p-warn">' + esc(a.identity || 'unattributed') + '</span>'}</td>
-          </tr>`).join('')}</table>` : ''}
-        <p class="src-note" style="margin-top:8px"><a href="#agentic">Open Agentic AI</a></p>`}
-    </div>`;
-  },
-
-  stat_row: () => {
-    const devs = ents(G.devices), pa = G.personal_accounts || [];
-    const gaps = devs.filter(([,d]) => d.scanner_seen && !d.collector_seen);
-    // "New" is relative to the window, capped at a week: in a 30-day
-    // window a week is still what somebody means by recent.
-    const freshH = Math.min(hoursNow(), 168);
-    const week = Date.now()/1000 - freshH*3600;
-    const fresh = pa.filter(r => r.first_seen &&
-      Date.parse(r.first_seen)/1000 > week).length;
-    const tr = G.trends || {};
-    // Accepted-with-a-reason rows leave the headline count: the tile is
-    // "what needs someone", and an answered finding no longer does.
-    const open = PSTAT
-      ? pa.filter(r => (PSTAT[paKey(r)] || {}).status !== 'accepted') : pa;
-    // People and unattributed devices remain separate: a machine is not a
-    // person, even when it is the only identity the finding carries.
-    const named = new Set(pa.filter(r => r.user).map(r => r.user));
-    const anon = new Set(pa.filter(r => !r.user && r.device).map(r => r.device));
-    const affectedTools = new Set(pa.map(r => r.tool)).size;
-    const tools = ents(G.tools).length;
-    const covered = Math.max(0, devs.length - gaps.length);
-    const coverage = devs.length ? Math.round(covered / devs.length * 100) : 0;
-    const attention = open.length || gaps.length;
-    // "Healthy" needs something to have looked: a fleet where no source
-    // reported in this window has zero of everything, and zero is not a
-    // clean bill. The status read is the same one the top-bar badge uses.
-    const silent = !S || !S.reporting;
-    const mood = silent ? 'silent' : attention ? 'needs-attention' : 'healthy';
-    return `<div class="overview-executive w12 ${mood}"
-      data-tour="stats">
-      <section class="executive-posture">
-        <span>Overall posture</span>
-        <strong>${silent ? 'Nothing reporting' : attention ? 'Needs attention' : 'Monitoring healthy'}</strong>
-        <p>${silent
-          ? 'No detection source reported in this window. These counts are missing data, not a clean result.'
-          : `${open.length} open personal account${open.length === 1 ? '' : 's'} ·
-          ${gaps.length} coverage gap${gaps.length === 1 ? '' : 's'}`}</p>
-        <div class="executive-actions">
-          ${open.length ? '<button class="mini" data-nav="personal">Review accounts</button>' : ''}
-          <button class="mini" data-nav="coverage">Verify coverage</button>
-        </div>
-      </section>
-      <dl class="executive-metrics">
-        <div><dt${open.length ? ' class="risk"' : ''}>${open.length}${trendChip(tr.personal, true)}</dt>
-          <dd>Open personal accounts</dd><small>${fresh} first seen in the last ${fmtWindow(freshH)}${
-            open.length !== pa.length ? ` · ${pa.length - open.length} accepted` : ''}</small></div>
-        <div><dt>${named.size}</dt><dd>Affected people</dd>
-          <small>${anon.size ? anon.size + ' unattributed device' + (anon.size === 1 ? '' : 's') : 'Every device is attributed'}</small></div>
-        <div><dt>${tools}</dt><dd>AI tools observed</dd>
-          <small>${affectedTools} linked to personal-account use</small></div>
-        <div><dt class="${gaps.length ? 'attention' : 'good'}">${coverage}%</dt>
-          <dd>Detection coverage</dd><small>${covered} of ${devs.length} devices · ${gaps.length} gaps</small></div>
-      </dl>
-    </div>`;
-  },
-
-  budget_spend: () => {
-    // Managed mode only, and quiet until the budget has been fetched
-    // (load() fetches it when this widget is configured). A tile of
-    // zeros on a deployment that never linked a tool would be noise.
-    if (!BUDGET) return '';
-    const subs = BUDGET.subscriptions || [];
-    if (!subs.length) {
-      return `<div class="wcard w6"><h3>AI spend</h3>
-      <p class="lede">Nothing linked yet. The Budget view records what
-      each AI tool costs and joins it against observed use.</p>
-      <p class="src-note"><button class="mini" data-nav="budget">Open Budget</button></p></div>`;
-    }
-    const next = subs.filter(s => s.renewal_date)
-      .sort((a, b) => a.renewal_date.localeCompare(b.renewal_date))[0];
-    const unob = subs.reduce((a, s) =>
-      a + bReconcile(s).unobserved.length, 0);
-    return `<div class="wcard w6"><h3>AI spend</h3>
-    <dl class="stats" style="margin-bottom:0">
-      <div><dt>${(() => { const c = bConverted(subs);
-        return c ? bMoney(c.total, bPrefCur()) : bSpendParts(subs).join(' + '); })()}</dt>
-        <dd>tracked / month${(() => { const c = bConverted(subs);
-        return c ? ` (${bSpendParts(subs).join(' + ')}, ECB ${esc(c.date)})` : ''; })()}</dd></div>
-      <div><dt>${subs.length}</dt><dd>tools linked</dd></div>
-      <div><dt${unob ? ' style="color:var(--warn)"' : ''}>${unob}</dt><dd>paid seats never observed</dd></div>
-    </dl>
-    <table class="plain budget-lines">${subs.map(sub => {
-      const r = bReconcile(sub);
-      const seats = (sub.seat_tiers || []).reduce((x, t) => x + (t.seats || 0), 0);
-      return `<tr data-nav="budget" style="cursor:pointer">
-        <td>${esc(sub.tool_id)}${sub.plan ? ` <span class="pill p-mut">${esc(sub.plan)}</span>` : ''}</td>
-        <td class="num">${bMoney(bSubMonthly(sub), sub.currency)}<span class="src-note"> /month</span></td>
-        <td class="num">${r.matched.length} of ${seats} seat${seats === 1 ? '' : 's'} in use</td>
-        <td class="num">${r.unobserved.length
-          ? `<span class="pill p-warn">${r.unobserved.length} idle</span>` : ''}${r.strangers.length
-          ? ` <span class="pill p-amb">${r.strangers.length} unseated</span>` : ''}</td></tr>`;
-    }).join('')}</table>
-    <p class="src-note">${next ? `next renewal: ${esc(next.tool_id)} ${when(next.renewal_date)} · ` : ''}<button class="mini" data-nav="budget">Open Budget</button></p></div>`;
-  },
-
-  top_tools: () => {
-    const tr = G.trends || {}, series = tr.tools || {}, firsts = tr.tool_first_seen || {};
-    const twoDays = Date.now() - 2*86400000;
-    const rows = ents(G.tools)
-      .sort((a,b)=>(b[1].devices||[]).length-(a[1].devices||[]).length).slice(0,7);
-    const bars = widgetForm('top_tools') === 'bar';
-    return `<div class="wcard w6"><h3>${formToggle('top_tools')}Top tools</h3>
-    ${rows.length ? (bars ? barRows(rows.map(([k,t]) =>
-      [k, (t.devices||[]).length || (t.identities||[]).length]), 'devices', 'tool')
-    : `<table class="plain">${rows.map(([k,t])=>{
-      const isNew = firsts[k] && Date.parse(firsts[k]) > twoDays;
-      return `<tr data-open="tool" data-key="${esc(k)}" style="cursor:pointer">
-        <td>${esc(k)}${isNew ? ' <span class="pill p-amb">new</span>' : ''}</td>
-        <td>${spark(series[k])}</td>
-        <td class="num">${(t.devices||[]).length || (t.identities||[]).length}</td></tr>`;
-    }).join('')}</table>`)
-    + `<p class="src-note">${bars
-      ? 'Devices per tool over the last ' + fmtWindow(hoursNow())
-        + '. Click a tool to open it, or switch to the table for one bar '
-        + 'per day.'
-      : 'One bar per day for the last ' + fmtWindow(hoursNow())
-        + ', left to right. Click a tool to open it.'}</p>`
-    : '<p class="lede">Nothing reported yet.</p>'}</div>`;
-  },
-
-  recent_personal_accounts: () => {
-    const pa = (G.personal_accounts || []).slice(0, 6);
-    return `<div class="wcard w6"><h3>Recent personal accounts</h3>
-    ${pa.length ? `<table>${pa.map(r=>`<tr>
-      <td>${esc(r.user || r.device_name || r.device)}</td>
-      <td><span class="pill p-warn">${esc(r.account_domain)}</span></td>
-      <td>${esc(r.tool)}</td>
-      <td style="color:var(--mut)">${esc((r.last_seen||'').slice(0,10))}</td>
-    </tr>`).join('')}</table>`
-    : dataOk()
-      ? '<p class="lede">None seen. That is a result, not an absence of one.</p>'
-      : '<p class="lede">Nothing to show: the findings could not be read.</p>'}
-    </div>`;
-  },
-
-  detection_coverage: () => {
-    if (!S) return '<div class="wcard w4"><h3>Detection coverage</h3><p class="lede">No status available.</p></div>';
-    // One square per source, filled when it reports: 1/5 should look like
-    // four dark squares, not a bar length to squint at.
-    const meter = widgetForm('detection_coverage') === 'meter';
-    return `<div class="wcard w4"><h3>${formToggle('detection_coverage')}Detection coverage</h3>
-    <p class="src-note" style="margin:0 0 8px">Dedicated sources reporting per
-    surface. A surface can still be covered by another source: MCP servers turn
-    up in endpoint collector findings whether or not the MCP scanner runs.</p>
-    ${meter ? (S.groups||[]).map(g => `<div class="meterrow"
-        data-ctip="${esc(g.group + ' · ' + g.reporting + ' of ' + g.total
-                         + ' dedicated sources reporting')}">
-        <span>${esc(g.group)}</span>
-        <span class="track"><span class="fill" style="width:${
-          g.total ? Math.round(g.reporting / g.total * 100) : 0}%"></span></span>
-        <b>${g.reporting}/${g.total}</b></div>`).join('')
-    : (S.groups||[]).map(g=>{
-      const dots = g.total <= 14
-        ? `<span class="dots">${Array.from({length: g.total}, (_, i) =>
-            `<i class="${i < g.reporting ? 'on' : ''}"></i>`).join('')}</span>`
-        : spark([g.reporting, g.total - g.reporting]);
-      // A surface's dedicated SOURCES, not the surface itself: the
-      // estate can see MCP servers through endpoint collectors while
-      // the dedicated mcp scanner is not deployed, and "mcp 0/1" read
-      // as "we have no MCP visibility" when the product was showing
-      // eight servers two views away.
-      return `<div class="covrow" title="Dedicated sources for the ${esc(g.group)} surface that are reporting. Other sources can still produce findings for it.">
-        <span>${esc(g.group)}</span>${dots}
-        <b>${g.reporting}/${g.total}</b></div>`;
-    }).join('')}</div>`;
-  },
-
-  // The change dimension, which the estate has had all along and shown
-  // only as 18px sparklines inside stat tiles. Every other number on this
-  // page is a total over the window: 23 personal accounts reads the same
-  // whether it was 12 last week or 40.
-  activity_trend: () => {
-    const tr = G.trends || {}, days = tr.days || [];
-    if (days.length < 2) return `<div class="wcard w6 exposure-trend-card"><h3>Personal-account exposure</h3>
-      <p class="lede">Not enough days in the window to draw a trend yet.</p></div>`;
-    return `<div class="wcard w6 exposure-trend-card">
-    <div class="trend-heading"><div><h3>Personal-account exposure</h3>
-      <p>Daily detections against reporting coverage</p></div></div>
-    <div class="exposure-chart">${trendChart(days,
-      tr.personal || days.map(() => 0), tr.devices || days.map(() => 0),
-      'personal-account detections', 'reporting devices')}</div>
-    <p class="src-note">Real findings per day, not a synthetic risk score.
-      Reporting devices provide the confidence check: both lines falling
-      together can mean the fleet went quiet rather than exposure improved.</p></div>`;
-  },
-
-  source_health: () => {
-    if (!S) return '';
-    const silent = (S.groups||[]).flatMap(g=>(g.sources||[]).filter(r=>!r.reporting));
-    return `<div class="wcard w4"><h3>Silent sources</h3>
-    ${silent.length ? silent.slice(0,8).map(r=>
-      `<div style="font-size:12px;margin:4px 0"><span class="pill p-mut">${esc(r.source)}</span></div>`
-    ).join('') : '<p class="lede">Every listed source is reporting.</p>'}</div>`;
-  },
-
-  paste_guard: () => {
-    // Native rather than an embedded Grafana panel. This number is derived by
-    // the portal now, so embedding an iframe to show it meant a card in
-    // Grafana's typography sitting beside cards in the portal's, with a title
-    // we could not restyle because it renders cross-origin.
-    //
-    // Two numbers, not four. The overview is a glance: is the guard running,
-    // and did somebody ignore it. Warned and blocked are the detail behind
-    // that, and they have a page. Four stat cells also clipped in a
-    // third-width card on a narrower content area, which is the same lesson
-    // the register learned the long way.
-    if (!PG) return '<div class="wcard w4"><h3>Paste guard</h3>'
-      + '<p class="lede">No paste guard data.</p></div>';
-    const over = PG.overridden || 0, live = PG.guard_devices || 0;
-    const warned = PG.warned || 0;
-    const versions = (PG.guard_versions || []).length;
-    const warnMode = (PG.guard_modes || []).some(m => m.mode === 'warn');
-    return `<div class="wcard w4"><h3>Paste guard</h3>
-      <dl class="stats" style="margin:0;grid-template-columns:repeat(2,1fr)">
-        <div><dt${live ? '' : ' style="color:var(--dstr)"'}>${live}</dt><dd>devices</dd></div>
-        <div><dt${over ? ' style="color:var(--dstr)"' : ''}>${over}</dt><dd>overridden</dd></div>
-      </dl>
-      ${warnMode && warned ? `<p class="src-note" style="color:var(--warn);font-style:normal">
-        In block mode, ${warned} warned paste${warned === 1 ? '' : 's'} would have
-        been stopped outright - the breakdown is on the Paste guard page.</p>` : ''}
-      <p class="src-note">${live
-        ? `The guard is running on ${live} device${live === 1 ? '' : 's'}${
-             versions > 1 ? ` (${versions} versions)` : ''}, so low numbers
-           here genuinely mean few risky pastes.`
-        : `No device has checked in yet, so zero here means "not deployed",
-           not "nobody pasted anything".`}</p></div>`;
-  },
-
-  review_queue: () => {
+// the console layer presentation helpers: use the same graph, lifecycle and register reads
+// as the working views. No demo fixtures or network calls live in renderers.
+let UI_PERSONAL_TOOLS = false;
+function uiOverviewFacts() {
+  const devices = ents(G.devices), personal = G.personal_accounts || [];
+  const open = PSTAT
+    ? personal.filter(r => (PSTAT[paKey(r)] || {}).status !== 'accepted') : personal;
+  const gaps = devices.filter(([,d]) => d.scanner_seen && !d.collector_seen);
+  const collectors = devices.filter(([,d]) => d.collector_seen).length;
+  const toolIds = Object.keys(G.tools || {});
+  const rows = REG && Array.isArray(REG.rows)
+    ? REG.rows.filter(r => toolIds.includes(r.id)) : null;
+  const recorded = rows && rows.filter(r => ['governance','portal'].includes(r.status_source));
+  return {known: dataOk(), personal, open, devices, gaps, collectors, toolIds,
+    coverage: devices.length ? Math.round(collectors / devices.length * 100) : null,
+    rows, recorded,
+    undecided: recorded ? toolIds.length - recorded.length : null,
+    overdue: rows ? rows.filter(r => r.days_overdue > 0).length : null,
+    people: new Set(personal.filter(r => r.user).map(r => r.user)).size,
+    unnamed: new Set(personal.filter(r => !r.user && r.device).map(r => r.device)).size};
+}
+function uiToolInfo(id) {
+  return ((REG && REG.rows) || []).find(r => r.id === id)
+    || (REGTOOLS || []).find(r => r.id === id) || {name:id, vendor:''};
+}
+// Registry names for identifiers, and catalogue labels for source ids, so
+// the inventory pages read the way the Overview does. The id stays in the
+// title, and search still matches it.
+function uiToolName(id) { return uiToolInfo(id).name || id; }
+function uiToolChip(id, cls) {
+  return `<span class="ui-tool-chip${cls ? ' ' + cls : ''}" title="${esc(id)}">${esc(uiToolName(id))}</span>`;
+}
+function uiSourceLabel(id) {
+  const src = ((S && S.groups) || []).flatMap(g => g.sources || []).find(x => x.source === id);
+  return src && src.label ? src.label : id;
+}
+function uiSourceChip(id) {
+  return `<span class="ui-tool-chip" title="${esc(id)}">${esc(uiSourceLabel(id))}</span>`;
+}
+function uiIcon(name) {
+  const paths = {
+    accounts:'<circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3m1-16a3 3 0 0 1 0 6m2 4a5 5 0 0 1 3 5"/>',
+    coverage:'<rect x="3" y="3" width="18" height="13" rx="2"/><path d="M12 16v5m-5 0h10"/>',
+    register:'<path d="M5 3h14v18H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2ZM7 3v18m4-13h4m-4 4h4"/>',
+    shield:NAVICONS.governance,
+    arrow:'<path d="M4 12h16m-6-6 6 6-6 6"/>'
+  };
+  return `<svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+    stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.arrow}</svg>`;
+}
+function uiFocusRows(f) {
+  if (!f.known) return '<p class="ui-empty">Findings are unavailable. Check System health before interpreting these counts.</p>';
+  const action = (route, icon, mood, title, text, badge, note) => `
+    <button class="ui-action" data-nav="${route}">
+      <span class="ui-action-icon ${mood}">${uiIcon(icon)}</span>
+      <span class="ui-action-copy"><strong>${title}</strong><span>${text}</span>
+        <small><b class="ui-badge ${mood}">${badge}</b>${note}</small></span>${uiIcon('arrow')}</button>`;
+  const names = [...new Set(f.open.map(r => r.tool))].slice(0,4)
+    .map(id => esc(uiToolInfo(id).name || id)).join(' · ');
+  return action('personal','accounts',f.open.length ? 'risk' : 'good',
+    f.open.length ? 'Review personal AI accounts' : 'Personal accounts reviewed',
+    f.open.length ? 'Follow up on activity in accounts outside your corporate domains.' : 'No open personal-account findings in this window.',
+    `${f.open.length} open`, names || 'View findings and recorded outcomes')
+    + action('coverage','coverage',f.gaps.length ? 'attention' : 'good',
+      f.gaps.length ? 'Close the collector coverage gaps' : 'Review detection coverage',
+      `${f.gaps.length} scanner-observed device${f.gaps.length === 1 ? '' : 's'} without a collector signal.`,
+      `${f.gaps.length} gaps`, 'Verify enrollment and reporting')
+    + action('register','register','governance','Complete the AI register',
+      f.undecided === null ? 'Register data is unavailable; open the register to check it.'
+        : `${f.undecided} discovered tool${f.undecided === 1 ? '' : 's'} without a recorded decision.`,
+      f.overdue === null ? 'Not read' : f.overdue ? `${f.overdue} overdue review${f.overdue === 1 ? '' : 's'}`
+        : `${f.recorded.length} decisions`, 'Confirm ownership and permitted use');
+}
+function uiToolsTable(rows) {
+  const f = uiOverviewFacts(), series = (G.trends || {}).tools || {};
+  return `<div class="ui-table-scroll" tabindex="0" role="region" aria-label="Discovered tools table">
+    <table class="ui-inventory"><thead><tr><th>AI tool</th><th>Observed surfaces</th>
+      <th class="num" aria-sort="descending">Devices ↓</th><th class="num">Cloud identities</th>
+      <th>Personal accounts</th><th>Activity</th><th><span class="sr-only">Details</span></th></tr></thead>
+    <tbody>${rows.map(([id,t]) => {
+      const info = uiToolInfo(id), name = info.name || id;
+      const n = f.open.filter(r => r.tool === id).length;
+      return `<tr data-open="tool" data-key="${esc(id)}">
+        <td><button class="ui-tool-button" data-open="tool" data-key="${esc(id)}"
+          aria-label="View ${esc(name)} details"><span class="ui-tool-initial" aria-hidden="true">${esc(name.slice(0,1).toUpperCase())}</span>
+          <span><strong>${esc(name)}</strong><small>${esc(info.vendor || id)}</small></span></button></td>
+        <td>${(t.surfaces || []).map(x => `<span class="ui-surface">${esc(x)}</span>`).join('')}</td>
+        <td class="num">${(t.devices || []).length}</td><td class="num">${(t.identities || []).length}</td>
+        <td>${n ? `<span class="ui-badge risk">${n} open</span>` : '<span class="ui-muted">None observed</span>'}</td>
+        <td>${uiActivity(series[id], name)}</td>
+        <td><button class="ui-row-open" data-open="tool" data-key="${esc(id)}" aria-label="Inspect ${esc(name)}">${uiIcon('arrow')}</button></td>
+      </tr>`;
+    }).join('')}</tbody></table></div>
+    ${uiToolsList(rows)}`;
+}
+// The same inventory as a list, for a card narrower than the table can
+// be. Which one shows is the container's width, in CSS; both are drawn
+// from the same rows so a size change never re-fetches or re-sorts.
+function uiToolsList(rows) {
+  const f = uiOverviewFacts(), series = (G.trends || {}).tools || {};
+  return `<ul class="ui-tool-list" aria-label="Discovered tools">${rows.map(([id,t]) => {
+    const info = uiToolInfo(id), name = info.name || id;
+    const n = f.open.filter(r => r.tool === id).length;
+    const days = series[id] || [], total = days.reduce((a, b) => a + b, 0);
+    return `<li><button class="ui-tool-item" data-open="tool" data-key="${esc(id)}" aria-label="View ${esc(name)} details">
+      <span class="ui-tool-initial" aria-hidden="true">${esc(name.slice(0,1).toUpperCase())}</span>
+      <span class="ui-tool-main"><strong>${esc(name)}</strong>
+        <small>${esc(info.vendor || id)}${(t.surfaces || []).length ? ' · ' + esc((t.surfaces || []).join(', ')) : ''}${total ? ` · ${total} in ${esc(fmtWindow(hoursNow()))}` : ''}</small></span>
+      <span class="ui-tool-nums"><b>${(t.devices || []).length}</b><i>devices</i></span>
+      <span class="ui-tool-nums ui-tool-cloud"><b>${(t.identities || []).length}</b><i>cloud</i></span>
+      <span class="ui-tool-flag">${n ? `<span class="ui-badge risk">${n} open</span>` : ''}</span>
+      ${uiIcon('arrow')}</button></li>`;
+  }).join('')}</ul>`;
+}
+// Findings per day as a sparkline once the window holds enough days to
+// make a shape; below that a single bar reads as a glitch, so the total
+// for the window is written out instead.
+function uiActivity(series, name) {
+  const days = series || [], total = days.reduce((a, b) => a + b, 0);
+  const tip = esc(name + ': findings over the last ' + fmtWindow(hoursNow()));
+  if (days.length >= 3 && days.some(v => v)) return `<span data-ctip="${tip}">${spark(days)}</span>`;
+  return total ? `<span data-ctip="${tip}"><b class="ui-activity-count">${total}</b><span class="ui-muted"> in ${esc(fmtWindow(hoursNow()))}</span></span>`
+    : '<span class="ui-muted">None in window</span>';
+}
+function uiReviewQueueDetail() {
     // The queue that replaces a weekly review pipeline: observed tools no
     // one has decided about. Recording the decision IS the acknowledgment,
     // so an empty queue means exactly what it says. Not-in-registry rows
@@ -2614,6 +2481,321 @@ const WIDGETS = {
     </section>`}
     <div class="decision-footer"><span>Recording a decision clears the tool from this queue.</span>
       <a href="#register">Open AI register</a></div></div>`;
+}
+
+const WIDGETS = {
+
+  // What runs with no person behind it, small enough to sit on an overview.
+  // The count is the headline; the rows are the ones with nothing to revoke,
+  // because a scheduled job under a real account is not the finding.
+  agentic: () => {
+    const head = (n) => `<div class="ui-panel-head"><div><h3>Running on its own${n === undefined ? '' : ` <span class="count">${n}</span>`}</h3>
+      <p>AI that starts itself, and who answers for it</p></div><span class="ui-eyebrow">Agentic</span></div>`;
+    if (!AGENTIC) return `<div class="wcard w6 ui-widget ui-agentic-card">${head()}
+      <p class="ui-empty">Not read yet. Open Agentic AI.</p>
+      <div class="ui-panel-footer"><span></span><button class="mini" data-nav="agentic">Open Agentic AI ${uiIcon('arrow')}</button></div></div>`;
+    const c = AGENTIC.counts || {};
+    const loose = (AGENTIC.agents || []).filter(
+      a => a.autonomous && !a.accountable);
+    const body = !c.autonomous
+      ? `<p class="ui-empty">Nothing reported starting itself.${
+        c.unrecognised ? ` ${c.unrecognised} process${c.unrecognised === 1 ? '' : 'es'}
+        reached a model unrecognised, which is a different question.` : ''} That is either
+        true or the collectors have not been updated to look. System health says which.</p>`
+      : `<p class="ui-widget-lede">${c.unaccountable
+          ? `<b>${c.unaccountable}</b> of ${c.autonomous} answer to nobody: a credential with no
+             person behind it, so revoking a sign-on does not stop them.`
+          : 'All of them run under an identity somebody can be asked about.'}</p>
+        ${loose.length ? `<div class="ui-table-scroll"><table class="ui-inventory ui-widget-table">
+          <thead><tr><th>Device</th><th class="ui-col-l">Runs</th><th class="ui-col-m">Schedule</th><th class="ui-col-l">Reaches</th><th>Answers to</th></tr></thead>
+          <tbody>${loose.slice(0, 10).map(a => `<tr>
+            <td><strong>${esc(label(a.device, G.devices[a.device] || {}))}</strong>${a.os ? `<small class="ui-col-s">${esc(a.os)}</small>` : ''}</td>
+            <td class="ui-col-l">${a.tool ? esc(uiToolName(a.tool)) : a.process ? `<span class="mono">${esc(a.process)}</span>` : '<span class="ui-muted">—</span>'}</td>
+            <td class="ui-col-m ui-muted">${esc(a.trigger || a.evidence || '')}</td>
+            <td class="ui-col-l">${(a.reach || []).length ? (a.reach || []).slice(0, 3).map(x => `<span class="ui-surface">${esc(x)}</span>`).join('') + ((a.reach || []).length > 3 ? ` <span class="ui-muted">+${a.reach.length - 3}</span>` : '') : '<span class="ui-muted">nothing configured</span>'}</td>
+            <td>${a.process
+              ? '<span class="ui-badge risk">no tool we know</span>'
+              : '<span class="ui-badge risk">' + esc(a.identity || 'unattributed') + '</span>'}</td>
+          </tr>`).join('')}</tbody></table></div>` : ''}`;
+    return `<div class="wcard w6 ui-widget ui-agentic-card">${head(c.autonomous || 0)}
+      ${body}
+      <div class="ui-panel-footer"><span>${c.unrecognised ? `${c.unrecognised} unrecognised process${c.unrecognised === 1 ? '' : 'es'} reached a model` : ''}</span>
+        <button class="mini" data-nav="agentic">Open Agentic AI ${uiIcon('arrow')}</button></div>
+    </div>`;
+  },
+
+  stat_row: () => {
+    const f = uiOverviewFacts(), open = f.open, gaps = f.gaps;
+    const freshH = Math.min(hoursNow(), 168), week = Date.now()/1000 - freshH*3600;
+    const fresh = f.personal.filter(r => r.first_seen && Date.parse(r.first_seen)/1000 > week).length;
+    const tr = G.trends || {};
+    const attention = open.length || gaps.length;
+    const silent = !S || !S.reporting;
+    const mood = !f.known ? 'silent' : silent ? 'silent' : attention ? 'needs-attention' : 'healthy';
+    const value = n => f.known ? n : '—';
+    return `<div class="ui-estate-line"><span>Your estate at a glance</span>
+      <span>${f.known ? `${f.devices.length} observed devices · last ${esc(fmtWindow(hoursNow()))}` : 'Findings unavailable'}</span></div>
+    <div class="overview-executive w12 ${mood}" data-tour="stats">
+      <section class="executive-posture">
+        <span>${uiIcon('shield')}Overall posture</span>
+        <strong>${!f.known ? 'Data unavailable' : silent ? 'Nothing reporting' : attention ? 'Needs attention' : 'Monitoring healthy'}</strong>
+        <p>${!f.known ? 'The findings could not be read. Open System health to check the connection.' : silent
+          ? 'No detection source reported in this window. These counts are missing data, not a clean result.'
+          : `${open.length} open personal account${open.length === 1 ? '' : 's'} · ${gaps.length} coverage gap${gaps.length === 1 ? '' : 's'}`}</p>
+        <div class="executive-actions">
+          ${open.length && f.known ? '<button class="mini" data-nav="personal">Review accounts</button>' : ''}
+          <button class="mini" data-nav="coverage">Verify coverage</button>
+        </div>
+        <small class="ui-posture-note">${f.known
+          ? `${f.people} people named in personal-account findings${f.unnamed ? ` · ${f.unnamed} unnamed devices` : ''}`
+          : 'Do not interpret unavailable data as a clean result.'}</small>
+      </section>
+      <dl class="executive-metrics">
+        <div><dt${open.length ? ' class="risk"' : ''}>${value(open.length)}${f.known ? trendChip(tr.personal, true) : ''}</dt>
+          <dd>Open personal accounts</dd><small>${f.known ? `${fresh} first seen in the last ${fmtWindow(freshH)}${
+            open.length !== f.personal.length ? ` · ${f.personal.length - open.length} accepted` : ''}` : 'Findings unavailable'}</small></div>
+        <div><dt>${value(f.toolIds.length)}</dt><dd>AI tools observed</dd>
+          <small>Across endpoint, browser and cloud sources</small></div>
+        <div><dt>${f.known && f.coverage !== null ? f.coverage + '<span class="ui-percent">%</span>' : '—'}</dt>
+          <dd>Collector coverage</dd><small>${f.known ? `${f.collectors} of ${f.devices.length} observed devices` : 'Findings unavailable'}</small></div>
+        <div><dt>${f.known && f.recorded ? f.recorded.length + '<span class="ui-denominator">/ ' + f.toolIds.length + '</span>' : '—'}</dt>
+          <dd>Register decisions</dd><small>${!f.known || !f.recorded ? 'Register data unavailable'
+            : `${f.undecided} tools without a recorded decision`}</small></div>
+      </dl>
+    </div>`;
+  },
+
+  budget_spend: () => {
+    // Managed mode only, and quiet until the budget has been fetched
+    // (load() fetches it when this widget is configured). A tile of
+    // zeros on a deployment that never linked a tool would be noise.
+    if (!BUDGET) return '';
+    const subs = BUDGET.subscriptions || [];
+    const head = `<div class="ui-panel-head"><div><h3>AI spend</h3><p>Tracked subscriptions against observed use</p></div>
+      <span class="ui-eyebrow">Budget</span></div>`;
+    if (!subs.length) {
+      return `<div class="wcard w6 ui-widget ui-spend-card">${head}
+      <p class="ui-empty">Nothing linked yet. The Budget view records what
+      each AI tool costs and joins it against observed use.</p>
+      <div class="ui-panel-footer"><span></span><button class="mini" data-nav="budget">Open Budget ${uiIcon('arrow')}</button></div></div>`;
+    }
+    const next = subs.filter(s => s.renewal_date)
+      .sort((a, b) => a.renewal_date.localeCompare(b.renewal_date))[0];
+    const unob = subs.reduce((a, s) =>
+      a + bReconcile(s).unobserved.length, 0);
+    const conv = bConverted(subs);
+    return `<div class="wcard w6 ui-widget ui-spend-card">${head}
+    <dl class="ui-tiles">
+      <div><dt>${conv ? bMoney(conv.total, bPrefCur()) : bSpendParts(subs).join(' + ')}</dt>
+        <dd>tracked per month${conv ? ` <span title="${esc(bSpendParts(subs).join(' + '))}">· ECB ${esc(conv.date)}</span>` : ''}</dd></div>
+      <div><dt>${subs.length}</dt><dd>tools linked</dd></div>
+      <div><dt${unob ? ' class="attention"' : ''}>${unob}</dt><dd>paid seats never observed</dd></div>
+    </dl>
+    <div class="ui-table-scroll"><table class="ui-inventory ui-widget-table ui-spend-table">
+      <thead><tr><th>Subscription</th><th class="ui-col-l">Plan</th><th class="num ui-col-m">Monthly</th>
+        <th class="num ui-col-m">Seats in use</th><th class="num ui-col-l">Observed</th><th class="ui-col-l">Renews</th><th>Review</th></tr></thead>
+      <tbody>${subs.map(sub => {
+        const r = bReconcile(sub);
+        const seats = (sub.seat_tiers || []).reduce((x, t) => x + (t.seats || 0), 0);
+        return `<tr data-nav="budget">
+          <td><strong>${esc(uiToolName(sub.tool_id))}</strong>${sub.plan ? `<small class="ui-col-s">${esc(sub.plan)}</small>` : ''}</td>
+          <td class="ui-col-l">${esc(sub.plan || '—')}</td>
+          <td class="num ui-col-m">${bMoney(bSubMonthly(sub), sub.currency)}</td>
+          <td class="num ui-col-m">${r.matched.length} of ${seats}</td>
+          <td class="num ui-col-l">${r.matched.length + r.strangers.length}</td>
+          <td class="ui-col-l ui-muted">${sub.renewal_date ? esc(sub.renewal_date) : '—'}</td>
+          <td>${r.unobserved.length ? `<span class="ui-badge attention">${r.unobserved.length} idle</span>` : ''}${r.strangers.length
+            ? ` <span class="ui-badge governance">${r.strangers.length} unseated</span>` : ''}${!r.unobserved.length && !r.strangers.length ? '<span class="ui-muted">Nothing flagged</span>' : ''}</td></tr>`;
+      }).join('')}</tbody></table></div>
+    <div class="ui-panel-footer"><span>${next ? `Next renewal: ${esc(uiToolName(next.tool_id))} ${when(next.renewal_date)}` : 'No renewal dates recorded'}</span>
+      <button class="mini" data-nav="budget">Open Budget ${uiIcon('arrow')}</button></div></div>`;
+  },
+
+  top_tools: () => {
+    const f = uiOverviewFacts();
+    const rows = ents(G.tools).filter(([id]) => {
+      const info = uiToolInfo(id);
+      return (match(id) || match(info.name || '') || match(info.vendor || ''))
+        && (!UI_PERSONAL_TOOLS || f.open.some(r => r.tool === id));
+    }).sort((a,b)=>(b[1].devices||[]).length-(a[1].devices||[]).length);
+    const bars = widgetForm('top_tools') === 'bar';
+    return `<div class="wcard ${bars ? 'w6' : 'w12'} ui-tools-card">
+      <div class="ui-panel-head"><h3>${formToggle('top_tools')}Discovered AI tools <span class="count">${f.toolIds.length}</span></h3>
+        <div class="ui-tool-filters" role="group" aria-label="Filter discovered tools">
+          <button class="${!UI_PERSONAL_TOOLS ? 'on' : ''}" data-act="ui-tools-filter" data-filter="all" aria-pressed="${!UI_PERSONAL_TOOLS}">All tools</button>
+          <button class="${UI_PERSONAL_TOOLS ? 'on' : ''}" data-act="ui-tools-filter" data-filter="personal" aria-pressed="${UI_PERSONAL_TOOLS}">Personal accounts</button>
+        </div></div>
+      ${!f.known ? '<p class="ui-empty">Findings are unavailable.</p>' : rows.length ? (bars
+        ? '<div class="ui-tool-bars">' + barRows(rows.map(([k,t]) => [k,(t.devices||[]).length]), 'devices', 'tool') + '</div>'
+        : uiToolsTable(rows)) : '<p class="ui-empty">No tools match this view.</p>'}
+      <div class="ui-panel-footer"><span>${f.known ? `${rows.length} of ${f.toolIds.length} discovered tools` : 'No data available'}</span>
+        <button class="mini" data-nav="tools">Open discovered tools ${uiIcon('arrow')}</button></div>
+      <p class="src-note ui-table-note">${bars ? 'Observed devices per tool. Cloud-only tools may have zero associated devices.'
+        : 'One bar per day for the last ' + fmtWindow(hoursNow()) + ', written as a total when the window holds fewer than three days. Devices and cloud identities are counted separately.'}</p>
+    </div>`;
+  },
+
+  recent_personal_accounts: () => {
+    // Ten rows are drawn; the card's width decides how many show and which
+    // columns (CSS, by container). The footer count is the whole window.
+    const pa = (G.personal_accounts || []).slice(0, 10);
+    const body = pa.length ? `<div class="ui-table-scroll"><table class="ui-inventory ui-widget-table ui-people-table">
+      <thead><tr><th>Person</th><th>Account</th><th class="ui-col-m">AI tool</th><th class="ui-col-l">Device</th>
+        <th class="ui-col-l">Surface</th><th class="ui-col-l">Source</th><th>Last seen</th></tr></thead>
+      <tbody>${pa.map(r => `<tr>
+        <td><strong>${esc(r.user || r.device_name || r.device)}</strong></td>
+        <td><span class="ui-badge risk">${esc(r.account_domain)}</span></td>
+        <td class="ui-col-m">${esc(uiToolInfo(r.tool).name || r.tool)}</td>
+        <td class="ui-col-l">${esc(r.device_name || r.device || '—')}</td>
+        <td class="ui-col-l">${(r.surfaces || []).map(x => `<span class="ui-surface">${esc(x)}</span>`).join('') || '<span class="ui-muted">—</span>'}</td>
+        <td class="ui-col-l">${(r.sources || []).map(x => uiSourceChip(x)).join('') || '<span class="ui-muted">—</span>'}</td>
+        <td class="ui-muted">${esc((r.last_seen || '').slice(0, 10))}</td>
+      </tr>`).join('')}</tbody></table></div>`
+      : dataOk()
+        ? '<p class="ui-empty">None seen. That is a result, not an absence of one.</p>'
+        : '<p class="ui-empty">Nothing to show: the findings could not be read.</p>';
+    return `<div class="wcard w6 ui-widget ui-people-card">
+      <div class="ui-panel-head"><div><h3>Recent personal accounts</h3>
+        <p>Latest activity in accounts outside your corporate domains</p></div>
+        <span class="ui-eyebrow">Last ${esc(fmtWindow(hoursNow()))}</span></div>
+      ${body}
+      <div class="ui-panel-footer"><span>${pa.length ? `${(G.personal_accounts || []).length} in this window` : ''}</span>
+        <button class="mini" data-nav="personal">Open personal accounts ${uiIcon('arrow')}</button></div>
+    </div>`;
+  },
+
+  detection_coverage: () => {
+    if (!S) return '<div class="wcard w4"><h3>Detection coverage</h3><p class="lede">No status available.</p></div>';
+    // One square per source, filled when it reports: 1/5 should look like
+    // four dark squares, not a bar length to squint at.
+    const meter = widgetForm('detection_coverage') === 'meter';
+    const f = uiOverviewFacts();
+    return `<div class="wcard w6 ui-visibility-card">
+    <div class="ui-panel-head"><div><h3>Visibility across your estate</h3><p>Collector signals across observed devices</p></div>${uiIcon('shield')}</div>
+    <div class="ui-coverage-overview">
+      <div class="ui-ring-block">
+        <div class="ui-ring" role="img" aria-label="${f.known && f.coverage !== null ? `${f.collectors} of ${f.devices.length} devices have a collector signal` : 'Collector coverage unavailable'}">
+          <svg viewBox="0 0 112 112" aria-hidden="true"><circle class="ui-ring-track" cx="56" cy="56" r="48"/>
+            <circle class="ui-ring-value" cx="56" cy="56" r="48" pathLength="100" stroke-dasharray="${f.known && f.devices.length ? f.collectors / f.devices.length * 100 : 0} 100"/></svg>
+          <div><strong>${f.known && f.coverage !== null ? f.coverage + '<span>%</span>' : '—'}</strong></div>
+        </div>
+        <small class="ui-ring-caption">Collector coverage</small>
+      </div>
+      <div class="ui-coverage-legend"><p><i></i>Collector observed <b>${f.known ? f.collectors : '—'}</b></p>
+        <p><i class="gap"></i>No collector signal <b>${f.known ? f.devices.length - f.collectors : '—'}</b></p>
+        <small>Of devices seen by any source in this window.</small></div>
+    </div>
+    <div class="ui-source-heading"><h4>Detection sources</h4><span>${S.reporting || 0}/${(S.groups || []).reduce((n,g) => n + g.total, 0)} reporting</span>${formToggle('detection_coverage')}</div>
+    <div class="ui-source-grid">
+    ${meter ? (S.groups||[]).map(g => `<div class="meterrow"
+        data-ctip="${esc(g.group + ' · ' + g.reporting + ' of ' + g.total
+                         + ' dedicated sources reporting')}">
+        <span>${esc(g.group)}</span>
+        <span class="track"><span class="fill" style="width:${
+          g.total ? Math.round(g.reporting / g.total * 100) : 0}%"></span></span>
+        <b>${g.reporting}/${g.total}</b></div>`).join('')
+    : (S.groups||[]).map(g=>{
+      const dots = g.total <= 14
+        ? `<span class="dots">${Array.from({length: g.total}, (_, i) =>
+            `<i class="${i < g.reporting ? 'on' : ''}"></i>`).join('')}</span>`
+        : spark([g.reporting, g.total - g.reporting]);
+      // A surface's dedicated SOURCES, not the surface itself: the
+      // estate can see MCP servers through endpoint collectors while
+      // the dedicated mcp scanner is not deployed, and "mcp 0/1" read
+      // as "we have no MCP visibility" when the product was showing
+      // eight servers two views away.
+      return `<div class="covrow" title="Dedicated sources for the ${esc(g.group)} surface that are reporting. Other sources can still produce findings for it.">
+        <span>${esc(g.group)}</span>${dots}
+        <b>${g.reporting}/${g.total}</b></div>`;
+    }).join('')}</div>
+    <div class="ui-panel-footer"><span>Source catalogue, not configured integrations</span><button class="mini" data-nav="setup">Review sources ${uiIcon('arrow')}</button></div>
+    <details class="ui-coverage-note"><summary>How to read coverage</summary><p class="src-note">Collector coverage uses devices observed by any source, not your entire company fleet. An unobserved source may be unconfigured or inapplicable. These are dedicated sources per surface; other sources can also produce findings for it.</p></details></div>`;
+  },
+
+  // The change dimension, which the estate has had all along and shown
+  // only as 18px sparklines inside stat tiles. Every other number on this
+  // page is a total over the window: 23 personal accounts reads the same
+  // whether it was 12 last week or 40.
+  activity_trend: () => {
+    const tr = G.trends || {}, days = tr.days || [];
+    if (days.length < 2) return `<div class="wcard w6 exposure-trend-card"><h3>Personal-account exposure</h3>
+      <p class="lede">Not enough days in the window to draw a trend yet.</p></div>`;
+    return `<div class="wcard w6 exposure-trend-card">
+    <div class="trend-heading"><div><h3>Personal-account exposure</h3>
+      <p>Daily detections against reporting coverage</p></div></div>
+    <div class="exposure-chart">${trendChart(days,
+      tr.personal || days.map(() => 0), tr.devices || days.map(() => 0),
+      'personal-account detections', 'reporting devices')}</div>
+    <p class="src-note">Real findings per day, not a synthetic risk score.
+      Reporting devices provide the confidence check: both lines falling
+      together can mean the fleet went quiet rather than exposure improved.</p></div>`;
+  },
+
+  source_health: () => {
+    if (!S) return '';
+    const groups = (S.groups || []).map(g => ({group: g.group, total: g.total,
+      silent: (g.sources || []).filter(r => !r.reporting)})).filter(g => g.silent.length);
+    const silent = groups.reduce((n, g) => n + g.silent.length, 0);
+    return `<div class="wcard w4 ui-widget ui-silent-card">
+      <div class="ui-panel-head"><div><h3>Silent sources <span class="count">${silent}</span></h3>
+        <p>In the catalogue, nothing reported in this window</p></div></div>
+      ${silent ? `<div class="ui-table-scroll"><table class="ui-inventory ui-widget-table ui-silent-table">
+        <thead><tr><th>Surface</th><th class="num">Silent</th><th>Sources</th></tr></thead>
+        <tbody>${groups.map(g => `<tr>
+          <td><strong>${esc(g.group)}</strong></td>
+          <td class="num">${g.silent.length} of ${g.total}</td>
+          <td>${g.silent.map(r => `<span title="${esc(r.source)}">${esc(r.label || r.source)}</span>`).join('<i>·</i>')}</td>
+        </tr>`).join('')}</tbody></table></div>`
+        : '<p class="ui-empty">Every listed source is reporting.</p>'}
+      <div class="ui-panel-footer"><span>Unconfigured or not applicable, not necessarily broken</span>
+        <button class="mini" data-nav="setup">Review sources ${uiIcon('arrow')}</button></div>
+    </div>`;
+  },
+
+  paste_guard: () => {
+    // Native rather than an embedded Grafana panel. This number is derived by
+    // the portal now, so embedding an iframe to show it meant a card in
+    // Grafana's typography sitting beside cards in the portal's, with a title
+    // we could not restyle because it renders cross-origin.
+    //
+    // Two numbers, not four. The overview is a glance: is the guard running,
+    // and did somebody ignore it. Warned and blocked are the detail behind
+    // that, and they have a page.
+    const head = `<div class="ui-panel-head"><div><h3>Paste guard</h3><p>Browser extension, on the devices it reached</p></div></div>`;
+    if (!PG) return `<div class="wcard w4 ui-widget ui-paste-card">${head}
+      <p class="ui-empty">No paste guard data.</p></div>`;
+    const over = PG.overridden || 0, live = PG.guard_devices || 0;
+    const warned = PG.warned || 0;
+    const versions = (PG.guard_versions || []).length;
+    const warnMode = (PG.guard_modes || []).some(m => m.mode === 'warn');
+    return `<div class="wcard w4 ui-widget ui-paste-card">${head}
+      <dl class="ui-tiles ui-tiles-2">
+        <div><dt${live ? '' : ' class="risk"'}>${live}</dt><dd>devices running the guard</dd></div>
+        <div><dt${over ? ' class="risk"' : ''}>${over}</dt><dd>warnings overridden</dd></div>
+      </dl>
+      <ul class="ui-notes">
+        ${warnMode && warned ? `<li class="attention">In block mode, ${warned} warned paste${warned === 1 ? '' : 's'} would have been stopped outright. The breakdown is on the Paste guard page.</li>` : ''}
+        <li>${live
+          ? `Running on ${live} device${live === 1 ? '' : 's'}${versions > 1 ? ` across ${versions} versions` : ''}, so low numbers here genuinely mean few risky pastes.`
+          : 'No device has checked in yet, so zero here means "not deployed", not "nobody pasted anything".'}</li>
+      </ul>
+      <div class="ui-panel-footer"><span>${warned ? `${warned} warned in this window` : 'Nothing warned in this window'}</span>
+        <button class="mini" data-nav="paste">Open Paste guard ${uiIcon('arrow')}</button></div></div>`;
+  },
+
+  review_queue: () => {
+    const f = uiOverviewFacts();
+    const candidates = (CAND || []).filter(c => !c.resolved && !c.dismissed_at);
+    return `<div class="wcard w6 ui-focus-card"><div class="ui-panel-head">
+      <div><h3>Where to focus</h3><p>Follow-ups across your AI estate</p></div>
+      <span class="ui-eyebrow">Action queue</span></div>
+      ${uiFocusRows(f)}
+      <details class="ui-queue-details">
+        <summary>Decision & discovery queue <span>${candidates.length
+          ? `${candidates.length} new discover${candidates.length === 1 ? 'y' : 'ies'}`
+          : f.undecided === null ? 'Register not read' : `${f.undecided} awaiting a decision`}</span></summary>
+        ${uiReviewQueueDetail()}
+      </details></div>`;
   },
 
   grafana: (w) => {
@@ -2796,7 +2978,7 @@ function overview() {
       col.map(k => cardOf(k)).join('')}</div>`;
   };
 
-  return `<h2>Overview</h2>
+  return `<h2>Overview</h2><p class="lede">Your AI estate. The exposure, the coverage, the next action.</p>
   ${truncNote(G.findings_truncated)}
   ${editing ? `<div class="oedit">
     <span>Drag a card between others to move it, or onto the middle of one
@@ -2844,8 +3026,8 @@ function devices() {
     <tbody>${rows.map(([k,d]) => `<tr data-open="device" data-key="${esc(k)}">
       <td><strong>${esc(label(k,d))}</strong><br><span class="mono row-key">${esc(k)}</span></td>
       <td>${d.person ? `<span class="pill p-ok">${esc(d.person)}</span>` : '<span class="muted-value">Unattributed</span>'}</td>
-      <td><div class="cell-tags">${(d.tools||[]).map(t=>`<span class="pill p-mut">${esc(t)}</span>`).join('') || '<span class="muted-value">None observed</span>'}</div></td>
-      <td><div class="cell-tags">${(d.personal_accounts||[]).map(a=>`<span class="pill p-warn">${esc(a)}</span>`).join('') || '<span class="muted-value">None</span>'}</div></td>
+      <td><div class="cell-tags">${(d.tools||[]).map(t=>uiToolChip(t)).join('') || '<span class="muted-value">None observed</span>'}</div></td>
+      <td><div class="cell-tags">${(d.personal_accounts||[]).map(a=>`<span class="ui-badge risk">${esc(a)}</span>`).join('') || '<span class="muted-value">None</span>'}</div></td>
       <td><div class="cell-tags">${(d.local_users||[]).map(u=>`<span class="pill p-mut">${esc(u)}</span>`).join('') || '<span class="muted-value">—</span>'}</div></td>
     </tr>`).join('')}</tbody>
   </table></div>`;
@@ -2985,12 +3167,12 @@ async function people() {
   const unattributed = ents(G.devices).filter(([,d]) => !d.person).length;
   return `<h2>People</h2><p class="lede">People named by cloud sources, which see accounts rather than machines. A device shows against a person only where the identity map links them.</p>
   ${identityMapPanel(unattributed)}
-  <div class="tcard"><table><tr><th>identity</th><th>tools</th><th>devices</th></tr>
-  ${rows.map(([k,i]) => `<tr><td>${esc(k)}${(i.aliases||[]).length
+  <div class="tcard"><table class="ui-page-table"><thead><tr><th>Identity</th><th>AI tools</th><th>Devices</th></tr></thead>
+  ${rows.map(([k,i]) => `<tr><td><strong>${esc(k)}</strong>${(i.aliases||[]).length
     ? `<br><span class="src-note" style="font-style:normal">also seen as
        ${(i.aliases).map(a => esc(a)).join(', ')}</span>` : ''}</td>
-    <td>${(i.tools||[]).map(t=>`<span class="pill p-mut">${esc(t)}</span>`).join('')}</td>
-    <td>${(i.devices||[]).map(d=>`<span class="pill p-acc">${esc(d)}</span>`).join('') || '<span class="pill p-mut">unmapped</span>'}</td></tr>`).join('')}
+    <td><div class="cell-tags">${(i.tools||[]).map(t=>uiToolChip(t)).join('')}</div></td>
+    <td><div class="cell-tags">${(i.devices||[]).map(d=>`<span class="pill p-acc">${esc(d)}</span>`).join('') || '<span class="muted-value">Unmapped</span>'}</div></td></tr>`).join('')}
   </table></div>`;
 }
 
@@ -3030,11 +3212,11 @@ function tools() {
       return rank(b) - rank(a) || (b[1].devices||[]).length - (a[1].devices||[]).length;
     });
   return `<h2>Tools</h2><p class="lede">The same tool in a browser, a desktop app and a CLI is three different exposures, so surfaces are listed separately. Tools that need a look sort first: <span class="pill p-warn">attention</span> when several factors stack up, <span class="pill p-amb">watch</span> for one. Open a tool to see which. Editors that bundle AI, such as Cursor or Windsurf, show as <span class="pill p-mut">installed only</span> until something shows a model actually ran. "Identities from sources" counts people a source named directly; the AI register also counts people linked through a device, so the two can differ.</p>
-  <div class="tcard"><table><tr><th>tool</th><th></th><th>devices</th>
-    <th title="People a SOURCE named on this tool. A cloud sign-in carries a person; an endpoint finding carries a machine, and the person behind it comes from the identity map - so this is lower than the register's user count for tools found on endpoints.">identities from sources</th>
-    <th>by surface</th></tr>
-  ${rows.map(([k,t,a]) => `<tr data-open="tool" data-key="${esc(k)}" style="cursor:pointer">
-    <td>${esc(k)}</td><td>${attnPill(a)}${t.usage === 'installed'
+  <div class="tcard"><table class="ui-page-table"><thead><tr><th>AI tool</th><th>Status</th><th>Devices</th>
+    <th title="People a SOURCE named on this tool. A cloud sign-in carries a person; an endpoint finding carries a machine, and the person behind it comes from the identity map - so this is lower than the register's user count for tools found on endpoints.">Identities from sources</th>
+    <th>By surface</th></tr></thead>
+  <tbody>${rows.map(([k,t,a]) => `<tr data-open="tool" data-key="${esc(k)}" style="cursor:pointer">
+    <td><strong>${esc(uiToolName(k))}</strong><span class="ui-id">${esc(uiToolInfo(k).vendor ? uiToolInfo(k).vendor + ' · ' : '')}${esc(k)}</span></td><td>${attnPill(a)}${t.usage === 'installed'
       ? `<span class="pill p-mut" title="Found installed, but nothing has shown a model actually running - no account, no sign-in, and no traffic to the completion backend. Editors that bundle AI (Cursor, Windsurf/Devin Desktop) are useful all day without it.">installed only</span>`
       : ''}</td>
     <td>${(t.devices||[]).length}${(t.devices_active||[]).length < (t.devices||[]).length
@@ -3045,12 +3227,12 @@ function tools() {
       || (t.surfaces||[]).filter(Boolean).map(s2 =>
         `<span class="pill p-mut">${esc(s2)}</span>`).join('')
       || '<span class="src-note">seen in cloud sign-ins only - no device attribution</span>'}</td>
-  </tr>`).join('')}</table></div>
+  </tr>`).join('')}</tbody></table></div>
   ${ents(G.bridges||{}).length ? `<div class="tcard">
   <div class="cardhead"><h3>Bridge targets</h3></div>
   <p class="lede">Where an AI tool reached. Not a tool inventory: these are
   destinations of an integration, not something someone installed.</p>
-  <table><tr><th>resource</th><th>devices</th></tr>
+  <table class="ui-page-table"><thead><tr><th>Resource</th><th>Devices</th></tr></thead>
   ${ents(G.bridges).sort((a,b)=>b[1].devices.length-a[1].devices.length)
     .map(([k,b])=>`<tr><td>${esc(k)}</td><td>${b.devices.length}</td></tr>`).join('')}
   </table></div>` : ''}`;
@@ -3059,9 +3241,9 @@ function tools() {
 function coverage() {
   const gaps = ents(G.devices).filter(([,d]) => d.scanner_seen && !d.collector_seen);
   return `<h2>Coverage</h2><p class="lede">Machines an inventory or telemetry source knows about, but no endpoint collector has reported from. Usually the collector is not installed there yet.</p>
-  ${gaps.length ? `<div class="tcard"><table><tr><th>device</th><th>sources</th><th>tools seen</th></tr>
-  ${gaps.map(([k,d])=>`<tr><td>${esc(label(k,d))}</td>
-    <td>${(d.sources||[]).map(s=>`<span class="pill p-mut">${esc(s)}</span>`).join('')}</td>
+  ${gaps.length ? `<div class="tcard"><table class="ui-page-table"><thead><tr><th>Device</th><th>Seen by</th><th>AI tools seen</th></tr></thead>
+  ${gaps.map(([k,d])=>`<tr><td><strong>${esc(label(k,d))}</strong></td>
+    <td><div class="cell-tags">${(d.sources||[]).map(x => uiSourceChip(x)).join('')}</div></td>
     <td>${(d.tools||[]).length}</td></tr>`).join('')}</table></div>`
   : dataOk()
     ? '<p class="lede">Every device with a scanner finding also has a collector reporting.</p>'
@@ -3132,15 +3314,15 @@ function mcp() {
     <div><dt>${tools.length}</dt><dd>configuring tools</dd></div>
   </dl>
 
-  ${rows.length ? `<div class="tcard"><table>
-  <tr><th>server</th><th>devices</th><th>configured by</th>
-  <th>first seen</th><th>last seen</th></tr>
+  ${rows.length ? `<div class="tcard"><table class="ui-page-table">
+  <thead><tr><th>Server</th><th>Devices</th><th>Configured by</th>
+  <th>First seen</th><th>Last seen</th></tr></thead>
   ${rows.map(r => `<tr data-open="mcp" data-key="${esc(r.server)}" style="cursor:pointer">
-    <td>${esc(r.server)}</td>
+    <td><strong>${esc(r.server)}</strong></td>
     <td>${(r.devices||[]).length}</td>
-    <td>${(r.tools||[]).map(t=>`<span class="pill p-mut">${esc(t)}</span>`).join('')}</td>
-    <td style="color:var(--mut)">${esc((r.first_seen||'').slice(0,10) || '—')}</td>
-    <td style="color:var(--mut)">${esc((r.last_seen||'').slice(0,10) || '—')}</td>
+    <td><div class="cell-tags">${(r.tools||[]).map(t=>uiToolChip(t)).join('')}</div></td>
+    <td class="ui-muted">${esc((r.first_seen||'').slice(0,10) || '—')}</td>
+    <td class="ui-muted">${esc((r.last_seen||'').slice(0,10) || '—')}</td>
   </tr>`).join('')}</table>
   <p class="src-note" style="margin-bottom:8px">Click a server to see which machines it's configured on.
   Widest reach is listed first.</p></div>`
@@ -3200,26 +3382,40 @@ function personal() {
     match(r.user) || match(r.account_domain) || match(r.tool) ||
     match(r.device) || match(r.device_name));
   const lifecycle = CFG.managed && CFG.managed.enabled && PSTAT !== null;
+  const all = G.personal_accounts || [];
+  const st = r => (paStatus(r) || {}).status || 'open';
+  const nOpen = all.filter(r => st(r) !== 'accepted').length;
+  const nAck = all.filter(r => st(r) === 'acknowledged').length;
+  const nAcc = all.filter(r => st(r) === 'accepted').length;
+  const nTools = new Set(all.map(r => r.tool)).size;
+  const nPeople = new Set(all.filter(r => r.user).map(r => r.user)).size;
+  const summary = !all.length ? '' : `<div class="inventory-summary" aria-label="Personal account summary">
+    <span class="${nOpen ? 'risk' : ''}"><b>${nOpen}</b> open</span>
+    ${lifecycle ? `<span><b>${nAck}</b> acknowledged</span><span><b>${nAcc}</b> accepted</span>` : ''}
+    <span><b>${nPeople}</b> people named</span>
+    <span><b>${nTools}</b> AI tool${nTools === 1 ? '' : 's'} involved</span>
+  </div>`;
   return `<h2>Personal accounts</h2>
   <p class="lede" data-tour="personal">AI tools signed in with personal accounts. Even on an approved tool, that means company data going somewhere you do not manage, with access that outlives offboarding. Personal means the account domain is not in your corporate domains list. Treat each one as a lead to follow up, not a verdict${lifecycle ? `, and record where it got to: acknowledged keeps it visible, accepted needs a reason and takes it out of the open count` : ''}.</p>
-  ${rows.length ? `<div class="tcard"><table>
-  <tr><th>who</th><th>account domain</th><th>tool</th><th>device</th>
-  <th>surface</th><th>first seen</th><th>last seen</th><th>source</th>
-  ${lifecycle ? '<th>status</th>' : ''}</tr>
-  ${rows.map(r => `<tr${paStatus(r) ? ' style="opacity:.6"' : ''}>
+  ${summary}
+  ${rows.length ? `<div class="tcard"><table class="ui-page-table">
+  <thead><tr><th>Person</th><th>Account</th><th>AI tool</th><th>Device</th>
+  <th>Surface</th><th>First seen</th><th>Last seen</th><th>Source</th>
+  ${lifecycle ? '<th>Status</th>' : ''}</tr></thead>
+  <tbody>${rows.map(r => `<tr${paStatus(r) ? ' class="ui-settled"' : ''}>
     <td>${r.user
       ? esc(r.user) + (r.user_via === 'device'
         ? ' <span class="pill p-mut" title="This source reported no account name. The person is the one the identity map attaches to this machine.">via device</span>' : '')
       : '<span class="pill p-mut">no identity</span>'}</td>
-    <td><span class="pill p-warn">${esc(r.account_domain)}</span></td>
-    <td>${esc(r.tool)}</td>
+    <td><span class="ui-badge risk">${esc(r.account_domain)}</span></td>
+    <td>${uiToolChip(r.tool)}</td>
     <td>${esc(r.device_name || r.device || '—')}</td>
-    <td>${(r.surfaces||[]).map(x=>`<span class="pill p-mut">${esc(x)}</span>`).join('')}</td>
-    <td style="color:var(--mut)">${esc((r.first_seen||'').slice(0,10) || '—')}</td>
-    <td style="color:var(--mut)">${esc((r.last_seen||'').slice(0,10) || '—')}</td>
-    <td style="color:var(--mut)">${esc((r.sources||[]).join(', ')) || '—'}</td>
-    ${lifecycle ? `<td class="nw">${paChip(paStatus(r))} ${paActions(r)}</td>` : ''}
-  </tr>`).join('')}</table></div>`
+    <td>${(r.surfaces||[]).map(x=>`<span class="ui-surface">${esc(x)}</span>`).join('')}</td>
+    <td class="ui-muted">${esc((r.first_seen||'').slice(0,10) || '—')}</td>
+    <td class="ui-muted">${esc((r.last_seen||'').slice(0,10) || '—')}</td>
+    <td>${(r.sources||[]).map(x => uiSourceChip(x)).join('') || '<span class="ui-muted">—</span>'}</td>
+    ${lifecycle ? `<td class="nw ui-row-actions">${paChip(paStatus(r))} ${paActions(r)}</td>` : ''}
+  </tr>`).join('')}</tbody></table></div>`
   : `<p class="lede">None seen in the last ${hoursNow()} hours.
   Worth trusting only if the sources on the Setup page are reporting.</p>`}`;
 }
@@ -4037,11 +4233,11 @@ async function paste() {
     regenerate the policy artifacts to roll it out.</p></div>` : ''}
 
   ${rows.length ? `<div class="tcard"><table>
-  <tr><th>tool</th><th class="n">warned</th><th class="n">overridden</th>
-  <th class="n">blocked</th><th class="n">devices</th><th>detectors</th>
-  <th>last seen</th></tr>
+  <thead><tr><th>AI tool</th><th class="n">Warned</th><th class="n">Overridden</th>
+  <th class="n">Blocked</th><th class="n">Devices</th><th>Detectors</th>
+  <th>Last seen</th></tr></thead>
   ${rows.map(r => `<tr>
-    <td>${esc(r.tool)}</td>
+    <td>${uiToolChip(r.tool)}</td>
     <td class="n">${num(r.warned)}</td>
     <td class="n">${r.overridden
       ? `<span class="pill p-warn">${r.overridden}</span>` : num(0)}</td>
@@ -8636,6 +8832,14 @@ async function managedAction(act, el) {
     if (r.ok) USERS = null;
     render(); return;
   }
+  if (act === 'ui-tools-filter') {
+    UI_PERSONAL_TOOLS = el.getAttribute('data-filter') === 'personal';
+    render(); return;
+  }
+  if (act === 'ui-density') {
+    await prefSet('display.compact', pref('display.compact', '0') === '1' ? '0' : '1');
+    render(); return;
+  }
   if (act === 'ov-edit') {
     const live = overviewWidgets();
     OVEDIT = {order: live.all.map(wKey), hidden: live.hidden.slice(),
@@ -9644,7 +9848,8 @@ function overviewTools() {
   const hidden = overviewWidgets().hidden.length;
   return `${hidden ? `<button class="mini" data-act="ov-showall"
     >Restore ${hidden} hidden ${hidden === 1 ? 'widget' : 'widgets'}</button>` : ''}
-    <button class="mini" data-act="ov-edit">Edit</button>`;
+    <button class="mini ui-density" data-act="ui-density" aria-pressed="${pref('display.compact', '0') === '1'}">${pref('display.compact', '0') === '1' ? 'Comfortable view' : 'Compact view'}</button>
+    <button class="mini" data-act="ov-edit">Edit widgets</button>`;
 }
 
 // Did the estate data actually arrive? Every "none seen, and that is a
@@ -10001,6 +10206,7 @@ function decorateView() {
 // the tour's own check hangs off the wrapper rather than the body - a call
 // per branch is a call somebody adding the twelfth view forgets.
 async function render() {
+  document.body.classList.toggle('ui-compact', pref('display.compact', '0') === '1');
   await renderView();
   decorateView();
   drawSetup();
