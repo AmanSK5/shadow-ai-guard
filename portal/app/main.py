@@ -2240,6 +2240,30 @@ def api_settings_write(req: SettingsWrite, _=Depends(require_auth),
     return out
 
 
+# ------------------------------------------------------------ activation --
+# Forwarded, like everything else that changes managed state: the receiver
+# holds the key, verifies it and enforces the owner rule. The portal is the
+# place a person types it and the place they read what it says, and holds
+# no part of the decision - which also means the browser never sees a
+# stored key, because there is no route here that could return one.
+
+
+class ActivationWrite(BaseModel):
+    model_config = {"extra": "forbid"}
+    key: str = Field(default="", max_length=4000)
+
+
+@app.get("/api/activation")
+def api_activation(_=Depends(require_auth), token: str = Depends(_admin_forward)):
+    return _receiver("GET", "/admin/activation", token)
+
+
+@app.post("/api/activation")
+def api_activation_write(req: ActivationWrite, _=Depends(require_auth),
+                         token: str = Depends(_admin_forward)):
+    return _receiver("PUT", "/admin/activation", token, {"key": req.key})
+
+
 class FindingStatusWrite(BaseModel):
     model_config = {"extra": "forbid"}
     key: str = Field(min_length=1, max_length=500)
