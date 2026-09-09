@@ -447,6 +447,50 @@ portal at run time, and there is no `curl | sh`. It shells out to the
 operator's own `helm`, `kubectl` and `docker`, found on their PATH, rather
 than embedding any of them.
 
+## Activation keys
+
+The open edition is complete and nothing in it is gated. An activation key
+names a subscription to the commercial edition, which ships as private
+images; it is also the credential that pulls them. Nothing in this
+repository reads it to decide what to do.
+
+A key is a compact JSON object stating the organisation, the plan, the term
+and any device limit, with an Ed25519 signature over exactly those bytes,
+both base64url-encoded behind an `nyxl_` prefix. The claims are readable on
+purpose - what somebody was sold should not need a tool to inspect - and
+the signature is what stops them being edited.
+
+**Checked offline, always.** The publisher's public key is compiled into the
+receiver, so verification is local arithmetic: no request at activation, at
+boot, or ever. A deployment that is airgapped, or whose vendor has gone
+quiet, keeps working exactly as it did. `ACTIVATION_PUBLIC_KEY` overrides
+the compiled-in key, which is how a key rotation reaches a deployment that
+has not taken a new image yet.
+
+**Owner-gated, and verified where it is stored.** `PUT /admin/activation`
+refuses a key it cannot verify, so the write path is not a way past the
+check, and it sits at the tier above admin for the same reason the `sso_*`
+settings do: it is about the organisation rather than the estate.
+
+**Never echoed.** The key does not appear in `GET /admin/activation`, in
+`GET /admin/settings`, or in the audit trail, which records that
+`activation_key` changed and who changed it. The portal returns the claims
+and a fingerprint - a truncated SHA-256 of the key - which is what support
+and an operator can use to agree on which key is installed without either
+of them sending it anywhere.
+
+**No revocation.** An offline check cannot be told a key was withdrawn. The
+stated term is the control: a key is good until the date it carries.
+
+The verifier is written out in `receiver/app/ed25519.py` rather than taken
+from a library, because the only operation needed is verify, over public
+data, in a component whose dependency list is seven packages. There is no
+private key in the process and none in this repository, so the usual reason
+to insist on a hardened implementation does not arise. `receiver/tests/`
+runs the RFC 8032 vectors against it, along with the forgeries a lax
+verifier accepts: a flipped bit in each field, a point that is not on the
+curve, and a scalar at or above the group order.
+
 ## What this is not
 
 Detection is visibility, not enforcement: it observes, and a user with local
