@@ -59,6 +59,7 @@ from pydantic import BaseModel, Field
 
 # Importing the module costs nothing stateful: the SQLite file only exists
 # once State() is instantiated, which only happens under MANAGED_MODE below.
+from . import activation
 from . import budget as _budget
 from . import state as _state
 
@@ -2613,6 +2614,77 @@ def put_settings(req: SettingsUpdate, authorization: str = Header(default="")):
             STATE.set_setting(key, val, by)
 
     return get_settings(authorization)
+
+
+# ------------------------------------------------------------ activation --
+# The subscription to the enterprise edition, if there is one. Nothing in
+# this repository reads it to decide what to do: the open edition is whole,
+# and a key here changes no behaviour, gates no route and unlocks nothing.
+# It is stored so the portal can tell an operator that the key they were
+# issued is genuine, what it says, and when it runs out - and so the
+# machine that pulls the private images has one place to be told which
+# subscription it is pulling as.
+#
+# The key never comes back out. It is the registry credential as well as
+# the statement of entitlement, so GET answers with the claims and a
+# fingerprint; the operator already has the key they typed.
+
+
+class ActivationWrite(BaseModel):
+    model_config = {"extra": "forbid"}
+    # Empty removes the stored key, which is how a deployment goes back to
+    # the open edition without a redeploy.
+    key: str = Field(default="", max_length=activation.MAX_LENGTH)
+
+
+def _activation_view() -> dict:
+    stored = (STATE.get_settings().get("activation_key") or "").strip()
+    if not stored:
+        return {"state": "none"}
+    try:
+        return activation.describe(stored)
+    except activation.ActivationError as e:
+        # A stored key that no longer parses is a real state, not a bug to
+        # hide: it happens when the publisher's key is rotated and this
+        # deployment has not taken the release that carries the new one.
+        return {"state": "invalid", "error": str(e),
+                "fingerprint": activation.fingerprint(stored)}
+
+
+@app.get("/admin/activation")
+def get_activation(authorization: str = Header(default="")):
+    """What this deployment's subscription says, or that there is none."""
+    _admin_auth(authorization)
+    return _activation_view()
+
+
+@app.put("/admin/activation")
+def put_activation(req: ActivationWrite, authorization: str = Header(default="")):
+    """Store a key, having checked it, or clear the one that is stored.
+
+    Owner-gated. This is a commercial agreement and a registry credential
+    rather than a setting about what the platform reports, which is the
+    same line sso_* sits on: the tier above admin exists for the handful of
+    things that are about the organisation rather than the estate.
+
+    Verified here, before the write. A portal that checked and then wrote
+    would leave this route as the way past the check.
+    """
+    _admin_auth(authorization, write=True, owner=True)
+    by = _admin_actor(authorization)
+    key = (req.key or "").strip()
+    if not key:
+        STATE.set_setting("activation_key", None, by)
+        return _activation_view()
+    try:
+        claims = activation.describe(key)
+    except activation.ActivationError as e:
+        raise HTTPException(422, str(e))
+    # An expired key is stored anyway. It is a true statement about a real
+    # subscription, and refusing it would leave an operator renewing a key
+    # they cannot see the details of - the portal says "expired" plainly.
+    STATE.set_setting("activation_key", key, by)
+    return claims
 
 
 @app.post("/admin/test/log-store-push")
