@@ -90,7 +90,7 @@ def viewer(managed, owner):
 # ------------------------------------------------------------ the format --
 
 def test_a_genuine_key_reads_back_what_it_says():
-    c = activation.describe(mint(), today=date(2026, 6, 1))
+    c = activation.check(mint(), today=date(2026, 6, 1))
     assert c["state"] == "active"
     assert c["org"] == "Acme Group Ltd"
     assert c["id"] == "NYX-0001"
@@ -103,7 +103,7 @@ def test_a_key_from_another_publisher_is_refused():
     forged = mint(seed=b"somebody else's signing seed....")
     with pytest.raises(activation.ActivationError) as e:
         activation.parse(forged)
-    assert "not issued for this software" in str(e.value)
+    assert e.value.code == "not_ours"
 
 
 def test_editing_the_claims_breaks_the_signature():
@@ -125,35 +125,38 @@ def test_editing_the_claims_breaks_the_signature():
 def test_an_expired_key_is_genuine_and_says_so():
     """Expired is not forged. An operator renewing has to be able to see
     what ran out and when."""
-    c = activation.describe(mint(expires="2026-01-31"), today=date(2026, 3, 1))
+    c = activation.check(mint(expires="2026-01-31"), today=date(2026, 3, 1))
     assert c["state"] == "expired"
     assert c["days_left"] == -29
     assert c["org"] == "Acme Group Ltd"
 
 
 def test_the_last_day_is_still_active():
-    c = activation.describe(mint(expires="2026-03-01"), today=date(2026, 3, 1))
+    c = activation.check(mint(expires="2026-03-01"), today=date(2026, 3, 1))
     assert c["state"] == "active" and c["days_left"] == 0
 
 
-@pytest.mark.parametrize("bad,says", [
-    ("", "no key"),
-    ("   ", "no key"),
-    ("nyxe_9f3c2a1b", "starts with nyxl_"),
+@pytest.mark.parametrize("bad,code", [
+    ("", "empty"),
+    ("   ", "empty"),
+    ("nyxe_9f3c2a1b", "not_a_key"),
     ("nyxl_notbase64!!", "damaged"),
     ("nyxl_" + "a" * 20, "damaged"),
-    ("nyxl_" + "a" * 5000, "too long"),
+    ("nyxl_" + "a" * 5000, "too_long"),
 ])
-def test_what_is_not_a_key_says_what_to_do_about_it(bad, says):
+def test_what_is_not_a_key_says_what_to_do_about_it(bad, code):
     with pytest.raises(activation.ActivationError) as e:
         activation.parse(bad)
-    assert says in str(e.value)
+    assert e.value.code == code
+    # And the sentence an operator sees is the one for that code, not
+    # anything built from the exception.
+    assert activation.check(bad)["reason"] == activation.REFUSALS[code]
 
 
 def test_a_signed_key_this_release_cannot_read_asks_for_an_upgrade():
     with pytest.raises(activation.ActivationError) as e:
         activation.parse(mint(v=2))
-    assert "newer release" in str(e.value)
+    assert e.value.code == "too_new"
 
 
 @pytest.mark.parametrize("overrides", [
@@ -186,7 +189,7 @@ def test_checking_a_key_makes_no_network_call(monkeypatch):
 
     monkeypatch.setattr(socket, "socket", refuse)
     monkeypatch.setattr(socket, "create_connection", refuse)
-    assert activation.describe(mint())["state"] == "active"
+    assert activation.check(mint())["state"] == "active"
 
 
 # --------------------------------------------------------- the endpoints --
@@ -214,7 +217,7 @@ def test_a_forged_key_is_refused_and_nothing_is_stored(managed, owner):
     forged = mint(seed=b"somebody else's signing seed....")
     r = client.put("/admin/activation", headers=owner, json={"key": forged})
     assert r.status_code == 422
-    assert "not issued for this software" in r.json()["detail"]
+    assert r.json()["detail"] == activation.REFUSALS["not_ours"]
     assert client.get("/admin/activation", headers=owner).json() == {"state": "none"}
 
 
@@ -256,7 +259,8 @@ def test_a_key_the_running_release_cannot_verify_is_reported_not_hidden(
                        base64.b64encode(public_key(b"a rotated signing seed..." + b"." * 7)).decode())
     got = client.get("/admin/activation", headers=owner).json()
     assert got["state"] == "invalid"
-    assert "not issued for this software" in got["error"]
+    assert got["code"] == "not_ours"
+    assert got["reason"] == activation.REFUSALS["not_ours"]
     assert got["fingerprint"]
 
 
@@ -271,3 +275,63 @@ def test_an_unknown_field_is_refused_rather_than_ignored(managed, owner):
     r = client.put("/admin/activation", headers=owner,
                    json={"key": mint(), "seats": 5})
     assert r.status_code == 422
+
+
+# ------------------------------------------------- what a refusal may say --
+# The rule portal/tests/test_error_disclosure.py sets out, held on this
+# side too: a response carries the class of failure, and the detail behind
+# it goes to the log. CodeQL flagged the first version of these two routes
+# for exposing exception detail (py/stack-trace-exposure) and it was right.
+
+def test_every_code_the_module_can_raise_has_a_sentence():
+    """The drift guard. A new refusal code with no entry would fall back to
+    a sentence about the wrong thing, which is worse than no sentence."""
+    import ast
+    import inspect
+
+    tree = ast.parse(inspect.getsource(activation))
+    raised = {
+        node.exc.args[0].value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Raise) and isinstance(node.exc, ast.Call)
+        and getattr(node.exc.func, "id", "") == "ActivationError"
+        and node.exc.args and isinstance(node.exc.args[0], ast.Constant)
+    }
+    assert raised, "no ActivationError raises found - has the module moved?"
+    assert raised <= set(activation.REFUSALS), \
+        "no sentence for: %s" % sorted(raised - set(activation.REFUSALS))
+
+
+def test_a_refusal_is_always_one_of_the_written_sentences():
+    for bad in ["", "nyxe_x", "nyxl_!!", "nyxl_" + "a" * 40, mint(v=2),
+                mint(plan="unlimited"), mint(seed=b"another publisher......." + b"." * 9)]:
+        view = activation.check(bad)
+        assert view["state"] == "invalid"
+        assert view["reason"] in activation.REFUSALS.values()
+
+
+@pytest.mark.parametrize("bad", [
+    "nyxl_!!!", "nyxe_x", "not-a-key-at-all",
+])
+def test_no_exception_detail_reaches_the_response(managed, owner, bad):
+    body = client.put("/admin/activation", headers=owner, json={"key": bad}).text
+    for leak in ["Traceback", "ActivationError", "binascii", "json.decoder",
+                 "activation.py", "/app/", "line ", "ValueError"]:
+        assert leak not in body, "%r leaked into the refusal" % leak
+
+
+def test_a_signed_key_is_never_quoted_back_in_a_refusal(managed, owner):
+    """A refusal that echoes a field out of the key is the shape this is
+    not allowed to have, even when the field is publisher-signed."""
+    r = client.put("/admin/activation", headers=owner,
+                   json={"key": mint(plan="wildly-bespoke-tier")})
+    assert r.status_code == 422
+    assert "wildly-bespoke-tier" not in r.text
+    assert r.json()["detail"] == activation.REFUSALS["unknown_plan"]
+
+
+def test_the_code_is_for_the_log_and_the_sentence_is_for_the_person(
+        managed, owner, caplog):
+    with caplog.at_level("INFO"):
+        client.put("/admin/activation", headers=owner, json={"key": "nyxl_!!"})
+    assert "damaged" in caplog.text

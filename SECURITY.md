@@ -472,9 +472,15 @@ refuses a key it cannot verify, so the write path is not a way past the
 check, and it sits at the tier above admin for the same reason the `sso_*`
 settings do: it is about the organisation rather than the estate.
 
-**Never echoed.** The key does not appear in `GET /admin/activation`, in
-`GET /admin/settings`, or in the audit trail, which records that
-`activation_key` changed and who changed it. The portal returns the claims
+**Never echoed, and neither is anything else.** The key does not appear in
+`GET /admin/activation`, in `GET /admin/settings`, or in the audit trail,
+which records that `activation_key` changed and who changed it. A refusal
+is one of a fixed set of sentences chosen by code, never a message built
+from a caught exception or a field quoted out of the key: the response
+carries the class of failure and the detail goes to the log, which is the
+same rule `portal/tests/test_error_disclosure.py` sets out for the log
+store. `receiver/tests/test_activation.py` holds it, including a check that
+every refusal code the module can raise has a sentence written for it. The portal returns the claims
 and a fingerprint - a truncated SHA-256 of the key - which is what support
 and an operator can use to agree on which key is installed without either
 of them sending it anywhere.

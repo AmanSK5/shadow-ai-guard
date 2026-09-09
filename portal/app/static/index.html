@@ -6519,7 +6519,7 @@ function activationCard() {
   const note = a.state === 'active'
     ? (soon ? `<p class="health-note warning">This subscription runs out on ${esc(a.expires)}. Renewing replaces the key here; nothing stops working on the day, because nothing here was ever switched on by it - the images simply stop being yours to pull.</p>` : '')
     : a.state === 'expired' ? `<p class="health-note warning">This key lapsed on ${esc(a.expires)}. The deployment carries on exactly as it is; a lapsed subscription means no new images and no support, not a portal that stops. Renew and paste the new key.</p>`
-    : a.state === 'invalid' ? `<p class="health-note danger"><b>Stored, but this release cannot check it.</b> ${esc(a.error || '')} This is what a reissued signing key looks like from a deployment that has not taken the release carrying it: upgrade first, and only then suspect the key.</p>`
+    : a.state === 'invalid' ? `<p class="health-note danger"><b>Stored, but this release cannot check it.</b> ${esc(a.reason || '')} This is what a reissued signing key looks like from a deployment that has not taken the release carrying it: upgrade first, and only then suspect the key.</p>`
     : `<p class="health-note">This deployment runs the open edition, and it is complete: nothing on this page or any other is held back for want of a key. Nyxus is the commercial edition of the same system - the same collectors, the same evidence - distributed as private images under a subscription with support. An activation key names the organisation it was issued to and the term it runs for, and is checked here against a signature this portal already holds, without asking anyone.</p>`;
 
   const form = !owner

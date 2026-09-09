@@ -59,13 +59,54 @@ _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
-class ActivationError(ValueError):
-    """The key is not usable, with a sentence saying why.
+# Why a key was refused, and the sentence an operator is shown for it.
+#
+# The two are separate on purpose. CodeQL flagged the first version of this
+# module for exposing exception detail in a response, and it was right in
+# the way it was right about the portal's Loki errors (see
+# portal/tests/test_error_disclosure.py): a response must carry the class of
+# failure, and the detail behind it belongs in the log. Nothing here is
+# built from a caught exception or from anything the key itself contains -
+# every refusal an operator sees is one of the constants below, chosen by
+# code.
+#
+# They still say what to do about it rather than which check failed, because
+# someone holding a key that does not work needs to know whether to look for
+# a typo or to email support.
+REFUSALS = {
+    "empty": "no key was given",
+    "too_long": "this is too long to be an activation key",
+    "not_a_key": "an activation key starts with %s. This looks like "
+                 "something else - an enrollment token, perhaps." % "nyxl_",
+    "damaged": "this key is damaged - it is not the shape a key has. Paste "
+               "it again, whole.",
+    "not_ours": "this key was not issued for this software, or it has been "
+                "altered since it was issued. Check you pasted all of it; if "
+                "you did, ask for it to be reissued.",
+    "unreadable": "this key is signed but unreadable",
+    "too_new": "this key needs a newer release than the one running here. "
+               "Upgrade, then activate.",
+    "incomplete": "this key is signed, but it does not state everything a "
+                  "key has to state. Ask for it to be reissued.",
+    "unknown_plan": "this key is for a plan this release does not know "
+                    "about. Upgrade, then activate.",
+    "publisher_key": "this deployment's ACTIVATION_PUBLIC_KEY is not a "
+                     "32-byte Ed25519 public key, so no key can be checked "
+                     "until it is corrected or removed.",
+}
 
-    The message is shown to an operator, so it says what to do about it
-    rather than which check failed: someone holding a key that does not
-    work needs to know whether to look for a typo or to email support.
+
+class ActivationError(ValueError):
+    """The key is not usable. Carries the code, not a message to echo.
+
+    Raised inside this module and caught inside it: check() is the only
+    thing callers use, and it hands back a constant from REFUSALS. An
+    exception object never reaches a response.
     """
+
+    def __init__(self, code: str):
+        self.code = code
+        super().__init__(code)
 
 
 def public_key() -> bytes:
@@ -73,10 +114,9 @@ def public_key() -> bytes:
     try:
         key = base64.b64decode(raw, validate=True)
     except (binascii.Error, ValueError):
-        raise ActivationError("ACTIVATION_PUBLIC_KEY is not valid base64")
+        raise ActivationError("publisher_key")
     if len(key) != 32:
-        raise ActivationError("ACTIVATION_PUBLIC_KEY is not a 32-byte "
-                              "Ed25519 public key")
+        raise ActivationError("publisher_key")
     return key
 
 
@@ -87,8 +127,7 @@ def _b64url(raw: str) -> bytes:
     try:
         return base64.urlsafe_b64decode(raw + pad)
     except (binascii.Error, ValueError):
-        raise ActivationError("this key is damaged - it is not the shape a "
-                              "key has. Paste it again, whole.")
+        raise ActivationError("damaged")
 
 
 def fingerprint(key: str) -> str:
@@ -112,55 +151,46 @@ def parse(key: str) -> dict:
     """
     key = (key or "").strip()
     if not key:
-        raise ActivationError("no key was given")
+        raise ActivationError("empty")
     if len(key) > MAX_LENGTH:
-        raise ActivationError("this is too long to be an activation key")
+        raise ActivationError("too_long")
     if not key.startswith(PREFIX):
-        raise ActivationError("an activation key starts with %s. This looks "
-                              "like something else - an enrollment token, "
-                              "perhaps." % PREFIX)
+        raise ActivationError("not_a_key")
     body = key[len(PREFIX):]
     if body.count(".") != 1:
-        raise ActivationError("this key is damaged - it is not the shape a "
-                              "key has. Paste it again, whole.")
+        raise ActivationError("damaged")
     claims_raw, sig_raw = body.split(".")
     signed = _b64url(claims_raw)
     signature = _b64url(sig_raw)
     if not ed25519.verify(public_key(), signed, signature):
-        raise ActivationError("this key was not issued for this software, or "
-                              "it has been altered since it was issued. "
-                              "Check you pasted all of it; if you did, ask "
-                              "for it to be reissued.")
+        raise ActivationError("not_ours")
     try:
         claims = json.loads(signed.decode())
     except (UnicodeDecodeError, json.JSONDecodeError):
-        raise ActivationError("this key is signed but unreadable")
+        raise ActivationError("unreadable")
     if not isinstance(claims, dict):
-        raise ActivationError("this key is signed but unreadable")
+        raise ActivationError("unreadable")
     # Version first: a v2 key may mean something different by every field
     # below, so guessing at it is worse than saying the software is old.
     if claims.get("v") != 1:
-        raise ActivationError("this key needs a newer release than the one "
-                              "running here. Upgrade, then activate.")
+        raise ActivationError("too_new")
     for field in ("id", "org", "plan", "issued", "expires"):
         if not isinstance(claims.get(field), str) or not claims[field].strip():
-            raise ActivationError("this key is signed but incomplete: it does "
-                                  "not state its %s" % field)
+            raise ActivationError("incomplete")
     if not _ID_RE.match(claims["id"]):
-        raise ActivationError("this key is signed but its reference is not "
-                              "one this software recognises")
+        raise ActivationError("incomplete")
     if claims["plan"] not in _PLANS:
-        raise ActivationError("this key is for a plan this release does not "
-                              "know about: %s" % claims["plan"][:40])
+        # The plan is not echoed. It is publisher-signed rather than
+        # attacker-chosen, but a response that quotes a field out of the
+        # key is the shape this module is not allowed to have.
+        raise ActivationError("unknown_plan")
     for field in ("issued", "expires"):
         if not _DATE_RE.match(claims[field]) or not _as_date(claims[field]):
-            raise ActivationError("this key is signed but its %s date is not "
-                                  "a date" % field)
+            raise ActivationError("incomplete")
     devices = claims.get("devices")
     if devices is not None and (not isinstance(devices, int)
                                 or isinstance(devices, bool) or devices < 0):
-        raise ActivationError("this key is signed but its device limit is "
-                              "not a number")
+        raise ActivationError("incomplete")
     return claims
 
 
@@ -171,15 +201,26 @@ def _as_date(text: str):
         return None
 
 
-def describe(key: str, today: date | None = None) -> dict:
-    """What the portal shows about a stored key.
+def check(key: str, today: date | None = None) -> dict:
+    """What the portal shows about a key. Never raises for a bad one.
+
+    A key that does not verify is an ordinary answer, not an exceptional
+    one - somebody mistyping a key is the common case, not a fault - so
+    this returns the same shape either way and callers have no exception to
+    catch. That is also what keeps exception detail out of every response
+    built from it: "reason" is a constant from REFUSALS, chosen by code.
 
     Never returns the key. Every caller of this is on a path to a browser,
     and the key is the registry credential; the fingerprint is what a
     person needs to identify it and all they get.
     """
     today = today or datetime.now(timezone.utc).date()
-    claims = parse(key)
+    try:
+        claims = parse(key)
+    except ActivationError as e:
+        return {"state": "invalid", "code": e.code,
+                "reason": REFUSALS.get(e.code, REFUSALS["damaged"]),
+                "fingerprint": fingerprint(key)}
     expires = _as_date(claims["expires"])
     days_left = (expires - today).days
     return {

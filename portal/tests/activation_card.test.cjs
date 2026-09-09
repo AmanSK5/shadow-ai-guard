@@ -102,7 +102,8 @@ test('an expired key is shown as genuine and lapsed, not as a forgery', () => {
 
 test('a key this release cannot verify says to upgrade before suspecting it', () => {
   const out = render({state: 'invalid', fingerprint: 'aaaa-bbbb-cccc',
-                      error: 'this key was not issued for this software'});
+                      code: 'not_ours',
+                      reason: 'this key was not issued for this software'});
   assert.match(out, /cannot be checked/);
   assert.match(out, /upgrade first/);
   assert.match(out, /aaaa-bbbb-cccc/);

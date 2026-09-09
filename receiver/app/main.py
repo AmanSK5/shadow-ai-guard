@@ -2638,17 +2638,18 @@ class ActivationWrite(BaseModel):
 
 
 def _activation_view() -> dict:
+    # A stored key that no longer verifies is a real state, not a bug to
+    # hide: it happens when the publisher's key is rotated and this
+    # deployment has not taken the release that carries the new one.
+    # activation.check answers with that state rather than raising, so
+    # nothing built from an exception reaches this response.
     stored = (STATE.get_settings().get("activation_key") or "").strip()
     if not stored:
         return {"state": "none"}
-    try:
-        return activation.describe(stored)
-    except activation.ActivationError as e:
-        # A stored key that no longer parses is a real state, not a bug to
-        # hide: it happens when the publisher's key is rotated and this
-        # deployment has not taken the release that carries the new one.
-        return {"state": "invalid", "error": str(e),
-                "fingerprint": activation.fingerprint(stored)}
+    view = activation.check(stored)
+    if view["state"] == "invalid":
+        log.info("stored activation key does not verify (%s)", view["code"])
+    return view
 
 
 @app.get("/admin/activation")
@@ -2676,15 +2677,18 @@ def put_activation(req: ActivationWrite, authorization: str = Header(default="")
     if not key:
         STATE.set_setting("activation_key", None, by)
         return _activation_view()
-    try:
-        claims = activation.describe(key)
-    except activation.ActivationError as e:
-        raise HTTPException(422, str(e))
+    view = activation.check(key)
+    if view["state"] == "invalid":
+        # The refusal is one of activation.REFUSALS, picked by code. The
+        # reason it was refused goes to the log; the response carries the
+        # class of failure and nothing derived from an exception.
+        log.info("activation key refused (%s)", view["code"])
+        raise HTTPException(422, view["reason"])
     # An expired key is stored anyway. It is a true statement about a real
     # subscription, and refusing it would leave an operator renewing a key
     # they cannot see the details of - the portal says "expired" plainly.
     STATE.set_setting("activation_key", key, by)
-    return claims
+    return view
 
 
 @app.post("/admin/test/log-store-push")
