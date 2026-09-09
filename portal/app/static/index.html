@@ -6449,6 +6449,105 @@ function ssoEnforceBlock() {
   </div>`;
 }
 
+// ---- the subscription, if there is one ---------------------------------
+// The open edition is whole and nothing here gates any of it: no view, no
+// route and no count asks whether a key is present. This card exists
+// because a person who has bought the commercial edition has to be able to
+// see that the key they were issued is genuine, what it says, and when it
+// runs out - and because the same key is the credential that pulls the
+// private images, so the place it is entered is the place to say what to
+// run next. On the operator's own machine, like every other change to a
+// deployment in this project.
+//
+// The key is never rendered. The receiver stores it and answers with the
+// claims and a fingerprint; there is no route that could return it, so a
+// screen share of this page discloses nothing.
+let ACT = null, ACTMSG = null;
+
+function activationCard() {
+  const a = ACT || {state: 'none'};
+  const owner = AUTH && AUTH.role === 'owner';
+  const state = a.state === 'active' ? ['p-ok', 'activated']
+    : a.state === 'expired' ? ['p-warn', 'expired']
+    : a.state === 'invalid' ? ['p-warn', 'cannot be checked']
+    : a.state === 'unknown' ? ['p-mut', 'not read']
+    : ['p-mut', 'open edition'];
+  const ns = (DIAG.deployment && DIAG.deployment.namespace) || '<namespace>';
+  const reg = a.registry || '<registry>';
+  const known = !!a.registry;
+  const soon = a.state === 'active' && a.days_left <= 45;
+
+  // Everything the operator runs, they run themselves. The portal has no
+  // registry credential of its own and no rights over the deployment: it
+  // knows what the key says and writes the commands out.
+  const steps = `<details class="how ui-how"><summary>Move this deployment to Nyxus</summary><div class="ui-steps">
+    <p>The images are private, and your activation key is the credential that pulls them. Nothing below runs from this page: it runs with your own kubeconfig, on your own machine, the same way an upgrade does.</p>
+    <ol class="ui-steplist">
+      <li><b>Put the key in your shell.</b>${uiCommand("export NYXUS_KEY='<your activation key>'")}<span>The portal does not hand it back - it is a credential - so this is the key you pasted above.</span></li>
+      <li><b>Give the cluster a pull secret.</b>${uiCommand(`kubectl -n ${ns} create secret docker-registry nyxus-registry \\
+  --docker-server=${reg} --docker-username=licence --docker-password="$NYXUS_KEY"`)}${known ? '' : '<span>Your welcome message names the registry to use in place of the placeholder.</span>'}</li>
+      <li><b>Install the chart, pointing at that secret.</b>${uiCommand(`helm upgrade --install nyxus oci://${reg}/charts/nyxus \\
+  --namespace ${ns} --set imagePullSecrets[0].name=nyxus-registry`)}<span>Your data stays where it is. The receiver and the portal restart; collectors keep reporting through it.</span></li>
+    </ol>
+    <p class="src-note">The chart version and the exact registry path come with the subscription. If a pull is refused, the pull secret is the first thing to check: <span class="mono">kubectl -n ${esc(ns)} get secret nyxus-registry</span>.</p>
+  </div></details>`;
+
+  // A read that failed says so. "No subscription" is a statement about
+  // this deployment, and one that has not been read is not entitled to it.
+  if (a.state === 'unknown') {
+    return `<section class="health-card health-wide" data-tour="activation"><div class="health-card-head"><div><span>Edition</span><h3>Nyxus</h3></div><span class="pill p-mut">not read</span></div>
+      <p class="health-note">The receiver did not answer when this page asked whether a subscription is activated, so nothing is claimed either way. The log store card above says whether the receiver is reachable at all.</p>
+    </section>`;
+  }
+
+  const facts = a.state === 'none' ? `<dl class="health-facts">
+      <div><dt>Running</dt><dd>Open edition</dd></div>
+      <div><dt>Licence</dt><dd>Apache 2.0</dd></div>
+      <div><dt>Activation</dt><dd>none stored</dd></div>
+      <div><dt>Checked</dt><dd>offline, no outbound request</dd></div></dl>`
+    : a.state === 'invalid' ? `<dl class="health-facts">
+      <div><dt>Key</dt><dd class="mono">${esc(a.fingerprint || '—')}</dd></div>
+      <div><dt>State</dt><dd>not verifiable by this release</dd></div></dl>`
+    : `<dl class="health-facts">
+      <div><dt>Organisation</dt><dd>${esc(a.org)}</dd></div>
+      <div><dt>Plan</dt><dd>${esc(a.plan)}${a.devices ? ` <span>· up to ${esc(a.devices)} devices</span>` : ''}</dd></div>
+      <div><dt>${a.state === 'expired' ? 'Expired' : 'Expires'}</dt><dd>${esc(a.expires)}${
+        a.state === 'expired' ? ` <span>· ${esc(-a.days_left)} day${a.days_left === -1 ? '' : 's'} ago</span>`
+        : ` <span>· in ${esc(a.days_left)} day${a.days_left === 1 ? '' : 's'}</span>`}</dd></div>
+      <div><dt>Reference</dt><dd>${esc(a.id)} <span>· key ${esc(a.fingerprint)}</span></dd></div></dl>`;
+
+  const note = a.state === 'active'
+    ? (soon ? `<p class="health-note warning">This subscription runs out on ${esc(a.expires)}. Renewing replaces the key here; nothing stops working on the day, because nothing here was ever switched on by it - the images simply stop being yours to pull.</p>` : '')
+    : a.state === 'expired' ? `<p class="health-note warning">This key lapsed on ${esc(a.expires)}. The deployment carries on exactly as it is; a lapsed subscription means no new images and no support, not a portal that stops. Renew and paste the new key.</p>`
+    : a.state === 'invalid' ? `<p class="health-note danger"><b>Stored, but this release cannot check it.</b> ${esc(a.reason || '')} This is what a reissued signing key looks like from a deployment that has not taken the release carrying it: upgrade first, and only then suspect the key.</p>`
+    : `<p class="health-note">This deployment runs the open edition, and it is complete: nothing on this page or any other is held back for want of a key. Nyxus is the commercial edition of the same system - the same collectors, the same evidence - distributed as private images under a subscription with support. An activation key names the organisation it was issued to and the term it runs for, and is checked here against a signature this portal already holds, without asking anyone.</p>`;
+
+  const form = !owner
+    ? `<p class="src-note" style="margin-top:10px">An owner account activates a subscription. ${a.state === 'none' ? 'This deployment has no key stored.' : 'The details above are read-only for your role.'}</p>`
+    : a.state === 'none' || a.state === 'invalid'
+    ? `<div class="act-entry">
+        <input id="act-key" class="mfield" spellcheck="false" autocomplete="off"
+          placeholder="Paste an activation key (nyxl_…)" value="">
+        <button class="mini" data-act="act-save">Activate</button>
+        ${a.state === 'invalid' ? '<button class="mini" data-act="act-clear">Remove it</button>' : ''}
+      </div>
+      <p class="src-note">Pasted here, checked here, stored by the receiver. It is a credential as well as a statement of what you bought, so it is never displayed again - only its fingerprint.</p>`
+    : `<div class="act-entry">
+        <input id="act-key" class="mfield" spellcheck="false" autocomplete="off"
+          placeholder="Paste a renewed key to replace this one" value="">
+        <button class="mini" data-act="act-save">Replace</button>
+        <button class="mini" data-act="act-clear">Remove</button>
+      </div>`;
+
+  return `<section class="health-card health-wide" data-tour="activation"><div class="health-card-head"><div><span>Edition</span><h3>Nyxus</h3></div><span class="pill ${state[0]}">${state[1]}</span></div>
+    ${facts}
+    ${note}
+    ${ACTMSG ? `<p class="health-note ${ACTMSG.ok ? '' : 'danger'}">${esc(ACTMSG.text)}</p>` : ''}
+    ${a.state === 'active' || a.state === 'expired' ? steps : ''}
+    ${form}
+  </section>`;
+}
+
 function diagnosticsCards() {
   const r = DIAG.runtime, d = DIAG.deployment;
   const yn = v => v ? '<span class="pill p-ok">yes</span>'
@@ -6567,6 +6666,8 @@ kubectl -n ${ns} set image cronjob/<discovery> discovery=ghcr.io/amansk5/shadow-
       ${CFG.managed && CFG.managed.enabled ? upgradeTracker() : ''}
     </section>`;
     })()}
+
+    ${CFG.managed && CFG.managed.enabled ? activationCard() : ''}
   </div>
 
   <section class="health-deployment"><div><span>Deployment context</span><h3>Provided by configuration</h3>
@@ -6717,6 +6818,15 @@ async function diagnostics() {
       system health: ${esc(String(e.message || e))}</div>`; }
   }
   const managed = CFG.managed && CFG.managed.enabled;
+  if (managed && ACT === null) {
+    try {
+      const ar = await mfetch('/api/activation');
+      // A refusal is not "no subscription": leaving ACT null would ask
+      // again on every render, and answering "open edition" would be a
+      // claim about the deployment made from a failed read.
+      ACT = ar.ok ? await ar.json() : {state: 'unknown'};
+    } catch (e) { ACT = {state: 'unknown'}; }
+  }
   if (managed && AUDITLOG === null) {
     try {
       const ar = await mfetch('/api/audit?limit=50');
@@ -8755,6 +8865,36 @@ async function managedAction(act, el) {
     // is reflected there too.
     try { const cr = await fetch('/api/config'); if (cr.ok) CFG = await cr.json(); } catch (e) {}
     drawSetup(); render(); return;
+  }
+  if (act === 'act-save' || act === 'act-clear') {
+    const field = document.getElementById('act-key');
+    const key = act === 'act-clear' ? '' : ((field || {}).value || '').trim();
+    if (act === 'act-save' && !key) {
+      ACTMSG = {ok: false, text: 'Paste the key first.'}; render(); return;
+    }
+    if (act === 'act-clear'
+        && !confirm('Remove the stored activation key? This deployment keeps '
+                    + 'running exactly as it is - the key entitles you to the '
+                    + 'private images, and nothing here depends on it.')) return;
+    el.disabled = true; el.textContent = act === 'act-clear' ? 'Removing…' : 'Checking…';
+    const r = await mfetch('/api/activation', {method: 'POST',
+      body: JSON.stringify({key})});
+    if (r.status === 401) { sessionLost(); return; }
+    if (!r.ok) {
+      // The receiver's refusal is the whole message: it says whether this
+      // is a typo or a key to ask about, and rewording it here would lose
+      // the difference.
+      ACTMSG = {ok: false, text: await _refusal(r)}; render(); return;
+    }
+    ACT = await r.json();
+    ACTMSG = act === 'act-clear'
+      ? {ok: true, text: 'Removed. This deployment is back to the open edition.'}
+      : ACT.state === 'expired'
+        ? {ok: true, text: 'Stored. The key is genuine but its term has ended.'}
+        : {ok: true, text: 'Activated. ' + ACT.org + ', to ' + ACT.expires + '.'};
+    // The audit trail below now has a row this page is showing state for.
+    AUDITLOG = null;
+    render(); return;
   }
   if (act === 'id-download') {
     window.location = '/api/suggest-identities?fmt=csv';

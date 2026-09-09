@@ -488,3 +488,12 @@ product built on this code must credit it as the work of Aman Karir and may
 not present the software as its own; see [TRADEMARKS.md](TRADEMARKS.md) for
 the name, the logo and what a paid offering has to say. The software itself
 can always be obtained from this repository for free.
+
+There is a commercial edition, **Nyxus**, distributed as private images under
+a subscription with support, licensed separately. Nothing here is held back
+for it: this repository is the whole open product, and it stays that way.
+An activation key gates nothing in this code either - it names the
+organisation a subscription was issued to and doubles as the credential that
+pulls those images. **System health** in the portal is where one is entered,
+checked offline against a signature the portal already holds, and where the
+commands to move a deployment across are written out.
