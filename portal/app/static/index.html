@@ -6657,7 +6657,7 @@ kubectl -n ${ns} set image cronjob/<discovery> discovery=ghcr.io/amansk5/shadow-
         <p>The command runs with your kubeconfig or Docker context and reports its progress here. The portal never upgrades anything itself; it approves the request (owners only) and shows the run.</p>
         <ol class="ui-steplist">
           <li><b>Have Python 3.10 or newer and pipx on your machine.</b><span>On a Mac, <code>brew install pipx</code>; elsewhere, <code>pip install --user pipx</code>.</span></li>
-          <li><b>Install the command once, from a tagged release.</b>${uiCommand(`pipx install -q "git+https://github.com/AmanSK5/shadow-ai-guard@${u.latest || 'v0.31.0'}#subdirectory=cli"`)}</li>
+          <li><b>Install the command once, from a tagged release.</b>${uiCommand(`pipx install -q "git+https://github.com/AmanSK5/shadow-ai-guard@${u.latest || 'v0.32.0'}#subdirectory=cli"`)}</li>
           <li><b>Put it on your PATH.</b>${uiCommand('pipx ensurepath')}<span>A shell opened before this will not find the command until it is reopened.</span></li>
           <li><b>Run it.</b>${uiCommand('aiguardctl upgrade --portal ' + location.origin)}<span>Your browser opens this portal to approve the request; compare the code it shows with your terminal. <code>--dry-run</code> prints every command without running one.</span></li>
         </ol>
