@@ -19,7 +19,7 @@ It needs Python 3.10 or newer and `pipx` (`brew install pipx` on a Mac,
 `pip install --user pipx` elsewhere). From a tagged release of this
 repository, once:
 
-    pipx install -q "git+https://github.com/AmanSK5/shadow-ai-guard@v0.31.0#subdirectory=cli"
+    pipx install -q "git+https://github.com/AmanSK5/shadow-ai-guard@v0.32.0#subdirectory=cli"
     pipx ensurepath
 
 `pipx ensurepath` puts the command on your PATH; a shell opened before that
