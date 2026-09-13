@@ -108,7 +108,14 @@ jobs:
           # last and the Security tab shows only whichever ran most recently.
           category: trivy-fs
 
+      # always(), so publishing cannot decide whether gating happens. A
+      # reporting step that fails takes every later step with it by default,
+      # and the later step here is the one that fails the build on a HIGH or
+      # CRITICAL - so an upload-sarif that breaks would skip the gate and the
+      # job would still be judged on a scan that gated nothing. The
+      # misconfiguration pair below has always had this; these two had not.
       - name: dependencies and committed secrets (gate)
+        if: always()
         run: |
           docker run --rm \
             -v "$PWD:/work:ro" \
@@ -211,7 +218,14 @@ jobs:
           # matrix leg to finish silently replaces the other two.
           category: trivy-image-${{ matrix.component }}
 
+      # always(), so publishing cannot decide whether gating happens. A
+      # reporting step that fails takes every later step with it by default,
+      # and the later step here is the one that fails the build on a HIGH or
+      # CRITICAL - so an upload-sarif that breaks would skip the gate and the
+      # job would still be judged on a scan that gated nothing. The
+      # misconfiguration pair below has always had this; these two had not.
       - name: scan image (gate)
+        if: always()
         run: |
           docker run --rm \
             -v /tmp/image.tar:/tmp/image.tar:ro \
