@@ -384,13 +384,21 @@ jobs:
           # zero, so a missing default reaches the cluster as a manifest that
           # is valid YAML and wrong. Grep for it rather than trust the exit
           # code.
+          # Discovery needs three things or the template refuses by design;
+          # named once because it is long.
+          discovery_on="--set discovery.enabled=true --set discovery.auth.value=aige_y"
+          discovery_on="$discovery_on --set discovery.sentinelOneUrl=https://t.sentinelone.net"
+          discovery_on="$discovery_on --set discovery.envFrom[0].secretRef.name=creds"
           for args in "" \
                       "--set ingress.enabled=true" \
                       "--set portal.enabled=false" \
                       "--set portal.ingress.enabled=true --set portal.lokiUrl=http://loki:3100" \
                       "--set portal.auth.mode=none" \
                       "--set portal.identityMap.existingConfigMap=my-map" \
-                      "--set portal.grafana.url=https://grafana.example.com --set portal.grafana.panels=a:1:B"; do
+                      "--set portal.grafana.url=https://grafana.example.com --set portal.grafana.panels=a:1:B" \
+                      "--set scanner.enabled=true --set scanner.auth.value=aige_x" \
+                      "--set scanner.enabled=true --set scanner.auth.existingSecret=mine" \
+                      "$discovery_on"; do
             # shellcheck disable=SC2086
             rendered=$(helm template ai-guard charts/ai-guard $args)
             if grep -q '<no value>' <<<"$rendered"; then
@@ -399,6 +407,30 @@ jobs:
               exit 1
             fi
           done
+      - name: no Service selects a scheduled job's pods
+        # A Service selects on app.kubernetes.io/name plus the instance. A
+        # CronJob pod carrying the receiver's name would be an endpoint for
+        # it, receiving traffic on a port it does not listen on - and only
+        # while a scan is running, so the failure arrives on a schedule and
+        # goes away before anyone looks. Each component carries its own name
+        # for this reason; this is the check that says so.
+        run: |
+          rendered=$(helm template ai-guard charts/ai-guard \
+            --set scanner.enabled=true --set scanner.auth.value=aige_x \
+            --set discovery.enabled=true --set discovery.auth.value=aige_y \
+            --set discovery.sentinelOneUrl=https://t.sentinelone.net \
+            --set discovery.envFrom[0].secretRef.name=creds \
+            --set portal.enabled=true)
+          selected=$(grep -A3 '^  selector:' <<<"$rendered" \
+                     | grep 'app.kubernetes.io/name:' | awk '{print $2}' | sort -u)
+          for name in $selected; do
+            case "$name" in
+              *-scanner|*-discovery)
+                echo "::error::a Service selects $name, which is a CronJob's pods"
+                exit 1 ;;
+            esac
+          done
+          echo "services select: $(tr '\n' ' ' <<<"$selected")"
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with: { python-version: '3.12' }
       - run: pip install --require-hashes -r .github/requirements-ci.txt

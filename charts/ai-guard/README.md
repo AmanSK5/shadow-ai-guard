@@ -148,6 +148,13 @@ the portal.
 | `alertmanager.ttlMinutes` | `120` | how long a warn finding counts as already alerted |
 | `displayTz` | `UTC` | timezone for the readable timestamp on alerts only |
 | `corpDomains` | `[]` | corporate domains served to the collectors via `/registry/collector`; collectors prefer this to their local list, so a change here reaches the fleet on its next check-in with no MDM re-push |
+| `scanner.enabled` | `false` | the cloud-side scanning CronJob. See [The scheduled components](#the-scheduled-components) |
+| `scanner.schedule` | `"17 */6 * * *"` | four times a day, off the hour: nothing here changes minute to minute and rate limits are real |
+| `scanner.auth.existingSecret` | `""` | a Secret holding an enrollment token under `enrollmentToken` |
+| `scanner.envFrom` | `[]` | where the scanner credentials come from. Your Secrets, never chart values |
+| `discovery.enabled` | `false` | the DNS discovery CronJob. Needs `sentinelOneUrl` and `envFrom` as well as a token |
+| `discovery.schedule` | `"41 6 * * *"` | daily, looking back seven days, so consecutive runs overlap on purpose |
+| `discovery.minDevices` | `1` | devices that must have resolved a domain before it is worth anyone's attention |
 | `managed.enabled` | `true` | the default since 0.9.9: device enrollment, accounts, central settings and a fleet inventory, backed by SQLite on a PVC. Requires `replicaCount: 1` (the chart refuses otherwise) and switches the Deployment to `Recreate`. Set `false` for classic mode |
 | `managed.adminToken.value` | `""` | the optional API credential for `/admin/*`: automation, break-glass recovery, and the portal's own service reads (viewer accounts reading a wizard-saved log store, and the digest task). Set it if you use viewer accounts or the digest; leaving both unset means no admin secret exists at all |
 | `managed.adminToken.existingSecret` | `""` | a Secret you created yourself, key `adminToken` |
@@ -250,8 +257,39 @@ to the collector as a 503 so nothing is silently discarded.
 `aiguard_loki_push_total` staying at zero while findings arrive is that
 failure.
 
+## The scheduled components
+
+The scanner and discovery are CronJobs, and both are off by default. They
+need credentials that are not the chart's to invent, and an enabled job
+without them is a failed Job arriving on a schedule, so turning either on
+without what it needs fails the template with a sentence saying which part is
+missing rather than installing something that cannot work.
+
+    helm upgrade ai-guard charts/ai-guard --reset-then-reuse-values \
+      --set scanner.enabled=true \
+      --set scanner.auth.existingSecret=my-scanner-token \
+      --set scanner.envFrom[0].secretRef.name=my-scanner-credentials
+
+The token is an enrollment token from the portal, under Coverage >
+Enrollment. It is exchanged for a device credential on first run, so the
+scanner is one row in Fleet however often it runs, and revoking that token in
+the portal is what stops it.
+
+Which scanners actually run is decided by which credentials are in the Secret
+you reference: each one checks its own prerequisites and skips itself with a
+line in the log, so a partial set is a working deployment rather than a
+broken one.
+
+Discovery additionally needs `discovery.sentinelOneUrl` and a Secret holding
+`S1_API_TOKEN` and `ANTHROPIC_API_KEY`.
+
+These are CronJobs because Kubernetes has a scheduler, and its run history,
+concurrency policy and visible Job failures beat anything the container could
+keep for itself. The same images can keep their own time instead, through
+`AIGUARD_RUN_INTERVAL` - that is what a Docker Compose deployment uses,
+because Compose has no scheduler at all. Leave it unset here.
+
 ## Not in the chart
 
 Collectors and the browser extension are delivered by your MDM or RMM, not
-by Kubernetes. The scanners run as CronJobs against cloud APIs and are
-deployed separately.
+by Kubernetes.

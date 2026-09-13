@@ -371,6 +371,116 @@ portal:
 # The receiver never calls the Kubernetes API, so it has no use for a
 # ServiceAccount token. Mounting one anyway hands a credential to anything
 # that gets code execution in the pod.
+# ---------------------------------------------------------------------------
+# The two scheduled components.
+#
+# CronJobs, because Kubernetes has a scheduler and its run history,
+# concurrency policy and visible Job failures beat anything a container could
+# keep for itself. The same images can keep their own time instead
+# (AIGUARD_RUN_INTERVAL), which is what a Compose deployment uses because
+# Compose has no scheduler at all. Leave that unset here.
+#
+# Both are OFF by default, and that is a different default from the compose
+# file, deliberately. There the alternative to running was not running at all;
+# here an enabled job with no credentials would produce a failed Job on a
+# schedule, and a wall of those in `kubectl get jobs` is a worse first day
+# than a component you turn on when you have what it needs. Turning either on
+# without its credential fails the template with a sentence saying so, rather
+# than installing something that cannot work.
+# ---------------------------------------------------------------------------
+
+# Cloud-side scanning: Entra sign-ins, OAuth grants, Exchange signup evidence,
+# Intune and Jamf inventory, SentinelOne. Which of them run is decided by
+# which credentials are present - each checks its own prerequisites and skips
+# itself with a line in the log - so a partial set is a working deployment.
+scanner:
+  enabled: false
+  image:
+    repository: ghcr.io/amansk5/shadow-ai-guard/scanner
+    tag: ""            # defaults to the chart's appVersion
+    digest: ""
+    pullPolicy: IfNotPresent
+
+  # Four times a day, off the hour. Nothing here changes minute to minute and
+  # a cloud API's rate limit is a real thing.
+  schedule: "17 */6 * * *"
+  timeZone: ""         # IANA name; empty means the cluster's own
+
+  # The enrollment token (aige_...) this scanner reports with, from the
+  # portal under Coverage > Enrollment. It is exchanged for a device
+  # credential on first run, so the scanner is one row in Fleet however often
+  # it runs, and revoking that token is the lever that stops it.
+  auth:
+    value: ""          # ends up in helm values - prefer existingSecret
+    existingSecret: ""
+    secretKey: enrollmentToken
+
+  # Scanner credentials - AIGUARD_ENTRA_*, AIGUARD_JAMF_*, AIGUARD_S1_* - from
+  # Secrets you created. Never chart values: these are the keys to the
+  # systems being scanned.
+  #
+  #   envFrom:
+  #     - secretRef:
+  #         name: my-scanner-credentials
+  envFrom: []
+  env: []              # anything else, in the usual name/value form
+
+  scannerId: scanner   # its identity in Fleet; change it if you run several
+  receiverUrl: ""      # defaults to this release's receiver Service
+
+  # Skip a run rather than start it very late: a scan that fires hours after
+  # its window is a scan whose results are already being overtaken.
+  startingDeadlineSeconds: 300
+  backoffLimit: 2
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  resources: {}        # empty falls back to the shared `resources` below
+
+# Finds AI domains in fleet DNS that the registry has never heard of and
+# queues them in the portal for a human to define or dismiss. Nothing is
+# detected until someone does - the queue is the gate.
+discovery:
+  enabled: false
+  image:
+    repository: ghcr.io/amansk5/shadow-ai-guard/discovery
+    tag: ""
+    digest: ""
+    pullPolicy: IfNotPresent
+
+  # Daily, and it looks back seven days, so consecutive runs overlap heavily
+  # on purpose: a domain that appears once is still there tomorrow.
+  schedule: "41 6 * * *"
+  timeZone: ""
+
+  auth:
+    value: ""
+    existingSecret: ""
+    secretKey: enrollmentToken
+
+  # REQUIRED when enabled: S1_API_TOKEN and ANTHROPIC_API_KEY from a Secret
+  # of your own. The template refuses to render without it.
+  envFrom: []
+  env: []
+
+  # The SentinelOne tenant its Deep Visibility queries go to. A hostname
+  # rather than a credential, so it lives here.
+  sentinelOneUrl: ""   # e.g. https://your-tenant.sentinelone.net
+
+  # Distinct devices that must have resolved a domain before it is worth
+  # anyone's attention. One shows everything, which is right for a first pass
+  # and usually too much for a large estate.
+  minDevices: 1
+
+  scannerId: discovery
+  receiverUrl: ""
+
+  startingDeadlineSeconds: 300
+  backoffLimit: 1      # a classification pass costs money; do not retry it hard
+  activeDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  resources: {}
+
 automountServiceAccountToken: false
 
 podSecurityContext:

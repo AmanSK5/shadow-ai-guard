@@ -168,10 +168,13 @@ Everything below is optional and independent. Add them in any order.
 - **Discovery**: a scheduled job that spots AI domains in your fleet's DNS
   that the registry doesn't know yet, and queues them in the portal's review
   queue for you to define or dismiss.
-- **Running those two on a schedule**: on Kubernetes they are CronJobs and the
-  portal generates the manifests. Compose has no scheduler, so there the same
-  images keep their own time - `AIGUARD_RUN_INTERVAL` is the gap between
-  passes, and the scanner is already in the compose file with a daily one.
+- **Running those two on a schedule**: on Kubernetes they are CronJobs. The
+  chart carries both, off until you have their credentials
+  (`--set scanner.enabled=true`), and the portal generates standalone
+  manifests for a deployment that does not use the chart. Compose has no
+  scheduler, so there the same images keep their own time -
+  `AIGUARD_RUN_INTERVAL` is the gap between passes, and the scanner is
+  already in the compose file with a daily one.
   Discovery needs SentinelOne and an Anthropic key, so it waits behind a
   profile: `docker compose --profile discovery up -d`. Put their credentials
   in `scanner.env` and `discovery.env` beside the compose file; both are

@@ -78,5 +78,18 @@ are reporting versus silent.
   picture rather than a broken one.
 {{- end }}
 
-Next: roll out one collector (docs/getting-started.md), then import
+{{ if not (or .Values.scanner.enabled .Values.discovery.enabled) }}
+The two scheduled components are off. They are CronJobs, and each needs an
+enrollment token from the portal before it can report:
+
+  scanner    cloud-side evidence - Entra, Exchange, Intune, Jamf, SentinelOne.
+             --set scanner.enabled=true --set scanner.auth.existingSecret=...
+             Its scanner credentials come from your own Secret, via
+             scanner.envFrom. Whichever are present is what runs.
+
+  discovery  AI domains in fleet DNS that the registry has never seen, queued
+             in the portal for someone to define or dismiss. Also needs a
+             SentinelOne tenant and an Anthropic key.
+
+{{ end }}Next: roll out one collector (docs/getting-started.md), then import
 dashboards/ai-guard.json into Grafana if you want the time-series view too.

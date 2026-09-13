@@ -200,7 +200,7 @@ services:
       AIGUARD_SCANNER_ID: ${SCANNER_ID:-scanner}
       AIGUARD_STATE_DIR: /var/lib/ai-guard
       AIGUARD_RUN_INTERVAL: ${SCAN_INTERVAL:-24h}
-      CORPORATE_DOMAIN: ${CORP_DOMAINS:-}
+      CORPORATE_DOMAINS: ${CORP_DOMAINS:-}
       DISPLAY_TZ: ${DISPLAY_TZ:-UTC}
     env_file:
       # RECEIVER_TOKEN, plus the scanner credentials - AIGUARD_ENTRA_*,
