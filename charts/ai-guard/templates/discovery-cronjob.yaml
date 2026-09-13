@@ -1,0 +1,113 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
+{{- if .Values.discovery.enabled }}
+{{- if not .Values.discovery.image }}
+{{- fail (printf "\n\nThe discovery values are incomplete: discovery.image is missing, so the chart defaults were dropped.\n\nThis is what `helm upgrade --reuse-values` does - it keeps only the values you set previously and discards everything underneath them, including defaults added by a newer chart.\n\nUse --reset-then-reuse-values instead:\n\n  helm upgrade %s charts/ai-guard --reset-then-reuse-values --set discovery.enabled=true\n" .Release.Name) }}
+{{- end }}
+{{- if and (not .Values.discovery.auth.value) (not .Values.discovery.auth.existingSecret) }}
+{{- fail "\n\ndiscovery.enabled is true but discovery has no credential to report with.\n\nCreate an enrollment token in the portal (Coverage > Enrollment) and pass it as discovery.auth.value, or point discovery.auth.existingSecret at a Secret you made yourself.\n" }}
+{{- end }}
+{{- if not .Values.discovery.envFrom }}
+{{- fail "\n\ndiscovery.enabled is true but discovery.envFrom is empty.\n\nDiscovery needs SentinelOne Deep Visibility (S1_API_TOKEN) and an Anthropic key (ANTHROPIC_API_KEY) to classify what it finds, and neither belongs in chart values. Put them in a Secret of your own and reference it:\n\n  discovery:\n    envFrom:\n      - secretRef:\n          name: my-discovery-credentials\n\nWithout them the job would fail weekly against an empty environment.\n" }}
+{{- end }}
+{{- if not .Values.discovery.sentinelOneUrl }}
+{{- fail "\n\ndiscovery.enabled is true but discovery.sentinelOneUrl is empty.\n\nThis is the tenant its Deep Visibility queries go to, e.g. https://your-tenant.sentinelone.net - a hostname, not a credential, so it belongs here rather than in a Secret.\n" }}
+{{- end }}
+{{- if not .Values.discovery.auth.existingSecret }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "ai-guard.discovery.fullname" . }}
+  labels:
+    {{- include "ai-guard.discovery.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  {{ .Values.discovery.auth.secretKey }}: {{ .Values.discovery.auth.value | quote }}
+---
+{{- end }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "ai-guard.discovery.fullname" . }}
+  labels:
+    {{- include "ai-guard.discovery.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.discovery.schedule | quote }}
+  {{- with .Values.discovery.timeZone }}
+  timeZone: {{ . | quote }}
+  {{- end }}
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: {{ .Values.discovery.startingDeadlineSeconds }}
+  successfulJobsHistoryLimit: {{ .Values.discovery.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.discovery.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.discovery.backoffLimit }}
+      # A pass pulls a week of DNS events and then classifies the residue, so
+      # it is the long one. Bounded rather than open-ended: a query that never
+      # returns should end as a failed Job somebody can see, not as a pod that
+      # sits there until the next schedule finds it still running and skips.
+      activeDeadlineSeconds: {{ .Values.discovery.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            {{- include "ai-guard.discovery.labels" . | nindent 12 }}
+          {{- with .Values.podAnnotations }}
+          annotations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+        spec:
+          restartPolicy: Never
+          automountServiceAccountToken: {{ .Values.automountServiceAccountToken }}
+          securityContext:
+            {{- toYaml .Values.podSecurityContext | nindent 12 }}
+          containers:
+            - name: discovery
+              image: "{{ .Values.discovery.image.repository }}{{ if .Values.discovery.image.digest }}@{{ .Values.discovery.image.digest }}{{ else }}:{{ .Values.discovery.image.tag | default .Chart.AppVersion }}{{ end }}"
+              imagePullPolicy: {{ .Values.discovery.image.pullPolicy }}
+              securityContext:
+                {{- toYaml .Values.securityContext | nindent 16 }}
+              env:
+                - name: RECEIVER_URL
+                  value: {{ .Values.discovery.receiverUrl | default (include "ai-guard.receiverUrl" .) | quote }}
+                - name: AIGUARD_SCANNER_ID
+                  value: {{ .Values.discovery.scannerId | quote }}
+                - name: RECEIVER_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "ai-guard.discovery.secretName" . }}
+                      key: {{ .Values.discovery.auth.secretKey }}
+                - name: S1_BASE_URL
+                  value: {{ .Values.discovery.sentinelOneUrl | quote }}
+                # How many distinct devices must have resolved a domain before
+                # it is worth a human's attention. One means everything, which
+                # is the right default for a first pass and usually too much
+                # for a large estate.
+                - name: MIN_DEVICES
+                  value: {{ .Values.discovery.minDevices | quote }}
+                {{- with .Values.discovery.env }}
+                {{- toYaml . | nindent 16 }}
+                {{- end }}
+              # S1_API_TOKEN and ANTHROPIC_API_KEY, from a Secret of your own.
+              # The template refuses to render without this, because the
+              # alternative is a job that fails once a week against an empty
+              # environment.
+              envFrom:
+                {{- toYaml .Values.discovery.envFrom | nindent 16 }}
+              resources:
+                {{- toYaml (.Values.discovery.resources | default .Values.resources) | nindent 16 }}
+          {{- with .Values.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.affinity }}
+          affinity:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }}

@@ -1,0 +1,115 @@
+# Copyright 2026 Aman Karir
+# SPDX-License-Identifier: Apache-2.0
+# Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
+
+{{- if .Values.scanner.enabled }}
+{{- if not .Values.scanner.image }}
+{{- fail (printf "\n\nThe scanner values are incomplete: scanner.image is missing, so the chart defaults were dropped.\n\nThis is what `helm upgrade --reuse-values` does - it keeps only the values you set previously and discards everything underneath them, including defaults added by a newer chart.\n\nUse --reset-then-reuse-values instead:\n\n  helm upgrade %s charts/ai-guard --reset-then-reuse-values --set scanner.enabled=true\n" .Release.Name) }}
+{{- end }}
+{{- if and (not .Values.scanner.auth.value) (not .Values.scanner.auth.existingSecret) }}
+{{- fail "\n\nscanner.enabled is true but the scanner has no credential to report with.\n\nCreate an enrollment token in the portal (Coverage > Enrollment) and pass it as scanner.auth.value, or point scanner.auth.existingSecret at a Secret you made yourself.\n\nWithout one every run would enroll-then-401 and the CronJob would fail on a schedule, which is a worse way to find this out.\n" }}
+{{- end }}
+{{- if not .Values.scanner.auth.existingSecret }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "ai-guard.scanner.fullname" . }}
+  labels:
+    {{- include "ai-guard.scanner.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  {{ .Values.scanner.auth.secretKey }}: {{ .Values.scanner.auth.value | quote }}
+---
+{{- end }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "ai-guard.scanner.fullname" . }}
+  labels:
+    {{- include "ai-guard.scanner.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.scanner.schedule | quote }}
+  {{- with .Values.scanner.timeZone }}
+  timeZone: {{ . | quote }}
+  {{- end }}
+  # A scan that is still running when the next one is due means the estate is
+  # bigger than the schedule assumed, not that it needs two of them. Forbid
+  # skips rather than stacking, which is the same bargain the image makes for
+  # itself when it keeps its own time under Compose.
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: {{ .Values.scanner.startingDeadlineSeconds }}
+  successfulJobsHistoryLimit: {{ .Values.scanner.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.scanner.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.scanner.backoffLimit }}
+      template:
+        metadata:
+          labels:
+            {{- include "ai-guard.scanner.labels" . | nindent 12 }}
+          {{- with .Values.podAnnotations }}
+          annotations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+        spec:
+          # Never, not OnFailure: a failed scan is retried as a new Job under
+          # backoffLimit, where it is visible in `kubectl get jobs`. Restarting
+          # the container in place hides the same failure inside one Job that
+          # still reads as running.
+          restartPolicy: Never
+          automountServiceAccountToken: {{ .Values.automountServiceAccountToken }}
+          securityContext:
+            {{- toYaml .Values.podSecurityContext | nindent 12 }}
+          containers:
+            - name: scanner
+              image: "{{ .Values.scanner.image.repository }}{{ if .Values.scanner.image.digest }}@{{ .Values.scanner.image.digest }}{{ else }}:{{ .Values.scanner.image.tag | default .Chart.AppVersion }}{{ end }}"
+              imagePullPolicy: {{ .Values.scanner.image.pullPolicy }}
+              securityContext:
+                {{- toYaml .Values.securityContext | nindent 16 }}
+              env:
+                - name: RECEIVER_URL
+                  value: {{ .Values.scanner.receiverUrl | default (include "ai-guard.receiverUrl" .) | quote }}
+                # The registry is fetched at runtime rather than baked into
+                # the image, so approving a tool reaches the next scan with
+                # no rebuild.
+                - name: AIGUARD_REGISTRY_URL
+                  value: {{ printf "%s/registry" (.Values.scanner.receiverUrl | default (include "ai-guard.receiverUrl" .)) | quote }}
+                - name: AIGUARD_SCANNER_ID
+                  value: {{ .Values.scanner.scannerId | quote }}
+                - name: RECEIVER_TOKEN
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ include "ai-guard.scanner.secretName" . }}
+                      key: {{ .Values.scanner.auth.secretKey }}
+                {{- with .Values.corpDomains }}
+                - name: CORPORATE_DOMAINS
+                  value: {{ join "," . | quote }}
+                {{- end }}
+                - name: DISPLAY_TZ
+                  value: {{ .Values.displayTz | quote }}
+                {{- with .Values.scanner.env }}
+                {{- toYaml . | nindent 16 }}
+                {{- end }}
+              {{- with .Values.scanner.envFrom }}
+              # Where the scanner credentials come from: Secrets you made,
+              # never this chart's values. Each scanner checks its own
+              # prerequisites and skips itself with a line in the log, so a
+              # partial set is a working deployment, not a broken one.
+              envFrom:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+              resources:
+                {{- toYaml (.Values.scanner.resources | default .Values.resources) | nindent 16 }}
+          {{- with .Values.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.affinity }}
+          affinity:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }}

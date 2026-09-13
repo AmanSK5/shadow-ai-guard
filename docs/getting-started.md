@@ -164,10 +164,22 @@ Everything below is optional and independent. Add them in any order.
   has the same material for reading offline.
 - **Cloud and network scanners**: Entra sign-ins, OAuth grants, Exchange
   signup evidence, Intune/Jamf inventory, SentinelOne DNS.
-  [scanner/README.md](../scanner/README.md). The portal generates the CronJob.
+  [scanner/README.md](../scanner/README.md).
 - **Discovery**: a scheduled job that spots AI domains in your fleet's DNS
   that the registry doesn't know yet, and queues them in the portal's review
-  queue for you to define or dismiss. The portal generates this CronJob too.
+  queue for you to define or dismiss.
+- **Running those two on a schedule**: on Kubernetes they are CronJobs. The
+  chart carries both, off until you have their credentials
+  (`--set scanner.enabled=true`), and the portal generates standalone
+  manifests for a deployment that does not use the chart. Compose has no
+  scheduler, so there the same images keep their own time -
+  `AIGUARD_RUN_INTERVAL` is the gap between passes, and the scanner is
+  already in the compose file with a daily one.
+  Discovery needs SentinelOne and an Anthropic key, so it waits behind a
+  profile: `docker compose --profile discovery up -d`. Put their credentials
+  in `scanner.env` and `discovery.env` beside the compose file; both are
+  gitignored and both are optional, because a scanner with nothing configured
+  says so in its log and skips itself.
 - **More eyes**: add accounts under Settings > Account. The setup code made
   you the owner; from there you can add admins, who run the platform, and
   viewers, who read every page and can change nothing - the right shape for
