@@ -358,20 +358,42 @@ jobs:
       # guarding anything.
       - name: the chart version moved if the chart did
         if: github.event_name == 'pull_request'
+        # The question is whether a repo index will offer this as an upgrade,
+        # and an index only ever sees PUBLISHED charts. publish-chart is
+        # tag-gated, so the comparison is against the chart version at the
+        # last tag, not against the base branch.
+        #
+        # Those were the same thing for as long as only release commits
+        # touched charts/. They stopped being when a feature PR added the
+        # scanner and discovery templates and bumped the version itself: the
+        # release PR that followed moved appVersion, which lives under
+        # charts/, and was told to bump a version that had already moved and
+        # had never been published. Against the base branch the rule demanded
+        # a second bump for one unpublished chart.
         run: |
-          if ! git diff --quiet origin/${{ github.base_ref }} HEAD -- charts/ ':!charts/**/README.md'; then
-            base=$(git show origin/${{ github.base_ref }}:charts/ai-guard/Chart.yaml \
-                   | grep -E '^version:' | awk '{print $2}')
-            head=$(grep -E '^version:' charts/ai-guard/Chart.yaml | awk '{print $2}')
-            if [ "$base" = "$head" ]; then
-              echo "::error::charts/ changed but Chart.yaml version is still $head."
-              echo "Bump it, or a repo index will not offer the change as an upgrade."
-              exit 1
-            fi
-            echo "chart changed, version moved $base -> $head."
-          else
+          if git diff --quiet origin/${{ github.base_ref }} HEAD -- charts/ ':!charts/**/README.md'; then
             echo "charts/ unchanged."
+            exit 0
           fi
+          head=$(grep -E '^version:' charts/ai-guard/Chart.yaml | awk '{print $2}')
+          last=$(git describe --tags --abbrev=0 origin/${{ github.base_ref }} 2>/dev/null || true)
+          if [ -n "$last" ]; then
+            against=$(git show "$last:charts/ai-guard/Chart.yaml" \
+                      | grep -E '^version:' | awk '{print $2}')
+            where="published at $last"
+          else
+            # No tag to compare with: nothing is published, so fall back to
+            # the old question rather than passing by default.
+            against=$(git show origin/${{ github.base_ref }}:charts/ai-guard/Chart.yaml \
+                      | grep -E '^version:' | awk '{print $2}')
+            where="on ${{ github.base_ref }} (no tag yet)"
+          fi
+          if [ "$against" = "$head" ]; then
+            echo "::error::charts/ changed but Chart.yaml version is still $head, which is what is $where."
+            echo "Bump it, or a repo index will not offer the change as an upgrade."
+            exit 1
+          fi
+          echo "chart changed, version $against ($where) -> $head."
 
       - name: lint and render the chart
         run: |

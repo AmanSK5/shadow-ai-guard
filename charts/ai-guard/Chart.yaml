@@ -17,7 +17,7 @@ version: 0.33.0
 # It sat at 0.2.0 through the 0.3.0 release: nothing checked it, so `helm
 # install` quietly deployed a receiver a full release behind what the tag
 # claimed. CI now fails a tag build if this and the tag disagree.
-appVersion: "0.32.0"
+appVersion: "0.33.0"
 home: https://github.com/AmanSK5/shadow-ai-guard
 maintainers:
   - name: Aman Karir
