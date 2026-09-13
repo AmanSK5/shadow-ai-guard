@@ -471,6 +471,12 @@ jobs:
             -t ghcr.io/amansk5/shadow-ai-guard/receiver:ci receiver
           docker build --build-arg APP_VERSION=ci-test \
             -t ghcr.io/amansk5/shadow-ai-guard/portal:ci portal
+          # The compose file runs the scanner, so the smoke has to have it.
+          # Without this the stack comes up trying to pull a tag that only
+          # exists after a release, and the job fails for a reason that has
+          # nothing to do with the change under review.
+          docker build --build-arg APP_VERSION=ci-test \
+            -t ghcr.io/amansk5/shadow-ai-guard/scanner:ci scanner
 
       - name: set up secrets and config the way the README says
         working-directory: deploy/compose
@@ -526,6 +532,36 @@ jobs:
             curl -fsS http://127.0.0.1:8080/healthz
             exit 1
           fi
+
+      - name: the scanner schedules itself and survives a failed pass
+        working-directory: deploy/compose
+        # This is the whole reason the scanner is in the compose file:
+        # Compose has no scheduler, so the image keeps its own time. With no
+        # credentials configured every pass fails, which is the case that
+        # matters - the container must stay up and record the failure rather
+        # than exit and be restarted against a receiver it cannot use.
+        run: |
+          for _ in $(seq 1 30); do
+            docker compose logs scanner 2>&1 | grep -q "running now and every" && break
+            sleep 2
+          done
+          docker compose logs scanner 2>&1 | grep -q "running now and every" || {
+            echo "::error::the scanner did not start on an interval"
+            docker compose logs scanner; exit 1; }
+
+          for _ in $(seq 1 30); do
+            docker compose exec -T scanner cat /tmp/ai-guard-health.json >/dev/null 2>&1 && break
+            sleep 2
+          done
+          health=$(docker compose exec -T scanner cat /tmp/ai-guard-health.json)
+          echo "health: $health"
+          grep -q '"interval": 86400' <<<"$health" || {
+            echo "::error::the scanner is not on the interval the compose file sets"; exit 1; }
+
+          state=$(docker compose ps --format '{{ .State }}' scanner)
+          [ "$state" = "running" ] || {
+            echo "::error::a failed pass took the scanner down (state: $state)"
+            docker compose logs scanner; exit 1; }
 
       - name: the registry builder succeeded
         working-directory: deploy/compose
