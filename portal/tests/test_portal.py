@@ -1789,3 +1789,39 @@ def test_attributing_one_name_does_not_excuse_another():
                 evidence="DNS lookup for api.anthropic.com (via curl)"),
     ], REG_BIN, aliases={"stable": "warp"})
     assert out["agents"][0]["process"] == "curl"
+
+
+def test_a_duplicated_identity_map_key_is_reported(tmp_path):
+    """Before this it was completely silent. The file parses, the estate
+    draws, and a person is attributed to whichever row came last on a report
+    somebody acts on - discoverable only by already suspecting it."""
+    csv_path = tmp_path / "map.csv"
+    csv_path.write_text(
+        "key,identity\n"
+        "SERIAL1,jane.doe@example.com\n"
+        "jdoe,jane.doe@example.com\n"
+        "SERIAL1,john.roe@example.com\n"
+    )
+    dups = []
+    out = derive.load_identity_map(str(csv_path), dups)
+    assert dups == ["SERIAL1"]
+    # Last-wins is unchanged: which row is right is not a thing this can know,
+    # and moving people between reports to fix the silence would be worse.
+    assert out["SERIAL1"] == "john.roe@example.com"
+    assert out["jdoe"] == "jane.doe@example.com"
+
+
+def test_a_clean_identity_map_reports_no_duplicates(tmp_path):
+    csv_path = tmp_path / "map.csv"
+    csv_path.write_text("key,identity\nSERIAL1,jane.doe@example.com\njdoe,j@example.com\n")
+    dups = []
+    derive.load_identity_map(str(csv_path), dups)
+    assert dups == []
+
+
+def test_the_duplicate_list_is_optional(tmp_path):
+    """Every existing caller passes one argument, and a repeated key must not
+    become an error for them."""
+    csv_path = tmp_path / "map.csv"
+    csv_path.write_text("SERIAL1,a@example.com\nSERIAL1,b@example.com\n")
+    assert derive.load_identity_map(str(csv_path))["SERIAL1"] == "b@example.com"

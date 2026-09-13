@@ -562,6 +562,11 @@ _last_loki_error_at: float = 0.0
 # on every derived response and in the evidence manifest, because a count
 # computed over a sample must never present itself as a total (issue #104).
 _last_read_truncated: bool = False
+# Keys the identity map CSV defines twice, from the most recent read. Kept so
+# the warning is not repeated on every read and so Diagnostics can name them:
+# a support conversation about "why is this device attributed to the wrong
+# person" ends here.
+_identity_map_dups: set = set()
 
 
 def _redact_url(url):
@@ -729,7 +734,22 @@ def _identity_map(request) -> dict:
     unattributed, which is a state this product renders honestly, and
     refusing to draw the estate over it would be worse.
     """
-    out = derive.load_identity_map(IDENTITY_MAP) if IDENTITY_MAP else {}
+    dups = []
+    out = derive.load_identity_map(IDENTITY_MAP, dups) if IDENTITY_MAP else {}
+    # Said once per distinct key rather than once per read: this runs behind
+    # every derived response, and a warning on a loop is a warning nobody
+    # reads. A duplicated key is a person attributed to whichever row came
+    # last, on a report somebody acts on, and before this it was completely
+    # silent - the file parses, the estate draws, and the only way to notice
+    # was to already suspect it.
+    global _identity_map_dups
+    if dups and set(dups) - _identity_map_dups:
+        for key in sorted(set(dups) - _identity_map_dups):
+            log.warning(
+                "identity map %s: key %r appears more than once; the last row "
+                "wins and the earlier attribution is discarded",
+                IDENTITY_MAP, key)
+    _identity_map_dups = set(dups)
     if not LOGIN_MODE or request is None:
         return out
     now = time.time()
@@ -1171,6 +1191,7 @@ def diagnostics(request: Request, _=Depends(require_auth)):
             "registry_path": REGISTRY_PATH,
             "identity_map_configured": bool(
                 IDENTITY_MAP and Path(IDENTITY_MAP).exists()),
+            "identity_map_duplicate_keys": sorted(_identity_map_dups),
             "grafana_configured": bool(GRAFANA_URL),
             "grafana_panels": len([w for w in _widgets()
                                    if w["kind"] == "grafana"]),

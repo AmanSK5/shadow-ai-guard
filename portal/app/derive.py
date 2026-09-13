@@ -213,7 +213,7 @@ def load_domain_map_from(reg):
     return out
 
 
-def load_identity_map(path):
+def load_identity_map(path, duplicates=None):
     """key,identity CSV. The key is a device or a local username, because
     which one a deployer can supply depends entirely on what they run: an MDM
     keys on serial, an RMM might only know a hostname, and a small team may
@@ -222,7 +222,15 @@ def load_identity_map(path):
     This platform does not resolve identity itself. It carries enough for a
     deployer to resolve it against whatever they have, and a device with no
     mapping stays unattributed, which is a legitimate answer rather than a
-    failure."""
+    failure.
+
+    A key that appears twice keeps the last row, and the key is appended to
+    `duplicates` when a list is passed. Last-wins is not a decision about
+    which row is right - neither is - it is the behaviour this has always
+    had, and changing which one wins would move people between reports for
+    deployments that already carry a duplicate. What was wrong was doing it
+    in silence: a repeated key means somebody is attributed to whoever came
+    last in a file nobody re-reads, and nothing anywhere said so."""
     if not path:
         return {}
     out = {}
@@ -253,6 +261,8 @@ def load_identity_map(path):
             if len(parts) == 2 and parts[0] and parts[1]:
                 if parts[0].lower() in ("key", "device", "local_user"):
                     continue  # header
+                if parts[0] in out and duplicates is not None:
+                    duplicates.append(parts[0])
                 out[parts[0]] = parts[1]
     return out
 
