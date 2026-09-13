@@ -40,6 +40,18 @@ Env:
   DRY_RUN                               (set to print candidates, emit nothing)
   DEBUG                                 (set to log the domains sent for
                                          classification)
+  AIGUARD_RUN_INTERVAL                  (unset or 0 - the CronJob - runs one
+                                         pass and exits; a value like 7d keeps
+                                         the container and runs on that gap,
+                                         which is how Compose runs this at all)
+  AIGUARD_HEALTH_FILE                   (where the last successful pass is
+                                         recorded, default
+                                         /tmp/ai-guard-health.json; --health
+                                         reads it back, and is what the
+                                         container healthcheck runs)
+
+On an interval a failed pass is recorded and retried rather than exiting; see
+schedule.py for why.
 """
 
 import json
@@ -54,6 +66,8 @@ from pathlib import Path
 
 import httpx
 import yaml
+
+import schedule
 
 S1_BASE = os.environ.get("S1_BASE_URL", "").rstrip("/")
 S1_TOKEN = os.environ.get("S1_API_TOKEN", "")
@@ -630,4 +644,6 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    if "--health" in sys.argv[1:]:
+        sys.exit(schedule.health_exit_code())
+    sys.exit(schedule.run_scheduled(main, say=print, name="discovery"))

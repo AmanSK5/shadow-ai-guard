@@ -26,10 +26,20 @@ Environment:
   CORPORATE_DOMAIN       example.com
   AIGUARD_*              scanner credentials, from the ai-guard-scanner secret
   DRY_RUN                if set, print the payloads instead of POSTing
+  AIGUARD_RUN_INTERVAL   unset or 0 (the CronJob) runs one pass and exits;
+                         a value like 24h keeps the container and scans on
+                         that gap, which is how Compose runs this at all
+  AIGUARD_HEALTH_FILE    where the last successful pass is recorded
+                         (default /tmp/ai-guard-health.json); `--health`
+                         reads it back and is what the container healthcheck
+                         runs
 
 Exit codes:
   0  scan completed, findings reported (or none found)
   1  enrollment refused, no scanner could run, or any finding failed to report
+
+On an interval a failed pass is recorded and retried rather than exiting;
+see schedule.py for why.
 """
 from __future__ import annotations
 
@@ -49,6 +59,7 @@ from ai_guard.scanners.intune import IntuneScanner
 from ai_guard.scanners.jamf import JAMFScanner
 from ai_guard.scanners.sentinelone import SentinelOneScanner
 
+import schedule
 from receiver_reporter import (DEVICE_PREFIX, ENROLL_PREFIX, EnrollmentError,
                                ReceiverReporter, resolve_credential)
 
@@ -172,4 +183,9 @@ def _exit_code(sent: int, failed: int) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(asyncio.run(run()))
+    if "--health" in sys.argv[1:]:
+        sys.exit(schedule.health_exit_code())
+    # A fresh event loop per pass: nothing is carried between scans on
+    # purpose, so a long-lived container behaves like a fresh CronJob pod.
+    sys.exit(schedule.run_scheduled(
+        lambda: asyncio.run(run()), say=log.info, name="scanner"))

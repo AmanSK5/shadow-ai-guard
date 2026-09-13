@@ -36,9 +36,17 @@ COPY pyproject.toml README.md ./
 COPY ai_guard/ ./ai_guard/
 RUN pip install --no-cache-dir --no-deps .
 
-COPY receiver_reporter.py entrypoint.py policy.yaml ./
+COPY receiver_reporter.py schedule.py entrypoint.py policy.yaml ./
 
 # Non-root, matching the receiver's securityContext.
 USER 65532:65532
+
+# Only meaningful when AIGUARD_RUN_INTERVAL keeps the container alive - a
+# CronJob pod exits and Kubernetes ignores this anyway. It reports on the last
+# SUCCESSFUL pass, because a loop that runs and achieves nothing looks
+# identical to a working one from out here. The start period covers a first
+# scan that is slow rather than stuck.
+HEALTHCHECK --interval=60s --timeout=10s --start-period=10m --retries=2 \
+  CMD ["python", "entrypoint.py", "--health"]
 
 ENTRYPOINT ["python", "-u", "entrypoint.py"]

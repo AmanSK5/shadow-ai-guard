@@ -173,6 +173,79 @@ services:
       retries: 6
 
   # --------------------------------------------------------------------------
+  # The two scheduled components.
+  #
+  # Under Kubernetes these are CronJobs and the cluster owns the timing.
+  # Compose has no scheduler - there is no `schedule:` key - so here they are
+  # ordinary services that keep their own: AIGUARD_RUN_INTERVAL is the gap
+  # between passes, and the same image still runs a single pass and exits when
+  # it is unset, which is what the CronJob asks for.
+  #
+  # Both report as a scanner, so both want an enrollment token from the portal
+  # (Coverage -> Enrollment) written to a file beside auth_token. The state
+  # volume keeps the device credential each one is issued in return, so they
+  # enroll once rather than once a day.
+  # --------------------------------------------------------------------------
+
+  # Cloud-side scanning: Entra, Exchange, Intune, Jamf, SentinelOne. Which of
+  # them run is policy, and a scanner with no credentials configured skips
+  # itself, so this is on by default and costs an idle container until you
+  # give it something to look at.
+  scanner:
+    image: ghcr.io/amansk5/shadow-ai-guard/scanner:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      RECEIVER_URL: http://receiver:8080
+      AIGUARD_REGISTRY_URL: http://receiver:8080/registry
+      AIGUARD_SCANNER_ID: ${SCANNER_ID:-scanner}
+      AIGUARD_STATE_DIR: /var/lib/ai-guard
+      AIGUARD_RUN_INTERVAL: ${SCAN_INTERVAL:-24h}
+      CORPORATE_DOMAIN: ${CORP_DOMAINS:-}
+      DISPLAY_TZ: ${DISPLAY_TZ:-UTC}
+    env_file:
+      # RECEIVER_TOKEN, plus the scanner credentials - AIGUARD_ENTRA_*,
+      # AIGUARD_JAMF_* and the rest. Kept out of .env so the file holding
+      # credentials is its own, and gitignored. Absent is fine: each scanner
+      # checks its own prerequisites and says so in the log rather than
+      # failing the pass.
+      - path: ./scanner.env
+        required: false
+    volumes:
+      - scanner-state:/var/lib/ai-guard
+    depends_on:
+      receiver:
+        condition: service_healthy
+
+  # DNS-based discovery of AI tools the registry has never heard of. Needs
+  # SentinelOne Deep Visibility and an Anthropic key to classify what it
+  # finds, so it stays behind a profile: switching it on for everyone would
+  # mean a container failing in a loop on every deployment that was never
+  # going to use it.
+  #
+  #     docker compose --profile discovery up -d
+  discovery:
+    profiles: [discovery]
+    image: ghcr.io/amansk5/shadow-ai-guard/discovery:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      RECEIVER_URL: http://receiver:8080
+      AIGUARD_SCANNER_ID: ${DISCOVERY_ID:-discovery}
+      AIGUARD_STATE_DIR: /var/lib/ai-guard
+      AIGUARD_RUN_INTERVAL: ${DISCOVERY_INTERVAL:-7d}
+      S1_BASE_URL: ${S1_BASE_URL:-}
+      MIN_DEVICES: ${MIN_DEVICES:-1}
+    env_file:
+      # RECEIVER_TOKEN, S1_API_TOKEN and ANTHROPIC_API_KEY. Same treatment as
+      # the scanner's: its own gitignored file rather than .env.
+      - path: ./discovery.env
+        required: false
+    volumes:
+      - discovery-state:/var/lib/ai-guard
+    depends_on:
+      receiver:
+        condition: service_healthy
+
+  # --------------------------------------------------------------------------
   # Only with `--profile with-logs`. For someone who has no log store yet.
   # If you already run Loki, or anything that takes JSON lines, do not use
   # these: point LOKI_PUSH_URL and LOKI_URL at what you have.
@@ -232,5 +305,9 @@ services:
 volumes:
   registry-dist:
   managed-state:
+  # One per scheduled component, holding the device credential it enrolled
+  # with. Shared would mean the two of them overwriting each other's.
+  scanner-state:
+  discovery-state:
   loki-data:
   grafana-data:

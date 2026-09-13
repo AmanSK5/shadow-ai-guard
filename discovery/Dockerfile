@@ -20,6 +20,14 @@ RUN apt-get update \
 WORKDIR /srv
 COPY requirements.lock .
 RUN pip install --no-cache-dir --require-hashes -r requirements.lock
-COPY discover.py allowlist.txt ./
+COPY discover.py schedule.py allowlist.txt ./
 USER 65532:65532
-CMD ["python", "discover.py"]
+
+# See the scanner's Dockerfile: this reports on the last successful pass, and
+# only means anything when AIGUARD_RUN_INTERVAL keeps the container alive. The
+# start period is longer here because a first pass pulls seven days of DNS
+# events and then classifies the residue.
+HEALTHCHECK --interval=60s --timeout=10s --start-period=20m --retries=2 \
+  CMD ["python", "discover.py", "--health"]
+
+CMD ["python", "-u", "discover.py"]

@@ -19,6 +19,8 @@ registry/dist/
 # Secrets. The compose route reads these from files rather than the
 # environment, so the files exist on a deployer's disk and must never be here.
 deploy/compose/secrets/
+deploy/compose/scanner.env
+deploy/compose/discovery.env
 *.pem
 *.key
 *.pfx
