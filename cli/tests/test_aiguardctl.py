@@ -192,7 +192,8 @@ def test_the_command_has_no_third_party_dependencies():
             if line.startswith(("import ", "from ")) and not line.startswith("from ."):
                 mod = line.split()[1].split(".")[0]
                 assert mod in {"json", "urllib", "hashlib", "secrets", "time", "webbrowser", "shutil",
-                               "subprocess", "argparse", "sys", "__future__"}, line
+                               "subprocess", "argparse", "sys", "__future__",
+                               "os", "re", "base64", "tempfile", "datetime", "pathlib"}, line
 
 
 def test_verify_waits_through_a_restart_and_a_timed_out_read():
