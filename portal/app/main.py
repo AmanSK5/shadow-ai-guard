@@ -2060,6 +2060,7 @@ def api_upgrade_plan(request: Request):
     return {"receiver_version": out.get("receiver_version"),
             "approved": out.get("approved"),
             "portal_version": APP_VERSION,
+            "activation": out.get("activation"),
             "latest": u["latest"], "latest_url": u["url"],
             "route_hint": u["route"], "deployment": u["deployment"],
             "image_repository": "ghcr.io/amansk5/shadow-ai-guard",

@@ -153,6 +153,21 @@ def test_an_upgrade_token_opens_the_upgrade_routes_and_nothing_else(managed):
     ).status_code == 401
 
 
+def test_the_plan_says_what_the_stored_key_says_and_never_the_key(managed):
+    owner = _owner()
+    verifier, grant = _ask()
+    client.post("/admin/cli/approve", headers=_hdr(owner),
+                json={"user_code": grant["user_code"], "approve": True})
+    token = _poll(grant, verifier).json()["token"]
+    assert client.get("/admin/upgrade/plan", headers=_hdr(token)).json()["activation"] == {"state": "none"}
+    stored = "nyxl_eyJ2IjoxfQ.bm90LWEtc2lnbmF0dXJl"
+    managed.set_setting("activation_key", stored, "aman")
+    plan = client.get("/admin/upgrade/plan", headers=_hdr(token))
+    assert plan.json()["activation"]["state"] == "invalid"
+    assert plan.json()["activation"]["fingerprint"]
+    assert stored not in plan.text
+
+
 def test_one_run_per_token_with_steps_the_portal_can_read(managed):
     owner = _owner()
     verifier, grant = _ask()

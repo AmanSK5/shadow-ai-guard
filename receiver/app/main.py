@@ -1724,7 +1724,12 @@ def upgrade_plan(authorization: str = Header(default="")):
     else:
         g = _upgrade_auth(authorization)
         approved = {"by": g["username"], "token_expires_at": g["token_expires_at"]}
-    return {"receiver_version": APP_VERSION, "approved": approved}
+    # What the stored activation key says, for `aiguardctl upgrade --edition
+    # nyxus`: it checks the key it was handed is this one, by fingerprint, and
+    # reads the registry from the claims. The same view System health shows;
+    # the key itself is never in it.
+    return {"receiver_version": APP_VERSION, "approved": approved,
+            "activation": _activation_view()}
 
 
 @app.post("/admin/upgrade/runs")
