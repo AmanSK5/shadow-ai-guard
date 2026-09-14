@@ -447,6 +447,47 @@ portal at run time, and there is no `curl | sh`. It shells out to the
 operator's own `helm`, `kubectl` and `docker`, found on their PATH, rather
 than embedding any of them.
 
+### Moving to Nyxus
+
+`aiguardctl upgrade --edition nyxus` is the same command under the same
+authorisation - an owner approves one grant, the token opens the upgrade
+routes and nothing else, progress carries step names and never output - and
+it adds two things an upgrade does not have: a credential, and a larger set
+of objects. [docs/upgrading-to-nyxus.md](docs/upgrading-to-nyxus.md) is the
+operator's account; this is what holds what.
+
+**The key.** The activation key is the registry credential. The command reads
+it from `NYXUS_KEY` or a file named with `--key-file`, never from its own
+arguments, and hands it on only on standard input (`helm registry login`,
+`docker login`) or inside a file created readable by this user alone and
+removed as soon as `kubectl` has read it (the pull secret). It is never
+printed, never put in a command's arguments, never in a progress report.
+Before anything changes, the command compares the key's fingerprint with the
+fingerprint of the key stored in the deployment, which the upgrade plan
+returns with the key's other claims - never the key - and stops unless they
+match and the stored key is active. The registry it pulls from is the host
+named in the stored key's claims.
+
+**What it touches.** On Helm, only the release it detected: it reads the
+release's values and manifest, backs the database up inside the receiver's
+own pod, copies the Secrets that release made into Secrets it names
+(`nyxus-carried-*`), creates `nyxus-registry`, scales that release's
+Deployments to zero, uninstalls that release and installs Nyxus in the same
+namespace on the same storage claim. On Compose, only the services of the
+project it detected, whose images are this project's own: it writes into the
+directory holding Nyxus's compose file and refuses to overwrite anything
+there, backs the database up inside the receiver's container, stops those
+services and starts Nyxus's under the same project name. The database and
+its storage are never removed.
+
+**If something is compromised.** A tampered plan could name a wrong registry
+host; the key still goes only to the host the stored key names, only after
+the fingerprint matches, and the plan is shown before anything runs. A
+receiver or portal process could mint itself a token, as for an upgrade, and
+still holds nothing that reaches the cluster or the host. The operator's
+machine remains the boundary: the key is in the shell because the operator
+put it there.
+
 ## Activation keys
 
 The open edition is complete and nothing in it is gated. An activation key

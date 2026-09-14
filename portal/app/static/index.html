@@ -6472,24 +6472,22 @@ function activationCard() {
     : a.state === 'invalid' ? ['p-warn', 'cannot be checked']
     : a.state === 'unknown' ? ['p-mut', 'not read']
     : ['p-mut', 'open edition'];
-  const ns = (DIAG.deployment && DIAG.deployment.namespace) || '<namespace>';
-  const reg = a.registry || '<registry>';
-  const known = !!a.registry;
   const soon = a.state === 'active' && a.days_left <= 45;
 
   // Everything the operator runs, they run themselves. The portal has no
   // registry credential of its own and no rights over the deployment: it
-  // knows what the key says and writes the commands out.
-  const steps = `<details class="how ui-how"><summary>Move this deployment to Nyxus</summary><div class="ui-steps">
-    <p>The images are private, and your activation key is the credential that pulls them. Nothing below runs from this page: it runs with your own kubeconfig, on your own machine, the same way an upgrade does.</p>
+  // knows what the key says, and the command does the moving - on the
+  // operator's machine, approved here by an owner, like an upgrade.
+  const steps = a.state !== 'active' ? '' : `<details class="how ui-how"><summary>Move this deployment to Nyxus</summary><div class="ui-steps">
+    <p>One command moves this deployment to Nyxus in place. It keeps this receiver's database, so accounts, decisions, enrolled devices and settings come across, and the findings already in your log store stay readable. It runs on your own machine with your own kubeconfig or Docker, and an owner approves it on this page first.</p>
     <ol class="ui-steplist">
-      <li><b>Put the key in your shell.</b>${uiCommand("export NYXUS_KEY='<your activation key>'")}<span>The portal does not hand it back - it is a credential - so this is the key you pasted above.</span></li>
-      <li><b>Give the cluster a pull secret.</b>${uiCommand(`kubectl -n ${ns} create secret docker-registry nyxus-registry \\
-  --docker-server=${reg} --docker-username=licence --docker-password="$NYXUS_KEY"`)}${known ? '' : '<span>Your welcome message names the registry to use in place of the placeholder.</span>'}</li>
-      <li><b>Install the chart, pointing at that secret.</b>${uiCommand(`helm upgrade --install nyxus oci://${reg}/charts/nyxus \\
-  --namespace ${ns} --set imagePullSecrets[0].name=nyxus-registry`)}<span>Your data stays where it is. The receiver and the portal restart; collectors keep reporting through it.</span></li>
+      <li><b>Install aiguardctl</b><span>The same command that upgrades this deployment; see Upgrade on this page.</span></li>
+      <li><b>Put the key in your shell.</b>${uiCommand("export NYXUS_KEY='<your activation key>'")}<span>The portal does not hand it back - it is a credential. The command checks it is the key stored here before using it, and never puts it on a command line.</span></li>
+      <li><b>See the plan.</b>${uiCommand('aiguardctl upgrade --edition nyxus --portal ' + location.origin + ' --nyxus-version <version> --dry-run')}<span>Every command, in order, and what each keeps. Nothing runs and nothing is approved.</span></li>
+      <li><b>Run it.</b>${uiCommand('aiguardctl upgrade --edition nyxus --portal ' + location.origin + ' --nyxus-version <version>')}<span>It backs up the database, stops Shadow AI Guard and starts Nyxus on the same data. On Docker Compose, add <code>--nyxus-compose-file</code> with the path to Nyxus's compose file.</span></li>
+      <li><b>Then the endpoints.</b><span>Replace the collector scripts in your MDM with Nyxus's, in the same policies. Each machine keeps its identity.</span></li>
     </ol>
-    <p class="src-note">The chart version and the exact registry path come with the subscription. If a pull is refused, the pull secret is the first thing to check: <span class="mono">kubectl -n ${esc(ns)} get secret nyxus-registry</span>.</p>
+    <p class="src-note">The version comes with your subscription. If the key in your shell is not the one stored here, the command stops before changing anything.</p>
   </div></details>`;
 
   // A read that failed says so. "No subscription" is a statement about
@@ -6518,7 +6516,7 @@ function activationCard() {
 
   const note = a.state === 'active'
     ? (soon ? `<p class="health-note warning">This subscription runs out on ${esc(a.expires)}. Renewing replaces the key here; nothing stops working on the day, because nothing here was ever switched on by it - the images simply stop being yours to pull.</p>` : '')
-    : a.state === 'expired' ? `<p class="health-note warning">This key lapsed on ${esc(a.expires)}. The deployment carries on exactly as it is; a lapsed subscription means no new images and no support, not a portal that stops. Renew and paste the new key.</p>`
+    : a.state === 'expired' ? `<p class="health-note warning">This key lapsed on ${esc(a.expires)}. The deployment carries on exactly as it is; a lapsed subscription means no new images and no support, not a portal that stops. Renew and paste the new key; moving this deployment to Nyxus needs an active one.</p>`
     : a.state === 'invalid' ? `<p class="health-note danger"><b>Stored, but this release cannot check it.</b> ${esc(a.reason || '')} This is what a reissued signing key looks like from a deployment that has not taken the release carrying it: upgrade first, and only then suspect the key.</p>`
     : `<p class="health-note">This deployment runs the open edition, and it is complete: nothing on this page or any other is held back for want of a key. Nyxus is the commercial edition of the same system - the same collectors, the same evidence - distributed as private images under a subscription with support. An activation key names the organisation it was issued to and the term it runs for, and is checked here against a signature this portal already holds, without asking anyone.</p>`;
 
@@ -6543,7 +6541,7 @@ function activationCard() {
     ${facts}
     ${note}
     ${ACTMSG ? `<p class="health-note ${ACTMSG.ok ? '' : 'danger'}">${esc(ACTMSG.text)}</p>` : ''}
-    ${a.state === 'active' || a.state === 'expired' ? steps : ''}
+    ${steps}
     ${form}
   </section>`;
 }

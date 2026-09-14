@@ -26,7 +26,8 @@ def login_mode(monkeypatch):
     def fake(base, method, path, token, body=None):
         calls.append({"method": method, "path": path, "token": token, "body": body})
         if path == "/admin/upgrade/plan":
-            return {"receiver_version": "0.28.0", "approved": {"by": "aman"}}
+            return {"receiver_version": "0.28.0", "approved": {"by": "aman"},
+                    "activation": {"state": "active", "fingerprint": "1f35-3860-0215", "registry": "registry.nyxus.co.uk"}}
         return {"ok": True}
     monkeypatch.setattr(main, "RECEIVER_URL", "http://receiver:8080")
     monkeypatch.setattr(main.managed, "receiver_request", fake)
@@ -87,6 +88,7 @@ def test_the_plan_joins_what_the_portal_knows_to_what_the_receiver_says(login_mo
     assert plan["latest"] == "v0.29.0" and plan["approved"] == {"by": "aman"}
     assert plan["image_repository"] == "ghcr.io/amansk5/shadow-ai-guard"
     assert plan["chart"].startswith("oci://ghcr.io/amansk5/shadow-ai-guard/charts/")
+    assert plan["activation"] == {"state": "active", "fingerprint": "1f35-3860-0215", "registry": "registry.nyxus.co.uk"}
     with pytest.raises(HTTPException) as e:
         main.api_upgrade_plan(_req())
     assert e.value.status_code == 401
@@ -101,6 +103,15 @@ def test_the_page_carries_the_approval_view_and_the_tracker():
     assert "function upgradeTracker()" in INDEX and "function upgradeWatch()" in INDEX
     assert "<b>Portal restarting</b>" in INDEX
     assert "uiCommand('aiguardctl upgrade --portal ' + location.origin)" in INDEX
+
+
+def test_moving_to_nyxus_is_one_command_that_keeps_the_data():
+    card = INDEX.split("function activationCard()", 1)[1].split("\nfunction ", 1)[0]
+    assert "aiguardctl upgrade --edition nyxus --portal ' + location.origin" in card
+    assert "export NYXUS_KEY=" in card
+    # the old steps installed a second release beside this one, on new storage
+    assert "helm upgrade --install nyxus" not in card
+    assert '--docker-password="$NYXUS_KEY"' not in card
 
 
 def test_the_portal_still_runs_nothing():
