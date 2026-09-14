@@ -55,10 +55,26 @@ Options: `--dry-run` prints the plan and runs and approves nothing;
 `--version` targets a release other than the latest; `--kubernetes` or
 `--compose` stops it looking at the other.
 
+## Move to Nyxus
+
+    export NYXUS_KEY='<your activation key>'
+    aiguardctl upgrade --edition nyxus --portal https://ai-guard-portal.example.com --nyxus-version <version>
+
+Moves the deployment to Nyxus in place: the receiver's database, its storage
+and its credentials are kept, and Nyxus reads the findings already in your
+log store. The key is read from `NYXUS_KEY` or `--key-file`, checked against
+the key stored in the deployment, and never put on a command line. On Helm it
+backs up the database, carries the release's Secrets, uninstalls the release
+and installs Nyxus on the same storage claim; on Docker Compose, name Nyxus's
+compose file with `--nyxus-compose-file`, in a directory of its own.
+`--nyxus-release` names the Helm release. `--dry-run` shows every step first.
+The full account is [docs/upgrading-to-nyxus.md](../docs/upgrading-to-nyxus.md).
+
 ## What it will not do
 
 Touch an object without the chart's labels or this project's image. Run a
-command it did not show you. Send command output to the portal. Keep the
-token: it lives in memory for one run and is retired when the run finishes.
-Upgrade a compose project whose images were built locally rather than
-pulled from the registry - it says so and stops.
+command it did not show you. Put an activation key on a command line. Send
+command output to the portal. Keep the token: it lives in memory for one run
+and is retired when the run finishes. Upgrade a compose project whose images
+were built locally rather than pulled from the registry - it says so and
+stops.
