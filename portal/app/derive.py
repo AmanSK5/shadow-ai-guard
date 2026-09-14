@@ -30,6 +30,7 @@ first-class state and not an error - a small team with no MDM still gets
 useful without a name on it.
 """
 
+import bisect
 import csv
 import io
 import json
@@ -37,10 +38,12 @@ import math
 import os
 import re
 import sys
+import threading
 import time
 import urllib.parse
 import urllib.request
 from collections import defaultdict
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from datetime import datetime, timedelta, timezone
 
 from app import governance
@@ -84,10 +87,20 @@ class Findings(list):
     """
 
     truncated = False
+    # The Loki timestamp of each finding, aligned with the list. The
+    # incremental reader keys on these; a plain list has none.
+    timestamps = ()
+
+
+# How long one parallel span of a read is. Short enough that the newest spans
+# alone usually reach the cap on a busy estate, so the older ones are never
+# asked for; long enough that a quiet week is a handful of requests.
+READ_SPAN_NS = 6 * 3600 * 10**9
 
 
 def fetch_from_loki(base, hours, token=None, limit=5000, username=None,
-                    password=None, max_findings=100_000):
+                    password=None, max_findings=100_000, parallel=1,
+                    start_ns=None, end_ns=None):
     """Pull findings from Loki, paginating until the window is exhausted.
 
     Loki caps one query_range response at `limit` entries. The old single
@@ -113,18 +126,31 @@ def fetch_from_loki(base, hours, token=None, limit=5000, username=None,
     which only sends credentials after a 401 with a realm it recognises -
     Grafana Cloud answers 401 without one, so the retry never carried the
     header.
+
+    parallel > 1 splits the window into six-hour spans and walks several at
+    once, newest first. One page at a time made a read's cost the number of
+    pages times one round trip - twenty in series for a capped window - and
+    Loki answers a page in about the same time wherever it sits in the
+    window, so the pages were only ever waiting on each other. Spans are
+    merged newest first, and the cap still means the newest max_findings:
+    once the newest completed spans hold that many, no older span is asked
+    for, and whether anything older existed is answered with one entry
+    rather than assumed.
+
+    start_ns and end_ns replace the window with an exact one, for a reader
+    that already holds everything older.
     """
     import base64
 
-    end = int(time.time() * 1e9)
-    start = end - int(hours * 3600 * 1e9)
+    end = int(time.time() * 1e9) if end_ns is None else int(end_ns)
+    start = end - int(hours * 3600 * 1e9) if start_ns is None else int(start_ns)
 
-    def page(page_end):
+    def page(page_start, page_end, page_limit=limit):
         params = urllib.parse.urlencode({
             "query": '{app="ai-guard-receiver", kind="finding"}',
-            "start": start,
+            "start": page_start,
             "end": page_end,
-            "limit": limit,
+            "limit": page_limit,
             "direction": "backward",
         })
         req = urllib.request.Request(
@@ -147,22 +173,184 @@ def fetch_from_loki(base, hours, token=None, limit=5000, username=None,
                     continue
         return entries, raw
 
-    out = Findings()
-    page_end = end
-    while True:
-        entries, raw = page(page_end)
-        out.extend(e for _, e in entries)
-        if raw < limit:
-            break  # a short page: the window is exhausted
-        if len(out) >= max_findings:
-            out.truncated = True
-            break
-        oldest = min((ts for ts, _ in entries), default=None)
-        if oldest is None or oldest <= start:
-            break
-        page_end = oldest - 1
+    def walk(walk_start, walk_end):
+        """One span, newest first: (entries, whether it stopped at the cap)."""
+        got = []
+        page_end = walk_end
+        while True:
+            entries, raw = page(walk_start, page_end)
+            # Loki groups a page by stream, so inside one page the order is
+            # per label set rather than by time. Sorted, a span is newest
+            # first end to end, which the merge below depends on.
+            entries.sort(key=lambda e: e[0], reverse=True)
+            got.extend(entries)
+            if raw < limit:
+                return got, False  # a short page: the span is exhausted
+            if len(got) >= max_findings:
+                return got, True
+            if not entries or entries[-1][0] <= walk_start:
+                return got, False
+            page_end = entries[-1][0] - 1
+
+    spans = 1
+    if parallel > 1 and end > start:
+        spans = min(64, max(1, math.ceil((end - start) / READ_SPAN_NS)))
+
+    if spans == 1:
+        got, truncated = walk(start, end)
+    else:
+        width = (end - start) // spans
+        # Span i covers (edges[i + 1], edges[i]]; the last one reaches start.
+        edges = [end - i * width for i in range(spans)] + [start - 1]
+        results, pending = {}, {}
+        submitted = prefix = prefix_count = 0
+        with ThreadPoolExecutor(max_workers=parallel) as pool:
+            while True:
+                while (submitted < spans and len(pending) < parallel
+                       and prefix_count < max_findings):
+                    fut = pool.submit(walk, edges[submitted + 1] + 1,
+                                      edges[submitted])
+                    pending[fut] = submitted
+                    submitted += 1
+                if not pending:
+                    break
+                done, _ = wait(pending, return_when=FIRST_COMPLETED)
+                for fut in done:
+                    results[pending.pop(fut)] = fut.result()
+                while prefix in results:
+                    prefix_count += len(results[prefix][0])
+                    prefix += 1
+        # Only the unbroken run of spans from the newest counts: a finished
+        # older span beyond it is older than findings the cap already keeps.
+        got = [e for i in range(prefix) for e in results[i][0]]
+        truncated = (len(got) > max_findings
+                     or any(results[i][1] for i in range(prefix)))
+        if not truncated and prefix < spans:
+            # Stopped at exactly the cap with older spans never asked for:
+            # one entry says whether the window held more.
+            truncated = page(start, edges[prefix], 1)[1] > 0
+        del got[max_findings:]
+
+    out = Findings(doc for _, doc in got)
+    out.timestamps = [ts for ts, _ in got]
+    out.truncated = truncated
     return out
 
+
+class IncrementalLokiReader:
+    """Keeps the window in memory and asks Loki only for what is new.
+
+    Every refresh used to read the whole window again: a week of findings,
+    parsed from scratch, while the previous copy was still referenced by the
+    views built from it. On a large estate that was seconds per refresh and
+    two copies of the window in memory at the moment of the swap - the
+    portal was OOMKilled at 256Mi with about 65,000 findings in the window,
+    and again at 512Mi above the cap.
+
+    The first read is a full one. After that a read fetches from shortly
+    before the end of the last one - the overlap covers a finding pushed
+    while that read was in flight - drops what it already holds by
+    timestamp (receiver timestamps are time_ns() at ingest, so they are
+    unique), and ages out what has left the window. The cap is kept by
+    evicting the oldest, and truncation is reported for any window reaching
+    older than what is held.
+
+    A full read happens again when the log store or its credentials change,
+    when a wider window is asked for than the one held, when more than the
+    cap arrived since the last read, and every resync_seconds regardless -
+    so a finding the log store no longer has (retention, a restored volume)
+    stops being shown within that interval rather than never.
+    """
+
+    def __init__(self, overlap_seconds=120, resync_seconds=3600,
+                 clock=time.time):
+        self.overlap_ns = int(overlap_seconds * 1e9)
+        self.resync_seconds = resync_seconds
+        self.clock = clock
+        self._lock = threading.Lock()
+        self._reset()
+
+    def _reset(self):
+        self.key = None
+        self.entries = []   # (ts_ns, finding), oldest first
+        self.hours = 0
+        self.covered_to = 0
+        self.floor = 0      # the oldest ts this store is complete from
+        self.capped = False
+        self.full_at = None
+        self.last = {"mode": "", "new": 0}
+
+    def read(self, key, fetch, hours, max_findings):
+        """fetch(start_ns=..., end_ns=...) is fetch_from_loki with everything
+        but the window bound. key identifies the log store it reads."""
+        with self._lock:
+            now = self.clock()
+            end = int(now * 1e9)
+            want = end - int(hours * 3600 * 1e9)
+            incremental = (key == self.key and self.full_at is not None
+                           and hours <= self.hours
+                           and now - self.full_at < self.resync_seconds)
+            if incremental:
+                since = max(self.covered_to - self.overlap_ns, self.floor)
+                new = fetch(start_ns=since, end_ns=end)
+                stamps = getattr(new, "timestamps", None)
+                if (stamps is None or len(stamps) != len(new)
+                        or getattr(new, "truncated", False)):
+                    incremental = False
+                else:
+                    held = set()
+                    for ts, _ in reversed(self.entries):
+                        if ts < since:
+                            break
+                        held.add(ts)
+                    fresh = sorted(((ts, doc) for ts, doc in zip(stamps, new)
+                                    if ts not in held), key=lambda e: e[0])
+                    if fresh and self.entries and fresh[0][0] < self.entries[-1][0]:
+                        # Something arrived late inside the overlap: merge the
+                        # tail rather than append out of order.
+                        cut = bisect.bisect_left(self.entries, fresh[0][0],
+                                                 key=lambda e: e[0])
+                        tail = self.entries[cut:]
+                        del self.entries[cut:]
+                        fresh = sorted(tail + fresh, key=lambda e: e[0])
+                        added = len(fresh) - len(tail)
+                    else:
+                        added = len(fresh)
+                    self.entries.extend(fresh)
+                    self.covered_to = end
+                    self.last = {"mode": "incremental", "new": added}
+            if not incremental:
+                out = fetch(start_ns=want, end_ns=end)
+                stamps = getattr(out, "timestamps", None)
+                if stamps is None or len(stamps) != len(out):
+                    # A stand-in with no timestamps cannot be kept current.
+                    self._reset()
+                    return out
+                self.entries = sorted(zip(stamps, out), key=lambda e: e[0])
+                self.key, self.hours = key, hours
+                self.covered_to, self.full_at = end, now
+                self.capped = bool(getattr(out, "truncated", False))
+                self.floor = (self.entries[0][0] if self.capped and self.entries
+                              else want)
+                self.last = {"mode": "full", "new": len(out)}
+
+            cutoff = end - int(self.hours * 3600 * 1e9)
+            aged = bisect.bisect_left(self.entries, cutoff, key=lambda e: e[0])
+            del self.entries[:aged]
+            if len(self.entries) > max_findings:
+                del self.entries[:len(self.entries) - max_findings]
+                self.capped = True
+            if self.capped and self.entries:
+                self.floor = max(self.floor, self.entries[0][0])
+            else:
+                self.floor = max(self.floor, cutoff)
+
+            first = bisect.bisect_left(self.entries, want, key=lambda e: e[0])
+            view = self.entries[first:]
+            result = Findings(doc for _, doc in reversed(view))
+            result.timestamps = [ts for ts, _ in reversed(view)]
+            result.truncated = self.capped and want < self.floor
+            return result
 
 def load_domain_map(path):
     """domain -> tool id, from the registry.

@@ -83,6 +83,10 @@ credentials, and it reveals nothing about your estate.
 | `GRAFANA_PANELS` | no | `dashboardUid:panelId:Title`, semicolon separated |
 | `GRAFANA_DASHBOARD_UID` | no | embed a whole dashboard instead of panels |
 | `CACHE_TTL_SECONDS` | no | how long a derived graph is reused, default 30 |
+| `LOKI_MAX_FINDINGS` | no | the most findings one read holds, default 100000; a window with more is shown as truncated |
+| `LOKI_READ_PARALLELISM` | no | six-hour spans of the window read from Loki at once, default 1; can help a remote or slow log store, costs memory |
+| `LOKI_INCREMENTAL` | no | `off` re-reads the whole window on every read; on by default, which fetches only what is new |
+| `LOKI_RESYNC_SECONDS` | no | how often an incremental portal re-reads the whole window anyway, default 3600 |
 | `OVERVIEW_WIDGETS` | no | which widgets the overview shows, comma separated |
 | `DEPLOY_CHART_VERSION` | no | shown on the settings page, clearly unverified |
 | `DEPLOY_RELEASE` | no | as above |

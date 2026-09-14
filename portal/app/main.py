@@ -69,6 +69,14 @@ encryption.
                     set embeds the whole dashboard in one frame instead, which
                     needs no panel ids and survives someone rearranging them
   GRAFANA_DASHBOARD_UID  dashboard to embed whole, when no panels are listed
+  LOKI_MAX_FINDINGS the most findings one read holds, default 100000; a
+                    window with more is reported as truncated
+  LOKI_READ_PARALLELISM  how many six-hour spans of the window are read from
+                    Loki at once, default 1 (serial)
+  LOKI_INCREMENTAL  "off" re-reads the whole window on every read; on (the
+                    default) keeps it and fetches only what is new
+  LOKI_RESYNC_SECONDS  even incrementally, re-read the whole window this
+                    often, default 3600
   CACHE_TTL_SECONDS how long a derived graph is reused, default 30. It exists
                     to absorb a page refresh and clicking between tabs, not to
                     reduce load: Grafana runs one query per panel on every
@@ -81,6 +89,7 @@ encryption.
 import html
 import json
 import logging
+import hashlib
 import os
 import re
 import secrets
@@ -239,6 +248,21 @@ CACHE_TTL = int(os.environ.get("CACHE_TTL_SECONDS", "30"))
 # the whole window page by page and stops early only here - and says so.
 # Raise it for a very large fleet rather than living with a floor.
 LOKI_MAX_FINDINGS = int(os.environ.get("LOKI_MAX_FINDINGS", "100000"))
+# Spans of the window read at once; see derive.fetch_from_loki. Serial by
+# default: against a single Loki in a homelab cluster, 100,000 findings read in
+# 2.9 s serially, 2.8 s with four spans and 3.5 s with eight, while peak memory
+# went from 270 to 450 and 550 MiB - JSON parsing holds the GIL, so the threads
+# mostly queue behind one another. A log store that answers slowly per page,
+# far away or rate limited, is where it can pay.
+LOKI_READ_PARALLELISM = max(1, int(os.environ.get("LOKI_READ_PARALLELISM", "1")))
+# Keep the window and fetch only what arrived since the last read, instead of
+# parsing the whole week on every refresh. Measured on a 10,000-user synthetic
+# estate: a full read of a capped window took 3 s and the swap held two copies
+# of it, which is what OOMKilled the portal at 256Mi and again at 512Mi.
+LOKI_INCREMENTAL = os.environ.get("LOKI_INCREMENTAL", "on").strip().lower() \
+    not in ("0", "off", "false", "no")
+LOKI_RESYNC_SECONDS = int(os.environ.get("LOKI_RESYNC_SECONDS", "3600"))
+_loki_reader = derive.IncrementalLokiReader(resync_seconds=LOKI_RESYNC_SECONDS)
 
 # Which widgets the overview shows, in order. A deployment decision rather than
 # a per-user one: the portal holds no state and has no users to hold it
@@ -923,13 +947,30 @@ def _findings(hours, request=None):
     global _last_loki_ok, _last_loki_error, _last_read_truncated
     global _last_loki_error_at
     started = time.time()
-    try:
-        out = derive.fetch_from_loki(
+
+    def fetch(**window):
+        return derive.fetch_from_loki(
             # The bearer token is env configuration and belongs to the env
             # store; a portal-saved store authenticates with its own pair.
             url, hours, LOKI_TOKEN if source == "env" else None,
             username=username or None, password=password or None,
-            max_findings=LOKI_MAX_FINDINGS)
+            max_findings=LOKI_MAX_FINDINGS, parallel=LOKI_READ_PARALLELISM,
+            **window)
+
+    try:
+        if LOKI_INCREMENTAL:
+            # Which store, including its credentials: a changed password is a
+            # store this reader has not read, and the digest keeps the
+            # password itself out of anything held.
+            key = (source, url, username or "",
+                   hashlib.sha256((password or "").encode()).hexdigest())
+            out = _loki_reader.read(key, fetch, hours, LOKI_MAX_FINDINGS)
+            how = _loki_reader.last.get("mode") or "full"
+            if how == "incremental":
+                how = "incremental, %d new" % _loki_reader.last.get("new", 0)
+        else:
+            out = fetch()
+            how = "full"
         _last_loki_ok = time.time()
         # Where the time went, on the one line that can say. Working out
         # that a slow portal was a quadratic graph build rather than a slow
@@ -939,8 +980,8 @@ def _findings(hours, request=None):
         # getattr, like the line below it: a stubbed read returns a plain
         # list, and instrumentation must never be the thing that breaks a
         # read it was only meant to describe.
-        log.info("read %d findings over %.0fh in %.2fs%s", len(out), hours,
-                 _last_loki_ok - started,
+        log.info("read %d findings over %.0fh in %.2fs (%s)%s", len(out),
+                 hours, _last_loki_ok - started, how,
                  " (TRUNCATED at the cap)"
                  if getattr(out, "truncated", False) else "")
         _last_loki_error = ""
@@ -1176,6 +1217,10 @@ def diagnostics(request: Request, _=Depends(require_auth)):
             "loki_last_error": _last_loki_error,
             "loki_last_error_at": _last_loki_error_at or None,
             "loki_last_read_truncated": _last_read_truncated,
+            "loki_read": {"incremental": LOKI_INCREMENTAL,
+                          "parallelism": LOKI_READ_PARALLELISM,
+                          "resync_seconds": LOKI_RESYNC_SECONDS,
+                          "last": dict(_loki_reader.last)},
             "lookback_hours": LOOKBACK_HOURS,
             "cache_ttl_seconds": CACHE_TTL,
             "auth_mode": ("login" if LOGIN_MODE and PORTAL_AUTH != "none"
