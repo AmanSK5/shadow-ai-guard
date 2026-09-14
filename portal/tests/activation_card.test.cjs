@@ -21,6 +21,7 @@ function render(act, {role = 'owner', msg = null} = {}) {
   const c = vm.createContext({
     AUTH: {role},
     DIAG: {deployment: {namespace: 'ai-guard'}},
+    location: {origin: 'https://ai-guard-portal.example.com'},
     esc: escape,
     uiCommand: cmd => `<div class="ui-cmd"><code>${escape(cmd)}</code></div>`,
   });
@@ -64,20 +65,21 @@ test('an activated deployment shows what it bought, and never the key', () => {
   assert.doesNotMatch(out, /nyxl_/);
 });
 
-test('the commands name the deployment\'s own namespace and registry', () => {
+test('moving to Nyxus is one command against this portal, with the key from the shell', () => {
   const out = render(ACTIVE);
-  assert.match(out, /kubectl -n ai-guard create secret docker-registry nyxus-registry/);
-  assert.match(out, /--docker-server=registry\.example\.com/);
-  assert.match(out, /helm upgrade --install nyxus/);
-  // The key goes in from the operator's shell, never from the page.
+  assert.match(out, /Move this deployment to Nyxus/);
+  assert.match(out, /aiguardctl upgrade --edition nyxus --portal https:\/\/ai-guard-portal\.example\.com --nyxus-version &lt;version&gt; --dry-run/);
   assert.match(out, /export NYXUS_KEY=/);
+  // Not the old steps: a second release on new storage, and a key on a command line.
+  assert.doesNotMatch(out, /helm upgrade --install nyxus/);
+  assert.doesNotMatch(out, /--docker-password/);
   assert.doesNotMatch(out, /nyxl_/);
 });
 
-test('a key that names no registry says where the real one comes from', () => {
+test('a key that names no registry gets the same command, because the command reads the registry', () => {
   const out = render(Object.assign({}, ACTIVE, {registry: ''}));
-  assert.match(out, /&lt;registry&gt;/);
-  assert.match(out, /welcome message names the registry/);
+  assert.match(out, /aiguardctl upgrade --edition nyxus/);
+  assert.doesNotMatch(out, /&lt;registry&gt;/);
 });
 
 test('a subscription close to its end says so before it ends', () => {
@@ -96,8 +98,9 @@ test('an expired key is shown as genuine and lapsed, not as a forgery', () => {
   assert.match(out, /29 days ago/);
   assert.match(out, /Acme Group Ltd/);
   assert.match(out, /carries on exactly as it is/);
-  // Still worth showing the handoff: renewing is the point.
-  assert.match(out, /Move this deployment to Nyxus/);
+  // The move needs an active key, so it is named rather than offered.
+  assert.match(out, /moving this deployment to Nyxus needs an active one/);
+  assert.doesNotMatch(out, /aiguardctl upgrade --edition nyxus/);
 });
 
 test('a key this release cannot verify says to upgrade before suspecting it', () => {
