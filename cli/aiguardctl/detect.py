@@ -14,7 +14,12 @@ import shutil
 import subprocess
 
 IMAGE_REPO = "ghcr.io/amansk5/shadow-ai-guard"
-NAME_LABEL = "app.kubernetes.io/name=ai-guard"
+# The chart gives the portal its own app.kubernetes.io/name so the receiver's
+# Service does not select it, which means a selector on the bare name finds
+# the receiver alone: an upgrade then leaves the portal behind, and a move to
+# Nyxus waits for ever on a portal it never stopped. Both names, always.
+NAMES = ("ai-guard", "ai-guard-portal")
+NAME_LABEL = "app.kubernetes.io/name in (%s)" % ",".join(NAMES)
 
 
 class DetectError(Exception):
@@ -72,7 +77,8 @@ def kubernetes(context: str | None, namespace: str | None, runner=run) -> dict |
         for c in d["spec"]["template"]["spec"]["containers"]:
             if _ours(c["image"]):
                 entry["deployments"].append({"name": md["name"], "container": c["name"],
-                                             "image": c["image"], "tag": _tag(c["image"])})
+                                             "image": c["image"], "tag": _tag(c["image"]),
+                                             "label": md.get("labels", {}).get("app.kubernetes.io/name", "")})
         if md.get("labels", {}).get("app.kubernetes.io/managed-by") == "Helm":
             entry["helm"] = True
     if len(releases) > 1 and not namespace:

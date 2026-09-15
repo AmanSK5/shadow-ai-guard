@@ -7,16 +7,21 @@
 The properties under test: the key is the one stored in this deployment or
 nothing happens, and it never appears in a command's arguments; Helm keeps the
 release's storage, credentials and values, backs the database up before
-anything stops, and removes Shadow AI Guard only after its credentials are
-copied; Compose prepares Nyxus's project from the running one without
-overwriting anything, and starts Nyxus under the same project so its volumes
-are the same volumes; and the findings Shadow AI Guard stored are marked for
-Nyxus to read.
+anything stops, stops every Deployment the release made and waits for their
+pods alone, and removes Shadow AI Guard only after its credentials are copied;
+an Ingress the Tailscale operator will not let go of is named, released only
+once the operator says its machines are gone, and never left to stall the
+move in silence; a move stopped after the release is removed says how to
+finish it and keeps what finishing needs; Compose prepares Nyxus's project
+from the running one without overwriting anything, and starts Nyxus under the
+same project so its volumes are the same volumes; and the findings Shadow AI
+Guard stored are marked for Nyxus to read.
 """
 import base64
 import hashlib
 import json
 import os
+import shutil
 import stat
 
 import pytest
@@ -25,6 +30,7 @@ from aiguardctl import cli, edition
 
 KEY = "nyxl_eyJ2IjoxLCJpZCI6Ik5ZWC0wMDAxIn0.c2lnbmF0dXJl"
 NOW = __import__("datetime").datetime(2026, 9, 20, 10, 0, 0, tzinfo=__import__("datetime").timezone.utc)
+SELECTOR = "app.kubernetes.io/instance=ai-guard,app.kubernetes.io/name in (ai-guard,ai-guard-portal)"
 
 
 class Reporter:
@@ -93,19 +99,64 @@ metadata:
     helm.sh/resource-policy: keep
 spec:
   accessModes: [ReadWriteOnce]
+---
+# Source: ai-guard/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-guard
+  labels:
+    app.kubernetes.io/name: ai-guard
+---
+# Source: ai-guard/templates/portal-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-guard-portal
+  labels:
+    app.kubernetes.io/name: ai-guard-portal
+"""
+
+MANIFEST_TAILSCALE = MANIFEST + """---
+# Source: ai-guard/templates/ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ai-guard
+spec:
+  ingressClassName: tailscale
+---
+# Source: ai-guard/templates/portal-ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ai-guard-portal
+spec:
+  ingressClassName: tailscale
 """
 
 FOUND_HELM = {"route": "helm", "release": "ai-guard", "namespace": "ai-guard", "context": None, "helm": True,
-              "deployments": [{"name": "ai-guard", "container": "receiver", "tag": "0.33.0",
+              "deployments": [{"name": "ai-guard", "container": "receiver", "tag": "0.33.0", "label": "ai-guard",
                                "image": "ghcr.io/amansk5/shadow-ai-guard/receiver:0.33.0"},
                               {"name": "ai-guard-portal", "container": "portal", "tag": "0.33.0",
+                               "label": "ai-guard-portal",
                                "image": "ghcr.io/amansk5/shadow-ai-guard/portal:0.33.0"}],
               "cronjobs": []}
 LIVE = {"ai-guard": {"authToken": "c2hhcmVk"}, "ai-guard-admin": {"adminToken": "YWRtaW4="},
         "ai-guard-portal": {"password": "cGFzc3dvcmQ="}}
 
 
-def helm_runner(calls, files):
+def _ingress(name, host, address="", finalizers=(edition.TAILSCALE_FINALIZER,), deleting=False):
+    """An Ingress as the Tailscale operator leaves it, read from a live cluster."""
+    md = {"name": name, "finalizers": list(finalizers)}
+    if deleting:
+        md["deletionTimestamp"] = "2026-09-20T10:01:00Z"
+    return {"kind": "Ingress", "metadata": md,
+            "spec": {"ingressClassName": "tailscale", "rules": [{"host": host}], "tls": [{"hosts": [host]}]},
+            "status": {"loadBalancer": {"ingress": [{"hostname": address, "ports": [{"port": 443}]}]} if address else {}}}
+
+
+def helm_runner(calls, files, manifest=MANIFEST, ingresses=(), left=lambda: [], released=None, after=(), state=None):
     def runner(argv, timeout=900, input=None):
         calls.append((argv, input))
         if argv[:3] == ["helm", "get", "values"]:
@@ -113,9 +164,20 @@ def helm_runner(calls, files):
                                   "auth": {"value": ""}, "ingress": {"enabled": True, "host": "ai-guard.example.com"},
                                   "portal": {"enabled": True, "auth": {"password": ""}}}), ""
         if argv[:3] == ["helm", "get", "manifest"]:
-            return 0, MANIFEST, ""
+            return 0, manifest, ""
         if argv[:3] == ["kubectl", "get", "secret"]:
             return 0, json.dumps({"data": LIVE[argv[3]]}), ""
+        if argv[:3] == ["kubectl", "get", "ingress"] and "-l" in argv:
+            return 0, json.dumps({"kind": "List", "items": list(after)}), ""
+        if argv[:3] == ["kubectl", "get", "ingress"]:
+            return 0, json.dumps({"kind": "List", "items": list(ingresses)}), ""
+        if argv[:2] == ["kubectl", "get"] and "--ignore-not-found" in argv:
+            items = left()
+            return 0, (json.dumps({"kind": "List", "items": items}) if items else ""), ""
+        if "patch" in argv and released is not None:
+            released(argv[argv.index("patch") + 1].split("/", 1)[1])
+        if "uninstall" in argv and state is not None:
+            state["values_before_uninstall"] = os.path.exists(os.path.join(state["workdir"], "values.json"))
         if "-f" in argv:
             path = argv[argv.index("-f") + 1]
             files.append((argv, open(path).read(), stat.S_IMODE(os.stat(path).st_mode)))
@@ -125,10 +187,20 @@ def helm_runner(calls, files):
     return runner
 
 
+@pytest.fixture
+def clock(monkeypatch):
+    """Ten minutes of waiting, in no time."""
+    now = [0.0]
+    monkeypatch.setattr(edition, "_clock", lambda: now[0])
+    monkeypatch.setattr(edition, "_sleep", lambda s: now.__setitem__(0, now[0] + s))
+    return now
+
+
 def test_helm_keeps_storage_credentials_and_values_and_never_passes_the_key_as_an_argument():
-    calls, files = [], []
-    runner = helm_runner(calls, files)
+    calls, files, state = [], [], {}
+    runner = helm_runner(calls, files, state=state)
     p = edition.plan(FOUND_HELM, KEY, "registry.nyxus.co.uk", "0.1.0", runner=runner, now=NOW)
+    state["workdir"] = p.workdir
     rep = Reporter()
     try:
         assert edition.apply(p, rep, runner=runner), rep.said
@@ -137,13 +209,22 @@ def test_helm_keeps_storage_credentials_and_values_and_never_passes_the_key_as_a
     argvs = [" ".join(a) for a, _ in calls]
     assert all(KEY not in a for a in argvs)
     assert all(KEY not in d for _, _, d in rep.steps)
-    # the order: back up, carry credentials, pull access, stop, remove, install
+    # the order: back up, carry credentials, pull access, stop both, wait, remove, install
     order = [next(i for i, a in enumerate(argvs) if needle in a) for needle in (
         "exec deployment/ai-guard -- python -c", "get secret ai-guard ", "registry login registry.nyxus.co.uk",
-        "scale deployment/ai-guard --replicas=0", "uninstall ai-guard", "install nyxus oci://registry.nyxus.co.uk/nyxus-enterprise/charts/nyxus")]
+        "scale deployment/ai-guard --replicas=0", "scale deployment/ai-guard-portal --replicas=0",
+        "wait --for=delete pod", "uninstall ai-guard", "install nyxus oci://registry.nyxus.co.uk/nyxus-enterprise/charts/nyxus")]
     assert order == sorted(order)
     assert [i for a, i in calls if i] == [KEY]
     assert "state.db.before-nyxus-20260920T100000Z" in argvs[order[0]]
+    # the wait is for the two Deployments' pods, not everything the release labels
+    wait = next(a for a, _ in calls if a[:2] == ["kubectl", "wait"])
+    assert wait[wait.index("-l") + 1] == SELECTOR
+    # the values are written while the release still exists; removal does not block on its own
+    assert state["values_before_uninstall"] is True
+    uninstall = next(a for a, _ in calls if "uninstall" in a)
+    assert "--wait" not in uninstall
+    assert any("--ignore-not-found" in a and "persistentvolumeclaim/ai-guard-state" not in a for a in argvs)
     install = next(a for a, _ in calls if a[:2] == ["helm", "install"])
     assert install[install.index("--version") + 1] == "0.1.0"
     # every file handed over was readable by this user alone, and is gone afterwards
@@ -162,7 +243,18 @@ def test_helm_keeps_storage_credentials_and_values_and_never_passes_the_key_as_a
     assert values["imagePullSecrets"] == [{"name": "nyxus-registry"}]
     assert "image" not in values and values["ingress"]["host"] == "ai-guard.example.com"
     assert values["portal"]["shadowAiGuardFindingsBefore"].endswith("Z")
+    assert not p.tailscale and not any("Tailscale" in line for line in edition.describe(FOUND_HELM, p, "0.1.0", "r", KEY))
     assert not os.path.exists(p.workdir)
+
+
+def test_a_deployment_the_release_made_that_was_not_found_stops_the_plan():
+    """What went wrong on a real move: detection found the receiver alone, the
+    portal was never stopped, and the wait for its pod could only time out."""
+    found = dict(FOUND_HELM, deployments=FOUND_HELM["deployments"][:1])
+    calls = []
+    with pytest.raises(edition.EditionError, match="ai-guard-portal"):
+        edition.plan(found, KEY, "registry.nyxus.co.uk", "0.1.0", runner=helm_runner(calls, []), now=NOW)
+    assert not any(a[:2] in (["kubectl", "scale"], ["helm", "uninstall"]) for a, _ in calls)
 
 
 def test_a_failed_step_stops_the_move_before_anything_after_it():
@@ -175,12 +267,130 @@ def test_a_failed_step_stops_the_move_before_anything_after_it():
             return 1, "", "unauthorized"
         return base(argv, timeout, input)
     p = edition.plan(FOUND_HELM, KEY, "registry.nyxus.co.uk", "0.1.0", runner=runner, now=NOW)
+    rep = Reporter()
     try:
-        assert not edition.apply(p, Reporter(), runner=runner)
+        assert not edition.apply(p, rep, runner=runner)
     finally:
         edition.cleanup(p)
     assert not any(a[:1] == ["helm"] and "uninstall" in a for a, _ in calls)
     assert not any("scale" in a for a, _ in calls)
+    # nothing was removed, so there is nothing to finish by hand and nothing kept
+    assert not any("upgrade --install" in s for s in rep.said) and not os.path.exists(p.workdir)
+
+
+def test_tailscale_machines_the_operator_cannot_delete_are_named_and_released_once_confirmed(clock):
+    calls, files = [], []
+    held = {"ai-guard": True, "ai-guard-portal": True}
+    runner = helm_runner(
+        calls, files, manifest=MANIFEST_TAILSCALE,
+        ingresses=[_ingress("ai-guard", "ai-guard", "ai-guard.tail1234.ts.net"),
+                   _ingress("ai-guard-portal", "ai-guard-portal", "ai-guard-portal.tail1234.ts.net")],
+        left=lambda: [_ingress(n, n, deleting=True) for n, h in held.items() if h],
+        released=lambda name: held.__setitem__(name, False),
+        after=[_ingress("nyxus", "ai-guard", "ai-guard.tail1234.ts.net"),
+               _ingress("nyxus-portal", "ai-guard-portal", "ai-guard-portal-1.tail1234.ts.net")])
+    p = edition.plan(FOUND_HELM, KEY, "registry.nyxus.co.uk", "0.1.0", runner=runner, now=NOW)
+    asked = []
+
+    def ask(lines, question):
+        asked.append((clock[0], "\n".join(lines), question))
+        return True
+    rep = Reporter()
+    try:
+        text = "\n".join(edition.describe(FOUND_HELM, p, "0.1.0", "registry.nyxus.co.uk", KEY))
+        assert edition.apply(p, rep, runner=runner, ask=ask), rep.said
+    finally:
+        edition.cleanup(p)
+    # said before anything ran
+    assert "Tailscale:" in text and "ai-guard-portal (ai-guard-portal.tail1234.ts.net)" in text and "<name>-1" in text
+    # asked once, only after the operator had had its chance, naming the machines to delete
+    assert len(asked) == 1
+    at, lines, question = asked[0]
+    assert at >= edition.STALL_AFTER
+    assert "admin console" in lines and "    ai-guard   (ai-guard.tail1234.ts.net)" in lines
+    assert "    ai-guard-portal   (ai-guard-portal.tail1234.ts.net)" in lines and "[y/N]" in question
+    # only the operator's finalizer, only on this release's Ingresses, and before Nyxus is installed
+    patches = [a for a, _ in calls if "patch" in a]
+    assert [a[a.index("patch") + 1] for a in patches] == ["ingress/ai-guard", "ingress/ai-guard-portal"]
+    assert json.loads(patches[0][-1]) == [
+        {"op": "test", "path": "/metadata/finalizers/0", "value": "tailscale.com/finalizer"},
+        {"op": "remove", "path": "/metadata/finalizers/0"}]
+    argvs = [" ".join(a) for a, _ in calls]
+    assert max(i for i, a in enumerate(argvs) if " patch " in a) < next(i for i, a in enumerate(argvs) if "install nyxus" in a)
+    # and a machine that came back under another name is caught, without failing a move that worked
+    said = "\n".join(rep.said)
+    assert "registered Nyxus as ai-guard-portal-1, not ai-guard-portal" in said
+    assert "rename ai-guard-portal-1 to ai-guard-portal" in said and "as ai-guard," not in said
+    assert rep.steps[-1] == ("check the Tailscale machine names", "done", "")
+
+
+@pytest.mark.parametrize("ask", [None, lambda lines, question: False], ids=["unattended", "declined"])
+def test_a_stalled_removal_stops_with_the_steps_and_keeps_what_finishing_needs(clock, ask):
+    calls, files = [], []
+    runner = helm_runner(
+        calls, files, manifest=MANIFEST_TAILSCALE,
+        ingresses=[_ingress("ai-guard", "ai-guard", "ai-guard.tail1234.ts.net"),
+                   _ingress("ai-guard-portal", "ai-guard-portal", "ai-guard-portal.tail1234.ts.net")],
+        left=lambda: [_ingress("ai-guard", "ai-guard", deleting=True),
+                      _ingress("ai-guard-portal", "ai-guard-portal", deleting=True)])
+    p = edition.plan(FOUND_HELM, KEY, "registry.nyxus.co.uk", "0.1.0", runner=runner, now=NOW)
+    rep = Reporter()
+    try:
+        assert not edition.apply(p, rep, runner=runner, ask=ask)
+        said = "\n".join(rep.said)
+        assert not any("patch" in a for a, _ in calls) and not any(a[:2] == ["helm", "install"] for a, _ in calls)
+        assert clock[0] < edition.GONE_TIMEOUT, "a stall that needs a person does not sit out the whole wait"
+        # what the step reports - on System health too - is a whole sentence, not a line cut mid-way
+        failed = next(detail for _, status, detail in rep.steps if status == "failed")
+        assert failed == ("the Tailscale operator still holds Ingresses ai-guard and ai-guard-portal, "
+                          "whose machines must be deleted in the admin console")
+        assert "the move carries on" not in said
+        if ask is None:
+            assert "admin console" in said and "    ai-guard-portal   (ai-guard-portal.tail1234.ts.net)" in said
+        assert "kubectl -n ai-guard patch ingress/ai-guard --type=json -p '[" in said
+        assert ("helm upgrade --install nyxus oci://registry.nyxus.co.uk/nyxus-enterprise/charts/nyxus --version 0.1.0 "
+                "-n ai-guard -f %s" % os.path.join(p.workdir, "values.json")) in said
+        assert p.keep_workdir and os.path.exists(os.path.join(p.workdir, "values.json"))
+        edition.cleanup(p)
+        assert os.path.exists(p.workdir), "finishing by hand needs the values file"
+    finally:
+        shutil.rmtree(p.workdir, ignore_errors=True)
+
+
+def test_an_object_held_by_anything_else_is_named_when_the_wait_gives_up(clock):
+    calls, files = [], []
+    lb = {"kind": "Service", "metadata": {"name": "ai-guard", "finalizers": ["service.kubernetes.io/load-balancer-cleanup"]}}
+    runner = helm_runner(calls, files, left=lambda: [lb])
+    p = edition.plan(FOUND_HELM, KEY, "registry.nyxus.co.uk", "0.1.0", runner=runner, now=NOW)
+    asked = []
+    rep = Reporter()
+    try:
+        assert not edition.apply(p, rep, runner=runner, ask=lambda lines, q: asked.append(q) or True)
+        said = "\n".join(rep.said)
+    finally:
+        shutil.rmtree(p.workdir, ignore_errors=True)
+    assert clock[0] >= edition.GONE_TIMEOUT and not asked
+    assert "service/ai-guard (held by service.kubernetes.io/load-balancer-cleanup)" in said
+    assert not any("patch" in a for a, _ in calls) and "helm upgrade --install nyxus" in said
+
+
+def test_an_operator_that_can_delete_its_machines_is_never_asked_about(clock):
+    calls, files = [], []
+    runner = helm_runner(
+        calls, files, manifest=MANIFEST_TAILSCALE,
+        ingresses=[_ingress("ai-guard", "ai-guard", "ai-guard.tail1234.ts.net"),
+                   _ingress("ai-guard-portal", "ai-guard-portal", "ai-guard-portal.tail1234.ts.net")],
+        left=lambda: [],
+        after=[_ingress("nyxus", "ai-guard", "ai-guard.tail1234.ts.net"),
+               _ingress("nyxus-portal", "ai-guard-portal", "ai-guard-portal.tail1234.ts.net")])
+    p = edition.plan(FOUND_HELM, KEY, "registry.nyxus.co.uk", "0.1.0", runner=runner, now=NOW)
+    asked, rep = [], Reporter()
+    try:
+        assert edition.apply(p, rep, runner=runner, ask=lambda lines, q: asked.append(q) or True), rep.said
+    finally:
+        edition.cleanup(p)
+    assert not asked and not any("patch" in a for a, _ in calls)
+    assert clock[0] < edition.STALL_AFTER and not any("registered Nyxus as" in s for s in rep.said)
 
 
 def compose_setup(tmp_path):
@@ -302,4 +512,3 @@ def test_once_shadow_ai_guard_has_stopped_progress_reports_do_not_hold_the_move_
     before = 2 * stop + 1          # running and done for each earlier step, and running for the stop
     assert len(slept) == 6 * before   # a patient report waits after each of its six tries
     assert not rep.patient and len(posts) == 6 * before + (2 * len(p.steps) - before)
-

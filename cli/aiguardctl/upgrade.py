@@ -28,11 +28,15 @@ class Reporter:
         # edition and starting the next - so a report tries once and moves
         # on, rather than holding the next step back for two minutes.
         self.patient = True
+        # Said once per outage. A portal that is down stays down for several
+        # steps, and the same line after each of them buries the steps.
+        self._unreachable = False
 
     def _post(self, path: str, body: dict) -> None:
         for attempt in range(6 if self.patient else 1):
             try:
                 self.request(self.portal, "POST", path, body, token=self.token)
+                self._unreachable = False
                 return
             except api.ApiError as e:
                 if e.status in (401, 403, 404, 409, 413, 422):
@@ -40,7 +44,10 @@ class Reporter:
                     return
                 if self.patient:
                     self.sleep(min(30, 5 * (attempt + 1)))
-        self.say("  (could not reach the portal to report progress; carrying on)")
+        if not self._unreachable:
+            self._unreachable = True
+            self.say("  (could not reach the portal to report progress; carrying on, and saying so "
+                     "once: reports resume when it answers)")
 
     def step(self, step: str, status: str, detail: str = "") -> None:
         self.say("  [%s] %s%s" % (status, step, (" - " + detail) if detail else ""))

@@ -6,6 +6,7 @@
 and every HTTP call is replaced, so what is tested is what the command
 would run and what it would send - which is what SECURITY.md promises."""
 import json
+import re
 
 import pytest
 
@@ -15,19 +16,61 @@ from aiguardctl import api, auth, detect, upgrade
 def _kubectl(items, cronjobs=()):
     def runner(argv, timeout=120):
         if "deployments" in argv:
-            return 0, json.dumps({"items": items}), ""
+            # Filter the way kubectl would, so a selector that misses one of
+            # the chart's Deployments misses it here too.
+            selector = argv[argv.index("-l") + 1]
+            m = re.fullmatch(r"app\.kubernetes\.io/name in \(([^)]*)\)", selector)
+            assert m, selector
+            names = m.group(1).split(",")
+            return 0, json.dumps({"items": [i for i in items
+                                            if i["metadata"]["labels"]["app.kubernetes.io/name"] in names]}), ""
         if "cronjobs" in argv:
             return 0, json.dumps({"items": list(cronjobs)}), ""
         raise AssertionError(argv)
     return runner
 
 
-def _dep(name, image, ns="ai-guard", rel="ai-guard", helm=True):
-    labels = {"app.kubernetes.io/name": "ai-guard", "app.kubernetes.io/instance": rel}
+def _dep(name, image, ns="ai-guard", rel="ai-guard", helm=True, label=None):
+    # The chart's own labels: the portal has a name of its own.
+    label = label or ("ai-guard-portal" if name.endswith("-portal") else "ai-guard")
+    labels = {"app.kubernetes.io/name": label, "app.kubernetes.io/instance": rel}
     if helm:
         labels["app.kubernetes.io/managed-by"] = "Helm"
     return {"metadata": {"name": name, "namespace": ns, "labels": labels},
             "spec": {"template": {"spec": {"containers": [{"name": name.split("-")[-1], "image": image}]}}}}
+
+
+def test_without_helm_the_portal_is_upgraded_with_the_receiver(monkeypatch):
+    monkeypatch.setattr(detect, "have", lambda b: True)
+    items = [_dep("ai-guard", "ghcr.io/amansk5/shadow-ai-guard/receiver:0.28.0", helm=False),
+             _dep("ai-guard-portal", "ghcr.io/amansk5/shadow-ai-guard/portal:0.28.0", helm=False)]
+    found = detect.kubernetes(None, "ai-guard", runner=_kubectl(items))
+    assert found["route"] == "kubernetes"
+    assert [(d["name"], d["label"]) for d in found["deployments"]] == [
+        ("ai-guard", "ai-guard"), ("ai-guard-portal", "ai-guard-portal")]
+    cmds = [" ".join(c) for c in upgrade.commands(found, "0.29.0")]
+    assert "kubectl -n ai-guard set image deployment/ai-guard-portal portal=ghcr.io/amansk5/shadow-ai-guard/portal:0.29.0" in cmds
+    assert "kubectl -n ai-guard rollout status deployment/ai-guard-portal --timeout=10m" in cmds
+
+
+def test_a_portal_that_stays_down_is_mentioned_once_until_it_answers():
+    said, up = [], [False]
+
+    def request(portal, method, path, body=None, token=""):
+        if not up[0]:
+            raise api.ApiError(0, "down")
+        return {}
+    rep = upgrade.Reporter("http://p", "aigu_t", "abcdef012345", said.append, sleep=lambda s: None, request=request)
+    rep.patient = False
+    for name in ("stop", "wait", "remove"):
+        rep.step(name, "running")
+        rep.step(name, "done")
+    assert sum("could not reach the portal" in m for m in said) == 1
+    up[0] = True
+    rep.step("install", "done")
+    up[0] = False
+    rep.step("check", "running")
+    assert sum("could not reach the portal" in m for m in said) == 2
 
 
 def _cj(name, image):
@@ -193,7 +236,7 @@ def test_the_command_has_no_third_party_dependencies():
                 mod = line.split()[1].split(".")[0]
                 assert mod in {"json", "urllib", "hashlib", "secrets", "time", "webbrowser", "shutil",
                                "subprocess", "argparse", "sys", "__future__",
-                               "os", "re", "base64", "tempfile", "datetime", "pathlib"}, line
+                               "os", "re", "base64", "tempfile", "datetime", "pathlib", "shlex"}, line
 
 
 def test_verify_waits_through_a_restart_and_a_timed_out_read():
