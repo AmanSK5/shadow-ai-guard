@@ -96,8 +96,17 @@ spec:
               # environment.
               envFrom:
                 {{- toYaml .Values.discovery.envFrom | nindent 16 }}
+              # The root filesystem is read-only, and the image records each
+              # pass in /tmp/ai-guard-health.json. Without somewhere to write,
+              # every run logs that it could not.
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
               resources:
                 {{- toYaml (.Values.discovery.resources | default .Values.resources) | nindent 16 }}
+          volumes:
+            - name: tmp
+              emptyDir: {}
           {{- with .Values.nodeSelector }}
           nodeSelector:
             {{- toYaml . | nindent 12 }}
