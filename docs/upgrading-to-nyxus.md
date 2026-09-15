@@ -123,6 +123,32 @@ reported afresh.
 The browser extension is a different extension. Deploy Nyxus's by policy and
 remove Shadow AI Guard's; each browser profile enrolls again on its own.
 
+## After the move
+
+Nyxus keeps the addresses this deployment is reached on, so collectors, the
+extension and people signing in carry on as they were. What the move cannot
+change is outside the deployment, and the first time an owner or admin signs
+in to Nyxus it opens on **Finish moving to Nyxus**, which lists it with this
+deployment's own values:
+
+- **Its names.** To serve Nyxus under new names, change the DNS record
+  (Route 53, Cloudflare or your own DNS), the certificate and the ingress host
+  or reverse proxy first, then the portal address and the single sign-on
+  redirect URI, and the receiver last, together with the collectors: its
+  address is built into every collector download.
+- **Anything set up by hand around this release.** On Kubernetes the Services
+  and Ingresses take the Nyxus release's name (`nyxus` and `nyxus-portal` by
+  default, where they were `ai-guard` and `ai-guard-portal`). The chart's own
+  Ingresses move with their hosts; anything else that names the old Services
+  needs the new names.
+- **Monitoring.** The receiver's metrics are `nyxus_*` where they were
+  `aiguard_*`, and findings carry `app="nyxus-receiver"` where they carried
+  `app="ai-guard-receiver"`, so alert rules and dashboards written for these
+  names stop matching.
+- **The command line.** `aiguardctl` becomes `nyxusctl`.
+
+The page stays under Settings › Getting started in Nyxus.
+
 ## If it stops part way
 
 Nothing after a failed step runs, and the terminal says which step and where
