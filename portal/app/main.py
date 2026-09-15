@@ -89,7 +89,6 @@ encryption.
 import html
 import json
 import logging
-import hashlib
 import os
 import re
 import secrets
@@ -256,9 +255,10 @@ LOKI_MAX_FINDINGS = int(os.environ.get("LOKI_MAX_FINDINGS", "100000"))
 # far away or rate limited, is where it can pay.
 LOKI_READ_PARALLELISM = max(1, int(os.environ.get("LOKI_READ_PARALLELISM", "1")))
 # Keep the window and fetch only what arrived since the last read, instead of
-# parsing the whole week on every refresh. Measured on a 10,000-user synthetic
-# estate: a full read of a capped window took 3 s and the swap held two copies
-# of it, which is what OOMKilled the portal at 256Mi and again at 512Mi.
+# parsing the whole week on every refresh. On a 10,000-user synthetic estate
+# the read inside a refresh went from about 3 s to 0.05 s. Building the views
+# from 100,000 findings still takes over a second, and memory stayed about
+# where it was.
 LOKI_INCREMENTAL = os.environ.get("LOKI_INCREMENTAL", "on").strip().lower() \
     not in ("0", "off", "false", "no")
 LOKI_RESYNC_SECONDS = int(os.environ.get("LOKI_RESYNC_SECONDS", "3600"))
@@ -960,10 +960,10 @@ def _findings(hours, request=None):
     try:
         if LOKI_INCREMENTAL:
             # Which store, including its credentials: a changed password is a
-            # store this reader has not read, and the digest keeps the
-            # password itself out of anything held.
-            key = (source, url, username or "",
-                   hashlib.sha256((password or "").encode()).hexdigest())
+            # store this reader has not read. Compared as it is, in memory,
+            # where the settings cache already holds it - a fast digest of a
+            # password is not a safer thing to keep than the password.
+            key = (source, url, username or "", password or "")
             out = _loki_reader.read(key, fetch, hours, LOKI_MAX_FINDINGS)
             how = _loki_reader.last.get("mode") or "full"
             if how == "incremental":
