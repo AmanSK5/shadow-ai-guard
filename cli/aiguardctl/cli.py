@@ -7,12 +7,22 @@ from __future__ import annotations
 
 import argparse
 import sys
+import urllib.parse
 
 from . import __version__, api, auth, detect, edition, upgrade
 
 
 def say(msg: str = "") -> None:
     print(msg, file=sys.stderr)
+
+
+def _ask(lines: list[str], question: str) -> bool:
+    for line in lines:
+        say(line)
+    try:
+        return input(question).strip().lower() in ("y", "yes")
+    except EOFError:
+        return False
 
 
 def cmd_upgrade(a) -> int:
@@ -150,13 +160,19 @@ def cmd_edition(a, portal: str, found: dict) -> int:
             "to_version": ("nyxus-" + a.nyxus_version.lstrip("v"))[:64],
             "plan": {"route": found["route"], "edition": "nyxus", "objects": moving.objects}}, token=token)
         rep = upgrade.Reporter(portal, token, run["id"], say)
+        # A step that needs the operator - the Tailscale machines only they can
+        # delete - asks at the terminal. Unattended, it stops and says how to go on.
+        ask = None if a.yes or not sys.stdin.isatty() else _ask
         try:
-            ok = edition.apply(moving, rep)
+            ok = edition.apply(moving, rep, ask=ask)
             if not ok:
                 rep.finish("failed", "a step failed; see the terminal")
                 say("The move stopped. The database as it was is at %s." % moving.backup)
                 return 1
             rep.patient = True
+            if moving.tailscale:
+                say("  Nyxus's Tailscale machines are new, so this computer can take a minute or two to "
+                    "resolve %s." % (urllib.parse.urlsplit(portal).hostname or portal))
             result = upgrade.verify(portal, token, a.nyxus_version, say)
         except KeyboardInterrupt:
             rep.finish("aborted", "interrupted at the terminal")

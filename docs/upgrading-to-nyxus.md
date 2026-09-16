@@ -67,19 +67,56 @@ In order:
 1. Back up the receiver database, as `state.db.before-nyxus-<time>` on the
    same volume.
 2. Copy the Secrets the release made - the shared token, and the admin token
-   if there is one - into `nyxus-carried-auth` and `nyxus-carried-admin`.
-   Uninstalling a release removes its Secrets; these copies belong to neither
-   release.
+   and portal password if there are any - into `nyxus-carried-auth`,
+   `nyxus-carried-admin` and `nyxus-carried-portal`. Uninstalling a release
+   removes its Secrets; these copies belong to neither release.
 3. Sign in to the registry with the key, and create the pull secret
    `nyxus-registry` in the namespace.
-4. Scale Shadow AI Guard's Deployments to zero and wait for its pods to stop.
-5. Uninstall the release. Its storage claim stays: the chart marks it to be
-   kept.
-6. Install Nyxus with this release's own values, pointed at that storage
-   claim and the carried Secrets, pulling with `nyxus-registry`.
+4. Scale every Deployment the release made - the receiver and the portal - to
+   zero, and wait for their pods to stop. A finished scanner or discovery Job
+   is not waited on; it goes with the release.
+5. Write Nyxus's values: this release's own, pointed at that storage claim and
+   the carried Secrets, pulling with `nyxus-registry`.
+6. Uninstall the release, and wait until what it made is gone. Its storage
+   claim stays: the chart marks it to be kept.
+7. Install Nyxus with those values.
+
+If the release made a Deployment the command cannot find running this
+project's images, it stops before changing anything and names it.
 
 `--nyxus-release` names the new release, `nyxus` by default. `--context` and
 `--namespace` pick the cluster and release, as for an upgrade.
+
+### With the Tailscale operator
+
+When the release's Ingresses use the `tailscale` class, the plan says so and
+names the machines they are on the tailnet. Removing the release asks the
+operator to delete those machines, and Nyxus's Ingresses ask for the same
+names, so the old machines have to be gone before Nyxus starts: while one
+exists, Nyxus's is registered as `<name>-1` and its address changes.
+
+The operator can only delete a machine if its OAuth client is allowed to
+delete devices. When it is not, the operator holds the Ingress with its
+finalizer, `tailscale.com/finalizer`, and removal cannot finish. The command
+gives it a minute, then:
+
+1. names the machines to delete in the Tailscale admin console, under
+   Machines, and asks whether you have deleted them;
+2. once you answer yes, removes that finalizer - only that one, and only from
+   this release's Ingresses - and carries on.
+
+With `--yes`, or with no terminal to ask in, it stops there instead and prints
+the machines, the `kubectl patch` commands that release the Ingresses, and the
+command that finishes the move (below).
+
+Once Nyxus is installed the command reads its Ingresses back. If a machine
+still came up as `<name>-1`, it says so: delete the old machine in the admin
+console, then rename the new one (Edit machine name). A new machine can take a
+minute or two to resolve on the computer running the command, so the wait for
+the portal can take that much longer.
+
+Afterwards, allow the operator's OAuth client to delete devices, or removing
+any Tailscale Ingress in that cluster will stall the same way.
 
 ### On Docker Compose
 
@@ -136,11 +173,11 @@ deployment's own values:
   or reverse proxy first, then the portal address and the single sign-on
   redirect URI, and the receiver last, together with the collectors: its
   address is built into every collector download.
-- **Anything set up by hand around this release.** On Kubernetes the Services
-  and Ingresses take the Nyxus release's name (`nyxus` and `nyxus-portal` by
-  default, where they were `ai-guard` and `ai-guard-portal`). The chart's own
-  Ingresses move with their hosts; anything else that names the old Services
-  needs the new names.
+- **Anything set up by hand around this release.** On Kubernetes the
+  Services and Ingresses take the Nyxus release's name (`nyxus` and
+  `nyxus-portal` by default, where they were `ai-guard` and `ai-guard-portal`).
+  The chart's own Ingresses move with their hosts; anything else that names
+  the old Services needs the new names.
 - **Monitoring.** The receiver's metrics are `nyxus_*` where they were
   `aiguard_*`, and findings carry `app="nyxus-receiver"` where they carried
   `app="ai-guard-receiver"`, so alert rules and dashboards written for these
@@ -157,6 +194,11 @@ the backup is.
 - **Before Shadow AI Guard stopped**, nothing has changed except files the
   command wrote: carried Secrets and the pull secret on Kubernetes, the new
   project directory on Compose. Run it again once the cause is fixed.
+- **After Shadow AI Guard's release was removed, before Nyxus was running**
+  (Helm), the terminal prints the command that finishes the move - a
+  `helm upgrade --install` of Nyxus with the values file the move wrote - and
+  keeps that file for it. Run that command once the cause is dealt with, then
+  delete the directory it names: the file holds the release's settings.
 - **After Nyxus started**, to go back: stop Nyxus, copy the backup over
   `state.db` on the same volume and remove `state.db-wal` and `state.db-shm`
   beside it, then start Shadow AI Guard again - on Kubernetes by installing
@@ -167,6 +209,7 @@ the backup is.
 ## What it will not do
 
 Put the key on a command line or print it. Touch anything outside the release
-or the compose project it detected. Overwrite a file beside Nyxus's compose
-file. Remove the storage or the database. Move a deployment whose key is not
-the one stored in it, or is not active. Change your MDM.
+or the compose project it detected. Remove a finalizer you have not confirmed,
+or any finalizer but the Tailscale operator's. Overwrite a file beside Nyxus's
+compose file. Remove the storage or the database. Move a deployment whose key
+is not the one stored in it, or is not active. Change your MDM.

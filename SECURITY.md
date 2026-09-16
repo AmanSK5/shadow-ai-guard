@@ -384,9 +384,9 @@ attacker nothing they can use.
 The command applies the plan with the operator's credentials, and it limits
 itself further than those credentials would allow:
 
-- On Kubernetes it acts only on objects carrying the chart's labels,
-  `app.kubernetes.io/name=ai-guard` and the release's
-  `app.kubernetes.io/instance`, and on CronJobs whose image repository is
+- On Kubernetes it acts only on objects carrying the chart's labels - an
+  `app.kubernetes.io/name` of `ai-guard` or `ai-guard-portal`, and the
+  release's `app.kubernetes.io/instance` - and on CronJobs whose image repository is
   this project's own. It refuses to guess when it finds more than one
   release and is not told which. On a Helm-managed release it runs
   `helm upgrade --reuse-values` against the published chart at the target
@@ -471,14 +471,26 @@ named in the stored key's claims.
 **What it touches.** On Helm, only the release it detected: it reads the
 release's values and manifest, backs the database up inside the receiver's
 own pod, copies the Secrets that release made into Secrets it names
-(`nyxus-carried-*`), creates `nyxus-registry`, scales that release's
-Deployments to zero, uninstalls that release and installs Nyxus in the same
-namespace on the same storage claim. On Compose, only the services of the
+(`nyxus-carried-*`), creates `nyxus-registry`, scales every Deployment that
+release made to zero, uninstalls that release, waits for what it made to be
+deleted and installs Nyxus in the same namespace on the same storage claim.
+If the release made a Deployment the command cannot find running this
+project's images, it stops before changing anything. On Compose, only the services of the
 project it detected, whose images are this project's own: it writes into the
 directory holding Nyxus's compose file and refuses to overwrite anything
 there, backs the database up inside the receiver's container, stops those
 services and starts Nyxus's under the same project name. The database and
 its storage are never removed.
+
+**One change to another controller's object.** The Tailscale operator deletes
+an Ingress's machine from the tailnet before letting the Ingress go, and holds
+it with its finalizer when its OAuth client may not delete devices. The move
+then names the machines and, only after the person at the terminal answers
+that they have deleted them, removes `tailscale.com/finalizer` from that
+release's Ingresses. The JSON patch tests that the finalizer at that position
+is still the operator's before removing it, so no other controller's finalizer
+is ever removed; unattended (`--yes`, or no terminal), nothing is removed and
+the command stops with the steps instead.
 
 **If something is compromised.** A tampered plan could name a wrong registry
 host; the key still goes only to the host the stored key names, only after

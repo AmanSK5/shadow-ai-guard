@@ -28,9 +28,11 @@ import json
 import os
 import re
 import secrets
+import shlex
 import shutil
 import subprocess
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -43,6 +45,21 @@ STATE_DB = "/var/lib/ai-guard/state.db"
 # the release is removed, because uninstalling it removes its Secrets too.
 CARRIED = {"auth": "nyxus-carried-auth", "admin": "nyxus-carried-admin", "portal": "nyxus-carried-portal"}
 PULL_SECRET = "nyxus-registry"
+
+# The Tailscale operator deletes an Ingress's machine from the tailnet before
+# it lets the Ingress go. When its OAuth client may not delete devices, that
+# never happens and the Ingress is held for good.
+TAILSCALE_FINALIZER = "tailscale.com/finalizer"
+# A controller that can clean up does so in seconds; one that cannot will not
+# manage it in ten minutes. After STALL_AFTER the move says what holds the
+# release's objects; after GONE_TIMEOUT it stops waiting.
+STALL_AFTER = 60
+GONE_TIMEOUT = 600
+NAMES_TIMEOUT = 180
+POLL = 3
+# Looked up at call time, so the tests can run a ten-minute wait instantly.
+_sleep = time.sleep
+_clock = time.monotonic
 
 
 class EditionError(Exception):
@@ -98,11 +115,14 @@ class Step:
     standard input; an action writes files or Secrets the plan describes."""
 
     def __init__(self, name: str, argv: list[str] | None = None, stdin: str | None = None,
-                 action=None, shows: str = "", stops: bool = False):
+                 action=None, shows: str = "", stops: bool = False, removes: bool = False):
         self.name, self.argv, self.stdin, self.action = name, argv, stdin, action
         self.shows = shows or " ".join(argv or [])
         # After this step the portal is down until Nyxus answers.
         self.stops = stops
+        # After this step Shadow AI Guard's release no longer exists, so a
+        # failure leaves a deployment that only finishing by hand can start.
+        self.removes = removes
 
 
 class Plan:
@@ -110,6 +130,13 @@ class Plan:
         self.route, self.steps, self.workdir, self.backup = route, steps, workdir, backup
         self.keeps, self.objects = keeps, objects
         self.context: dict = {}
+        # The release's Ingresses the Tailscale operator serves, read before
+        # anything runs: {ingress, host, address, machine}.
+        self.tailscale: list[dict] = []
+        # Said when the move stops after the release is removed. The workdir is
+        # then kept, because its values file is what finishing by hand needs.
+        self.resume: list[str] = []
+        self.keep_workdir = False
 
 
 def _backup_code(stamp: str) -> tuple[str, str]:
@@ -139,10 +166,14 @@ def _instant(now) -> str:
     return now.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _shell(argv: list[str]) -> str:
+    return " ".join(shlex.quote(a) for a in argv)
+
+
 # ------------------------------------------------------------------ helm --
 
 def manifest_objects(text: str) -> list[dict]:
-    """Kind, name and data keys of each object in `helm get manifest`."""
+    """Kind, name, data keys and keep policy of each object in `helm get manifest`."""
     objs = []
     for doc in re.split(r"^---[^\n]*$", text, flags=re.M):
         kind = re.search(r"^kind:\s*(\S+)", doc, re.M)
@@ -154,8 +185,49 @@ def manifest_objects(text: str) -> list[dict]:
         data = re.search(r"^data:\s*\n((?:[ \t]+.*\n?)*)", doc, re.M)
         if data:
             keys = re.findall(r"^\s{2}([A-Za-z0-9_.-]+):", data.group(1), re.M)
-        objs.append({"kind": kind.group(1), "name": name.group(1), "data": keys})
+        keep = bool(meta and re.search(r"^\s+helm\.sh/resource-policy:\s*\"?keep\"?\s*$", meta.group(1), re.M))
+        objs.append({"kind": kind.group(1), "name": name.group(1), "data": keys, "keep": keep})
     return objs
+
+
+def _items(text: str) -> list[dict]:
+    """`kubectl get -o json` answers a List for several objects, the object
+    itself for one, and nothing at all when --ignore-not-found found none."""
+    if not (text or "").strip():
+        return []
+    doc = json.loads(text)
+    return doc.get("items") or [] if "items" in doc else [doc]
+
+
+def tailscale_ingresses(items: list[dict]) -> list[dict]:
+    """The Ingresses among these that the Tailscale operator serves, and the
+    machine each one is on the tailnet."""
+    found = []
+    for i in items:
+        md, spec = i.get("metadata") or {}, i.get("spec") or {}
+        cls = spec.get("ingressClassName") or (md.get("annotations") or {}).get("kubernetes.io/ingress.class", "")
+        # The exact finalizer, not a prefix of it. Only one is ever removed, so
+        # recognising a family of them here would be wider than anything this
+        # acts on - and a prefix test on a domain-qualified name is the kind of
+        # loose match that is wrong far more often than it is useful.
+        if cls != "tailscale" and TAILSCALE_FINALIZER not in (md.get("finalizers") or []):
+            continue
+        tls = next((h for t in spec.get("tls") or [] for h in t.get("hosts") or [] if h), "")
+        rule = next((r["host"] for r in spec.get("rules") or [] if r.get("host")), "")
+        host = tls or rule
+        lb = ((i.get("status") or {}).get("loadBalancer") or {}).get("ingress") or []
+        address = next((x["hostname"] for x in lb if x.get("hostname")), "")
+        found.append({"ingress": md.get("name", ""), "host": host, "address": address,
+                      "machine": (address or host).split(".")[0]})
+    return found
+
+
+def _release_patch(index: int) -> str:
+    """Remove the operator's finalizer, and only if it is still the one at
+    that position: another controller's finalizer is never touched."""
+    path = "/metadata/finalizers/%d" % index
+    return json.dumps([{"op": "test", "path": path, "value": TAILSCALE_FINALIZER},
+                       {"op": "remove", "path": path}], separators=(",", ":"))
 
 
 def _get(d: dict, path: tuple):
@@ -231,11 +303,37 @@ def helm_plan(found: dict, key: str, host: str, version: str, release: str,
     if not receiver:
         raise EditionError("no receiver Deployment of this release was found")
 
+    # Every Deployment the release made is stopped, whatever found it: one
+    # left running keeps its pods, and the wait for them never ends.
+    made = [o["name"] for o in objs if o["kind"] == "Deployment"]
+    running = [d["name"] for d in found["deployments"]]
+    missing = [n for n in made if n not in running]
+    if missing:
+        raise EditionError("the release made Deployment %s, which was not found running this project's images; "
+                           "nothing was changed" % ", ".join(missing))
+    stopping = [d for d in found["deployments"] if d["name"] in made] if made else found["deployments"]
+    # Only the pods of those Deployments. A finished scanner or discovery Job
+    # keeps its pod, with the release's instance label, until the Job itself
+    # goes - a selector on the instance alone waits on it for ever.
+    selector = "app.kubernetes.io/instance=%s,app.kubernetes.io/name in (%s)" % (
+        rel, ",".join(sorted({d.get("label") or d["name"] for d in stopping})))
+
+    ingresses = [o["name"] for o in objs if o["kind"] == "Ingress"]
+    tailscale: list[dict] = []
+    if ingresses:
+        code, out, err = runner(kube + ["get", "ingress"] + ingresses + ["-n", ns, "-o", "json"], timeout=120)
+        if code != 0:
+            raise EditionError("kubectl could not read the release's Ingresses: %s" % err.strip()[:200])
+        tailscale = tailscale_ingresses(_items(out))
+    # What uninstalling removes. A kept object - the storage claim - stays.
+    watched = ["%s/%s" % (o["kind"].lower(), o["name"]) for o in objs if not o["keep"]]
+
     workdir = tempfile.mkdtemp(prefix="aiguardctl-nyxus-")
     os.chmod(workdir, 0o700)
     values_path = os.path.join(workdir, "values.json")
     backup_code, backup_path = _backup_code(_stamp(now))
     plan = Plan("helm", [], workdir, backup_path, [], [])
+    plan.tailscale = tailscale
 
     def carry(runner):
         for purpose, (name, data_key) in secrets_made.items():
@@ -271,9 +369,10 @@ def helm_plan(found: dict, key: str, host: str, version: str, release: str,
         if c != 0:
             raise EditionError("could not create the pull secret: %s" % e.strip()[:200])
 
+    wait_argv = kube + ["wait", "--for=delete", "pod", "-n", ns, "-l", selector, "--timeout=5m"]
+
     def wait_stopped(runner):
-        c, _, e = runner(kube + ["wait", "--for=delete", "pod", "-n", ns,
-                                 "-l", "app.kubernetes.io/instance=" + rel, "--timeout=5m"], timeout=360)
+        c, _, e = runner(wait_argv, timeout=360)
         if c != 0 and "no matching resources" not in e:
             raise EditionError("Shadow AI Guard's pods did not stop: %s" % e.strip()[:200])
         plan.context["stopped_at"] = _instant(datetime.now(timezone.utc))
@@ -282,7 +381,109 @@ def helm_plan(found: dict, key: str, host: str, version: str, release: str,
         values = nyxus_values(user, secrets_made, claim, plan.context.get("stopped_at") or _instant(now))
         _private_file(workdir, "values.json", json.dumps(values, indent=2))
 
+    machines = {t["ingress"]: t for t in tailscale}
+
+    def held_by_tailscale(left: list[dict]) -> list[dict]:
+        return [i for i in left if i.get("kind") == "Ingress"
+                and TAILSCALE_FINALIZER in ((i.get("metadata") or {}).get("finalizers") or [])]
+
+    def patch_argv(item: dict) -> list[str]:
+        md = item["metadata"]
+        return kube + ["-n", ns, "patch", "ingress/" + md["name"], "--type=json",
+                       "-p", _release_patch(md["finalizers"].index(TAILSCALE_FINALIZER))]
+
+    def stalled(held: list[dict], asking: bool) -> list[str]:
+        lines = ["",
+                 "  Removing Shadow AI Guard has waited %d seconds on the Tailscale operator, which still holds"
+                 % STALL_AFTER,
+                 "  %s %s." % ("Ingresses" if len(held) > 1 else "Ingress",
+                              " and ".join(i["metadata"]["name"] for i in held)),
+                 "  The operator deletes each Ingress's machine from the tailnet before letting it go, and stops",
+                 "  here when its OAuth client is not allowed to delete devices. Nyxus's Ingresses ask for the",
+                 "  same names, so while those machines exist Nyxus's would be registered as <name>-1.",
+                 "",
+                 "  In the Tailscale admin console, under Machines, delete:"]
+        for i in held:
+            t = machines.get(i["metadata"]["name"]) or tailscale_ingresses([i])[0]
+            lines.append("    %s%s" % (t["machine"], "   (%s)" % t["address"] if t["address"] else ""))
+        lines.append("")
+        if asking:
+            lines += ["  Once they are deleted, answer y: the operator's finalizer is removed from those Ingresses -",
+                      "  that finalizer only, nothing else of theirs - and the move carries on."]
+        else:
+            lines += ["  Nothing is asked with --yes or without a terminal, so the move stops here. The commands",
+                      "  below remove the operator's finalizer from those Ingresses - that finalizer only - once",
+                      "  the machines are deleted."]
+        lines += ["  Afterwards, let the operator's OAuth client delete devices, or removing any Tailscale Ingress",
+                  "  in this cluster will stall the same way.",
+                  ""]
+        return lines
+
+    def wait_gone(runner):
+        say, ask = plan.context.get("say") or (lambda m: None), plan.context.get("ask")
+        start, asked = _clock(), False
+        while True:
+            c, o, e = runner(kube + ["get"] + watched + ["-n", ns, "-o", "json", "--ignore-not-found"], timeout=120)
+            if c != 0:
+                raise EditionError("kubectl could not check what is left of the release: %s" % e.strip()[:200])
+            left = _items(o)
+            if not left:
+                return
+            waited = _clock() - start
+            held = held_by_tailscale(left)
+            if held and waited >= STALL_AFTER and not asked:
+                if not (ask and ask(stalled(held, True), "Have you deleted them in the Tailscale admin console? [y/N] ")):
+                    # The first line is what the step reports, so it is a whole sentence.
+                    summary = "the Tailscale operator still holds %s %s, whose machines must be deleted in the admin console" % (
+                        "Ingresses" if len(held) > 1 else "Ingress", " and ".join(i["metadata"]["name"] for i in held))
+                    raise EditionError("\n".join(
+                        [summary] + (stalled(held, False) if not ask else [""])
+                        + ["  Once they are deleted, release the Ingresses:"]
+                        + ["    " + _shell(patch_argv(i)) for i in held]))
+                asked = True
+                for i in held:
+                    c, _, e = runner(patch_argv(i), timeout=120)
+                    if c != 0:
+                        raise EditionError("could not remove the Tailscale finalizer from Ingress %s: %s"
+                                           % (i["metadata"]["name"], e.strip()[:200]))
+                    say("  released Ingress %s" % i["metadata"]["name"])
+                continue
+            if waited >= GONE_TIMEOUT:
+                raise EditionError("after %d minutes the release still has %s" % (GONE_TIMEOUT // 60, ", ".join(
+                    "%s/%s%s" % (i.get("kind", "").lower(), (i.get("metadata") or {}).get("name", ""),
+                                 " (held by %s)" % ", ".join(i["metadata"]["finalizers"])
+                                 if (i.get("metadata") or {}).get("finalizers") else "")
+                    for i in left)))
+            _sleep(POLL)
+
+    def check_names(runner):
+        # Never fails the move: Nyxus is installed by now, and a name that came
+        # back wrong is something to tell the operator, not a reason to stop.
+        say = plan.context.get("say") or (lambda m: None)
+        want = {t["host"]: t for t in tailscale}
+        start = _clock()
+        while True:
+            c, o, _ = runner(kube + ["get", "ingress", "-n", ns, "-l", "app.kubernetes.io/instance=" + release,
+                                     "-o", "json"], timeout=120)
+            got = [g for g in (tailscale_ingresses(_items(o)) if c == 0 else []) if g["host"] in want]
+            if got and all(g["address"] for g in got):
+                break
+            if _clock() - start >= NAMES_TIMEOUT:
+                say("  Tailscale had not given Nyxus's Ingresses an address after %d minutes. Check the operator's "
+                    "logs in its namespace." % (NAMES_TIMEOUT // 60))
+                return
+            _sleep(POLL)
+        for g in got:
+            old = want[g["host"]]["machine"]
+            if g["machine"] != old:
+                say("  Tailscale registered Nyxus as %s, not %s: a machine called %s was still on the tailnet. "
+                    "Until that is put right Nyxus is reached at %s. In the Tailscale admin console, delete the old "
+                    "%s, then rename %s to %s (Edit machine name)." % (g["machine"], old, old, g["address"], old,
+                                                                        g["machine"], old))
+
     chart = "oci://%s/%s/charts/nyxus" % (host, REPOSITORY)
+    install = helm + ["install", release, chart, "--version", version.lstrip("v"),
+                      "-n", ns, "-f", values_path, "--wait", "--timeout", "10m"]
     plan.steps = [
         Step("back up the receiver database", kube + ["-n", ns, "exec", "deployment/" + receiver, "--",
                                                      "python", "-c", backup_code]),
@@ -294,19 +495,35 @@ def helm_plan(found: dict, key: str, host: str, version: str, release: str,
         Step("create the pull secret", action=pull_secret,
              shows="create Secret %s (docker-registry, %s) from the key, in a file only you can read" % (PULL_SECRET, host)),
     ] + [Step("stop " + d["name"], kube + ["-n", ns, "scale", "deployment/" + d["name"], "--replicas=0"])
-         for d in found["deployments"]] + [
-        Step("wait for Shadow AI Guard to stop", action=wait_stopped, stops=True,
-             shows=" ".join(kube + ["wait", "--for=delete", "pod", "-n", ns, "-l", "app.kubernetes.io/instance=" + rel, "--timeout=5m"])),
-        Step("remove the Shadow AI Guard release", helm + ["uninstall", rel, "-n", ns, "--wait"]),
+         for d in stopping] + [
+        Step("wait for Shadow AI Guard to stop", action=wait_stopped, stops=True, shows=_shell(wait_argv)),
         Step("write Nyxus's values", action=write_values,
              shows="write %s: this release's values, on %s, with the carried credentials" % (values_path, claim)),
-        Step("install Nyxus", helm + ["install", release, chart, "--version", version.lstrip("v"),
-                                      "-n", ns, "-f", values_path, "--wait", "--timeout", "10m"]),
+        Step("remove the Shadow AI Guard release", helm + ["uninstall", rel, "-n", ns], removes=True),
+        Step("wait for the release's objects to be deleted", action=wait_gone,
+             shows="%s, until nothing is left%s" % (
+                 _shell(kube + ["get"] + watched + ["-n", ns, "-o", "json", "--ignore-not-found"]),
+                 "; if the Tailscale operator holds an Ingress, ask before removing its finalizer" if tailscale else "")),
+        Step("install Nyxus", install),
+    ] + ([Step("check the Tailscale machine names", action=check_names,
+               shows="%s, until each has its address" % _shell(
+                   kube + ["get", "ingress", "-n", ns, "-l", "app.kubernetes.io/instance=" + release, "-o", "json"]))]
+         if tailscale else [])
+    finish = helm + ["upgrade", "--install", release, chart, "--version", version.lstrip("v"),
+                     "-n", ns, "-f", values_path, "--wait", "--timeout", "10m"]
+    plan.resume = [
+        "",
+        "Shadow AI Guard's release is removed and Nyxus is not running yet. The database, its storage and the",
+        "carried credentials are untouched. Once the cause above is dealt with, finish the move by hand:",
+        "",
+        "  " + _shell(finish),
+        "",
+        "and then delete %s - the values file in it holds this release's settings." % workdir,
     ]
     plan.keeps = ["the receiver database, on %s (backed up first to %s)" % (claim, backup_path),
                   "the shared token, the admin token and the portal password",
                   "this release's other values: ingress, log store, scanner and discovery settings"]
-    plan.objects = [rel, claim, receiver] + [n for n, _ in secrets_made.values()]
+    plan.objects = [rel, claim] + [d["name"] for d in stopping] + [n for n, _ in secrets_made.values()] + ingresses
     return plan
 
 
@@ -434,6 +651,17 @@ def describe(found: dict, p: Plan, version: str, host: str, key: str) -> list[st
     lines.append("Kept:")
     lines.extend("  - " + k for k in p.keeps)
     lines.append("")
+    if p.tailscale:
+        lines.append("Tailscale:")
+        lines.append("  This release is reached through the Tailscale operator, as %s." % ", ".join(
+            "%s%s" % (t["machine"], " (%s)" % t["address"] if t["address"] else "") for t in p.tailscale))
+        lines += ["  Removing the release asks the operator to delete those machines. Nyxus's Ingresses ask for the",
+                  "  same names, so the old machines have to be gone first or the new ones are registered as <name>-1.",
+                  "  If the operator cannot delete them - usually because its OAuth client may not delete devices - the",
+                  "  move stops at that point, names the machines for you to delete in the admin console, and removes",
+                  "  the operator's finalizer from those Ingresses once you say they are gone. With --yes, or with no",
+                  "  terminal to ask in, it stops there and prints the steps instead.",
+                  ""]
     lines.append("Steps, in order:")
     for s in p.steps:
         lines.append("  %s" % s.name)
@@ -444,7 +672,19 @@ def describe(found: dict, p: Plan, version: str, host: str, key: str) -> list[st
     return lines
 
 
-def apply(p: Plan, reporter, runner=run) -> bool:
+def _stopped(p: Plan, reporter, removed: bool) -> None:
+    if removed and p.resume:
+        p.keep_workdir = True
+        for line in p.resume:
+            reporter.say(line)
+
+
+def apply(p: Plan, reporter, runner=run, ask=None) -> bool:
+    """Run the steps in order. `ask(lines, question)` shows lines and returns
+    whether the person answered yes; without it nothing is asked, and a step
+    that needs an answer stops the move with instructions instead."""
+    p.context["say"], p.context["ask"] = reporter.say, ask
+    removed = False
     for s in p.steps:
         reporter.step(s.name, "running")
         try:
@@ -453,20 +693,27 @@ def apply(p: Plan, reporter, runner=run) -> bool:
                 if code != 0:
                     reporter.step(s.name, "failed", "exit %d" % code)
                     reporter.say((err.strip() or out.strip())[-2000:])
+                    _stopped(p, reporter, removed)
                     return False
             else:
                 s.action(runner)
         except (EditionError, OSError, detect.DetectError) as e:
-            reporter.step(s.name, "failed", str(e)[:300])
+            reporter.step(s.name, "failed", str(e).strip().splitlines()[0][:300] if str(e).strip() else "")
             reporter.say(str(e))
+            _stopped(p, reporter, removed)
             return False
+        except KeyboardInterrupt:
+            _stopped(p, reporter, removed)
+            raise
         if s.stops and hasattr(reporter, "patient"):
             # Nothing answers until Nyxus is up: waiting on each report would
             # only keep the deployment down for longer.
             reporter.patient = False
+        removed = removed or s.removes
         reporter.step(s.name, "done")
     return True
 
 
 def cleanup(p: Plan) -> None:
-    shutil.rmtree(p.workdir, ignore_errors=True)
+    if not p.keep_workdir:
+        shutil.rmtree(p.workdir, ignore_errors=True)
