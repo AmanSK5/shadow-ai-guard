@@ -206,7 +206,11 @@ def tailscale_ingresses(items: list[dict]) -> list[dict]:
     for i in items:
         md, spec = i.get("metadata") or {}, i.get("spec") or {}
         cls = spec.get("ingressClassName") or (md.get("annotations") or {}).get("kubernetes.io/ingress.class", "")
-        if cls != "tailscale" and not any(f.startswith("tailscale.com/") for f in md.get("finalizers") or []):
+        # The exact finalizer, not a prefix of it. Only one is ever removed, so
+        # recognising a family of them here would be wider than anything this
+        # acts on - and a prefix test on a domain-qualified name is the kind of
+        # loose match that is wrong far more often than it is useful.
+        if cls != "tailscale" and TAILSCALE_FINALIZER not in (md.get("finalizers") or []):
             continue
         tls = next((h for t in spec.get("tls") or [] for h in t.get("hosts") or [] if h), "")
         rule = next((r["host"] for r in spec.get("rules") or [] if r.get("host")), "")
