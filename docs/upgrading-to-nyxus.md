@@ -33,7 +33,7 @@ The database is backed up beside itself before anything stops.
 - You have `aiguardctl` from this release, with your own `helm` and `kubectl`,
   or `docker`, on your PATH:
 
-      pipx install -q "git+https://github.com/AmanSK5/shadow-ai-guard@v0.36.0#subdirectory=cli"
+      pipx install --force -q "git+https://github.com/AmanSK5/shadow-ai-guard@v0.36.0#subdirectory=cli"
 
 Move the receiver and portal first. The endpoints follow, below.
 
