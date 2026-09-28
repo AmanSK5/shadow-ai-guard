@@ -148,3 +148,24 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version }}
 {{- define "ai-guard.receiverUrl" -}}
 {{- printf "http://%s:%v" (include "ai-guard.fullname" .) .Values.service.port -}}
 {{- end -}}
+
+{{/*
+  A whole values section arrived missing, which only happens one way.
+
+  `helm upgrade --reuse-values` takes the PREVIOUS release's computed values as
+  the base and drops every default the new chart carries underneath them. Where
+  the previous chart had no such section at all - scanner, discovery and portal
+  were each added after 0.32.0 - the section does not arrive partially filled,
+  it does not arrive at all, and the first `.Values.<section>.enabled` in the
+  template dereferences nil.
+
+  The existing guards inside each template catch the PARTIAL case, where the
+  section exists and a key underneath it is missing. They cannot catch this one,
+  because they sit below the dereference that crashes. This is called above it.
+
+  Takes a dict so the message stays in one place:
+    (dict "section" "scanner" "release" .Release.Name)
+*/}}
+{{- define "ai-guard.sectionDropped" -}}
+{{- fail (printf "\n\nThe %s values are missing entirely, so the chart defaults were dropped.\n\nThis is what `helm upgrade --reuse-values` does: it keeps only the values you set previously and discards everything underneath them, including whole sections a newer chart added. The %s section did not exist in older charts, so there was nothing of it to keep.\n\nUse --reset-then-reuse-values instead, which resets to the chart defaults and then reapplies your stored values on top:\n\n  helm upgrade %s <chart> --reset-then-reuse-values\n" .section .section .release) -}}
+{{- end -}}

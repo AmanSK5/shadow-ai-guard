@@ -19,7 +19,7 @@ It needs Python 3.10 or newer and `pipx` (`brew install pipx` on a Mac,
 `pip install --user pipx` elsewhere). From a tagged release of this
 repository, once:
 
-    pipx install -q "git+https://github.com/AmanSK5/shadow-ai-guard@v0.35.0#subdirectory=cli"
+    pipx install -q "git+https://github.com/AmanSK5/shadow-ai-guard@v0.36.0#subdirectory=cli"
     pipx ensurepath
 
 `pipx ensurepath` puts the command on your PATH; a shell opened before that
@@ -41,10 +41,10 @@ shells out to your own `helm`, `kubectl` and `docker`, found on your PATH.
    command never sees a password and never learns which sign-in you use.
 3. It shows the plan - every object it will touch and every command it will
    run - and waits for `y`.
-4. It runs them: `helm upgrade --reuse-values` on a Helm release, image bumps
-   on a bare Kubernetes install, `pull` and `up -d` for the named services on
-   compose. Each step is reported to the portal; command output stays in
-   your terminal.
+4. It runs them: `helm upgrade --reset-then-reuse-values` on a Helm release,
+   image bumps on a bare Kubernetes install, `pull` and `up -d` for the named
+   services on compose. Each step is reported to the portal; command output
+   stays in your terminal.
 5. It waits for the portal to answer as the new version, checks the receiver
    did too and that detection sources are reporting, and records the
    outcome.

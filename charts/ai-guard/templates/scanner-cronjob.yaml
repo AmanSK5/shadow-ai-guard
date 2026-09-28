@@ -2,6 +2,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # Part of Shadow AI Guard, https://github.com/AmanSK5/shadow-ai-guard
 
+{{/* Checked BEFORE the dereference below, which is where it crashed. */}}
+{{- if not .Values.scanner }}
+{{- include "ai-guard.sectionDropped" (dict "section" "scanner" "release" .Release.Name) }}
+{{- end }}
 {{- if .Values.scanner.enabled }}
 {{- if not .Values.scanner.image }}
 {{- fail (printf "\n\nThe scanner values are incomplete: scanner.image is missing, so the chart defaults were dropped.\n\nThis is what `helm upgrade --reuse-values` does - it keeps only the values you set previously and discards everything underneath them, including defaults added by a newer chart.\n\nUse --reset-then-reuse-values instead:\n\n  helm upgrade %s charts/ai-guard --reset-then-reuse-values --set scanner.enabled=true\n" .Release.Name) }}

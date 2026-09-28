@@ -144,7 +144,7 @@ def test_an_image_of_ours_outside_compose_is_refused(monkeypatch):
         detect.compose(runner=runner)
 
 
-def test_helm_commands_reuse_values_and_bump_the_cronjobs():
+def test_helm_commands_reset_then_reuse_values_and_bump_the_cronjobs():
     found = {"route": "helm", "release": "ai-guard", "namespace": "sec", "context": "prod",
              "deployments": [{"name": "ai-guard", "container": "receiver",
                               "image": "ghcr.io/amansk5/shadow-ai-guard/receiver:0.28.0", "tag": "0.28.0"}],
@@ -152,12 +152,38 @@ def test_helm_commands_reuse_values_and_bump_the_cronjobs():
                            "image": "ghcr.io/amansk5/shadow-ai-guard/scanner:0.28.0", "tag": "0.28.0"}]}
     cmds = upgrade.commands(found, "v0.29.0")
     assert cmds[0] == ["helm", "--kube-context", "prod", "upgrade", "ai-guard", upgrade.CHART,
-                       "--version", "0.29.0", "--namespace", "sec", "--reuse-values", "--wait", "--timeout", "10m"]
+                       "--version", "0.29.0", "--namespace", "sec",
+                       "--reset-then-reuse-values", "--wait", "--timeout", "10m"]
     assert cmds[1] == ["kubectl", "--context", "prod", "-n", "sec", "set", "image", "cronjob/nightly",
                        "job=ghcr.io/amansk5/shadow-ai-guard/scanner:0.29.0"]
     assert all(c[0] in ("helm", "kubectl") for c in cmds)
     text = "\n".join(upgrade.describe(found, {"portal_version": "0.28.0", "receiver_version": "0.28.0"}, "v0.29.0"))
     assert "$ helm --kube-context prod upgrade ai-guard" in text and "CronJob  nightly" in text
+
+
+
+def test_helm_upgrade_never_uses_reuse_values():
+    """--reuse-values drops whole values sections a newer chart added.
+
+    scanner, discovery and portal were each added after 0.32.0. Upgrading a
+    0.32.0 release with --reuse-values hands Helm a values tree where
+    .Values.scanner does not exist at all, and the template dies on
+    `nil pointer evaluating interface {}.enabled` - which says nothing about
+    the flag that caused it. Seen upgrading 0.32.0 to 0.35.0.
+
+    This asserts the ABSENCE of the wrong flag rather than the presence of the
+    right one. The wrong flag is the one that reads like the obvious choice,
+    and the failure it causes points at the chart rather than at the command.
+    """
+    for label, found in (
+        ("no context", {"route": "helm", "release": "ai-guard", "namespace": "ns",
+                        "context": None, "deployments": [], "cronjobs": []}),
+        ("with context", {"route": "helm", "release": "ai-guard", "namespace": "ns",
+                          "context": "prod", "deployments": [], "cronjobs": []}),
+    ):
+        flat = [a for c in upgrade.commands(found, "v0.36.0") for a in c]
+        assert "--reuse-values" not in flat, label
+        assert "--reset-then-reuse-values" in flat, label
 
 
 def test_bare_kubernetes_sets_images_on_labelled_objects_only():
