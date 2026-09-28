@@ -167,7 +167,16 @@ def cmd_edition(a, portal: str, found: dict) -> int:
             ok = edition.apply(moving, rep, ask=ask)
             if not ok:
                 rep.finish("failed", "a step failed; see the terminal")
-                say("The move stopped. The database as it was is at %s." % moving.backup)
+                # Only claim a backup where one was actually taken. The backup
+                # step is the first, so it is the one most likely to be what
+                # failed - and saying "the database as it was is at <path>"
+                # when nothing wrote it sends somebody to an empty file.
+                if moving.backed_up:
+                    say("The move stopped. The database as it was is at %s." % moving.backup)
+                else:
+                    say("The move stopped before the database was backed up, so there is no "
+                        "backup to go back to. Nothing was changed either: the steps that stop "
+                        "and remove anything all come after it.")
                 return 1
             rep.patient = True
             if moving.tailscale:
@@ -176,8 +185,12 @@ def cmd_edition(a, portal: str, found: dict) -> int:
             result = upgrade.verify(portal, token, a.nyxus_version, say)
         except KeyboardInterrupt:
             rep.finish("aborted", "interrupted at the terminal")
-            say("Interrupted. The steps that already ran are not undone; the database as it was "
-                "is at %s." % moving.backup)
+            if moving.backed_up:
+                say("Interrupted. The steps that already ran are not undone; the database as it was "
+                    "is at %s." % moving.backup)
+            else:
+                say("Interrupted before the database was backed up. Nothing that stops or removes "
+                    "anything had run yet.")
             return 130
         if result is None:
             rep.finish("unverified", "Nyxus did not confirm %s within the wait" % a.nyxus_version)
