@@ -66,8 +66,24 @@ def commands(found: dict, target: str) -> list[list[str]]:
     cmds: list[list[str]] = []
     if found["route"] == "helm":
         base = ["helm"] + (["--kube-context", found["context"]] if found.get("context") else [])
+        # --reset-then-reuse-values, NOT --reuse-values.
+        #
+        # --reuse-values takes the previous release's computed values as the
+        # base and drops every default the new chart carries underneath them.
+        # Where the old chart had no such section at all - scanner, discovery
+        # and portal were each added after 0.32.0 - the section does not arrive
+        # partially filled, it does not arrive at all, and the template
+        # dereferences nil. An upgrade from 0.32.0 to 0.35.0 died on
+        # `.Values.scanner.enabled: nil pointer evaluating interface {}.enabled`,
+        # which tells the operator nothing about what they did.
+        #
+        # The chart's guards now catch that and say what to do, but the right
+        # fix is not to send the flag that causes it. charts/ai-guard/README.md
+        # has said "--reset-then-reuse-values, not --reuse-values" since the
+        # portal was added; this is the command catching up with it.
         cmds.append(base + ["upgrade", found["release"], CHART, "--version", v,
-                            "--namespace", found["namespace"], "--reuse-values", "--wait",
+                            "--namespace", found["namespace"],
+                            "--reset-then-reuse-values", "--wait",
                             "--timeout", "10m"])
     elif found["route"] == "kubernetes":
         base = ["kubectl"] + (["--context", found["context"]] if found.get("context") else [])

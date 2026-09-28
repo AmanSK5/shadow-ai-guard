@@ -28,6 +28,10 @@ spec:
                 name: {{ include "ai-guard.portal.fullname" . }}
                 port:
                   number: {{ .Values.portal.service.port }}
+{{/* Checked BEFORE the dereference below, which is where it crashed. */}}
+{{- if not .Values.portal }}
+{{- include "ai-guard.sectionDropped" (dict "section" "portal" "release" .Release.Name) }}
+{{- end }}
   {{- if .Values.portal.ingress.tls.enabled }}
   tls:
     - hosts:
