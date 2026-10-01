@@ -197,8 +197,28 @@ def cmd_edition(a, portal: str, found: dict) -> int:
             say("The steps ran, but the portal did not answer as Nyxus %s in time. Open System health." % a.nyxus_version)
             return 1
         rep.finish("succeeded", "Nyxus %s" % result.get("portal_version"))
-        say("Done: this deployment runs Nyxus %s. Next, replace the collector scripts in your MDM with "
-            "Nyxus's, in the same policies; each machine keeps its identity." % result.get("portal_version"))
+        say("Done: this deployment runs Nyxus %s." % result.get("portal_version"))
+        say("")
+        # Anything maintained outside the chart is invisible to Helm, so the
+        # move cannot have touched it: collector CronJobs still on the old
+        # image and environment, credentials under names the new collectors do
+        # not read, and - where somebody made one by hand - an Ingress naming
+        # a Service the uninstall took with it. That last one was two days of
+        # every collector being refused at the door on a real deployment, with
+        # the pods up and the console up and nothing saying so.
+        #
+        # Named only where it exists. On Compose there is no cluster to read,
+        # and before 0.5.0 there is no such command.
+        if found["route"] == "helm" and edition.has_move(a.nyxus_version):
+            say("Anything kept outside the chart is still as it was - Helm could not see it, so")
+            say("the move did not touch it. Nyxus reads the cluster for what that leaves:")
+            say("")
+            say("    nyxusctl move")
+            say("")
+            say("It reports and changes nothing; `nyxusctl move --apply` puts right what it can.")
+            say("")
+        say("Then replace the collector scripts in your MDM with Nyxus's, in the same policies; "
+            "each machine keeps its identity.")
         return 0
     finally:
         edition.cleanup(moving)

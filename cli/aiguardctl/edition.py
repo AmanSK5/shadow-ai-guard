@@ -264,6 +264,28 @@ def _release_patch(index: int) -> str:
                        {"op": "remove", "path": path}], separators=(",", ":"))
 
 
+# The Nyxus release that first ships `nyxusctl move`. Below it the command
+# does not exist, and a closing line naming one that is not there is the same
+# fault as the dead link it is meant to replace.
+MOVE_FROM = (0, 5, 0)
+
+
+def has_move(version: str) -> bool:
+    """Whether the Nyxus being installed ships `nyxusctl move`.
+
+    Unreadable or short versions answer False. Saying nothing costs a reader
+    one command they could have run; saying it wrongly costs them the time to
+    find out it does not exist, and some of their trust in the rest.
+    """
+    parts = []
+    for piece in (version or "").strip().lstrip("v").split("."):
+        digits = "".join(c for c in piece if c.isdigit())
+        if not digits:
+            break
+        parts.append(int(digits))
+    return len(parts) >= 3 and tuple(parts[:3]) >= MOVE_FROM
+
+
 def _get(d: dict, path: tuple):
     for p in path:
         if not isinstance(d, dict) or p not in d:

@@ -162,6 +162,32 @@ remove Shadow AI Guard's; each browser profile enrolls again on its own.
 
 ## After the move
 
+### First, what the move could not see
+
+Helm moves what it owns. Anything set up around the release by hand is
+invisible to it, so the move cannot have touched it:
+
+- collector CronJobs applied outside the chart, still on Shadow AI Guard's
+  image and its `AIGUARD_` environment;
+- credentials in your own Secret, under names Nyxus's collectors do not read
+  — the scanner reads Entra, Jamf and SentinelOne credentials by a `NYXUS_`
+  prefix now, and nothing rewrites the keys inside a Secret you made. This
+  one is quiet: the collector runs, finds nothing, and reports nothing;
+- an Ingress made by hand naming the release's Service, which the uninstall
+  took with it. Requests to it are refused before they reach anything.
+
+From Nyxus 0.5.0, `nyxusctl move` reads the cluster and says which of these
+are present, and `nyxusctl move --apply` puts right what it can in place:
+it repoints the Ingress, adds each credential under the name the collector
+reads while keeping the old name, and offers to hand hand-maintained
+CronJobs to the chart so they stop drifting. It changes nothing until you
+ask it to.
+
+On Docker Compose none of this applies: the move writes `scanner.env` and
+`discovery.env` itself, with the names already renamed.
+
+### Then, what is outside the deployment
+
 Nyxus keeps the addresses this deployment is reached on, so collectors, the
 extension and people signing in carry on as they were. What the move cannot
 change is outside the deployment, and the first time an owner or admin signs
