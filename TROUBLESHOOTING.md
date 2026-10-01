@@ -223,6 +223,63 @@ A large count on a surface whose source says `not reporting` is cause 2.
 
 ---
 
+## An upgrade fails on `nil pointer evaluating interface {}.enabled`
+
+    scanner-cronjob.yaml:5:14 executing at <.Values.scanner.enabled>:
+    nil pointer evaluating interface {}.enabled
+
+The upgrade was run with `helm upgrade --reuse-values`. That flag takes the
+previous release's computed values as the base and drops every default the new
+chart carries underneath them. `scanner`, `discovery` and `portal` were each
+added to the chart after 0.32.0, so upgrading from before them leaves those
+sections not merely incomplete but absent, and the first `.Values.<section>.enabled`
+dereferences nil.
+
+Use `--reset-then-reuse-values`, which resets to the chart's values, applies the
+last release's values over them, and then any overrides. Your settings carry
+forward exactly as before:
+
+    helm upgrade ai-guard <chart> --version <version> \
+      --namespace <namespace> --reset-then-reuse-values --wait
+
+From 0.36.0 the chart says this itself rather than failing on a nil pointer, and
+`aiguardctl upgrade` sends the right flag. Both of those ship IN 0.36.0, so an
+upgrade *to* it still runs whatever your current CLI does - see below.
+
+## `aiguardctl upgrade` still behaves like the old version after installing a new one
+
+`pipx install` does nothing if the package is already installed. It prints
+"already installed" and exits 0, and `-q` suppresses even that, so the command
+looks like it worked. Every operator upgrading already has `aiguardctl`
+installed, which is exactly when this bites.
+
+Check what you actually have, and force the reinstall:
+
+    aiguardctl --version
+    pipx install --force "git+https://github.com/AmanSK5/shadow-ai-guard@v<version>#subdirectory=cli"
+    aiguardctl --version
+
+Then run `aiguardctl upgrade` and read the plan before confirming. The first
+line should name `--reset-then-reuse-values`. If it says `--reuse-values`, the
+reinstall did not take effect in this shell.
+
+## An upgrade reports success but the deployment did not change
+
+Check what is running rather than trusting the message. The portal names its
+release on System health, and the receiver answers at `/healthz`:
+
+    curl -s https://<your-receiver-host>/healthz
+
+If that names the release you upgraded *from*, the upgrade rendered and applied
+a chart whose image references were carried over from the previous release -
+again `--reuse-values`. Re-run with `--reset-then-reuse-values`.
+
+The scanner and discovery CronJobs live outside the chart. A Helm step that
+failed part way leaves them on the old tag with nothing saying so, so check
+those too:
+
+    kubectl -n <namespace> get cronjob -o wide
+
 ## `helm install` fails with an ownership error
 
 ```

@@ -512,3 +512,84 @@ def test_once_shadow_ai_guard_has_stopped_progress_reports_do_not_hold_the_move_
     before = 2 * stop + 1          # running and done for each earlier step, and running for the stop
     assert len(slept) == 6 * before   # a patient report waits after each of its six tries
     assert not rep.patient and len(posts) == 6 * before + (2 * len(p.steps) - before)
+
+
+# ---- what the move could not see, and who is told about it -----------------
+#
+# Helm moves what it owns. A deployment that kept collector CronJobs, an
+# Ingress or a credential Secret outside the chart keeps them exactly as they
+# were, and nothing in the move says so - which on a real deployment was two
+# days of every collector being refused at the door with the pods up, the
+# console up, and no page disagreeing.
+
+
+@pytest.mark.parametrize("version,named", [
+    ("0.5.0", True),
+    ("v0.5.0", True),
+    ("0.5.1", True),
+    ("0.10.0", True),
+    ("1.0.0", True),
+    # Before 0.5.0 there is no such command. Naming one that is not there is
+    # the fault this line exists to stop, not a smaller version of it.
+    ("0.4.0", False),
+    ("0.3.0", False),
+    # And a version that cannot be read is not a licence to guess.
+    ("0.5", False),
+    ("", False),
+    ("latest", False),
+])
+def test_the_follow_up_command_is_named_only_where_it_exists(version, named):
+    assert edition.has_move(version) is named
+
+
+def test_the_closing_line_sends_a_helm_move_to_read_the_cluster(monkeypatch, capsys):
+    """The move's last word is the only moment it has somebody's attention."""
+    out = _finish(monkeypatch, capsys, route="helm", version="0.5.0")
+    assert "nyxusctl move" in out
+    assert "--apply" in out, "and says which form changes anything"
+    assert "MDM" in out, "without losing the endpoints, which are still theirs to do"
+
+
+def test_an_older_nyxus_is_not_sent_after_a_command_it_does_not_have(monkeypatch, capsys):
+    out = _finish(monkeypatch, capsys, route="helm", version="0.4.0")
+    assert "nyxusctl move" not in out
+    assert "MDM" in out
+
+
+def test_compose_is_not_sent_to_read_a_cluster_it_does_not_have(monkeypatch, capsys):
+    """There are no CronJobs, no Ingress and no Secret to read, and the move
+    writes Compose's env files itself with the names already renamed."""
+    out = _finish(monkeypatch, capsys, route="compose", version="0.5.0")
+    assert "nyxusctl move" not in out
+    assert "MDM" in out
+
+
+def _finish(monkeypatch, capsys, route, version):
+    """Drive cmd_edition to its closing line with everything else stubbed."""
+    class Args:
+        nyxus_version = version
+        nyxus_release = "nyxus"
+        nyxus_compose_file = "compose.yml"
+        key_file = None
+        dry_run = False
+        yes = True
+        no_pull = False
+
+    plan = type("P", (), {"objects": [], "backed_up": True, "backup": "/tmp/b",
+                          "tailscale": [], "context": {}})()
+    monkeypatch.setattr(edition, "load_key", lambda f: "nyxl_x")
+    monkeypatch.setattr(edition, "check_key", lambda k, a: "registry.example")
+    monkeypatch.setattr(edition, "plan", lambda *a, **k: plan)
+    monkeypatch.setattr(edition, "describe", lambda *a, **k: [])
+    monkeypatch.setattr(edition, "apply", lambda *a, **k: True)
+    monkeypatch.setattr(edition, "cleanup", lambda p: None)
+    monkeypatch.setattr(cli.auth, "authorize", lambda p, s: "tok")
+    monkeypatch.setattr(cli.api, "request", lambda *a, **k: {"id": "r1", "portal_version": "0.3.0"})
+    monkeypatch.setattr(cli.upgrade, "Reporter",
+                        lambda *a, **k: type("R", (), {"finish": lambda s, *a: None,
+                                                       "patient": False})())
+    monkeypatch.setattr(cli.upgrade, "verify",
+                        lambda *a, **k: {"portal_version": version.lstrip("v")})
+    assert cli.cmd_edition(Args(), "http://portal", {"route": route, "namespace": "ns",
+                                                     "release": "ai-guard"}) == 0
+    return capsys.readouterr().err

@@ -71,6 +71,11 @@ their machines in the plan, and if the operator cannot delete them it asks you
 to in the admin console, then releases those Ingresses. On Docker Compose, name Nyxus's
 compose file with `--nyxus-compose-file`, in a directory of its own.
 `--nyxus-release` names the Helm release. `--dry-run` shows every step first.
+
+What it moves is what Helm owns. Collector CronJobs applied outside the chart,
+credentials in a Secret you made, and an Ingress named by hand are invisible to
+it and are left as they were; from Nyxus 0.5.0, `nyxusctl move` reads the
+cluster for those and `nyxusctl move --apply` puts right what it can.
 The full account is [docs/upgrading-to-nyxus.md](../docs/upgrading-to-nyxus.md).
 
 ## What it will not do

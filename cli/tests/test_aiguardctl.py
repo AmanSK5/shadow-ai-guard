@@ -302,3 +302,60 @@ def test_a_timed_out_read_is_an_api_error_not_a_crash(monkeypatch):
         assert e.status == 0 and "no answer" in e.detail
     else:
         raise AssertionError("expected ApiError")
+
+
+def test_the_database_backup_survives_a_wrapped_sqlite3_connection(monkeypatch, tmp_path):
+    """Connection.backup() needs a real sqlite3.Connection and rejects a proxy.
+
+    OpenTelemetry's Python auto-instrumentation replaces sqlite3.connect so it
+    can trace queries, and hands back a TracedConnectionProxy. The move died on
+    its first step with
+
+        TypeError: backup() argument 'target' must be sqlite3.Connection,
+                   not TracedConnectionProxy
+
+    on a real cluster. Connecting to the target had already created it, so a
+    zero-byte file sat at the path the command then named as the backup.
+
+    VACUUM INTO is one statement through the connection that already works,
+    whatever wraps it. This runs the generated code against a proxied sqlite3
+    and checks a real backup comes out.
+    """
+    import sqlite3, subprocess, sys, textwrap
+    from aiguardctl import edition
+
+    src = tmp_path / "state.db"
+    con = sqlite3.connect(src)
+    con.execute("PRAGMA journal_mode=WAL")
+    con.execute("CREATE TABLE t(x)")
+    con.executemany("INSERT INTO t VALUES(?)", [(i,) for i in range(500)])
+    con.commit(); con.close()
+
+    monkeypatch.setattr(edition, "STATE_DB", str(src))
+    code, target = edition._backup_code("TEST")
+
+    prelude = textwrap.dedent("""
+        import sqlite3
+        class TracedConnectionProxy:
+            def __init__(self, inner): self._inner = inner
+            def __getattr__(self, n): return getattr(self._inner, n)
+        _real = sqlite3.connect
+        sqlite3.connect = lambda *a, **k: TracedConnectionProxy(_real(*a, **k))
+    """)
+    r = subprocess.run([sys.executable, "-c", prelude + code], capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+
+    import os
+    assert os.path.getsize(target) > 0, "the backup is empty"
+    check = sqlite3.connect(target)
+    assert check.execute("SELECT count(*) FROM t").fetchone()[0] == 500
+    check.close()
+
+
+def test_a_move_that_stops_before_the_backup_does_not_claim_one():
+    """The path was named whatever had happened, including when the backup step
+    was itself what failed. Somebody following that sentence found an empty
+    file. A plan only reports a backup once the step has run."""
+    from aiguardctl import edition
+    p = edition.Plan("helm", [], "/tmp", "/var/lib/ai-guard/state.db.before-nyxus-X", [], [])
+    assert p.backed_up is False

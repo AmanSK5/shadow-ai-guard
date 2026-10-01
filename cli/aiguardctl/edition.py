@@ -45,6 +45,8 @@ STATE_DB = "/var/lib/ai-guard/state.db"
 # the release is removed, because uninstalling it removes its Secrets too.
 CARRIED = {"auth": "nyxus-carried-auth", "admin": "nyxus-carried-admin", "portal": "nyxus-carried-portal"}
 PULL_SECRET = "nyxus-registry"
+# Named once: apply() watches for it to know whether a backup really exists.
+BACKUP_STEP = "back up the receiver database"
 
 # The Tailscale operator deletes an Ingress's machine from the tailnet before
 # it lets the Ingress go. When its OAuth client may not delete devices, that
@@ -137,12 +139,44 @@ class Plan:
         # then kept, because its values file is what finishing by hand needs.
         self.resume: list[str] = []
         self.keep_workdir = False
+        # Whether the backup step actually finished. The command used to name
+        # the backup path whatever had happened, including when the backup step
+        # itself was what failed - and connecting to the target creates it, so
+        # there was a zero-byte file sitting at the path it named. Somebody
+        # trusting that sentence had no backup at all.
+        self.backed_up = False
 
 
 def _backup_code(stamp: str) -> tuple[str, str]:
+    """`VACUUM INTO`, not Connection.backup(), and the result is checked.
+
+    `Connection.backup(target)` requires the target to be a real
+    sqlite3.Connection and rejects anything else. OpenTelemetry's Python
+    auto-instrumentation replaces sqlite3.connect so it can trace queries, and
+    what comes back is a TracedConnectionProxy. The backup then dies with
+
+        TypeError: backup() argument 'target' must be sqlite3.Connection,
+                   not TracedConnectionProxy
+
+    on the first step of the move, in any cluster where that instrumentation is
+    injected - which is not unusual. Seen on a real deployment.
+
+    Worse than failing: connecting to the target CREATES it, so a zero-byte
+    file was left behind at the path the command then named as "the database as
+    it was". Anybody trusting that had no backup at all.
+
+    `VACUUM INTO` is one SQL statement through the connection that already
+    works, whatever wraps it. It writes an equally consistent snapshot of a
+    live WAL database, and it refuses rather than overwrites if the target
+    exists. The size check afterwards is because this runs unattended and the
+    only thing worse than no backup is a backup nobody checked.
+    """
     target = "%s.before-nyxus-%s" % (STATE_DB, stamp)
-    code = ("import sqlite3;s=sqlite3.connect(%r);d=sqlite3.connect(%r);"
-            "s.backup(d);d.close();s.close()" % (STATE_DB, target))
+    code = ("import os,sqlite3;s=sqlite3.connect(%r);"
+            "s.execute('VACUUM INTO ?',(%r,));s.close();"
+            "n=os.path.getsize(%r);"
+            "raise SystemExit('the backup is empty' if n==0 else 0)"
+            % (STATE_DB, target, target))
     return code, target
 
 
@@ -228,6 +262,28 @@ def _release_patch(index: int) -> str:
     path = "/metadata/finalizers/%d" % index
     return json.dumps([{"op": "test", "path": path, "value": TAILSCALE_FINALIZER},
                        {"op": "remove", "path": path}], separators=(",", ":"))
+
+
+# The Nyxus release that first ships `nyxusctl move`. Below it the command
+# does not exist, and a closing line naming one that is not there is the same
+# fault as the dead link it is meant to replace.
+MOVE_FROM = (0, 5, 0)
+
+
+def has_move(version: str) -> bool:
+    """Whether the Nyxus being installed ships `nyxusctl move`.
+
+    Unreadable or short versions answer False. Saying nothing costs a reader
+    one command they could have run; saying it wrongly costs them the time to
+    find out it does not exist, and some of their trust in the rest.
+    """
+    parts = []
+    for piece in (version or "").strip().lstrip("v").split("."):
+        digits = "".join(c for c in piece if c.isdigit())
+        if not digits:
+            break
+        parts.append(int(digits))
+    return len(parts) >= 3 and tuple(parts[:3]) >= MOVE_FROM
 
 
 def _get(d: dict, path: tuple):
@@ -485,7 +541,7 @@ def helm_plan(found: dict, key: str, host: str, version: str, release: str,
     install = helm + ["install", release, chart, "--version", version.lstrip("v"),
                       "-n", ns, "-f", values_path, "--wait", "--timeout", "10m"]
     plan.steps = [
-        Step("back up the receiver database", kube + ["-n", ns, "exec", "deployment/" + receiver, "--",
+        Step(BACKUP_STEP, kube + ["-n", ns, "exec", "deployment/" + receiver, "--",
                                                      "python", "-c", backup_code]),
         Step("carry the release's credentials", action=carry,
              shows="copy %s into %s" % (", ".join(n for n, _ in secrets_made.values()) or "no Secrets",
@@ -615,7 +671,7 @@ def compose_plan(found: dict, key: str, host: str, version: str, compose_file: s
         Step("sign in to the registry", ["docker", "login", host, "--username", "licence", "--password-stdin"], stdin=key),
         Step("pull Nyxus's images", new + ["pull"] + services),
     ] if pull else []) + [
-        Step("back up the receiver database", old + ["exec", "-T", "receiver", "python", "-c", backup_code]),
+        Step(BACKUP_STEP, old + ["exec", "-T", "receiver", "python", "-c", backup_code]),
         Step("stop Shadow AI Guard", old + ["stop"] + services, stops=True),
         Step("note when it stopped", action=mark_stopped,
              shows="add SHADOW_AI_GUARD_FINDINGS_BEFORE=<that moment> to %s" % env_path),
@@ -697,6 +753,8 @@ def apply(p: Plan, reporter, runner=run, ask=None) -> bool:
                     return False
             else:
                 s.action(runner)
+            if s.name == BACKUP_STEP:
+                p.backed_up = True
         except (EditionError, OSError, detect.DetectError) as e:
             reporter.step(s.name, "failed", str(e).strip().splitlines()[0][:300] if str(e).strip() else "")
             reporter.say(str(e))
