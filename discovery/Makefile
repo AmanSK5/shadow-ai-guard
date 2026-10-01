@@ -1,4 +1,4 @@
-.PHONY: lock upgrade lock-check
+.PHONY: lock upgrade upgrade-package lock-check
 
 # Lockfiles are compiled inside the same base image this component ships on.
 # pip-compile bakes environment markers from the interpreter running it, so a
@@ -36,6 +36,26 @@ upgrade:
 	  "pip install -q pip-tools==$(PIP_TOOLS_VERSION) click==$(CLICK_VERSION) && pip-compile --upgrade --generate-hashes --strip-extras --output-file=requirements.lock requirements.in"
 
 # Fail if requirements.lock is not what requirements.in currently compiles to.
+# Recompile, moving only the packages named and nothing else.
+#
+# This is the one to reach for when a scan reports a CVE. `upgrade` clears it
+# too, but by moving every package with a newer compatible release, and that
+# collateral has broken the build: clearing CVE-2026-102268 in PyJWT with it
+# also carried pygments to a version .github/requirements-ci.txt does not pin,
+# and every test job installs a component's lock and that file together - so
+# pip could not resolve the pair and the tests failed before collecting one.
+# A CVE is a reason to move a package, not a reason to move every package.
+#
+#   make upgrade-package PKG=pyjwt
+#   make upgrade-package PKG="pyjwt urllib3"
+upgrade-package:
+	@test -n "$(PKG)" || { echo "PKG is required, e.g. make upgrade-package PKG=\"pyjwt urllib3\""; exit 2; }
+	docker run --rm -v "$$PWD:/w" -w /w $(PY_IMAGE) sh -c \
+	  "pip install -q pip-tools==$(PIP_TOOLS_VERSION) click==$(CLICK_VERSION) && pip-compile $(foreach p,$(PKG),--upgrade-package $(p)) --generate-hashes --strip-extras --output-file=requirements.lock requirements.in"
+	@echo ""
+	@echo "requirements.lock regenerated, moving only: $(PKG)"
+	@echo "Check the diff names no other package, and run the tests."
+
 # Nothing installs from requirements.in: CI, the Dockerfile and Trivy all read
 # the lock. So an edit to the .in alone changes nothing and still goes green.
 # This is what CI runs. Run it locally before pushing to save a round trip.
