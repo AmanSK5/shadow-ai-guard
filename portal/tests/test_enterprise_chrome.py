@@ -173,7 +173,8 @@ def test_every_time_label_follows_the_chosen_window():
     assert "first seen this week" not in body
     assert "from=now-7d" not in body
     assert "'One bar per day for the last ' + fmtWindow(hoursNow())" in HTML
-    assert "'&from=now-' + hoursNow() + 'h&to=now&kiosk'" in HTML
+    assert "'&from=now-' + panelHours() + 'h&to=now&kiosk'" in HTML
+    assert "const panelHours = () => Math.min(hoursNow(), PANEL_MAX_HOURS);" in HTML
 
 
 def test_system_health_is_called_that_everywhere_a_person_reads():

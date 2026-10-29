@@ -263,3 +263,30 @@ def test_the_portal_reads_incrementally_after_the_first_read(monkeypatch, loki):
     again = portal_main._findings(24)
     assert portal_main._loki_reader.last["mode"] == "incremental"
     assert len(again) == 301 and again[0]["tool"] == "latest"
+
+
+# ---- a window longer than one query may ask for ----------------------------
+
+def test_no_query_asks_for_more_than_loki_answers(loki):
+    """The picker offers 90 days and a stock Loki refuses any range over
+    30d1h, so a 90-day read was a 400 and an empty page."""
+    fake = loki(_spread(900, END, 2160 * HOUR))
+    got = derive.fetch_from_loki("http://loki", 2160, limit=100, end_ns=END)
+    assert fake.requests and all(e - s <= derive.MAX_QUERY_NS for s, e, _ in fake.requests)
+    assert len(got) == 900 and len(set(got.timestamps)) == 900, "a finding lost or counted twice"
+    assert got.truncated is False
+
+
+def test_a_long_window_read_serially_still_keeps_the_newest_at_the_cap(loki):
+    fake = loki(_spread(900, END, 2160 * HOUR))
+    got = derive.fetch_from_loki("http://loki", 2160, limit=100, end_ns=END, max_findings=250)
+    assert got.truncated is True
+    assert got.timestamps == sorted(got.timestamps, reverse=True)[:len(got)]
+    assert max(got.timestamps) == END
+    assert all(e - s <= derive.MAX_QUERY_NS for s, e, _ in fake.requests)
+
+
+def test_a_window_inside_the_limit_is_still_one_query_range(loki):
+    fake = loki(_spread(50, END, 168 * HOUR))
+    derive.fetch_from_loki("http://loki", 168, limit=100, end_ns=END)
+    assert {(s, e) for s, e, _ in fake.requests} == {(END - 168 * HOUR, END)}

@@ -97,6 +97,13 @@ class Findings(list):
 # asked for; long enough that a quiet week is a handful of requests.
 READ_SPAN_NS = 6 * 3600 * 10**9
 
+# The longest range one query may ask for. Loki refuses a query_range longer
+# than its max_query_length, which defaults to 30d1h, however few entries it
+# would return - and the window picker offers 90 days, so the longest window
+# was a 400 from the store and an empty page. A store with a lower limit can
+# be met with LOKI_MAX_QUERY_HOURS.
+MAX_QUERY_NS = int(float(os.environ.get("LOKI_MAX_QUERY_HOURS") or 720) * 3600 * 10**9)
+
 
 def fetch_from_loki(base, hours, token=None, limit=5000, username=None,
                     password=None, max_findings=100_000, parallel=1,
@@ -126,6 +133,9 @@ def fetch_from_loki(base, hours, token=None, limit=5000, username=None,
     which only sends credentials after a 401 with a realm it recognises -
     Grafana Cloud answers 401 without one, so the retry never carried the
     header.
+
+    A window longer than one query may ask for (MAX_QUERY_NS) is split into
+    spans no longer than that, whatever `parallel` is.
 
     parallel > 1 splits the window into six-hour spans and walks several at
     once, newest first. One page at a time made a read's cost the number of
@@ -195,6 +205,11 @@ def fetch_from_loki(base, hours, token=None, limit=5000, username=None,
     spans = 1
     if parallel > 1 and end > start:
         spans = min(64, max(1, math.ceil((end - start) / READ_SPAN_NS)))
+    if end > start:
+        # Never a span longer than one query may be, read in parallel or not.
+        # One at a time, the spans are walked newest first and the cap stops
+        # the walk exactly as it stops a parallel one.
+        spans = max(spans, math.ceil((end - start) / MAX_QUERY_NS))
 
     if spans == 1:
         got, truncated = walk(start, end)

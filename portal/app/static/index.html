@@ -2001,6 +2001,11 @@ let HOURS = null;
 const WINDOWS = [[24, '24 hours'], [72, '3 days'], [168, '7 days'],
                  [336, '14 days'], [720, '30 days'], [2160, '90 days']];
 const hoursNow = () => Number(HOURS || (CFG && CFG.lookback_hours) || 168);
+// What a Grafana panel is asked for. Its queries go to Loki, which refuses a
+// range longer than its max_query_length (30d1h unless raised), so a panel
+// under the 90-day window drew an error instead of a chart.
+const PANEL_MAX_HOURS = 720;
+const panelHours = () => Math.min(hoursNow(), PANEL_MAX_HOURS);
 const hq = sep => HOURS ? (sep || '?') + 'hours=' + HOURS : '';
 const windowPref = () => {
   const v = Number(pref('window.hours', ''));
@@ -2881,7 +2886,7 @@ const WIDGETS = {
       "${esc(w.ref)}". Named here but not defined there, so there is nothing
       to draw.</div></div>`;
     const q = 'orgId=1&theme=' + (document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light')
-    + '&from=now-' + hoursNow() + 'h&to=now&kiosk';
+    + '&from=now-' + panelHours() + 'h&to=now&kiosk';
     // No heading of our own. The panel draws its own, from the dashboard, so a
     // second one is both duplicated and less trustworthy: ours comes from
     // GRAFANA_PANELS, which is a snapshot of a title someone can rename in
@@ -7035,7 +7040,11 @@ function dashboard() {
 
   const base = CFG.grafana_url, panels = CFG.grafana_panels || [];
   const q = 'orgId=1&theme=' + (document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light')
-    + '&from=now-' + hoursNow() + 'h&to=now&kiosk';
+    + '&from=now-' + panelHours() + 'h&to=now&kiosk';
+  const shorter = panelHours() < hoursNow() ? `<div class="note">These charts cover
+    the last ${fmtWindow(panelHours())}, not the ${fmtWindow(hoursNow())} chosen for
+    the portal: that is the longest range Loki answers unless its
+    <code>max_query_length</code> is raised.</div>` : '';
 
   if (!panels.length && CFG.grafana_dashboard_uid) {
     return `<h2>Grafana</h2>
@@ -7043,6 +7052,7 @@ function dashboard() {
       <p class="lede">Embedded from ${esc(base)}. Set
       <code>GRAFANA_PANELS</code> to pick individual panels instead of the
       whole dashboard.</p>
+      ${shorter}
       <iframe src="${esc(base)}/d/${esc(CFG.grafana_dashboard_uid)}/?${q}"
         style="width:100%;height:78vh;border:1px solid var(--bd);border-radius:10px;background:var(--sf)"
         title="Grafana dashboard"></iframe>`;
@@ -7059,6 +7069,7 @@ function dashboard() {
   Grafana is refusing to be embedded - check <code>allow_embedding</code> and
   the cookie <code>SameSite</code> setting on the Grafana side.</p>
   ${bad.length ? `<div class="note">${bad.map(b => esc(b.error)).join('<br>')}</div>` : ''}
+  ${shorter}
   <div style="display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(420px,1fr))">
   ${panels.filter(p => !p.error).map(p => `
     <iframe src="${esc(base)}/d-solo/${esc(p.uid)}/?${q}&panelId=${esc(p.panel_id)}"
