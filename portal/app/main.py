@@ -1991,9 +1991,13 @@ def _admin_forward(request: Request) -> str:
     return token
 
 
-def _receiver(method: str, path: str, token: str, body: dict | None = None):
+def _receiver(method: str, path: str, token: str, body: dict | None = None,
+              timeout: float | None = None):
+    # The timeout only travels when a route asks for one, so every other call
+    # keeps the default and the shape it has always had.
+    kw = {"timeout": timeout} if timeout else {}
     try:
-        return managed.receiver_request(RECEIVER_URL, method, path, token, body)
+        return managed.receiver_request(RECEIVER_URL, method, path, token, body, **kw)
     except managed.ReceiverError as e:
         if e.status == 502:
             log.warning("receiver call failed for %s: %s",
@@ -2417,7 +2421,10 @@ def api_users_create(req: UserCreate, _=Depends(require_auth),
     # still earns its 422, which is the honest answer.
     if not body.get("email"):
         body.pop("email", None)
-    return _receiver("POST", "/admin/users", token, body)
+    # With an address and mail set up, the receiver sends the invite before it
+    # answers, so this waits as long as a mail does.
+    return _receiver("POST", "/admin/users", token, body,
+                     timeout=managed.MAIL_TIMEOUT_SECONDS)
 
 
 @app.post("/api/users/{uid}/delete")
@@ -2459,7 +2466,8 @@ def api_users_invite(req: InviteWrite, _=Depends(require_auth),
     """Tell one account, or everybody who was never told."""
     if req.user_id and not _UID_RE.match(req.user_id):
         raise HTTPException(422, "malformed user id")
-    return _receiver("POST", "/admin/users/invite", token, req.model_dump())
+    return _receiver("POST", "/admin/users/invite", token, req.model_dump(),
+                     timeout=managed.MAIL_TIMEOUT_SECONDS)
 
 
 class MailTestWrite(BaseModel):
@@ -2470,7 +2478,8 @@ class MailTestWrite(BaseModel):
 @app.post("/api/test/mail")
 def api_test_mail(req: MailTestWrite, _=Depends(require_auth),
                   token: str = Depends(_admin_forward)):
-    return _receiver("POST", "/admin/test/mail", token, req.model_dump())
+    return _receiver("POST", "/admin/test/mail", token, req.model_dump(),
+                     timeout=managed.MAIL_TIMEOUT_SECONDS)
 
 
 class SSOProbe(BaseModel):

@@ -30,7 +30,7 @@ INDEX = (Path(__file__).parent.parent / "app" / "static"
 def receiver_spy(monkeypatch):
     calls = []
 
-    def fake(base, method, path, token, body=None):
+    def fake(base, method, path, token, body=None, timeout=None):
         calls.append({"method": method, "path": path, "token": token,
                       "body": body})
         return {"ok": True}

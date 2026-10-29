@@ -31,6 +31,10 @@ from pathlib import Path
 from xml.sax.saxutils import escape as _xml
 
 TIMEOUT_SECONDS = 10
+# For a call that sends mail before it answers. The receiver allows a relay 15
+# seconds a step, so a slow one outlasted the 10 above: the portal said the
+# receiver could not be reached while the mail went, behind it.
+MAIL_TIMEOUT_SECONDS = 180
 
 
 class ReceiverError(Exception):
@@ -43,7 +47,7 @@ class ReceiverError(Exception):
 
 
 def receiver_request(base: str, method: str, path: str, admin_token: str,
-                     body: dict | None = None) -> dict:
+                     body: dict | None = None, timeout: float | None = None) -> dict:
     """One call to the receiver's admin API, the operator's token forwarded.
 
     stdlib urllib, matching derive.fetch_from_loki, so the portal gains no
@@ -64,7 +68,7 @@ def receiver_request(base: str, method: str, path: str, admin_token: str,
         },
     )
     try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT_SECONDS) as resp:
+        with urllib.request.urlopen(req, timeout=timeout or TIMEOUT_SECONDS) as resp:
             return json.loads(resp.read() or b"{}")
     except urllib.error.HTTPError as e:
         detail = "receiver refused with HTTP %d" % e.code
