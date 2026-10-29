@@ -21,6 +21,10 @@ WORKDIR /srv
 COPY requirements.lock .
 RUN pip install --no-cache-dir --require-hashes -r requirements.lock
 COPY discover.py schedule.py allowlist.txt ./
+# Where Compose mounts this job's state. A named volume takes the owner of
+# the directory it lands on, so it exists and belongs to the user the job runs
+# as; without it a fresh volume is root's and nothing can be written to it.
+RUN mkdir -p /var/lib/ai-guard && chown 65532:65532 /var/lib/ai-guard
 USER 65532:65532
 
 # See the scanner's Dockerfile: this reports on the last successful pass, and

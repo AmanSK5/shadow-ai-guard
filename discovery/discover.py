@@ -60,6 +60,7 @@ import re
 import socket
 import sys
 import time
+import urllib.parse
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -89,22 +90,25 @@ def _require_https(name: str, value: str) -> None:
 
 
 def _require_https_or_cluster(name: str, value: str) -> None:
-    """Like _require_https, but allow plain HTTP for in-cluster URLs.
+    """Like _require_https, but allow plain HTTP inside the deployment.
 
-    The documented deployment runs discovery as a CronJob talking to the
-    receiver over the pod network where TLS terminates at the ingress.
-    Requiring HTTPS there would break every in-cluster deployment, so
-    *.svc.cluster.local URLs are exempted.
+    Under the chart discovery talks to the receiver over the pod network,
+    where TLS terminates at the ingress, so *.svc.cluster.local is exempted.
+    Under Compose it is the service name, `receiver`: a name with no dot,
+    which only resolves on the containers' own network and so can never be a
+    host on the internet. Refusing that left discovery unable to start under
+    Compose at all.
     """
     if not value:
         return
     if value.startswith("https://"):
         return
-    if value.startswith("http://") and ".svc.cluster.local" in value:
+    host = urllib.parse.urlparse(value).hostname or ""
+    if value.startswith("http://") and (host.endswith(".svc.cluster.local") or (host and "." not in host)):
         return
     sys.exit(
-        f"{name} must use https:// (or http:// only for "
-        f"*.svc.cluster.local in-cluster URLs). Got {value!r}"
+        f"{name} must use https:// (or http:// only for an in-cluster "
+        f"*.svc.cluster.local or Compose service name). Got {value!r}"
     )
 
 

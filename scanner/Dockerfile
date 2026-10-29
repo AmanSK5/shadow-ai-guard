@@ -38,6 +38,11 @@ RUN pip install --no-cache-dir --no-deps .
 
 COPY receiver_reporter.py schedule.py entrypoint.py policy.yaml ./
 
+# Where Compose mounts this job's state. A named volume takes the owner of
+# the directory it lands on, so it exists and belongs to the user the job runs
+# as; without it a fresh volume is root's and nothing can be written to it.
+RUN mkdir -p /var/lib/ai-guard && chown 65532:65532 /var/lib/ai-guard
+
 # Non-root, matching the receiver's securityContext.
 USER 65532:65532
 
