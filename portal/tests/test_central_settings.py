@@ -37,7 +37,7 @@ def _request(cookie_token="aigt_s"):
 def login_mode(monkeypatch):
     calls = []
 
-    def fake(base, method, path, token, body=None):
+    def fake(base, method, path, token, body=None, timeout=None):
         calls.append({"method": method, "path": path, "token": token,
                       "body": body})
         if path == "/admin/governance" and method == "GET":

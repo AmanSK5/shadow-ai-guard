@@ -54,6 +54,11 @@ def cmd_upgrade(a) -> int:
     if not target:
         say("No target version: the portal does not know the latest release and "
             "--version was not given."); return 1
+    if found["route"] == "compose":
+        try:
+            found["tag_edit"] = upgrade.compose_tag(found, target)
+        except detect.DetectError as e:
+            say("Cannot upgrade this compose project: %s" % e); return 1
     for line in upgrade.describe(found, plan, target):
         say(line)
     if a.dry_run:

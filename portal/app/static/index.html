@@ -2001,6 +2001,11 @@ let HOURS = null;
 const WINDOWS = [[24, '24 hours'], [72, '3 days'], [168, '7 days'],
                  [336, '14 days'], [720, '30 days'], [2160, '90 days']];
 const hoursNow = () => Number(HOURS || (CFG && CFG.lookback_hours) || 168);
+// What a Grafana panel is asked for. Its queries go to Loki, which refuses a
+// range longer than its max_query_length (30d1h unless raised), so a panel
+// under the 90-day window drew an error instead of a chart.
+const PANEL_MAX_HOURS = 720;
+const panelHours = () => Math.min(hoursNow(), PANEL_MAX_HOURS);
 const hq = sep => HOURS ? (sep || '?') + 'hours=' + HOURS : '';
 const windowPref = () => {
   const v = Number(pref('window.hours', ''));
@@ -2881,7 +2886,7 @@ const WIDGETS = {
       "${esc(w.ref)}". Named here but not defined there, so there is nothing
       to draw.</div></div>`;
     const q = 'orgId=1&theme=' + (document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light')
-    + '&from=now-' + hoursNow() + 'h&to=now&kiosk';
+    + '&from=now-' + panelHours() + 'h&to=now&kiosk';
     // No heading of our own. The panel draws its own, from the dashboard, so a
     // second one is both duplicated and less trustworthy: ours comes from
     // GRAFANA_PANELS, which is a snapshot of a title someone can rename in
@@ -3671,6 +3676,7 @@ function rwOpen(seed) {
     category: seed.category || 'unreviewed', risk: seed.risk || 'medium',
     notes: seed.notes || '', domains: seed.domains || [],
     evidence: seed.evidence || null, sugs: (seed.sugs || []).slice(),
+    rest: seed.rest || {},
   };
   (seed.domains || []).forEach(d => RW.sugs.push({
     f: 'domains', v: d, why: seed.editing ? 'saved' : 'ev',
@@ -3679,12 +3685,28 @@ function rwOpen(seed) {
   REDIT = seed.editing || ''; RPRE = null; RERR = ''; RADV = false;
 }
 
-// An existing entry arrives with every identifier already confirmed: it is in
-// the registry, so the question is what to change, not what to believe.
-function rwFromEntry(id, e) {
-  const sugs = [];
-  const take = (f, arr) => (arr || []).forEach(v =>
-    sugs.push({f: f, v: v, why: 'saved', conf: 'high', on: true}));
+// The fields the wizard shows and writes. Everything else an entry can hold -
+// browser extension ids other than VS Code's, per-OS MCP paths, a CLI's
+// account file, model hosts, credential variables - is set through the JSON
+// editor, and is carried through an edit untouched rather than dropped.
+const RW_OWNED = ['id', 'name', 'vendor', 'category', 'risk_tier', 'notes',
+  'domains', 'app_names', 'bundle_ids', 'exe_names', 'email_senders',
+  'mcp_identifiers', 'mcp_config_paths'];
+const RW_OWNED_IN = {cli: ['binaries', 'config_paths'], extension_ids: ['vscode']};
+
+function rwRest(e) {
+  const rest = JSON.parse(JSON.stringify(e || {}));
+  RW_OWNED.forEach(k => { delete rest[k]; });
+  Object.keys(RW_OWNED_IN).forEach(k => {
+    if (!rest[k] || typeof rest[k] !== 'object') return;
+    RW_OWNED_IN[k].forEach(sub => { delete rest[k][sub]; });
+    if (!Object.keys(rest[k]).length) delete rest[k];
+  });
+  return rest;
+}
+
+// The wizard's identifiers, read out of an entry.
+function rwTakeAll(e, take) {
   take('app_names', e.app_names); take('bundle_ids', e.bundle_ids);
   take('exe_names', e.exe_names); take('email_senders', e.email_senders);
   take('mcp_identifiers', e.mcp_identifiers);
@@ -3692,9 +3714,40 @@ function rwFromEntry(id, e) {
   take('cli.binaries', (e.cli || {}).binaries);
   take('cli.config_paths', (e.cli || {}).config_paths);
   take('extension_ids.vscode', (e.extension_ids || {}).vscode);
+}
+
+// An existing entry arrives with every identifier already confirmed: it is in
+// the registry, so the question is what to change, not what to believe.
+function rwFromEntry(id, e) {
+  const sugs = [];
+  const take = (f, arr) => (arr || []).forEach(v =>
+    sugs.push({f: f, v: v, why: 'saved', conf: 'high', on: true}));
+  rwTakeAll(e, take);
   rwOpen({editing: id, id: id, name: e.name, vendor: e.vendor,
           category: e.category, risk: e.risk_tier, notes: e.notes,
-          domains: e.domains || [], sugs: sugs});
+          domains: e.domains || [], sugs: sugs, rest: rwRest(e)});
+}
+
+// Back from the JSON editor: the wizard shows what the JSON now says. A value
+// it already offered is ticked or unticked to match, a new one is added as
+// typed, and every field the wizard does not show is kept as the JSON has it.
+function rwApplyEntry(e) {
+  const before = RW.name + '\x00' + RW.vendor;
+  if (!RW.editing && e.id) RW.id = e.id;
+  RW.name = e.name || ''; RW.vendor = e.vendor || '';
+  RW.category = e.category || RW.category; RW.risk = e.risk_tier || RW.risk;
+  RW.notes = e.notes || ''; RW.domains = e.domains || [];
+  const want = {};
+  const take = (f, arr) => (arr || []).forEach(v => { want[f + ' ' + v] = [f, v]; });
+  take('domains', e.domains); rwTakeAll(e, take);
+  RW.sugs.forEach(x => { x.on = !!want[x.f + ' ' + x.v]; delete want[x.f + ' ' + x.v]; });
+  Object.keys(want).forEach(k => RW.sugs.push(
+    {f: want[k][0], v: want[k][1], why: 'me', conf: 'high', on: true}));
+  RW.rest = rwRest(e);
+  // A guess the JSON keeps is the person's now: re-suggesting replaces every
+  // derived guess, ticked or not, so it would come back unticked.
+  RW.sugs.forEach(x => { if (x.on && x.why === 'derived') x.why = 'me'; });
+  if (RW.name + '\x00' + RW.vendor !== before) rwResuggest();
 }
 
 const rwOn = () => RW.sugs.filter(s => s.on);
@@ -3711,6 +3764,7 @@ function rwEntry() {
   // entry the receiver refused - found by saving one, not by reading this.
   const e = {id: RW.editing || RW.id, name: RW.name, vendor: RW.vendor};
   e.category = RW.category; e.risk_tier = RW.risk;
+  Object.assign(e, JSON.parse(JSON.stringify(RW.rest || {})));
   const push = (f, v) => {
     if (f.indexOf('.') < 0) {
       e[f] = e[f] || [];
@@ -7035,7 +7089,11 @@ function dashboard() {
 
   const base = CFG.grafana_url, panels = CFG.grafana_panels || [];
   const q = 'orgId=1&theme=' + (document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light')
-    + '&from=now-' + hoursNow() + 'h&to=now&kiosk';
+    + '&from=now-' + panelHours() + 'h&to=now&kiosk';
+  const shorter = panelHours() < hoursNow() ? `<div class="note">These charts cover
+    the last ${fmtWindow(panelHours())}, not the ${fmtWindow(hoursNow())} chosen for
+    the portal: that is the longest range Loki answers unless its
+    <code>max_query_length</code> is raised.</div>` : '';
 
   if (!panels.length && CFG.grafana_dashboard_uid) {
     return `<h2>Grafana</h2>
@@ -7043,6 +7101,7 @@ function dashboard() {
       <p class="lede">Embedded from ${esc(base)}. Set
       <code>GRAFANA_PANELS</code> to pick individual panels instead of the
       whole dashboard.</p>
+      ${shorter}
       <iframe src="${esc(base)}/d/${esc(CFG.grafana_dashboard_uid)}/?${q}"
         style="width:100%;height:78vh;border:1px solid var(--bd);border-radius:10px;background:var(--sf)"
         title="Grafana dashboard"></iframe>`;
@@ -7059,6 +7118,7 @@ function dashboard() {
   Grafana is refusing to be embedded - check <code>allow_embedding</code> and
   the cookie <code>SameSite</code> setting on the Grafana side.</p>
   ${bad.length ? `<div class="note">${bad.map(b => esc(b.error)).join('<br>')}</div>` : ''}
+  ${shorter}
   <div style="display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(420px,1fr))">
   ${panels.filter(p => !p.error).map(p => `
     <iframe src="${esc(base)}/d-solo/${esc(p.uid)}/?${q}&panelId=${esc(p.panel_id)}"
@@ -9449,7 +9509,11 @@ async function managedAction(act, el) {
     // Toggling into JSON carries the form's current state with it, so
     // nothing typed is lost; toggling back re-renders the form from the
     // JSON if it parses, and stays put with the error if it does not.
-    try { RPRE = regEntryFromForm(); RADV = !RADV; RERR = ''; }
+    try {
+      RPRE = regEntryFromForm();
+      if (RADV) rwApplyEntry(RPRE);
+      RADV = !RADV; RERR = '';
+    }
     catch (e) { RERR = 'That JSON does not parse: ' + String(e.message || e); }
     render(); return;
   }

@@ -130,6 +130,7 @@ def test_compose_detection_limits_itself_to_our_services(monkeypatch):
     assert sorted(s["service"] for s in found["services"]) == ["portal", "receiver"]
     cmds = upgrade.commands(found, "v0.29.0")
     assert cmds[0] == ["docker", "compose", "--project-directory", "/srv/ai-guard",
+                       "-p", "ai-guard",
                        "-f", "/srv/ai-guard/docker-compose.yml", "pull", "portal", "receiver"]
     assert cmds[1][-3:] == ["--no-deps", "portal", "receiver"] and "up" in cmds[1]
 
@@ -359,3 +360,77 @@ def test_a_move_that_stops_before_the_backup_does_not_claim_one():
     from aiguardctl import edition
     p = edition.Plan("helm", [], "/tmp", "/var/lib/ai-guard/state.db.before-nyxus-X", [], [])
     assert p.backed_up is False
+
+
+# ---- a compose upgrade changes the version, not just the containers --------
+
+def _compose_project(tmp_path, compose_text, env_text=None):
+    (tmp_path / "docker-compose.yml").write_text(compose_text)
+    if env_text is not None:
+        (tmp_path / ".env").write_text(env_text)
+    return {"route": "compose", "project": "ai-guard", "working_dir": str(tmp_path),
+            "config_files": str(tmp_path / "docker-compose.yml"),
+            "services": [{"service": "receiver", "image": "i", "tag": "0.36.0"}]}
+
+
+def _quiet_reporter(said=None):
+    return upgrade.Reporter("http://p", "aigu_t", "abcdef012345",
+                            (said if said is not None else []).append,
+                            sleep=lambda s: None, request=lambda *a, **k: {})
+
+
+SHIPPED = 'image: ghcr.io/amansk5/shadow-ai-guard/receiver:${IMAGE_TAG:-latest}\n'
+
+
+def test_a_compose_upgrade_moves_image_tag_in_env_and_keeps_the_rest(tmp_path):
+    """`pull` and `up -d` alone fetched the tag the project already named and
+    restarted it, and the plan called that an upgrade."""
+    found = _compose_project(tmp_path, SHIPPED,
+                             "# mine\nLOKI_URL=http://loki:3100\nIMAGE_TAG=0.36.0\nCORP_DOMAINS=a.test")
+    found["tag_edit"] = upgrade.compose_tag(found, "v0.37.0")
+    assert found["tag_edit"]["old"] == "0.36.0" and found["tag_edit"]["new"] == "0.37.0"
+    plan = "\n".join(upgrade.describe(found, {}, "0.37.0"))
+    assert "IMAGE_TAG 0.36.0 -> 0.37.0" in plan, "the plan does not say what it changes"
+
+    assert upgrade.apply(found, "0.37.0", _quiet_reporter(), runner=lambda a, timeout=900: (0, "", ""))
+    lines = (tmp_path / ".env").read_text().splitlines()
+    assert lines == ["# mine", "LOKI_URL=http://loki:3100", "IMAGE_TAG=0.37.0",
+                     "CORP_DOMAINS=a.test"]
+
+
+def test_an_env_without_the_tag_gets_one(tmp_path):
+    found = _compose_project(tmp_path, SHIPPED, "LOKI_URL=x\n")
+    found["tag_edit"] = upgrade.compose_tag(found, "0.37.0")
+    assert found["tag_edit"]["old"] == ""
+    assert upgrade.apply(found, "0.37.0", _quiet_reporter(), runner=lambda a, timeout=900: (0, "", ""))
+    assert (tmp_path / ".env").read_text() == "LOKI_URL=x\nIMAGE_TAG=0.37.0\n"
+
+
+def test_a_failed_pull_puts_the_tag_back(tmp_path):
+    """Nothing was restarted, so nothing runs the new tag. Left changed, the
+    next `docker compose up` for any reason would be this upgrade, unannounced."""
+    found = _compose_project(tmp_path, SHIPPED, "IMAGE_TAG=0.36.0\n")
+    found["tag_edit"] = upgrade.compose_tag(found, "0.37.0")
+    said = []
+    assert upgrade.apply(found, "0.37.0", _quiet_reporter(said),
+                         runner=lambda a, timeout=900: (1, "", "pull refused")) is False
+    assert (tmp_path / ".env").read_text() == "IMAGE_TAG=0.36.0\n"
+    assert any("put back" in s for s in said)
+
+
+def test_a_compose_file_with_its_own_tags_is_refused_not_rewritten(tmp_path):
+    found = _compose_project(tmp_path, "image: ghcr.io/amansk5/shadow-ai-guard/receiver:0.36.0\n",
+                             "IMAGE_TAG=0.36.0\n")
+    with pytest.raises(detect.DetectError) as e:
+        upgrade.compose_tag(found, "0.37.0")
+    assert "IMAGE_TAG" in str(e.value) and "0.37.0" in str(e.value)
+    assert (tmp_path / ".env").read_text() == "IMAGE_TAG=0.36.0\n"
+
+
+def test_a_compose_project_under_its_own_name_is_the_one_upgraded(tmp_path):
+    """Compose takes the project name from the file when none is given, so a
+    stack started with -p was not upgraded: a second one came up beside it."""
+    found = _compose_project(tmp_path, SHIPPED, "IMAGE_TAG=0.36.0\n")
+    found["project"] = "guard-prod"
+    for argv in upgrade.commands(found, "0.37.0"):
+        assert argv[argv.index("-p") + 1] == "guard-prod"
