@@ -3676,6 +3676,7 @@ function rwOpen(seed) {
     category: seed.category || 'unreviewed', risk: seed.risk || 'medium',
     notes: seed.notes || '', domains: seed.domains || [],
     evidence: seed.evidence || null, sugs: (seed.sugs || []).slice(),
+    rest: seed.rest || {},
   };
   (seed.domains || []).forEach(d => RW.sugs.push({
     f: 'domains', v: d, why: seed.editing ? 'saved' : 'ev',
@@ -3684,12 +3685,28 @@ function rwOpen(seed) {
   REDIT = seed.editing || ''; RPRE = null; RERR = ''; RADV = false;
 }
 
-// An existing entry arrives with every identifier already confirmed: it is in
-// the registry, so the question is what to change, not what to believe.
-function rwFromEntry(id, e) {
-  const sugs = [];
-  const take = (f, arr) => (arr || []).forEach(v =>
-    sugs.push({f: f, v: v, why: 'saved', conf: 'high', on: true}));
+// The fields the wizard shows and writes. Everything else an entry can hold -
+// browser extension ids other than VS Code's, per-OS MCP paths, a CLI's
+// account file, model hosts, credential variables - is set through the JSON
+// editor, and is carried through an edit untouched rather than dropped.
+const RW_OWNED = ['id', 'name', 'vendor', 'category', 'risk_tier', 'notes',
+  'domains', 'app_names', 'bundle_ids', 'exe_names', 'email_senders',
+  'mcp_identifiers', 'mcp_config_paths'];
+const RW_OWNED_IN = {cli: ['binaries', 'config_paths'], extension_ids: ['vscode']};
+
+function rwRest(e) {
+  const rest = JSON.parse(JSON.stringify(e || {}));
+  RW_OWNED.forEach(k => { delete rest[k]; });
+  Object.keys(RW_OWNED_IN).forEach(k => {
+    if (!rest[k] || typeof rest[k] !== 'object') return;
+    RW_OWNED_IN[k].forEach(sub => { delete rest[k][sub]; });
+    if (!Object.keys(rest[k]).length) delete rest[k];
+  });
+  return rest;
+}
+
+// The wizard's identifiers, read out of an entry.
+function rwTakeAll(e, take) {
   take('app_names', e.app_names); take('bundle_ids', e.bundle_ids);
   take('exe_names', e.exe_names); take('email_senders', e.email_senders);
   take('mcp_identifiers', e.mcp_identifiers);
@@ -3697,9 +3714,40 @@ function rwFromEntry(id, e) {
   take('cli.binaries', (e.cli || {}).binaries);
   take('cli.config_paths', (e.cli || {}).config_paths);
   take('extension_ids.vscode', (e.extension_ids || {}).vscode);
+}
+
+// An existing entry arrives with every identifier already confirmed: it is in
+// the registry, so the question is what to change, not what to believe.
+function rwFromEntry(id, e) {
+  const sugs = [];
+  const take = (f, arr) => (arr || []).forEach(v =>
+    sugs.push({f: f, v: v, why: 'saved', conf: 'high', on: true}));
+  rwTakeAll(e, take);
   rwOpen({editing: id, id: id, name: e.name, vendor: e.vendor,
           category: e.category, risk: e.risk_tier, notes: e.notes,
-          domains: e.domains || [], sugs: sugs});
+          domains: e.domains || [], sugs: sugs, rest: rwRest(e)});
+}
+
+// Back from the JSON editor: the wizard shows what the JSON now says. A value
+// it already offered is ticked or unticked to match, a new one is added as
+// typed, and every field the wizard does not show is kept as the JSON has it.
+function rwApplyEntry(e) {
+  const before = RW.name + '\x00' + RW.vendor;
+  if (!RW.editing && e.id) RW.id = e.id;
+  RW.name = e.name || ''; RW.vendor = e.vendor || '';
+  RW.category = e.category || RW.category; RW.risk = e.risk_tier || RW.risk;
+  RW.notes = e.notes || ''; RW.domains = e.domains || [];
+  const want = {};
+  const take = (f, arr) => (arr || []).forEach(v => { want[f + ' ' + v] = [f, v]; });
+  take('domains', e.domains); rwTakeAll(e, take);
+  RW.sugs.forEach(x => { x.on = !!want[x.f + ' ' + x.v]; delete want[x.f + ' ' + x.v]; });
+  Object.keys(want).forEach(k => RW.sugs.push(
+    {f: want[k][0], v: want[k][1], why: 'me', conf: 'high', on: true}));
+  RW.rest = rwRest(e);
+  // A guess the JSON keeps is the person's now: re-suggesting replaces every
+  // derived guess, ticked or not, so it would come back unticked.
+  RW.sugs.forEach(x => { if (x.on && x.why === 'derived') x.why = 'me'; });
+  if (RW.name + '\x00' + RW.vendor !== before) rwResuggest();
 }
 
 const rwOn = () => RW.sugs.filter(s => s.on);
@@ -3716,6 +3764,7 @@ function rwEntry() {
   // entry the receiver refused - found by saving one, not by reading this.
   const e = {id: RW.editing || RW.id, name: RW.name, vendor: RW.vendor};
   e.category = RW.category; e.risk_tier = RW.risk;
+  Object.assign(e, JSON.parse(JSON.stringify(RW.rest || {})));
   const push = (f, v) => {
     if (f.indexOf('.') < 0) {
       e[f] = e[f] || [];
@@ -9460,7 +9509,11 @@ async function managedAction(act, el) {
     // Toggling into JSON carries the form's current state with it, so
     // nothing typed is lost; toggling back re-renders the form from the
     // JSON if it parses, and stays put with the error if it does not.
-    try { RPRE = regEntryFromForm(); RADV = !RADV; RERR = ''; }
+    try {
+      RPRE = regEntryFromForm();
+      if (RADV) rwApplyEntry(RPRE);
+      RADV = !RADV; RERR = '';
+    }
     catch (e) { RERR = 'That JSON does not parse: ' + String(e.message || e); }
     render(); return;
   }
