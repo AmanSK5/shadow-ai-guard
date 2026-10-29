@@ -8,6 +8,7 @@ has seen it. Progress reports carry step names and outcomes only - never
 command output, which can hold values or errors with secrets in them."""
 from __future__ import annotations
 
+import os
 import time
 
 from . import api, detect
@@ -59,6 +60,94 @@ class Reporter:
                    {"outcome": outcome, "detail": detail[:300]})
 
 
+def _tag_of(line: str) -> str | None:
+    """The value if this .env line sets IMAGE_TAG, else None."""
+    name, eq, value = line.partition("=")
+    if not eq or name.strip() != "IMAGE_TAG":
+        return None
+    return value.strip().strip("'\"")
+
+
+def compose_tag(found: dict, target: str) -> dict:
+    """Where a compose project's version lives, and what it becomes.
+
+    `pull` and `up -d` alone change nothing: they fetch the tag the project
+    already names and restart it, and the plan used to report that as an
+    upgrade. The version has to change where every later `docker compose up`
+    reads it again, which for the shipped compose file is IMAGE_TAG in the
+    project's .env.
+
+    Raises DetectError rather than guessing when the project does not read
+    its version from there - a compose file with its own tags written in is
+    somebody's edit, and rewriting it is not this command's to do.
+    """
+    wd = found.get("working_dir") or ""
+    if not wd or not os.path.isdir(wd):
+        raise detect.DetectError(
+            "the compose project's directory (%s) is not on this machine. Run "
+            "this on the machine the stack runs on" % (wd or "unknown"))
+    files = [f for f in (found.get("config_files") or "").split(",") if f]
+    text = ""
+    for f in files or [os.path.join(wd, "docker-compose.yml")]:
+        try:
+            with open(f) as fh:
+                text += fh.read()
+        except OSError as e:
+            raise detect.DetectError("cannot read %s: %s" % (f, e.strerror))
+    if "${IMAGE_TAG" not in text:
+        raise detect.DetectError(
+            "%s names its image tags itself rather than reading IMAGE_TAG from "
+            ".env. Change them to %s and run `docker compose up -d`, or use "
+            "${IMAGE_TAG} the way the shipped file does"
+            % (", ".join(files) or "the compose file", target.lstrip("v")))
+    path = os.path.join(wd, ".env")
+    old = ""
+    try:
+        with open(path) as fh:
+            for line in fh:
+                if _tag_of(line) is not None:
+                    old = _tag_of(line)
+    except FileNotFoundError:
+        pass
+    return {"path": path, "old": old, "new": target.lstrip("v")}
+
+
+def set_tag(edit: dict) -> str | None:
+    """Write IMAGE_TAG into .env, keeping every other line. Returns what was
+    there before, or None if there was no file, so a failed pull can put it
+    back."""
+    try:
+        with open(edit["path"]) as fh:
+            before = fh.read()
+    except FileNotFoundError:
+        before = None
+    lines = (before or "").splitlines(keepends=True)
+    out, done = [], False
+    for line in lines:
+        if _tag_of(line) is not None:
+            if not done:
+                out.append("IMAGE_TAG=%s\n" % edit["new"])
+                done = True
+            continue                  # a second definition would win; drop it
+        out.append(line if line.endswith("\n") else line + "\n")
+    if not done:
+        out.append("IMAGE_TAG=%s\n" % edit["new"])
+    with open(edit["path"], "w") as fh:
+        fh.write("".join(out))
+    return before
+
+
+def put_back(edit: dict, before: str | None) -> None:
+    if before is None:
+        try:
+            os.unlink(edit["path"])
+        except OSError:
+            pass
+        return
+    with open(edit["path"], "w") as fh:
+        fh.write(before)
+
+
 def commands(found: dict, target: str) -> list[list[str]]:
     """Exactly what will run, in order. Shown before anything runs and used
     verbatim afterwards, so the plan and the action cannot differ."""
@@ -104,7 +193,12 @@ def commands(found: dict, target: str) -> list[list[str]]:
                 cmds.append(base + ["-n", found["namespace"], "rollout", "status",
                                     "deployment/" + d["name"], "--timeout=10m"])
     if found["route"] == "compose":
-        base = ["docker", "compose", "--project-directory", found["working_dir"]]
+        # The project by name, as well as by directory. Without it Compose takes
+        # the name from the file (`name: ai-guard` in the shipped one), so a
+        # stack started under any other name with -p or COMPOSE_PROJECT_NAME was
+        # not upgraded: a second stack came up beside it, on empty volumes.
+        base = ["docker", "compose", "--project-directory", found["working_dir"],
+                "-p", found["project"]]
         for f in [x for x in (found.get("config_files") or "").split(",") if x]:
             base += ["-f", f]
         services = sorted({s["service"] for s in found["services"]})
@@ -128,6 +222,10 @@ def describe(found: dict, plan: dict, target: str) -> list[str]:
             lines.append("  CronJob  none running this project's scanner or discovery images")
     else:
         lines.append("  Route    compose, project %s in %s" % (found["project"], found["working_dir"]))
+        edit = found.get("tag_edit")
+        if edit:
+            lines.append("  Edit     %s: IMAGE_TAG %s -> %s" % (
+                edit["path"], edit["old"] or "(unset)", edit["new"]))
         for s in found["services"]:
             lines.append("  Service  %s %s -> %s" % (s["service"], s["tag"], target.lstrip("v")))
     lines.append("")
@@ -141,6 +239,15 @@ def describe(found: dict, plan: dict, target: str) -> list[str]:
 
 
 def apply(found: dict, target: str, reporter: Reporter, runner=detect.run) -> bool:
+    edit, before, started = found.get("tag_edit"), None, False
+    if edit:
+        reporter.step("set IMAGE_TAG", "running")
+        try:
+            before = set_tag(edit)
+        except OSError as e:
+            reporter.step("set IMAGE_TAG", "failed", e.strerror or "")
+            return False
+        reporter.step("set IMAGE_TAG", "done")
     for argv in commands(found, target):
         name = " ".join(argv[:3]) if argv[0] != "kubectl" else " ".join(
             [a for a in argv if a not in ("-n", found.get("namespace", ""))][:5])
@@ -149,7 +256,15 @@ def apply(found: dict, target: str, reporter: Reporter, runner=detect.run) -> bo
         if code != 0:
             reporter.step(name, "failed", "exit %d" % code)
             reporter.say(err.strip()[-2000:] or out.strip()[-2000:])
+            if edit and not started:
+                # Nothing was restarted, so nothing runs the new tag yet. Left
+                # in place, the next `docker compose up` for any reason would
+                # be the upgrade that just failed, unannounced.
+                put_back(edit, before)
+                reporter.say("  IMAGE_TAG put back to %s" % (edit["old"] or "(unset)"))
             return False
+        if "up" in argv:
+            started = True
         reporter.step(name, "done")
     return True
 
