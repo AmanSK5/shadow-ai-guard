@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.15-slim
 
 # Debian security updates on top of the base image. The base rebuilds on its
 # own schedule, so it lags patched packages: CVE-2026-53615 in util-linux was
