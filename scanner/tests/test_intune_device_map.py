@@ -22,6 +22,7 @@ it answers honestly.
 """
 
 import asyncio
+from datetime import datetime, timedelta, timezone
 
 from ai_guard.config import ScannerConfig
 from ai_guard.registry import AIService
@@ -66,14 +67,20 @@ STUBBED_SUB_RESOURCE = [
 ]
 
 # What the devices resource returns for the same two machines: real serials,
-# real users, and sync times from this morning.
+# real users, and sync times from this morning. "This morning" is computed,
+# not written down: a fixed date passed the 90-day cutoff one day and the
+# suite went red with no change to the code.
+def _this_morning(hours_ago: int) -> str:
+    return (datetime.now(timezone.utc) - timedelta(hours=hours_ago)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 INVENTORY = [
     {
         "id": "d1",
         "deviceName": "LAPTOP-01",
         "serialNumber": "PF2ABCDE",
         "userPrincipalName": "alice@example.com",
-        "lastSyncDateTime": "2026-08-10T06:14:00Z",
+        "lastSyncDateTime": _this_morning(3),
         "operatingSystem": "Windows",
     },
     {
@@ -81,7 +88,7 @@ INVENTORY = [
         "deviceName": "LAPTOP-02",
         "serialNumber": "PF3FGHIJ",
         "userPrincipalName": "bob@example.com",
-        "lastSyncDateTime": "2026-08-10T07:02:00Z",
+        "lastSyncDateTime": _this_morning(2),
         "operatingSystem": "Windows",
     },
 ]
